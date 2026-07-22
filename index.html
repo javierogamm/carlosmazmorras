@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.27.1 SUPABASE DUNGEONS</title>
+<title>MAZMORRA // BOTÍN v0.28.4 CONFIG ITEMS</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
-<div id="app">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.27.1 SUPABASE DUNGEONS</div></header>
+<div id="app" class="hidden">
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.28.4 CONFIG ITEMS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -82,9 +82,51 @@
 </div>
 
 
+
+<div class="overlay" id="landingOverlay">
+ <div class="modal landingModal">
+  <h2>MAZMORRA // BOTÍN</h2>
+  <p class="small">Elige si quieres configurar objetos personalizados o entrar a jugar.</p>
+  <div class="landingActions">
+   <button class="start" id="landingConfigBtn">CONFIGURAR</button>
+   <button class="start" id="landingPlayBtn">JUGAR</button>
+  </div>
+ </div>
+</div>
+
+<div class="configScreen hidden" id="configScreen">
+ <header><h1>CONFIGURACIÓN DE OBJETOS</h1><div class="badge">v0.28.4 CONFIG ITEMS</div></header>
+ <div class="configLayout">
+  <section class="panel">
+   <h2>Editor</h2>
+   <label>Imagen base <input type="file" id="configImageInput" accept="image/*"></label>
+   <div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja un cuadrado nuevo o arrastra el cuadrado existente sobre la imagen original. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
+   <div class="configPreview"><canvas id="configIconPreview" width="50" height="50"></canvas><span id="configIconStatus" class="small">Sin icono</span></div>
+   <div class="configForm">
+    <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
+    <label>Tier <select id="configTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
+    <label>Slot <select id="configSlot"></select></label>
+    <label>iLvl <input id="configIlvl" type="number" min="1" value="1"></label>
+    <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
+    <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
+    <div id="configStatsHelp" class="configStatsHelp"></div>
+   </div>
+   <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
+   <button id="exportConfigJsonBtn">EXPORTAR JSON</button>
+   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigJsonInput" accept=".json,application/json" multiple></label>
+   <div id="configStatus" class="small"></div>
+  </section>
+  <section class="panel">
+   <h2>Objetos guardados</h2>
+   <div id="configItemsList" class="configItemsList"></div>
+  </section>
+ </div>
+ <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
+</div>
+
 <div class="skillChoiceModal" id="skillChoiceModal"><div class="skillChoiceBox"><h2 id="skillChoiceTitle">ELIGE HABILIDAD</h2><p id="skillChoiceText" class="small"></p><div class="skillChoiceGrid" id="skillChoiceGrid"></div></div></div>
 
-<div class="overlay" id="dungeonOverlay">
+<div class="overlay hidden" id="dungeonOverlay">
 <div class="modal">
 <h2>ELIGE O CREA UNA DUNGEON</h2>
 <p class="small">Antes de crear personaje debes seleccionar un mundo guardado o crear uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>

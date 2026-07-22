@@ -1,5 +1,39 @@
 # Log de cambios
 
+## v0.28.4 - 2026-07-22
+
+- Añadido selector de tirada de daño para objetos configurados de tipo arma (`1d4`, `1d6`, `1d8`, `1d10`, `2d6`, etc.).
+- El daño configurado del arma se guarda en `item_json.damageDice`, se muestra en la ficha del objeto y se usa como tirada del ataque básico al equiparla.
+- Actualizada la versión de la app a `0.28.4` y la versión visible a `v0.28.4 CONFIG ITEMS`.
+
+## v0.28.3 - 2026-07-22
+
+- Ajustado el recorte del modo edición para dibujar cuadrados nuevos de tamaño variable y redimensionar el área seleccionada al icono final de 50x50 px.
+- Corregido el movimiento del cuadro para que el icono se genere siempre desde la posición actual sobre la imagen original, evitando usar un canvas ya sombreado o alterado.
+- Actualizada la versión de la app a `0.28.3` y la versión visible a `v0.28.3 CONFIG ITEMS`.
+
+## v0.28.2 - 2026-07-22
+
+- Corregido el atajo global de teclado para que la tecla `a` y el resto de teclas no intercepten la escritura dentro del modo edición.
+- Añadida una lista directa de bonos disponibles en el editor de stats para insertar claves como `damage:+1`, `armor:+1` o `critChance:+1`.
+- Actualizada la versión de la app a `0.28.2` y la versión visible a `v0.28.2 CONFIG ITEMS`.
+
+## v0.28.1 - 2026-07-22
+
+- Ajustado el editor de iconos para mantener la imagen subida a tamaño original dentro del canvas, sin redimensionarla ni alterarla.
+- Cambiado el selector de recorte a un cuadro fijo de 50x50 px que copia exactamente esa zona como icono hexadecimal.
+- Actualizada la versión de la app a `0.28.1` y la versión visible a `v0.28.1 CONFIG ITEMS`.
+
+## v0.28.0 - 2026-07-22
+
+- Añadido un landing inicial con las opciones Configurar y Jugar.
+- Añadido modo configuración para crear objetos con nombre, slot, tier, iLvl, stats e icono recortado a 50x50 px guardado como hexadecimal.
+- Añadida API `/api/config-items` para listar y guardar objetos en Supabase en la tabla `config_items`, incluyendo `item_json`.
+- Añadida exportación de un objeto a JSON e importación múltiple de JSON para guardar varios objetos configurados.
+- El generador de botín carga los objetos de `config_items` y los incorpora al loot del juego.
+- Añadido el tier Artefacto y colores de rareza para los objetos configurables.
+- Actualizada la versión de la app a `0.28.0` y la versión visible a `v0.28.0 CONFIG ITEMS`.
+
 ## v0.27.1 - 2026-07-22
 
 - Corregida la API de dungeons para leer la URL desde `SUPABASE_URL`, que es la variable configurada en Vercel, manteniendo `SUPABASE_ANON_KEY` como clave.
