@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.29.1 - 2026-07-22
+
+- Corregida la edición de objetos configurados para renderizar en la previsualización el icono hexadecimal ya guardado en `item_json.icon` o en la columna `icon`.
+- Añadido limpiado explícito de la previsualización al crear un nuevo objeto desde el modo configuración.
+- Actualizada la versión de la app a `0.29.1` y la versión visible a `v0.29.1 CONFIG ITEMS`.
+
 ## v0.29.0 - 2026-07-22
 
 - Añadidas acciones en modo configuración para editar objetos existentes, duplicarlos y borrarlos desde la lista guardada.
