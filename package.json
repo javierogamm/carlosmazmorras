@@ -1,0 +1,13 @@
+{
+  "name": "mazmorra-botin",
+  "version": "0.14.0",
+  "private": true,
+  "description": "MAZMORRA // BOTÍN, dungeon crawler web en HTML, CSS y JavaScript.",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "devDependencies": {
+    "vercel": "latest"
+  }
+}
