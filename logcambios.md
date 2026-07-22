@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.27.0 - 2026-07-22
+
+- Revisado al píxel el spritesheet normalizado `weapons/espadas/espadas.png`: superficie total 500x250 px, 10 columnas x 5 filas, celdas exactas de 50x50 px, margen X/Y 0 px y separación X/Y 0 px.
+- Corregido el recorte de espadas para eliminar el margen y separación heredados de 15 px que desplazaban el encuadre.
+- Añadidos límites explícitos de 10 columnas y 5 filas para que el recorte no salga de la superficie real del spritesheet.
+- Reasignadas las familias de espadas que apuntaban a filas inexistentes para mantenerlas dentro de la superficie disponible.
+- Actualizada la versión visible/exportada de la app a `v0.27 ENCUADRE` y la versión del paquete a `0.27.0`.
+
 ## v0.26.0 - 2026-07-22
 
 - Cambiada la integración para usar directamente el spritesheet transparente `weapons/espadas/espadas.png` sin generar ni versionar nuevos PNG binarios.
