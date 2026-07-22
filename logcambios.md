@@ -1,5 +1,15 @@
 # Log de cambios
 
+## v0.28.0 - 2026-07-22
+
+- Añadido un landing inicial con las opciones Configurar y Jugar.
+- Añadido modo configuración para crear objetos con nombre, slot, tier, iLvl, stats e icono recortado a 50x50 px guardado como hexadecimal.
+- Añadida API `/api/config-items` para listar y guardar objetos en Supabase en la tabla `config_items`, incluyendo `item_json`.
+- Añadida exportación de un objeto a JSON e importación múltiple de JSON para guardar varios objetos configurados.
+- El generador de botín carga los objetos de `config_items` y los incorpora al loot del juego.
+- Añadido el tier Artefacto y colores de rareza para los objetos configurables.
+- Actualizada la versión de la app a `0.28.0` y la versión visible a `v0.28.0 CONFIG ITEMS`.
+
 ## v0.27.1 - 2026-07-22
 
 - Corregida la API de dungeons para leer la URL desde `SUPABASE_URL`, que es la variable configurada en Vercel, manteniendo `SUPABASE_ANON_KEY` como clave.
