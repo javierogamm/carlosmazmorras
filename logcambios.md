@@ -1,5 +1,27 @@
 # Log de cambios
 
+## v0.30.2 - 2026-07-22
+
+- Igualado el editor de iconos de Clases al de Items: carga la imagen a tamaño original, permite dibujar un cuadrado nuevo o arrastrar el existente y redimensiona el recorte a 50x50 px.
+- Añadido canvas de recorte específico para el icono de personaje en la pestaña Clases, manteniendo rollback al sprite pixel original.
+- Actualizada la versión de la app y del paquete a `0.30.2` y la versión visible a `v0.30.2 CONFIG CLASES`.
+
+## v0.30.1 - 2026-07-22
+
+- Cambiado el editor de Clases para que el selector salga de las clases existentes en el juego, no solo de filas ya presentes en `config_class`.
+- Al guardar una clase se crea o actualiza su fila en `config_class` asociándola por `class_json.classId`; desde ese momento el juego usa el icono guardado para esa clase.
+- Añadido botón de rollback al original para vaciar el icono guardado de la clase y volver al sprite pixel por defecto.
+- Ampliada la API `/api/config-class` con creación (`POST`) además de lectura y actualización.
+- Actualizada la versión de la app y del paquete a `0.30.1` y la versión visible a `v0.30.1 CONFIG CLASES`.
+
+## v0.30.0 - 2026-07-22
+
+- Añadidas pestañas al modo configuración para separar el editor de Items y el nuevo editor de Clases.
+- Añadida API `/api/config-class` para leer y actualizar la tabla `config_class` en Supabase.
+- Añadido selector de clases existentes y edición del icono de personaje, guardando el icono en `icon` y `class_json.icon`.
+- El juego carga los iconos de clase configurados y los usa en selección de clase, sprite del héroe y muñeco de equipo; si una clase no tiene icono subido, conserva los pixels por defecto.
+- Actualizada la versión de la app y del paquete a `0.30.0` y la versión visible a `v0.30.0 CONFIG TABS`.
+
 ## v0.29.1 - 2026-07-22
 
 - Corregida la edición de objetos configurados para renderizar en la previsualización el icono hexadecimal ya guardado en `item_json.icon` o en la columna `icon`.
