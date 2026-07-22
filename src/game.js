@@ -490,9 +490,13 @@ const WEAPON_ICON_COLUMNS=10;
 const WEAPON_TYPE_ICON_SIZE=50;
 const SWORD_ICON_FOLDER='weapons/espadas';
 const SWORD_SPRITESHEET=`${SWORD_ICON_FOLDER}/espadas.png`;
-const SWORD_SPRITE_MARGIN=15;
-const SWORD_SPRITE_GAP=15;
+const SWORD_SPRITE_MARGIN_X=0;
+const SWORD_SPRITE_MARGIN_Y=0;
+const SWORD_SPRITE_GAP_X=0;
+const SWORD_SPRITE_GAP_Y=0;
 const SWORD_SPRITE_SIZE=50;
+const SWORD_SPRITE_COLUMNS=10;
+const SWORD_SPRITE_ROWS=5;
 const weaponRows=[
  {category:'Armas blancas steampunk básicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:0,legacy:['Espadas cortas'],stat:'strength',names:['Cuchillo de mecánico', 'Daga de caldera', 'Estoque dentado', 'Machete industrial', 'Espada de acero pulido', 'Sable de oficial', 'Garrote remachado', 'Hacha de ingeniero', 'Lanza de latón', 'Maza de pistón']},
  {category:'Armas a distancia mecánicas',legacy:['Katanas y hachas pesadas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola de chispa', 'Revólver de latón', 'Pistola de presión', 'Cañón de mano', 'Carabina compacta', 'Ballesta mecánica', 'Arco de poleas', 'Sierra arrojadiza', 'Bomba de relojería', 'Dron escarabajo']},
@@ -507,13 +511,13 @@ const weaponRows=[
  {category:'Armas de fuego ciberpunk',legacy:['Pistolas y armas de fuego mágicas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola inteligente', 'Subfusil de neón', 'Pistola de plasma compacta', 'Cañón sónico', 'Rifle de pulsos', 'Fusil de partículas', 'Ballesta magnética', 'Arco holográfico', 'Mina de pulso violeta', 'Granada de antimateria']},
  {category:'Armas ciberpunk pesadas',legacy:['Hoces, armas curvas y armas exóticas'],stat:'vitality',iconFolder:'weaponsCP',names:['Maza de núcleo oscuro', 'Mayal de plasma', 'Hacha de combate cibernética', 'Martillo de sobrecarga', 'Daga de datos corruptos', 'Alabarda de fase', 'Cadena de energía', 'Guantelete de fuerza', 'Látigo neuronal', 'Dron depredador']},
  {category:'Armas térmicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Látigos'],stat:'strength',names:['Daga incandescente', 'Kukri térmico', 'Sable de fuego', 'Espada láser roja', 'Mandoble de magma', 'Estoque ígneo', 'Bastón de combustión', 'Hacha térmica', 'Lanza de fusión', 'Maza de reactor rojo']},
- {category:'Armas criogénicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:5,legacy:['Bastones mágicos'],stat:'intelligence',names:['Daga criogénica', 'Kukri de hielo tecnológico', 'Sable glacial', 'Espada láser azul', 'Mandoble criónico', 'Estoque de escarcha', 'Bastón de congelación', 'Hacha criogénica', 'Lanza de hielo comprimido', 'Maza de núcleo glacial']},
- {category:'Armas tóxicas y biotecnológicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:6,legacy:['Martillos de guerra'],stat:'luck',names:['Daga biocortante', 'Kukri venenoso', 'Sable de ácido', 'Espada de plasma verde', 'Mandoble biotecnológico', 'Estoque tóxico', 'Pistola de esporas', 'Hacha corrosiva', 'Lanza de bioenergía', 'Granada química']},
+ {category:'Armas criogénicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Bastones mágicos'],stat:'intelligence',names:['Daga criogénica', 'Kukri de hielo tecnológico', 'Sable glacial', 'Espada láser azul', 'Mandoble criónico', 'Estoque de escarcha', 'Bastón de congelación', 'Hacha criogénica', 'Lanza de hielo comprimido', 'Maza de núcleo glacial']},
+ {category:'Armas tóxicas y biotecnológicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Martillos de guerra'],stat:'luck',names:['Daga biocortante', 'Kukri venenoso', 'Sable de ácido', 'Espada de plasma verde', 'Mandoble biotecnológico', 'Estoque tóxico', 'Pistola de esporas', 'Hacha corrosiva', 'Lanza de bioenergía', 'Granada química']},
  {category:'Armas de pólvora industrial',legacy:['Hachas mágicas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola de percusión', 'Escopeta recortada', 'Revólver de cañones múltiples', 'Fusil pesado de vapor', 'Ametralladora de engranajes', 'Lanzagranadas industrial', 'Ballesta de asedio compacta', 'Arco neumático', 'Cañón portátil', 'Mortero de hombro']},
  {category:'Artillería steampunk',legacy:['Lanzas cortas y jabalinas'],stat:'vitality',iconFolder:'weaponsCP',names:['Pistola lanzallamas', 'Fusil rotatorio de vapor', 'Cañón de bobina mecánico', 'Lanzacohetes de latón', 'Rifle explosivo', 'Mortero de presión', 'Ballesta pesada plegable', 'Mina magnética', 'Cañón automático', 'Torreta mecánica']},
  {category:'Artefactos de energía',legacy:['Mandobles mágicos'],stat:'intelligence',iconFolder:'weaponsCP',names:['Núcleo de plasma azul', 'Portal de fase', 'Proyector de singularidad', 'Garra gravitatoria', 'Cuchilla del vacío', 'Orbe de agujero negro', 'Cañón dimensional', 'Reactor temporal', 'Reloj de estasis', 'Mina de singularidad']},
- {category:'Armas tecnomágicas legendarias',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:7,legacy:['Espadas legendarias'],stat:'wisdom',names:['Pistola del reloj divino', 'Sable de energía dorada', 'Hoja sierra de plasma', 'Espada del núcleo celeste', 'Mandoble del cronoingeniero', 'Bastón del sol mecánico', 'Hacha de tormenta Tesla', 'Lanza del autómata real', 'Maza del gran reloj', 'Dron serafín mecánico']},
- {category:'Armas míticas ciberpunk',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:8,legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Cañón del corazón azul', 'Guadaña del vacío violeta', 'Espada de plasma imperial', 'Hoja del reactor carmesí', 'Estrella de energía criónica', 'Rifle del arcángel mecánico', 'Hacha del señor de las máquinas', 'Lanza de fotones', 'Bastón de singularidad violeta', 'Núcleo del apocalipsis mecánico']}
+ {category:'Armas tecnomágicas legendarias',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Espadas legendarias'],stat:'wisdom',names:['Pistola del reloj divino', 'Sable de energía dorada', 'Hoja sierra de plasma', 'Espada del núcleo celeste', 'Mandoble del cronoingeniero', 'Bastón del sol mecánico', 'Hacha de tormenta Tesla', 'Lanza del autómata real', 'Maza del gran reloj', 'Dron serafín mecánico']},
+ {category:'Armas míticas ciberpunk',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Cañón del corazón azul', 'Guadaña del vacío violeta', 'Espada de plasma imperial', 'Hoja del reactor carmesí', 'Estrella de energía criónica', 'Rifle del arcángel mecánico', 'Hacha del señor de las máquinas', 'Lanza de fotones', 'Bastón de singularidad violeta', 'Núcleo del apocalipsis mecánico']}
 ];
 const weaponCategories=weaponRows.map(r=>r.category);
 const weaponCategoryStats=Object.fromEntries(weaponRows.flatMap(r=>[r.category,...r.legacy].map(c=>[c,r.stat])));
@@ -538,7 +542,11 @@ function weaponIconAssetRow(row){return Number.isInteger(weaponRows[row]?.iconAs
 function weaponIconFileStem(row,col){return `icon_r${String(weaponIconAssetRow(row)+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`}
 function weaponIconBase(row,col){return `${weaponIconFolder(row)}/${weaponIconFileStem(row,col)}`}
 function weaponUsesSwordSpritesheet(row){return weaponIconFolder(row)===SWORD_ICON_FOLDER}
-function swordSpriteRect(row,col){const assetRow=weaponIconAssetRow(row);return{x:SWORD_SPRITE_MARGIN+col*(SWORD_SPRITE_SIZE+SWORD_SPRITE_GAP),y:SWORD_SPRITE_MARGIN+assetRow*(SWORD_SPRITE_SIZE+SWORD_SPRITE_GAP),size:SWORD_SPRITE_SIZE}}
+function swordSpriteRect(row,col){
+ const assetRow=Math.max(0,Math.min(SWORD_SPRITE_ROWS-1,weaponIconAssetRow(row)));
+ const assetCol=Math.max(0,Math.min(SWORD_SPRITE_COLUMNS-1,col));
+ return{x:SWORD_SPRITE_MARGIN_X+assetCol*(SWORD_SPRITE_SIZE+SWORD_SPRITE_GAP_X),y:SWORD_SPRITE_MARGIN_Y+assetRow*(SWORD_SPRITE_SIZE+SWORD_SPRITE_GAP_Y),size:SWORD_SPRITE_SIZE}
+}
 function weaponIconCandidates(row,col){const base=weaponIconBase(row,col),cp=`weaponsCP/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`,classic=`weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`,legacy=`resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`;return weaponUsesSwordSpritesheet(row)?[SWORD_SPRITESHEET]:[`${base}.png`,base,`${base}.webp`,`${base}.PNG`,`${cp}.png`,cp,`${classic}.png`,classic,`${legacy}.png`,legacy]}
 function weaponIconPath(row,col){return weaponUsesSwordSpritesheet(row)?`${SWORD_SPRITESHEET}#${weaponIconFileStem(row,col)}`:weaponIconCandidates(row,col)[0]}
 function weaponNameForCategory(category,col=0){
@@ -2251,7 +2259,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.25',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.27',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
