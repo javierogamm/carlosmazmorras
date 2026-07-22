@@ -769,6 +769,40 @@ function encounterLootQuality(source='normal'){
  return Math.max(1,q)
 }
 
+
+const classStarterWeaponCategories={
+ yunque:'Martillos de guerra',
+ berserker:'Katanas y hachas pesadas',
+ necromancer:'Guadañas',
+ paladin:'Hachas de guerra y mazas con pinchos',
+ jester:'Hoces, armas curvas y armas exóticas',
+ sniper:'Pistolas y armas de fuego mágicas',
+ shaman:'Bastones mágicos',
+ thief:'Dagas, lanzas y alabardas',
+ cleric:'Mayales',
+ entropyMage:'Varitas mágicas',
+ bountyHunter:'Ballestas',
+ druid:'Lanzas cortas y jabalinas',
+ monk:'Garras y guanteletes',
+ engineer:'Pistolas y armas de fuego mágicas',
+ seer:'Bastones mágicos',
+ beastGuardian:'Garras y guanteletes'
+};
+function makeStarterWeapon(classId){
+ const category=classStarterWeaponCategories[classId]||'Espadas cortas';
+ const stat=weaponCategoryStats[category]||'strength';
+ const statLabel=DEFENSE_STAT_LABELS[stat]||'Fuerza';
+ return{
+  id:crypto.randomUUID(),slot:'weapon',iconShape:'blade',rarity:'common',label:'Común',itemLevel:1,score:8,
+  name:`${weaponNameForCategory(category)} de aprendiz`,
+  theme:'starter',weaponCategory:category,weaponIconRow:weaponCategories.indexOf(category),weaponIconCol:0,
+  flavor:`Arma inicial de clase: ${category}. Icono básico de la primera columna del spritesheet.`,
+  defenseStat:stat,
+  affixes:[{key:stat,label:statLabel,value:1,percent:false}],passives:[],effects:[],
+  desc:'Nivel 1 · Poder 8'
+ };
+}
+
 function makeLoot(level,source='normal'){if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  const slot=pick(slots),rar=weightedRarity(level);
  const itemLevel=Math.max(1,level+rng(3)-1);
@@ -855,7 +889,8 @@ function openInitialNarrative(){
 function start(){
  const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3;
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
- game={floor:1,themeIndex:0,turn:0,inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment:Object.fromEntries(slots.map(s=>[s,null])),knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
+ game={floor:1,themeIndex:0,turn:0,inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -2103,7 +2138,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.15',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.16',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}

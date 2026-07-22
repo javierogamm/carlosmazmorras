@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.16.0 - 2026-07-22
+
+- Añadida arma inicial básica equipada automáticamente al crear partida.
+- Cada clase empieza con una categoría de arma coherente con su fantasía de juego.
+- Las armas iniciales usan la primera columna del spritesheet `resources/armas1.png` y metadatos de categoría compatibles con el nuevo sistema de itemización.
+- Actualizada la versión de la app a `v0.16 ARMAS INICIALES` y la versión del paquete a `0.16.0`.
+
 ## v0.15.0 - 2026-07-22
 
 - Añadido el primer bloque del nuevo sistema de itemización para armas.
