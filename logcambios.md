@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.30.0 - 2026-07-22
+
+- Añadidas pestañas al modo configuración para separar el editor de Items y el nuevo editor de Clases.
+- Añadida API `/api/config-class` para leer y actualizar la tabla `config_class` en Supabase.
+- Añadido selector de clases existentes y edición del icono de personaje, guardando el icono en `icon` y `class_json.icon`.
+- El juego carga los iconos de clase configurados y los usa en selección de clase, sprite del héroe y muñeco de equipo; si una clase no tiene icono subido, conserva los pixels por defecto.
+- Actualizada la versión de la app y del paquete a `0.30.0` y la versión visible a `v0.30.0 CONFIG TABS`.
+
 ## v0.29.1 - 2026-07-22
 
 - Corregida la edición de objetos configurados para renderizar en la previsualización el icono hexadecimal ya guardado en `item_json.icon` o en la columna `icon`.

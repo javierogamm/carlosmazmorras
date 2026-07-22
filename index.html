@@ -95,7 +95,9 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN DE OBJETOS</h1><div class="badge">v0.29.1 CONFIG ITEMS</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.30.0 CONFIG TABS</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button></div>
+ <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
    <h2>Editor</h2>
@@ -122,6 +124,25 @@
    <h2>Objetos guardados</h2>
    <div id="configItemsList" class="configItemsList"></div>
   </section>
+ </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabClasses">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de clases</h2>
+    <p class="small">Selecciona una clase existente de <code>config_class</code> y sube el icono del personaje. Ese icono se usará en el juego; si no hay icono, se mantiene el sprite pixel por defecto.</p>
+    <label>Clase <select id="configClassSelect"></select></label>
+    <label>Icono de personaje <input type="file" id="configClassImageInput" accept="image/*"></label>
+    <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
+    <label>Nombre <input id="configClassName" maxlength="80" readonly placeholder="Nombre de la clase"></label>
+    <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
+    <div id="configClassStatus" class="small"></div>
+   </section>
+   <section class="panel">
+    <h2>Clases guardadas</h2>
+    <div id="configClassesList" class="configItemsList"></div>
+   </section>
+  </div>
  </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
 </div>
