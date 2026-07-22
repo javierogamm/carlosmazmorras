@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.19.0 - 2026-07-22
+
+- Reajustada la grilla de iconos de armas observando los márgenes reales del PNG.
+- Añadidos offsets de recorte para evitar que un icono muestre fragmentos de la fila superior o inferior.
+- El recorte usa 10 columnas y 20 filas dentro del área útil del spritesheet, descontando márgenes laterales y verticales.
+- Actualizada la versión de la app a `v0.19 GRID ARMAS` y la versión del paquete a `0.19.0`.
+
 ## v0.18.0 - 2026-07-22
 
 - Corregido el recorte de iconos de armas para usar las dimensiones reales del spritesheet `resources/armas1.png`.

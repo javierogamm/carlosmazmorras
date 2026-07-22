@@ -489,6 +489,7 @@ const weaponSpriteSheet=new Image();
 weaponSpriteSheet.src='resources/armas1.png';
 weaponSpriteSheet.onload=()=>{if(game)updateUI()};
 const WEAPON_ICON_COLUMNS=10,WEAPON_ICON_ROWS=20;
+const WEAPON_GRID_OFFSET={left:10,top:7,right:10,bottom:47};
 const weaponCategories=[
  'Espadas cortas',
  'Katanas y hachas pesadas',
@@ -543,7 +544,12 @@ function weaponPowerColumn(itemLevel,rarity,score=0){
  return Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,Math.round(rarityIndex*1.8+levelBoost+scoreBoost)));
 }
 function weaponSpriteCell(){
- return{w:weaponSpriteSheet.naturalWidth/WEAPON_ICON_COLUMNS,h:weaponSpriteSheet.naturalHeight/WEAPON_ICON_ROWS};
+ return{
+  x:WEAPON_GRID_OFFSET.left,
+  y:WEAPON_GRID_OFFSET.top,
+  w:(weaponSpriteSheet.naturalWidth-WEAPON_GRID_OFFSET.left-WEAPON_GRID_OFFSET.right)/WEAPON_ICON_COLUMNS,
+  h:(weaponSpriteSheet.naturalHeight-WEAPON_GRID_OFFSET.top-WEAPON_GRID_OFFSET.bottom)/WEAPON_ICON_ROWS
+ };
 }
 function weaponCategoryForLoot(rarity){
  const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name));
@@ -574,7 +580,7 @@ function drawItemIcon(canvas,item){
  q.fillStyle='#21172a';q.fillRect(0,0,48,48);
  if(item?.slot==='weapon'&&Number.isInteger(item.weaponIconRow)&&Number.isInteger(item.weaponIconCol)&&weaponSpriteSheet.complete&&weaponSpriteSheet.naturalWidth){
   const cell=weaponSpriteCell();
-  q.drawImage(weaponSpriteSheet,item.weaponIconCol*cell.w,item.weaponIconRow*cell.h,cell.w,cell.h,3,3,42,42);
+  q.drawImage(weaponSpriteSheet,cell.x+item.weaponIconCol*cell.w,cell.y+item.weaponIconRow*cell.h,cell.w,cell.h,3,3,42,42);
   q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);
   return;
  }
@@ -2155,7 +2161,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.18',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.19',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
