@@ -560,6 +560,60 @@ function weaponIconImage(item){
  const img=weaponIconCache[key];item.weaponIconPath=img.currentSrc||img.src||item.weaponIconPath;return img;
 }
 
+
+
+const armorIconCache={};
+const ARMOR_ICON_COLUMNS=10;
+const armorRows=[
+ {category:'Túnicas y ropajes rudimentarios',names:['Túnica de lino desgarrada','Túnica de viajero remendada','Harapos del bosque','Túnica azul de peregrino','Jubón de cuero gastado','Túnica sombría deteriorada','Túnica blanca de acólito','Harapos carmesíes','Túnica negra de vagabundo','Túnica ocre reforzada']},
+ {category:'Gambesones y armaduras acolchadas',names:['Gambesón de lino','Gambesón de cuero oscuro','Gambesón del explorador','Gambesón azul','Gambesón carmesí','Gambesón gris reforzado','Gambesón blanco ceremonial','Gambesón violeta','Gambesón negro','Gambesón dorado']},
+ {category:'Túnicas y hábitos',names:['Hábito marrón de monje','Túnica verde con capucha','Túnica azul de erudito','Túnica roja de iniciado','Hábito blanco de sacerdote','Hábito negro de penitente','Túnica púrpura de ocultista','Túnica turquesa de vidente','Túnica de mercader','Hábito negro carmesí']},
+ {category:'Túnicas mágicas',names:['Túnica de escarcha','Túnica druídica','Túnica del mago azul','Túnica de piromante','Túnica de luz sagrada','Túnica arcana violeta','Túnica espectral turquesa','Túnica del vacío','Túnica solar dorada','Túnica glacial blanca']},
+ {category:'Armaduras de cuero ligeras',names:['Chaleco de cuero básico','Chaleco de cuero negro','Cuero del guardabosques','Cuero reforzado azul','Cuero carmesí','Cuero gris endurecido','Cuero del desierto','Cuero arcano violeta','Cuero de asesino','Cuero dorado']},
+ {category:'Cuero tachonado',names:['Cuero tachonado marrón','Cuero tachonado negro','Cuero tachonado verde','Cuero tachonado azul','Cuero tachonado rojo','Cuero tachonado de acero','Cuero tachonado blanco','Cuero tachonado violeta','Cuero tachonado sombrío','Cuero tachonado dorado']},
+ {category:'Cuero reforzado',names:['Coraza de cuero cruzado','Cuero reforzado oscuro','Cuero reforzado del bosque','Cuero reforzado azul','Cuero reforzado carmesí','Cuero reforzado gris','Cuero reforzado blanco','Cuero reforzado arcano','Cuero reforzado negro','Cuero reforzado dorado']},
+ {category:'Armaduras de explorador y pícaro',names:['Armadura de explorador verde','Armadura de cazador','Armadura espinosa del bosque','Armadura de montaraz azul','Armadura de pícaro carmesí','Armadura de ladrón gris','Armadura de rastreador','Armadura de acechador violeta','Armadura de asesino negro','Armadura de guardabosques ancestral']},
+ {category:'Pieles y armaduras de bestia',names:['Piel de oso pardo','Piel de lobo negro','Piel de lobo blanco','Piel de bestia cornuda','Armadura tribal con cuernos','Piel de lobo ártico','Piel de bestia sangrienta','Piel de oso ancestral','Piel de yeti','Piel de león dorado']},
+ {category:'Cotas de malla ligeras',names:['Cota de malla común','Cota de malla oscura','Cota de malla verdosa','Cota de malla azul','Cota de malla carmesí','Cota de malla de acero','Cota de malla plateada','Cota de malla arcana','Cota de malla negra','Cota de malla dorada']},
+ {category:'Cotas de malla pesadas',names:['Cota de malla reforzada','Malla pesada del bosque','Malla pesada azul','Malla pesada carmesí','Malla pesada plateada','Malla pesada negra y dorada','Malla pesada violeta','Malla de guardia imperial','Malla pesada de obsidiana','Malla pesada real']},
+ {category:'Armaduras de escamas',names:['Armadura de escamas de bronce','Escamas del pantano','Escamas azules','Escamas de dragón rojo','Escamas plateadas','Escamas arcanas','Escamas turquesa','Escamas negras','Escamas doradas','Escamas cristalinas blancas']},
+ {category:'Brigantinas y lamelares',names:['Brigantina de hierro','Brigantina verde','Brigantina azul','Brigantina carmesí','Brigantina plateada','Brigantina violeta','Brigantina turquesa','Brigantina negra','Brigantina negra y dorada','Brigantina blanca y dorada']},
+ {category:'Corazas de bronce',names:['Coraza de bronce','Coraza de bronce envejecido','Coraza de bronce con pátina','Coraza de cobre rojo','Coraza de bronce pesado','Coraza de latón dorado','Coraza de bronce arcano','Coraza de bronce negro','Coraza de oro antiguo','Coraza ceremonial dorada']},
+ {category:'Armaduras de placas',names:['Armadura de placas de acero','Placas de acero azulado','Placas de la Guardia Roja','Placas de acero negro','Placas plateadas con oro','Placas blancas de caballero','Placas arcanas violetas','Placas oscuras','Placas negras y doradas','Placas blancas y doradas']},
+ {category:'Armaduras pesadas de caballero',names:['Armadura pesada de caballero','Armadura pesada azul','Armadura pesada carmesí','Armadura pesada de obsidiana','Armadura pesada de campeón','Armadura pesada imperial','Armadura pesada arcana','Armadura pesada infernal','Armadura pesada negra y dorada','Armadura pesada del rey oscuro']},
+ {category:'Armaduras sagradas y reales',names:['Armadura del paladín solar','Armadura real azul y dorada','Armadura del paladín de fuego','Armadura del guardián celestial','Armadura áurea del campeón','Armadura del cruzado blanco','Armadura del paladín arcano','Armadura del ángel custodio','Armadura real alada','Armadura del serafín blanco']},
+ {category:'Armaduras elementales',names:['Armadura de magma','Armadura de hielo cristalino','Armadura del relámpago dorado','Armadura de espinas vivientes','Armadura del glaciar','Armadura de cristal arcano','Armadura de roca rúnica','Armadura de coral abisal','Armadura de piedra ancestral','Armadura de nubes eternas']},
+ {category:'Armaduras oscuras, demoníacas y cristalinas',names:['Armadura del demonio carmesí','Armadura de sombra abisal','Armadura de hueso infernal','Armadura del vacío violeta','Armadura de cristal glacial','Armadura del corazón oscuro','Armadura del señor infernal','Armadura de espinas venenosas','Armadura de amatista viviente','Armadura espectral turquesa']},
+ {category:'Armaduras míticas y legendarias',names:['Armadura del Sol Eterno','Armadura del Arcángel','Armadura del Dragón Carmesí','Armadura del Guardián Esmeralda','Armadura del Firmamento','Armadura de la Luz Primordial','Armadura del Oráculo Arcano','Armadura del Fénix Dorado','Armadura del Eclipse','Armadura del Invierno Celestial']}
+];
+function armorPowerColumn(itemLevel,rarity,score=0){return weaponPowerColumn(itemLevel,rarity,score)}
+function armorRowForLoot(rarity){
+ const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name)),level=game?.player?.level||1;
+ const levelCap=level>=45?19:level>=35?18:level>=25?17:level>=18?16:level>=12?15:level>=7?12:8;
+ const minRow=rarityIndex>=4?17:rarityIndex>=3?12:rarityIndex>=2?6:rarityIndex>=1?3:0;
+ const rawMaxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?11:8;
+ return minRow+rng(Math.max(1,Math.max(minRow,Math.min(rawMaxRow,levelCap))-minRow+1));
+}
+function armorIconBase(row,col){return `armors/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`}
+function armorIconCandidates(row,col){const base=armorIconBase(row,col),legacy=`resources/armors/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`;return[`${base}.png`,base,`${base}.webp`,`${base}.PNG`,`${legacy}.png`,legacy]}
+function armorIconPath(row,col){return armorIconCandidates(row,col)[0]}
+function armorName(row,col){return armorRows[row]?.names[Math.max(0,Math.min(ARMOR_ICON_COLUMNS-1,col))]||itemBases.chest[0]}
+function normalizeArmorIcon(item){
+ if(!item||item.slot!=='chest')return item;
+ if(!Number.isInteger(item.armorIconRow))return item;
+ item.armorIconRow=Math.max(0,Math.min(armorRows.length-1,item.armorIconRow));
+ item.armorIconCol=Math.max(0,Math.min(ARMOR_ICON_COLUMNS-1,Number.isInteger(item.armorIconCol)?item.armorIconCol:0));
+ item.armorCategory=armorRows[item.armorIconRow]?.category||item.armorCategory;
+ item.armorIconPath=armorIconPath(item.armorIconRow,item.armorIconCol);
+ return item;
+}
+function armorIconImage(item){
+ normalizeArmorIcon(item);if(!Number.isInteger(item?.armorIconRow))return null;
+ const key=armorIconBase(item.armorIconRow,item.armorIconCol);
+ if(!armorIconCache[key]){const candidates=armorIconCandidates(item.armorIconRow,item.armorIconCol),img=new Image();img.dataset.tryIndex='0';img.dataset.failed='0';img.onerror=()=>{const next=Number(img.dataset.tryIndex||0)+1;if(next<candidates.length){img.dataset.tryIndex=String(next);img.src=candidates[next]}else img.dataset.failed='1'};img.src=candidates[0];armorIconCache[key]=img}
+ const img=armorIconCache[key];item.armorIconPath=img.currentSrc||img.src||item.armorIconPath;return img;
+}
+
 const itemIconShapes={
  weapon:['blade','hammer','axe','mace','spear'],
  offhand:['shield','book','lid','orb','board'],
@@ -584,6 +638,11 @@ function drawItemIcon(canvas,item){
    q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);
    return;
   }
+  if(img)img.onload=()=>drawItemIcon(canvas,item);
+ }
+ if(item?.slot==='chest'&&Number.isInteger(item.armorIconRow)){
+  const img=armorIconImage(item);
+  if(img?.complete&&img.naturalWidth){q.drawImage(img,3,3,42,42);q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);return}
   if(img)img.onload=()=>drawItemIcon(canvas,item);
  }
  const shape=item.iconShape||'gemring',c=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';
@@ -826,12 +885,16 @@ function makeLoot(level,source='normal'){if(Math.random()<Math.min(.22,.07+game.
  const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
  const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
  const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
+ const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
+ const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
+ const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
  return{
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
   theme:themed?.theme||'fantasy',
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
-  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
+  armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
+  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
   defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
   affixes,passives,effects,
   desc:`Nivel ${itemLevel} · Poder ${score}`
@@ -2017,6 +2080,14 @@ function drawHeadGear(q,v,x,y,type,color){
  else if(type==='veil'){q.globalAlpha=.7;q.fillRect(x-15,y-10,30,23);q.globalAlpha=1}
  else if(type==='beast'){q.fillRect(x-14,y-10,7,9);q.fillRect(x+7,y-10,7,9);q.fillRect(x-10,y-15,5,7);q.fillRect(x+5,y-15,5,7)}
 }
+
+function drawEquippedWeaponIcon(q,item,x,y,facing=1){
+ const img=item?weaponIconImage(item):null;
+ if(!(img?.complete&&img.naturalWidth))return false;
+ q.save();q.translate(x,y);q.scale(facing,1);q.rotate(facing>0?.55:-.55);q.drawImage(img,-8,-18,16,16);q.restore();
+ return true;
+}
+
 function drawCharacter(q,x,y,scale,cls,equipment={},frame=0,facing=1){
  const v=classVisuals[cls]||classVisuals.yunque, bob=frame%2?1:0;
  q.save();q.translate(x,y+bob);q.scale(scale,scale);
@@ -2049,7 +2120,7 @@ function drawCharacter(q,x,y,scale,cls,equipment={},frame=0,facing=1){
  // weapon and offhand
  const weapon=equipment.weapon, wc=weapon?rarityColors[weapon.rarity]:accent;
  const wa=equipmentAnchor(cls,v.weapon,'weapon',facing);
- q.save();q.translate(wa.x,wa.y);if(wa.rotation)q.rotate(wa.rotation);drawPixelWeapon(q,0,0,v.weapon,wc,facing);q.restore();
+ if(!drawEquippedWeaponIcon(q,weapon,wa.x,wa.y,facing)){q.save();q.translate(wa.x,wa.y);if(wa.rotation)q.rotate(wa.rotation);drawPixelWeapon(q,0,0,v.weapon,wc,facing);q.restore();}
  if(equipment.offhand){const oc=rarityColors[equipment.offhand.rarity],oa=equipmentAnchor(cls,v.weapon,'offhand',-facing);q.save();q.translate(oa.x+(facing>0?-2:2),oa.y+8);q.fillStyle=oc;q.fillRect(-6,-5,12,17);q.fillStyle=shade(oc,-20);q.fillRect(-4,-3,8,13);q.fillStyle=shade(oc,18);q.fillRect(-3,-2,6,3);q.restore()}
  // rings/trinkets glow
  const glow=[equipment.ring1,equipment.ring2,equipment.trinket1,equipment.trinket2].filter(Boolean);
