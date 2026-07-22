@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.18.0 - 2026-07-22
+
+- Corregido el recorte de iconos de armas para usar las dimensiones reales del spritesheet `resources/armas1.png`.
+- El cálculo de celda ahora divide la imagen en 10 columnas y 20 filas desde el tamaño natural del PNG, evitando asumir celdas de 30x30 cuando el recurso está escalado.
+- Los iconos de armas equipadas, botín e inventario usan el recorte correcto de fila y columna.
+- Actualizada la versión de la app a `v0.18 SPRITES ARMAS` y la versión del paquete a `0.18.0`.
+
 ## v0.17.0 - 2026-07-22
 
 - Añadidos iconos visibles para todos los objetos equipados en la vista de equipo.
