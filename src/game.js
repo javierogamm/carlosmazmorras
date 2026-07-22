@@ -1,13 +1,16 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const gameCanvasWrap=document.getElementById('gameStage');
 ctx.imageSmoothingEnabled=false;
-const TILE=64,COLS=70,ROWS=70,VIEW=8,CANVAS_SIZE=TILE*VIEW;
-canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE;
+const TILE=64,COLS=70,ROWS=70,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
+let visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(localStorage.getItem('visibleTiles')||8)||8));
+let CANVAS_SIZE=TILE*visibleTiles;
+function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE}
+applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.30.4';
+const APP_VERSION='0.30.5';
 let configItems=[];
 let configClasses=[];
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -926,8 +929,18 @@ function makeLoot(level,source='normal'){const configured=makeConfiguredLoot(lev
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
-function camera(){return{x:Math.max(0,Math.min(COLS-VIEW,game.player.x-Math.floor(VIEW/2))),y:Math.max(0,Math.min(ROWS-VIEW,game.player.y-Math.floor(VIEW/2)))}}
-function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/VIEW}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/VIEW}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
+function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+
+function setVisibleTiles(value){
+ visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(value)||8));
+ localStorage.setItem('visibleTiles',String(visibleTiles));
+ applyCanvasSize();
+ const input=document.getElementById('zoomVisibleTiles'),label=document.getElementById('zoomVisibleTilesLabel');
+ if(input)input.value=String(visibleTiles);
+ if(label)label.textContent=`${visibleTiles}x${visibleTiles}`;
+ if(game)draw();
+}
 
 function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.player.y){
  const max=Number(entity.maxHp)||0,before=Number(entity.hp)||0;
@@ -1957,7 +1970,7 @@ function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnima
 function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;
  ctx.save();ctx.globalAlpha=.28;
- for(let sy=0;sy<VIEW;sy++)for(let sx=0;sx<VIEW;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
  ctx.restore()
 }
 
@@ -1979,7 +1992,7 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<VIEW;sy++)for(let sx=0;sx<VIEW;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);doorSprite(p.x,p.y,d)}
@@ -2361,7 +2374,7 @@ async function createDungeonWorld(){
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;landingPlayBtn.onclick=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses()};landingConfigBtn.onclick=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();fetchConfigItems();fetchConfigClasses()};backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;landingPlayBtn.onclick=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses()};landingConfigBtn.onclick=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();fetchConfigItems();fetchConfigClasses()};backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 
 
 
