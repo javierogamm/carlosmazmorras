@@ -5,6 +5,8 @@ const TILE=64,COLS=70,ROWS=70,VIEW=10;
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
+let selectedDungeonWorld=null;
+const APP_VERSION='0.27.0';
 const raceDefs={"humano": {"name": "Humano Desafortunado", "origin": "Canalla", "desc": "No destaca en nada salvo en meterse donde no debe.", "trait": "+10% de experiencia.", "bonuses": {"xpMult": 1.1}}, "enano": {"name": "Enano de la Forja Negra", "origin": "Alta fantasía", "desc": "Terco, blindado y convencido de que todo problema admite un martillo.", "trait": "+3 de armadura y +8 de vida.", "bonuses": {"armor": 3, "maxHp": 8}}, "elfoNocturno": {"name": "Elfo de la Luna Rota", "origin": "Alta fantasía", "desc": "Un exiliado de los bosques plateados con demasiados enemigos y muy pocas disculpas.", "trait": "+2 AGI, +1 SAB y +4% de evasión.", "bonuses": {"agility": 2, "wisdom": 1, "dodge": 4}}, "orcoLibre": {"name": "Orco de Compañía Libre", "origin": "Alta fantasía", "desc": "Mercenario, duelista y saqueador profesional. Cobra por adelantado.", "trait": "+2 FUE, +1 VIT y +8% de daño físico.", "bonuses": {"strength": 2, "vitality": 1, "physicalPower": 8}}, "draconido": {"name": "Dracónido de Brasa Azul", "origin": "Alta fantasía", "desc": "Su linaje promete dragones. De momento aporta humo, escamas y mal carácter.", "trait": "+1 FUE, +2 VIT y resistencia convertida en +2 armadura.", "bonuses": {"strength": 1, "vitality": 2, "armor": 2}}, "mediano": {"name": "Mediano Rompebolsas", "origin": "Canalla", "desc": "Pequeño, rápido y absolutamente incapaz de dejar un bolsillo sin revisar.", "trait": "+2 SUE, +1 AGI y +12% de hallazgo de rareza.", "bonuses": {"luck": 2, "agility": 1, "rarityFind": 12}}, "tiefling": {"name": "Tiefling de Taberna", "origin": "Alta fantasía", "desc": "Sangre infernal, sonrisa impecable y una deuda en cada reino conocido.", "trait": "+2 INT, +1 SUE y +8% de poder mágico.", "bonuses": {"intelligence": 2, "luck": 1, "magicPower": 8}}, "silvano": {"name": "Silvano de Corteza Férrea", "origin": "Alta fantasía", "desc": "Un espíritu del bosque que aprendió que la diplomacia funciona mejor con raíces gruesas.", "trait": "+2 VIT, +1 SAB y regeneración de vida al cambiar de piso.", "bonuses": {"vitality": 2, "wisdom": 1, "floorHeal": 10}}, "sintetico": {"name": "Sintético de Callejón", "origin": "Ciberpunk", "desc": "Construido con piezas legales, ilegales y varias que niegan haberlo conocido.", "trait": "+1 INT, +1 AGI, +10 stamina y +8 maná.", "bonuses": {"intelligence": 1, "agility": 1, "maxStamina": 10, "maxMana": 8}}, "neonita": {"name": "Neonita del Subnivel", "origin": "Ciberpunk", "desc": "Mutante urbano criado bajo anuncios luminosos y tuberías que nunca dejaron de gotear.", "trait": "+2 AGI, +1 SUE y +6% de crítico.", "bonuses": {"agility": 2, "luck": 1, "critChance": 6}}, "gnomoCable": {"name": "Gnomo Cableado", "origin": "Ciberpunk", "desc": "Ingeniero diminuto con seis herramientas, tres implantes y cero respeto por las garantías.", "trait": "+2 INT, +1 SAB y regeneración superior de maná.", "bonuses": {"intelligence": 2, "wisdom": 1, "manaRegen": 3}}, "cambiapieles": {"name": "Cambiapieles de los Bajos Fondos", "origin": "Canalla", "desc": "Imita caras, voces y firmas. El problema es recordar cuál era la suya.", "trait": "+1 a AGI, SUE e INT; +5% de evasión.", "bonuses": {"agility": 1, "luck": 1, "intelligence": 1, "dodge": 5}}};
 
 const classDefs={
@@ -978,7 +980,7 @@ function start(){
  const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3;
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -986,6 +988,45 @@ function start(){
  recomputeDerived();startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
+
+function createDungeonWorldJson(name){
+ const floors=[];
+ const oldGame=game;
+ const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
+ for(let floor=1;floor<=20;floor++){
+  const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
+  const targetRooms=30+Math.min(18,Math.floor(floor/2))+rng(7);
+  for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
+  for(let i=1;i<rooms.length;i++){let a=rooms[i-1],b=rooms[i],x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}}
+  game={floor,player:tempPlayer};
+  const spawn=rooms[0],distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy),distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
+  const stairRoom=distantRooms[0]||rooms.at(-1),bossRoom=distantRooms[1]||distantRooms[0]||rooms.at(-1),stairs={x:stairRoom.cx,y:stairRoom.cy};
+  const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
+  const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&distanceFromSpawn(r)>10).sort(()=>Math.random()-.5).slice(0,2+rng(3)).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
+  const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
+  const occ=new Set([key(spawn.cx,spawn.cy),key(stairs.x,stairs.y)]);safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
+  const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
+  const free=()=>{let p;do{p=pick(cells)}while(occ.has(key(p.x,p.y)));occ.add(key(p.x,p.y));return{...p}};
+  const doors=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1,v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}}
+  const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
+  const chests=[];for(let i=0;i<14+Math.floor(floor*.8);i++)chests.push({...free(),opened:false});
+  const family=floorEnemyFamily(),theme={name:family.floorTheme,enemies:family.enemies,boss:pick(family.bosses)},enemies=[],isBossFloor=floor%2===0,count=32+floor*5+rng(13);
+  for(let i=0;i<count;i++){const type=pick(theme.enemies),def=enemyDefs[type],p=free(),scale=1+(floor-1)*.16;enemies.push({x:p.x,y:p.y,type,name:def.name,hp:Math.round(def.hp*scale*1.5),maxHp:Math.round(def.hp*scale*1.5),atk:Math.round(def.atk*scale),boss:false})}
+  const bossCount=isBossFloor?Math.min(4,1+Math.floor(floor/10)):Math.min(2,Math.floor(floor/15));let boss=null;
+  for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,type=theme.boss,def=enemyDefs[type],scale=1+(floor-1)*.13,b={x:room.cx,y:room.cy,type,name:bi?`${def.name} · Campeón ${bi+1}`:def.name,hp:Math.round(def.hp*scale*1.5*(1+bi*.18)),maxHp:Math.round(def.hp*scale*1.5*(1+bi*.18)),atk:Math.round(def.atk*scale*(1+bi*.08)),boss:true};enemies.push(b);if(!boss)boss=b}
+  const event=Math.random()<=.09?{id:pick(eventDefs).id}:null;
+  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(assignEnemySkills),enemyFamily:family.name,themeName:theme.name,boss});
+ }
+ game=oldGame;
+ return {schemaVersion:1,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),floors};
+}
+function loadPrecomputedFloor(){
+ const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
+ if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+ Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>assignEnemySkills({...e})),enemyFamily:data.enemyFamily,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss});
+ game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
+ banner(`PISO ${game.floor} · ${data.themeName||'Mundo precomputado'}`);log(`Entras en ${data.themeName||'la dungeon'}. Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');updateUI();draw();rollFloorEvent();return true;
+}
 
 function floorTheme(){return themes[Math.min(themes.length-1,Math.floor((game.floor-1)/2))]}
 function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)map[y][x]=0}
@@ -1065,8 +1106,10 @@ function currentEventStatValue(stat){
 function rollFloorEvent(){
  if(!game?.player||game.floorEventRolled)return;
  game.floorEventRolled=true;
- if(Math.random()>.09)return;
- const def={...pick(eventDefs)};
+ let def=null;
+ if(game.precomputedEvent){def={...eventDefs.find(e=>e.id===game.precomputedEvent.id)};delete game.precomputedEvent;}
+ else{if(Math.random()>.09)return;def={...pick(eventDefs)}}
+ if(!def)return;
  def.threshold=Math.max(9,Math.round(def.threshold+(game.floor-1)*.65+(game.player.level-1)*.18));
  const value=currentEventStatValue(def.stat),roll=1+rng(20),total=roll+Math.floor(value/2);
  const detected=total>=def.threshold;
@@ -1251,7 +1294,7 @@ function updateRestButton(){
  else{btn.textContent='ESPERAR';btn.disabled=false;delete btn.dataset.rest}
 }
 
-function generateFloor(){game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  busy=false;const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
  const targetRooms=30+Math.min(18,Math.floor(game.floor/2))+rng(7);
  for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
@@ -2230,7 +2273,26 @@ function enemySprite(x,y,e){
  if(e.hp<e.maxHp){R(8,4,48,5,'#330d14');R(8,4,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
 }
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();startBtn.onclick=start;
+
+async function fetchDungeonWorlds(){
+ const status=document.getElementById('worldStatus'),list=document.getElementById('worldList');if(!status||!list)return;
+ status.textContent='Cargando dungeons desde Supabase...';list.innerHTML='';
+ try{const r=await fetch('/api/dungeon-worlds');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar las dungeons');
+  if(!data.length){status.textContent='No hay dungeons guardadas. Crea una nueva.';return}
+  status.textContent=`${data.length} dungeon(s) disponibles.`;
+  list.innerHTML=data.map(w=>`<button type="button" class="worldCard" data-world-id="${w.id}"><b>${w.world_name||'Dungeon sin nombre'}</b><span>#${w.id} · ${new Date(w.created_at).toLocaleString()}</span><small>${w.world_json?.floors?.length||0} pisos precomputados</small></button>`).join('');
+  list.querySelectorAll('[data-world-id]').forEach(btn=>btn.onclick=()=>{selectedDungeonWorld=data.find(w=>String(w.id)===btn.dataset.worldId);dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${selectedDungeonWorld.id} SELECCIONADA`)});
+ }catch(e){status.textContent=`Error: ${e.message}. Revisa SUPABASE_KEY y SUPABASE_ANON_KEY en Vercel.`}
+}
+async function createDungeonWorld(){
+ const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim();
+ btn.disabled=true;status.textContent='Calculando pisos, enemigos, cofres, eventos y diseño de niveles...';
+ try{const world_json=createDungeonWorldJson(name);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+  selectedDungeonWorld=data;dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${data.id} CREADA`);
+ }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
+}
+
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;fetchDungeonWorlds();
 
 
 
