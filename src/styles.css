@@ -175,3 +175,8 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .equippedItemInfo{min-width:0}.equippedItemInfo .small{display:block;font-size:9px}
 .itemDetail{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:start}
 .itemDetailIcon{width:54px;height:54px;image-rendering:pixelated;border:2px solid #000;background:#261b30}
+.worldList{display:grid;gap:8px;margin-top:8px;max-height:300px;overflow:auto;padding-right:4px}
+.worldCard{background:#271a31;border:2px solid #513b60;color:#f3eaf6;padding:10px;text-align:left;cursor:pointer;font-family:inherit}
+.worldCard:hover{border-color:#ffc35a;box-shadow:0 0 10px #ffc35a44}
+.worldCard b{display:block;color:#ffd68b;font-size:14px}
+.worldCard span,.worldCard small{display:block;color:#c9b8d0;font-size:10px;margin-top:4px}

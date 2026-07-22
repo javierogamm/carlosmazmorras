@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.25 ESPADAS</title>
+<title>MAZMORRA // BOTÍN v0.27.1 SUPABASE DUNGEONS</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.25 ESPADAS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.27.1 SUPABASE DUNGEONS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -84,7 +84,19 @@
 
 <div class="skillChoiceModal" id="skillChoiceModal"><div class="skillChoiceBox"><h2 id="skillChoiceTitle">ELIGE HABILIDAD</h2><p id="skillChoiceText" class="small"></p><div class="skillChoiceGrid" id="skillChoiceGrid"></div></div></div>
 
-<div class="overlay" id="startOverlay">
+<div class="overlay" id="dungeonOverlay">
+<div class="modal">
+<h2>ELIGE O CREA UNA DUNGEON</h2>
+<p class="small">Antes de crear personaje debes seleccionar un mundo guardado o crear uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>
+<label>Nombre del mundo <input id="worldNameInput" value="Mazmorra Consolidada" maxlength="40"></label>
+<button class="start" id="createWorldBtn">CREAR DUNGEON Y CALCULAR CONTENIDOS</button>
+<h3>Dungeons guardadas</h3>
+<div id="worldStatus" class="small">Cargando dungeons...</div>
+<div class="worldList" id="worldList"></div>
+</div>
+</div>
+
+<div class="overlay hidden" id="startOverlay">
 <div class="modal">
 <h2>CREA TU DESGRACIADO PROFESIONAL</h2>
 <label>Nombre <input id="nameInput" value="Carl-ish" maxlength="16"></label>
