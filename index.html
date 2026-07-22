@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.28.4 CONFIG ITEMS</title>
+<title>MAZMORRA // BOTÍN v0.29.0 CONFIG ITEMS</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.28.4 CONFIG ITEMS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.29.0 CONFIG ITEMS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -95,7 +95,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN DE OBJETOS</h1><div class="badge">v0.28.4 CONFIG ITEMS</div></header>
+ <header><h1>CONFIGURACIÓN DE OBJETOS</h1><div class="badge">v0.29.0 CONFIG ITEMS</div></header>
  <div class="configLayout">
   <section class="panel">
    <h2>Editor</h2>
@@ -109,9 +109,11 @@
     <label>iLvl <input id="configIlvl" type="number" min="1" value="1"></label>
     <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
+    <label class="configSkillSelectWrap">Habilidades <select id="configSkills" multiple size="8"></select><span class="small">Ctrl/Cmd + clic para asignar varias habilidades del set completo.</span></label>
     <div id="configStatsHelp" class="configStatsHelp"></div>
    </div>
    <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
+   <button id="newConfigItemBtn">NUEVO OBJETO</button>
    <button id="exportConfigJsonBtn">EXPORTAR JSON</button>
    <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigJsonInput" accept=".json,application/json" multiple></label>
    <div id="configStatus" class="small"></div>
