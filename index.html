@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>MAZMORRA // BOTÍN v0.14 ESTRUCTURA</title>
+<link rel="stylesheet" href="./src/styles.css">
+
+</head>
+<body>
+<div id="app">
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.14 ESTRUCTURA</div></header>
+<div class="layout">
+<section class="panel heroPanel">
+<h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
+<div><div class="stat"><span>Nivel</span><b id="level">1</b></div><div class="stat"><span>Vida</span><b id="hpText"></b></div><div class="bar"><i class="hp" id="hpBar"></i></div></div>
+<div>
+<div class="stat"><span>XP</span><b id="xpText"></b></div><div class="bar"><i class="xp" id="xpBar"></i></div>
+<div class="stat"><span>Stamina</span><b id="staminaText"></b></div><div class="bar"><i class="stamina" id="staminaBar"></i></div>
+<div class="stat"><span>Maná</span><b id="manaText"></b></div><div class="bar"><i class="mana" id="manaBar"></i></div>
+<div class="stat"><span>Piso</span><b id="floor"></b></div>
+</div>
+<div><div class="stat"><span>Daño</span><b id="damage"></b></div><div class="stat"><span>Armadura</span><b id="armor"></b></div><div class="stat"><span>Oro</span><b id="gold"></b></div></div>
+<div><div class="stat"><span>FUE</span><b id="strength"></b></div><div class="stat"><span>VIT</span><b id="vitality"></b></div><div class="stat"><span>AGI</span><b id="agility"></b></div><div class="stat"><span>SUE</span><b id="luck"></b></div><div class="stat"><span>INT</span><b id="intelligence"></b></div><div class="stat"><span>SAB</span><b id="wisdom"></b></div></div>
+<hr><h3>Equipo rápido</h3><div id="equipmentMini"></div>
+<div class="saveTools">
+<button id="saveGameBtn">⬇ Guardar JSON</button>
+<label>⬆ Cargar JSON<input type="file" id="loadGameInput" accept=".json,application/json"></label>
+</div>
+</section>
+
+<section class="panel">
+<div class="enemyTheme" id="themeLabel"></div>
+<div class="gameStage" id="gameStage">
+<canvas id="game" width="640" height="640"></canvas>
+<div class="gameHud">
+ <div class="hudBars">
+  <div class="hudBar"><span>♥</span><div class="hudTrack"><i class="hudFill hudHp" id="hudHpFill"></i></div><span id="hudHpText"></span></div>
+  <div class="hudBar"><span>★</span><div class="hudTrack"><i class="hudFill hudXp" id="hudXpFill"></i></div><span id="hudXpText"></span></div>
+  <div class="hudBar"><span>⚡</span><div class="hudTrack"><i class="hudFill hudStamina" id="hudStaminaFill"></i></div><span id="hudStaminaText"></span></div>
+  <div class="hudBar"><span>✦</span><div class="hudTrack"><i class="hudFill hudMana" id="hudManaFill"></i></div><span id="hudManaText"></span></div>
+ </div>
+ <div class="activeEffects" id="activeEffects"></div>
+ <div class="hudButtons">
+  <button class="hudButton" id="hudEquipment" title="Equipo">⚔</button>
+  <button class="hudButton" id="hudSkills" title="Habilidades">✷</button>
+  <button class="hudButton" id="hudMap" title="Mostrar u ocultar minimapa">🗺</button>
+ </div>
+</div>
+<div class="minimapWrap minimapHidden" id="minimapWrap"><canvas id="minimap" width="150" height="150"></canvas></div>
+<div class="inspectPopup" id="inspectPopup"><button class="closeInspect" id="closeInspect">×</button><div id="inspectContent"></div></div>
+<div class="targetHint hidden" id="targetHint"></div>
+<div class="mobileSkillbar" id="mobileSkillbar"></div>
+</div>
+<div class="controls">
+<button class="empty">.</button><button data-move="0,-1">▲</button><button class="empty">.</button>
+<button data-move="-1,0">◀</button>
+<div class="waitCancelWrap">
+  <button id="waitBtn">ESPERAR</button>
+  <button id="cancelTargetBtn" class="cancelTargetBtn hidden">CANCELAR</button>
+</div>
+<button data-move="1,0">▶</button>
+<button class="empty">.</button><button data-move="0,1">▼</button><button class="empty">.</button>
+</div>
+<div class="small">Muévete exclusivamente con las flechas · habilidades abajo · enemigos actúan tras tu movimiento</div>
+<div class="log" id="log"></div>
+</section>
+
+<section class="panel sidePanel">
+<div class="tabs">
+<button class="active" data-tab="inventory">Mochila</button>
+<button data-tab="equipment">Equipo</button>
+<button data-tab="skills">Habilidades</button>
+<button data-tab="achievements">Logros</button>
+</div>
+<div id="inventory" class="tabview"></div>
+<div id="equipment" class="tabview hidden"></div>
+<div id="skills" class="tabview hidden"></div>
+<div id="achievements" class="tabview hidden"></div>
+</section>
+</div>
+</div>
+
+
+<div class="skillChoiceModal" id="skillChoiceModal"><div class="skillChoiceBox"><h2 id="skillChoiceTitle">ELIGE HABILIDAD</h2><p id="skillChoiceText" class="small"></p><div class="skillChoiceGrid" id="skillChoiceGrid"></div></div></div>
+
+<div class="overlay" id="startOverlay">
+<div class="modal">
+<h2>CREA TU DESGRACIADO PROFESIONAL</h2>
+<label>Nombre <input id="nameInput" value="Carl-ish" maxlength="16"></label>
+<h3>Raza</h3>
+<div class="choices raceGrid" id="raceChoices"></div>
+<h3>Clase</h3>
+<p class="small">Cada clase define sus atributos iniciales y su estilo de juego.</p>
+<div class="classGrid" id="classChoices"></div>
+<div id="classDetail" class="narrative"></div>
+<button class="start" id="startBtn">ENTRAR EN LA MAZMORRA</button>
+</div>
+</div>
+
+<div class="overlay hidden" id="storyOverlay">
+<div class="modal">
+<h2 id="storyTitle"></h2>
+<div id="storyBody"></div>
+<button class="start" id="storyContinue">ACEPTAR EL MAL PRESAGIO</button>
+</div>
+</div>
+
+<script src="./src/game.js"></script>
+
+</body>
+</html>
