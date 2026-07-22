@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.30.1 - 2026-07-22
+
+- Cambiado el editor de Clases para que el selector salga de las clases existentes en el juego, no solo de filas ya presentes en `config_class`.
+- Al guardar una clase se crea o actualiza su fila en `config_class` asociándola por `class_json.classId`; desde ese momento el juego usa el icono guardado para esa clase.
+- Añadido botón de rollback al original para vaciar el icono guardado de la clase y volver al sprite pixel por defecto.
+- Ampliada la API `/api/config-class` con creación (`POST`) además de lectura y actualización.
+- Actualizada la versión de la app y del paquete a `0.30.1` y la versión visible a `v0.30.1 CONFIG CLASES`.
+
 ## v0.30.0 - 2026-07-22
 
 - Añadidas pestañas al modo configuración para separar el editor de Items y el nuevo editor de Clases.
