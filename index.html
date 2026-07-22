@@ -96,14 +96,14 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.30.5 EDITOR ZOOM</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.31.0 MAGIC ERASER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
    <h2>Editor</h2>
    <label>Imagen base <input type="file" id="configImageInput" accept="image/*"></label>
-   <div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja un cuadrado nuevo o arrastra el cuadrado existente sobre la imagen original. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configCropZoom" min="25" max="400" value="100"></label><button type="button" id="configMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
    <div class="configPreview"><canvas id="configIconPreview" width="50" height="50"></canvas><span id="configIconStatus" class="small">Sin icono</span></div>
    <div class="configForm">
     <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
@@ -134,7 +134,7 @@
     <p class="small">Selecciona una clase de las existentes en el juego y sube el icono del personaje. Al guardar se consolida en <code>config_class</code> y desde ese momento esa clase usa ese icono; puedes volver al sprite pixel original con rollback.</p>
     <label>Clase del juego <select id="configClassSelect"></select></label>
     <label>Icono de personaje <input type="file" id="configClassImageInput" accept="image/*"></label>
-    <div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja un cuadrado nuevo o arrastra el cuadrado existente sobre la imagen original. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
     <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
     <label>Nombre <input id="configClassName" maxlength="80" readonly placeholder="Nombre de la clase"></label>
     <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>

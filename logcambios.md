@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.31.0 - 2026-07-22
+
+- Añadidos controles de zoom in/out en el visor de imagen cargada para recortar iconos de Items y Clases sin alterar el tamaño original del recurso.
+- Añadida herramienta Magic eraser en ambos visores para convertir a transparente el color seleccionado y colores similares.
+- Añadido slider de sutileza del pixel para ajustar la tolerancia de borrado de fondos antes de consolidar el icono 50x50 px.
+- Actualizada la versión de la app y del paquete a `0.31.0` y la versión visible a `v0.31.0`.
+
 ## v0.30.5 - 2026-07-22
 
 - Añadido un editor de zoom directamente en la pantalla de juego para elegir cuántas casillas visibles muestra la zona jugable.
