@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.22.0 - 2026-07-22
+
+- Corregida la ruta principal de los iconos de armas para cargar desde la carpeta raíz `weapons/`.
+- Conservada compatibilidad de carga con la ruta anterior `resources/weapons/` como reserva para partidas o despliegues antiguos.
+- Los metadatos y descripciones de armas iniciales apuntan ahora a la ruta consolidada `weapons/`.
+- Actualizada la versión de la app a `v0.22 RUTA ARMAS` y la versión del paquete a `0.22.0`.
+
 ## v0.21.0 - 2026-07-22
 
 - Corregida la carga de iconos individualizados de armas para probar varias rutas reales por icono.

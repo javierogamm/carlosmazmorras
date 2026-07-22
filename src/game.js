@@ -524,8 +524,8 @@ function weaponCategoryForLoot(rarity){
  const maxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?12:9;
  return weaponRows[minRow+rng(maxRow-minRow+1)].category;
 }
-function weaponIconBase(row,col){return `resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`}
-function weaponIconCandidates(row,col){const base=weaponIconBase(row,col);return[`${base}.png`,base,`${base}.webp`,`${base}.PNG`]}
+function weaponIconBase(row,col){return `weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`}
+function weaponIconCandidates(row,col){const base=weaponIconBase(row,col),legacy=`resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`;return[`${base}.png`,base,`${base}.webp`,`${base}.PNG`,`${legacy}.png`,legacy]}
 function weaponIconPath(row,col){return weaponIconCandidates(row,col)[0]}
 function weaponNameForCategory(category,col=0){
  const row=weaponRows[weaponRowForCategory(category)]||weaponRows[0];
@@ -805,7 +805,7 @@ function makeStarterWeapon(classId){
   id:crypto.randomUUID(),slot:'weapon',iconShape:'blade',rarity:'common',label:'Común',itemLevel:1,score:8,
   name:`${weaponNameForCategory(canonicalCategory,col)} de aprendiz`,
   theme:'starter',weaponCategory:canonicalCategory,weaponIconRow:row,weaponIconCol:col,weaponIconPath:weaponIconPath(row,col),
-  flavor:`Arma inicial de clase: ${canonicalCategory}. Icono básico individual en resources/weapons.`,
+  flavor:`Arma inicial de clase: ${canonicalCategory}. Icono básico individual en weapons.`,
   defenseStat:stat,
   affixes:[{key:stat,label:statLabel,value:1,percent:false}],passives:[],effects:[],
   desc:'Nivel 1 · Poder 8'
@@ -2161,7 +2161,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.21',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.22',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
