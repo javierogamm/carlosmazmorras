@@ -524,7 +524,9 @@ function weaponCategoryForLoot(rarity){
  const maxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?12:9;
  return weaponRows[minRow+rng(maxRow-minRow+1)].category;
 }
-function weaponIconPath(row,col){return `resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}.png`}
+function weaponIconBase(row,col){return `resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}`}
+function weaponIconCandidates(row,col){const base=weaponIconBase(row,col);return[`${base}.png`,base,`${base}.webp`,`${base}.PNG`]}
+function weaponIconPath(row,col){return weaponIconCandidates(row,col)[0]}
 function weaponNameForCategory(category,col=0){
  const row=weaponRows[weaponRowForCategory(category)]||weaponRows[0];
  return row.names[Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,col))];
@@ -541,9 +543,17 @@ function normalizeWeaponIcon(item){
 }
 function weaponIconImage(item){
  normalizeWeaponIcon(item);
- const src=item.weaponIconPath;if(!src)return null;
- if(!weaponIconCache[src]){const img=new Image();img.src=src;weaponIconCache[src]=img}
- return weaponIconCache[src];
+ const key=weaponIconBase(item.weaponIconRow,item.weaponIconCol);
+ if(!weaponIconCache[key]){
+  const candidates=weaponIconCandidates(item.weaponIconRow,item.weaponIconCol);
+  const img=new Image();img.dataset.tryIndex='0';img.dataset.failed='0';
+  img.onerror=()=>{
+   const next=Number(img.dataset.tryIndex||0)+1;
+   if(next<candidates.length){img.dataset.tryIndex=String(next);img.src=candidates[next]}else img.dataset.failed='1';
+  };
+  img.src=candidates[0];weaponIconCache[key]=img;
+ }
+ const img=weaponIconCache[key];item.weaponIconPath=img.currentSrc||img.src||item.weaponIconPath;return img;
 }
 
 const itemIconShapes={
@@ -2151,7 +2161,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.20',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.21',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}

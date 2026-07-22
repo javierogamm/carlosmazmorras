@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.21.0 - 2026-07-22
+
+- Corregida la carga de iconos individualizados de armas para probar varias rutas reales por icono.
+- El cargador intenta `icon_rXX_cYY.png`, el nombre sin extensión, `webp` y `PNG` antes de usar el fallback procedural.
+- La ruta del arma se actualiza con la variante cargada para que los detalles del objeto apunten al recurso correcto.
+- Actualizada la versión de la app a `v0.21 ICONOS ARMAS` y la versión del paquete a `0.21.0`.
+
 ## v0.20.0 - 2026-07-22
 
 - Sustituida la lectura del spritesheet por iconos individualizados en `resources/weapons`.
