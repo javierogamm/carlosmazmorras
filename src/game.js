@@ -6,7 +6,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.30.2';
+const APP_VERSION='0.30.3';
 let configItems=[];
 let configClasses=[];
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -2197,10 +2197,19 @@ function drawCharacter(q,x,y,scale,cls,equipment={},frame=0,facing=1){
  if(glow.length){q.globalAlpha=.55;for(let i=0;i<glow.length;i++){q.strokeStyle=rarityColors[glow[i].rarity];q.strokeRect(-19-i, -20-i,38+i*2,50+i*2)}q.globalAlpha=1}
  q.restore()
 }
-function drawCharacterIcon(q,iconHex,x,y,w,h){
+function drawTrimmedImage(q,img,x,y,w,h,padding=0){
+ const src=document.createElement('canvas');src.width=img.naturalWidth||img.width;src.height=img.naturalHeight||img.height;const s=src.getContext('2d');s.imageSmoothingEnabled=false;s.clearRect(0,0,src.width,src.height);s.drawImage(img,0,0);
+ const data=s.getImageData(0,0,src.width,src.height).data;let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+ for(let yy=0;yy<src.height;yy++)for(let xx=0;xx<src.width;xx++){if(data[(yy*src.width+xx)*4+3]>8){if(xx<minX)minX=xx;if(yy<minY)minY=yy;if(xx>maxX)maxX=xx;if(yy>maxY)maxY=yy}}
+ q.imageSmoothingEnabled=false;
+ if(maxX<0){q.drawImage(img,x,y,w,h);return}
+ const sw=maxX-minX+1,sh=maxY-minY+1,scale=Math.min((w-padding*2)/sw,(h-padding*2)/sh),dw=Math.max(1,Math.round(sw*scale)),dh=Math.max(1,Math.round(sh*scale)),dx=x+Math.round((w-dw)/2),dy=y+Math.round((h-dh)/2);
+ q.drawImage(img,minX,minY,sw,sh,dx,dy,dw,dh)
+}
+function drawCharacterIcon(q,iconHex,x,y,w,h,padding=0){
  if(!iconHex)return false;
  try{const data='data:image/png;base64,'+hexToBase64(iconHex.startsWith('#')?iconHex.slice(1):iconHex),img=configIconImage(data);
-  const draw=()=>{q.imageSmoothingEnabled=false;q.drawImage(img,x,y,w,h)};
+  const draw=()=>drawTrimmedImage(q,img,x,y,w,h,padding);
   if(img.complete&&img.naturalWidth){draw();return true}
   img.onload=()=>{draw();if(game)draw()};
  }catch(e){}
@@ -2208,7 +2217,7 @@ function drawCharacterIcon(q,iconHex,x,y,w,h){
 }
 function heroSprite(x,y){
  const icon=game.player.classIcon||classIconForId(game.player.cls);
- if(icon&&drawCharacterIcon(ctx,icon,x+7,y+7,50,50))return;
+ if(icon&&drawCharacterIcon(ctx,icon,x+3,y+3,58,58,2))return;
  const facing=game.player.facing||1,frame=game.turn%4<2?0:1;
  drawCharacter(ctx,x+32,y+34,1.18,game.player.cls,game.player.equipment,frame,facing)
 }
@@ -2216,7 +2225,7 @@ function drawClassPreview(canvas,cls){
  const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,64,64);
  q.fillStyle='#120c18';q.fillRect(0,0,64,64);
  q.fillStyle='#25182e';for(let i=0;i<4;i++)q.fillRect(i*18,50+(i%2)*3,15,8);
- if(drawCharacterIcon(q,classIconForId(cls),7,7,50,50))return;
+ if(drawCharacterIcon(q,classIconForId(cls),3,3,58,58,2))return;
  drawCharacter(q,32,38,.85,cls,{},0,1)
 }
 function drawPaperDoll(canvas,p){
@@ -2224,7 +2233,7 @@ function drawPaperDoll(canvas,p){
  const grad=q.createLinearGradient(0,0,0,192);grad.addColorStop(0,'#21162b');grad.addColorStop(1,'#0d0912');q.fillStyle=grad;q.fillRect(0,0,128,192);
  q.strokeStyle='#493454';q.strokeRect(5,5,118,182);
  for(let y=12;y<188;y+=16){q.fillStyle=y%32?'#16101d':'#1a1222';q.fillRect(8,y,112,1)}
- if(p.classIcon||classIconForId(p.cls)){drawCharacterIcon(q,p.classIcon||classIconForId(p.cls),39,48,50,50)}else{q.save();q.translate(64,103);q.scale(2.25,2.25);drawCharacter(q,0,0,1,p.cls,p.equipment,game.turn%2,p.facing||1);q.restore();}
+ if(p.classIcon||classIconForId(p.cls)){drawCharacterIcon(q,p.classIcon||classIconForId(p.cls),24,26,80,112,4)}else{q.save();q.translate(64,103);q.scale(2.25,2.25);drawCharacter(q,0,0,1,p.cls,p.equipment,game.turn%2,p.facing||1);q.restore();}
  q.fillStyle='#e8d8a7';q.font='6px monospace';q.textAlign='center';q.fillText((p.className||'CLASE').toUpperCase().slice(0,20),64,181)
 }
 function chestSprite(x,y){px(x+8,y+27,48,27,'#553018');px(x+10,y+19,44,15,'#a65d2c');px(x+14,y+21,36,4,'#d38a43');px(x+28,y+24,8,22,'#f2c456');px(x+13,y+47,38,4,'#321b12')}
