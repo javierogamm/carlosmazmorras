@@ -1,12 +1,16 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const gameCanvasWrap=document.getElementById('gameStage');
 ctx.imageSmoothingEnabled=false;
-const TILE=64,COLS=70,ROWS=70,VIEW=10;
+const TILE=64,COLS=70,ROWS=70,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
+let visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(localStorage.getItem('visibleTiles')||8)||8));
+let CANVAS_SIZE=TILE*visibleTiles;
+function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE}
+applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.30.2';
+const APP_VERSION='0.30.5';
 let configItems=[];
 let configClasses=[];
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -925,8 +929,18 @@ function makeLoot(level,source='normal'){const configured=makeConfiguredLoot(lev
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
-function camera(){return{x:Math.max(0,Math.min(COLS-VIEW,game.player.x-Math.floor(VIEW/2))),y:Math.max(0,Math.min(ROWS-VIEW,game.player.y-Math.floor(VIEW/2)))}}
-function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/VIEW}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/VIEW}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
+function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+
+function setVisibleTiles(value){
+ visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(value)||8));
+ localStorage.setItem('visibleTiles',String(visibleTiles));
+ applyCanvasSize();
+ const input=document.getElementById('zoomVisibleTiles'),label=document.getElementById('zoomVisibleTilesLabel');
+ if(input)input.value=String(visibleTiles);
+ if(label)label.textContent=`${visibleTiles}x${visibleTiles}`;
+ if(game)draw();
+}
 
 function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.player.y){
  const max=Number(entity.maxHp)||0,before=Number(entity.hp)||0;
@@ -1956,7 +1970,7 @@ function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnima
 function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;
  ctx.save();ctx.globalAlpha=.28;
- for(let sy=0;sy<VIEW;sy++)for(let sx=0;sx<VIEW;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
  ctx.restore()
 }
 
@@ -1977,8 +1991,8 @@ function drawSafeRoomOverlay(sc){
 }
 
 function draw(){
- if(!game)return;const c=camera();ctx.clearRect(0,0,640,640);
- for(let sy=0;sy<VIEW;sy++)for(let sx=0;sx<VIEW;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
+ if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);doorSprite(p.x,p.y,d)}
@@ -1987,7 +2001,7 @@ function draw(){
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){let p=sc(e.x,e.y);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
- const g=ctx.createRadialGradient(320,320,170,320,320,470);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,640,640)
+ const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
@@ -2197,10 +2211,19 @@ function drawCharacter(q,x,y,scale,cls,equipment={},frame=0,facing=1){
  if(glow.length){q.globalAlpha=.55;for(let i=0;i<glow.length;i++){q.strokeStyle=rarityColors[glow[i].rarity];q.strokeRect(-19-i, -20-i,38+i*2,50+i*2)}q.globalAlpha=1}
  q.restore()
 }
-function drawCharacterIcon(q,iconHex,x,y,w,h){
+function drawTrimmedImage(q,img,x,y,w,h,padding=0){
+ const src=document.createElement('canvas');src.width=img.naturalWidth||img.width;src.height=img.naturalHeight||img.height;const s=src.getContext('2d');s.imageSmoothingEnabled=false;s.clearRect(0,0,src.width,src.height);s.drawImage(img,0,0);
+ const data=s.getImageData(0,0,src.width,src.height).data;let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+ for(let yy=0;yy<src.height;yy++)for(let xx=0;xx<src.width;xx++){if(data[(yy*src.width+xx)*4+3]>8){if(xx<minX)minX=xx;if(yy<minY)minY=yy;if(xx>maxX)maxX=xx;if(yy>maxY)maxY=yy}}
+ q.imageSmoothingEnabled=false;
+ if(maxX<0){q.drawImage(img,x,y,w,h);return}
+ const sw=maxX-minX+1,sh=maxY-minY+1,scale=Math.min((w-padding*2)/sw,(h-padding*2)/sh),dw=Math.max(1,Math.round(sw*scale)),dh=Math.max(1,Math.round(sh*scale)),dx=x+Math.round((w-dw)/2),dy=y+Math.round((h-dh)/2);
+ q.drawImage(img,minX,minY,sw,sh,dx,dy,dw,dh)
+}
+function drawCharacterIcon(q,iconHex,x,y,w,h,padding=0){
  if(!iconHex)return false;
  try{const data='data:image/png;base64,'+hexToBase64(iconHex.startsWith('#')?iconHex.slice(1):iconHex),img=configIconImage(data);
-  const draw=()=>{q.imageSmoothingEnabled=false;q.drawImage(img,x,y,w,h)};
+  const draw=()=>drawTrimmedImage(q,img,x,y,w,h,padding);
   if(img.complete&&img.naturalWidth){draw();return true}
   img.onload=()=>{draw();if(game)draw()};
  }catch(e){}
@@ -2208,7 +2231,7 @@ function drawCharacterIcon(q,iconHex,x,y,w,h){
 }
 function heroSprite(x,y){
  const icon=game.player.classIcon||classIconForId(game.player.cls);
- if(icon&&drawCharacterIcon(ctx,icon,x+7,y+7,50,50))return;
+ if(icon&&drawCharacterIcon(ctx,icon,x+3,y+3,58,58,2))return;
  const facing=game.player.facing||1,frame=game.turn%4<2?0:1;
  drawCharacter(ctx,x+32,y+34,1.18,game.player.cls,game.player.equipment,frame,facing)
 }
@@ -2216,7 +2239,7 @@ function drawClassPreview(canvas,cls){
  const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,64,64);
  q.fillStyle='#120c18';q.fillRect(0,0,64,64);
  q.fillStyle='#25182e';for(let i=0;i<4;i++)q.fillRect(i*18,50+(i%2)*3,15,8);
- if(drawCharacterIcon(q,classIconForId(cls),7,7,50,50))return;
+ if(drawCharacterIcon(q,classIconForId(cls),3,3,58,58,2))return;
  drawCharacter(q,32,38,.85,cls,{},0,1)
 }
 function drawPaperDoll(canvas,p){
@@ -2224,7 +2247,7 @@ function drawPaperDoll(canvas,p){
  const grad=q.createLinearGradient(0,0,0,192);grad.addColorStop(0,'#21162b');grad.addColorStop(1,'#0d0912');q.fillStyle=grad;q.fillRect(0,0,128,192);
  q.strokeStyle='#493454';q.strokeRect(5,5,118,182);
  for(let y=12;y<188;y+=16){q.fillStyle=y%32?'#16101d':'#1a1222';q.fillRect(8,y,112,1)}
- if(p.classIcon||classIconForId(p.cls)){drawCharacterIcon(q,p.classIcon||classIconForId(p.cls),39,48,50,50)}else{q.save();q.translate(64,103);q.scale(2.25,2.25);drawCharacter(q,0,0,1,p.cls,p.equipment,game.turn%2,p.facing||1);q.restore();}
+ if(p.classIcon||classIconForId(p.cls)){drawCharacterIcon(q,p.classIcon||classIconForId(p.cls),24,26,80,112,4)}else{q.save();q.translate(64,103);q.scale(2.25,2.25);drawCharacter(q,0,0,1,p.cls,p.equipment,game.turn%2,p.facing||1);q.restore();}
  q.fillStyle='#e8d8a7';q.font='6px monospace';q.textAlign='center';q.fillText((p.className||'CLASE').toUpperCase().slice(0,20),64,181)
 }
 function chestSprite(x,y){px(x+8,y+27,48,27,'#553018');px(x+10,y+19,44,15,'#a65d2c');px(x+14,y+21,36,4,'#d38a43');px(x+28,y+24,8,22,'#f2c456');px(x+13,y+47,38,4,'#321b12')}
@@ -2351,7 +2374,7 @@ async function createDungeonWorld(){
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;landingPlayBtn.onclick=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses()};landingConfigBtn.onclick=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();fetchConfigItems();fetchConfigClasses()};backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;landingPlayBtn.onclick=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses()};landingConfigBtn.onclick=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();fetchConfigItems();fetchConfigClasses()};backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 
 
 

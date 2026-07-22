@@ -80,7 +80,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .classCard canvas{width:64px;height:64px;image-rendering:pixelated;background:#100b16;border:2px solid #4c3859}
 .classCard .classCopy{min-width:0}
 .equipmentHeroCanvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:192px;height:288px;image-rendering:pixelated;filter:drop-shadow(0 10px 10px #000)}
-#game{image-rendering:pixelated;cursor:crosshair}
+#game{image-rendering:pixelated;cursor:crosshair;width:100%;max-width:640px;display:block}
 .gameStage{position:relative;width:100%}
 .gameHud{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;z-index:8}
 .hudBars{width:190px;display:grid;gap:2px;background:#08060bdd;border:2px solid #493653;padding:5px;box-shadow:0 3px 10px #000a}
@@ -128,7 +128,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .mobileSkill .icon{display:block;font-size:22px;line-height:1}.mobileSkill .slotKey{position:absolute;left:4px;top:3px;color:#ffd365;font-size:11px}.attackSkill{border-color:#c65d5d;background:linear-gradient(#65313a,#321b22)}.costTag{display:block;font-size:9px;color:#e9d8a2;margin-top:2px}
 .mobileSkill b{display:block;font-size:11px;margin-top:4px}
 .cooldown{position:absolute;right:3px;top:2px;background:#000d;color:#ffd365;border-radius:50%;min-width:22px;height:22px;line-height:22px}
-.targetHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
+.targetHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}.zoomControl{position:absolute;left:8px;top:8px;z-index:9;background:#09070ddd;border:2px solid #493653;padding:6px 8px;color:#f4ead5;font-size:8px;display:grid;gap:3px;min-width:150px}.zoomControl label{display:flex;justify-content:space-between;gap:8px;color:#ffd68b}.zoomControl input{width:150px;accent-color:#ffc35a}.zoomControl span{color:#c7b7d0;font-size:7px}
 .floatText{position:fixed;pointer-events:none;z-index:70;font-weight:bold;font-size:20px;text-shadow:2px 2px #000;animation:floatUp .8s ease-out forwards}
 @keyframes floatUp{0%{transform:translateY(0) scale(.8);opacity:1}30%{transform:translateY(-12px) scale(1.15)}100%{transform:translateY(-52px);opacity:0}}
 .shake{animation:shake .18s linear}.flash{animation:flash .18s linear}

@@ -1,5 +1,23 @@
 # Log de cambios
 
+## v0.30.5 - 2026-07-22
+
+- Añadido un editor de zoom directamente en la pantalla de juego para elegir cuántas casillas visibles muestra la zona jugable.
+- Permitido ajustar la vista entre 5x5 y 12x12 casillas, guardando la preferencia en el navegador y redibujando el canvas al instante.
+- Actualizada la versión de la app y del paquete a `0.30.5` y la versión visible a `v0.30.5 EDITOR ZOOM`.
+
+## v0.30.4 - 2026-07-22
+
+- Aumentado mucho el zoom del área jugable reduciendo la vista del tablero de 10x10 a 8x8 casillas.
+- Ajustado el canvas del juego a 512x512 px internos y escalado visual máximo a 640 px para que cada casilla y personaje se vea más grande y definido.
+- Actualizada la versión de la app y del paquete a `0.30.4` y la versión visible a `v0.30.4 ZOOM TABLERO`.
+
+## v0.30.3 - 2026-07-22
+
+- Añadido autoencuadre de los iconos personalizados de clase al dibujarlos, recortando bordes transparentes para que el personaje ocupe mejor el espacio disponible.
+- Aumentado el tamaño de render del personaje personalizado en el tablero, previsualización de clase y muñeco de equipo para que el protagonista sea más visible.
+- Actualizada la versión de la app y del paquete a `0.30.3` y la versión visible a `v0.30.3 PERSONAJE VISIBLE`.
+
 ## v0.30.2 - 2026-07-22
 
 - Igualado el editor de iconos de Clases al de Items: carga la imagen a tamaño original, permite dibujar un cuadrado nuevo o arrastrar el existente y redimensiona el recorte a 50x50 px.
