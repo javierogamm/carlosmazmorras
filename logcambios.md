@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.17.0 - 2026-07-22
+
+- Añadidos iconos visibles para todos los objetos equipados en la vista de equipo.
+- Los iconos equipados son clicables y abren una ficha con descripción, categoría, rareza, nivel, poder, afijos, pasivas y efectos.
+- La ficha de detalle reutiliza el render del spritesheet de armas y mantiene soporte para iconos procedurales en el resto de objetos.
+- Actualizada la versión de la app a `v0.17 EQUIPO VISUAL` y la versión del paquete a `0.17.0`.
+
 ## v0.16.0 - 2026-07-22
 
 - Añadida arma inicial básica equipada automáticamente al crear partida.

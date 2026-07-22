@@ -1783,15 +1783,28 @@ function equipItem(id){
 }
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
 
+
+function equippedSlotHtml(slot,item){
+ if(!item)return`<span class="small">Vacío</span>`;
+ return`<button type="button" class="equippedItemButton" onclick="showEquippedItem('${slot}')" title="Ver detalles de ${item.name}"><canvas class="equippedItemIcon" width="48" height="48" data-equipped-slot="${slot}"></canvas></button><div class="equippedItemInfo"><b class="${item.rarity}">${item.name}</b><span class="small">Nv. ${item.itemLevel||1} · Poder ${item.score||0}</span></div>`;
+}
+function showEquippedItem(slot){
+ const item=game?.player?.equipment?.[slot];if(!item)return;
+ storyTitle.textContent=`${slotNames[slot]} — ${item.name}`;
+ storyBody.innerHTML=`<div class="narrative itemDetail"><canvas class="itemDetailIcon" width="48" height="48" data-detail-slot="${slot}"></canvas><div><p><b class="${item.rarity}">${item.name}</b></p><p class="small">${slotNames[item.slot]} · ${item.label} · Nivel ${item.itemLevel||1} · Poder ${item.score||0}</p>${item.weaponCategory?`<p class="small">Categoría: ${item.weaponCategory}</p>`:''}<p>${item.flavor||item.desc||''}</p>${describeItem(item)}<div class="startActions"><button id="closeItemDetail">Cerrar</button></div></div></div>`;
+ storyOverlay.classList.remove('hidden');
+ setTimeout(()=>{const c=document.querySelector('[data-detail-slot]');if(c)drawItemIcon(c,item);document.getElementById('closeItemDetail')?.addEventListener('click',()=>storyOverlay.classList.add('hidden'))},0)
+}
+
 function updateUI(){
  if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
- equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${p.equipment[s]?`<b class="${p.equipment[s].rarity}">${p.equipment[s].name}</b><span class="small">Nv. ${p.equipment[s].itemLevel||1} · Poder ${p.equipment[s].score||0}</span>${describeItem(p.equipment[s])}`:'<span class="small">Vacío</span>'}</div>`).join('')}</div>`;
+ equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
- setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p)},0);
+ setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()"><span class="slotKey">A</span><span class="icon">⚔</span><b>ATACAR</b><span class="costTag">${baseAttackDice()} · ${attackRangeLabel()}</span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><b>${d.name}</b><span class="costTag">${d.cost} ${d.resource==='mana'?'MP':'STA'} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
@@ -2138,7 +2151,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.16',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.17',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
