@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.26.0 - 2026-07-22
+
+- Cambiada la integración para usar directamente el spritesheet transparente `weapons/espadas/espadas.png` sin generar ni versionar nuevos PNG binarios.
+- Añadido recorte en tiempo de ejecución con margen de 15 px, separación de 15 px e iconos fuente de 50x50 px.
+- Actualizada la asignación de familias de espadas para que cada categoría use una fila propia del spritesheet.
+- Actualizada la versión de la app a `0.26.0`.
+
 ## v0.25.0 - 2026-07-22
 
 - Reubicada la carga de iconos de espadas para que use la nueva carpeta por tipo `weapons/espadas/`.
