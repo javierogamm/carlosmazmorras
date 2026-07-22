@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.28.1 - 2026-07-22
+
+- Ajustado el editor de iconos para mantener la imagen subida a tamaño original dentro del canvas, sin redimensionarla ni alterarla.
+- Cambiado el selector de recorte a un cuadro fijo de 50x50 px que copia exactamente esa zona como icono hexadecimal.
+- Actualizada la versión de la app a `0.28.1` y la versión visible a `v0.28.1 CONFIG ITEMS`.
+
 ## v0.28.0 - 2026-07-22
 
 - Añadido un landing inicial con las opciones Configurar y Jugar.
