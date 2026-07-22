@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.28.3 - 2026-07-22
+
+- Ajustado el recorte del modo edición para dibujar cuadrados nuevos de tamaño variable y redimensionar el área seleccionada al icono final de 50x50 px.
+- Corregido el movimiento del cuadro para que el icono se genere siempre desde la posición actual sobre la imagen original, evitando usar un canvas ya sombreado o alterado.
+- Actualizada la versión de la app a `0.28.3` y la versión visible a `v0.28.3 CONFIG ITEMS`.
+
 ## v0.28.2 - 2026-07-22
 
 - Corregido el atajo global de teclado para que la tecla `a` y el resto de teclas no intercepten la escritura dentro del modo edición.
