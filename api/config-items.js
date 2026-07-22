@@ -19,6 +19,7 @@ function cleanItem(body){
   item_json:item
  };
 }
+function requestId(req){return req.query?.id||req.body?.id||req.body?.item_id||null}
 module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
@@ -36,6 +37,23 @@ module.exports=async(req,res)=>{
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
   }
-  res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Método no permitido'});
+  if(req.method==='PUT'){
+   const id=requestId(req);
+   if(!id)return res.status(400).json({error:'Falta id para actualizar el objeto'});
+   const row=cleanItem(req.body||{});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  if(req.method==='DELETE'){
+   const id=requestId(req);
+   if(!id)return res.status(400).json({error:'Falta id para borrar el objeto'});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
  }catch(e){return res.status(500).json({error:e.message});}
 };

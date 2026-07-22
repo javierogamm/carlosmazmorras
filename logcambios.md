@@ -1,5 +1,19 @@
 # Log de cambios
 
+## v0.29.1 - 2026-07-22
+
+- Corregida la edición de objetos configurados para renderizar en la previsualización el icono hexadecimal ya guardado en `item_json.icon` o en la columna `icon`.
+- Añadido limpiado explícito de la previsualización al crear un nuevo objeto desde el modo configuración.
+- Actualizada la versión de la app a `0.29.1` y la versión visible a `v0.29.1 CONFIG ITEMS`.
+
+## v0.29.0 - 2026-07-22
+
+- Añadidas acciones en modo configuración para editar objetos existentes, duplicarlos y borrarlos desde la lista guardada.
+- Añadido selector múltiple de habilidades en el editor para asignar al objeto cualquier habilidad del set completo.
+- Los objetos configurados guardan `skillIds` en `item_json`, muestran las habilidades asignadas en su ficha y las enseñan al equiparse.
+- Ampliada la API `/api/config-items` con actualización (`PUT`) y borrado (`DELETE`) por `id`.
+- Actualizada la versión de la app a `0.29.0` y la versión visible a `v0.29.0 CONFIG ITEMS`.
+
 ## v0.28.4 - 2026-07-22
 
 - Añadido selector de tirada de daño para objetos configurados de tipo arma (`1d4`, `1d6`, `1d8`, `1d10`, `2d6`, etc.).
