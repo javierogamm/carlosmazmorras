@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.30.2 - 2026-07-22
+
+- Igualado el editor de iconos de Clases al de Items: carga la imagen a tamaño original, permite dibujar un cuadrado nuevo o arrastrar el existente y redimensiona el recorte a 50x50 px.
+- Añadido canvas de recorte específico para el icono de personaje en la pestaña Clases, manteniendo rollback al sprite pixel original.
+- Actualizada la versión de la app y del paquete a `0.30.2` y la versión visible a `v0.30.2 CONFIG CLASES`.
+
 ## v0.30.1 - 2026-07-22
 
 - Cambiado el editor de Clases para que el selector salga de las clases existentes en el juego, no solo de filas ya presentes en `config_class`.
