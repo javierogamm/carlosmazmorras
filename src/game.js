@@ -484,6 +484,74 @@ function unlockSkillLoot(id){
  log(`Has aprendido ${s.name}.`,'loot');
 }
 
+
+const weaponSpriteSheet=new Image();
+weaponSpriteSheet.src='resources/armas1.png';
+weaponSpriteSheet.onload=()=>{if(game)updateUI()};
+const WEAPON_ICON_SIZE=30,WEAPON_ICON_COLUMNS=10;
+const weaponCategories=[
+ 'Espadas cortas',
+ 'Katanas y hachas pesadas',
+ 'Hachas de guerra y mazas con pinchos',
+ 'Dagas, lanzas y alabardas',
+ 'Arcos',
+ 'Ballestas',
+ 'Varitas mágicas',
+ 'Guadañas',
+ 'Mayales',
+ 'Garras y guanteletes',
+ 'Pistolas y armas de fuego mágicas',
+ 'Hoces, armas curvas y armas exóticas',
+ 'Látigos',
+ 'Bastones mágicos',
+ 'Martillos de guerra',
+ 'Hachas mágicas',
+ 'Lanzas cortas y jabalinas',
+ 'Mandobles mágicos',
+ 'Espadas legendarias',
+ 'Armas artefacto y armas míticas'
+];
+const weaponCategoryNameParts={
+ 'Espadas cortas':['Espada corta','Gladio','Sable corto'],
+ 'Katanas y hachas pesadas':['Katana','Hacha pesada','Nodachi astillado'],
+ 'Hachas de guerra y mazas con pinchos':['Hacha de guerra','Maza con pinchos','Lucero brutal'],
+ 'Dagas, lanzas y alabardas':['Daga','Lanza','Alabarda'],
+ 'Arcos':['Arco','Arco recurvo','Arco largo'],
+ 'Ballestas':['Ballesta','Arbalesta','Ballesta de asedio'],
+ 'Varitas mágicas':['Varita mágica','Vara rúnica','Aguja arcana'],
+ 'Guadañas':['Guadaña','Segadora','Hoja de siega'],
+ 'Mayales':['Mayal','Mangual','Cadena de guerra'],
+ 'Garras y guanteletes':['Garras','Guanteletes','Puños dentados'],
+ 'Pistolas y armas de fuego mágicas':['Pistola mágica','Trabuco rúnico','Cañón de bolsillo'],
+ 'Hoces, armas curvas y armas exóticas':['Hoz curva','Chakrám','Cuchilla exótica'],
+ 'Látigos':['Látigo','Azote rúnico','Cadena flexible'],
+ 'Bastones mágicos':['Bastón mágico','Cetro','Báculo'],
+ 'Martillos de guerra':['Martillo de guerra','Gran martillo','Mallo'],
+ 'Hachas mágicas':['Hacha mágica','Hacha rúnica','Cortarrayos'],
+ 'Lanzas cortas y jabalinas':['Lanza corta','Jabalina','Venablo'],
+ 'Mandobles mágicos':['Mandoble mágico','Espadón rúnico','Hoja colosal'],
+ 'Espadas legendarias':['Espada legendaria','Hoja ancestral','Filo de rey'],
+ 'Armas artefacto y armas míticas':['Artefacto mítico','Reliquia armada','Arma imposible']
+};
+const weaponCategoryStats={
+ 'Arcos':'agility','Ballestas':'agility','Pistolas y armas de fuego mágicas':'agility','Dagas, lanzas y alabardas':'agility','Lanzas cortas y jabalinas':'agility','Varitas mágicas':'intelligence','Bastones mágicos':'intelligence','Hachas mágicas':'intelligence','Mandobles mágicos':'strength','Espadas legendarias':'strength','Armas artefacto y armas míticas':'wisdom','Martillos de guerra':'vitality','Hachas de guerra y mazas con pinchos':'vitality','Katanas y hachas pesadas':'strength','Garras y guanteletes':'strength','Látigos':'agility','Guadañas':'wisdom','Mayales':'vitality','Hoces, armas curvas y armas exóticas':'luck','Espadas cortas':'strength'
+};
+function weaponPowerColumn(itemLevel,rarity,score=0){
+ const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name));
+ const levelBoost=Math.min(1,Math.floor(Math.max(1,itemLevel)-1)/35);
+ const scoreBoost=Math.min(1,Math.max(0,score-10)/140);
+ return Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,Math.round(rarityIndex*1.8+levelBoost+scoreBoost)));
+}
+function weaponCategoryForLoot(rarity){
+ const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name));
+ const minRow=rarityIndex>=4?16:rarityIndex>=3?12:rarityIndex>=2?7:rarityIndex>=1?3:0;
+ const maxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?12:9;
+ return weaponCategories[minRow+rng(maxRow-minRow+1)];
+}
+function weaponNameForCategory(category){
+ return `${pick(weaponCategoryNameParts[category]||['Arma'])} ${pick(prefixes)}`;
+}
+
 const itemIconShapes={
  weapon:['blade','hammer','axe','mace','spear'],
  offhand:['shield','book','lid','orb','board'],
@@ -501,6 +569,11 @@ const itemIconShapes={
 function drawItemIcon(canvas,item){
  const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,48,48);
  q.fillStyle='#21172a';q.fillRect(0,0,48,48);
+ if(item?.slot==='weapon'&&Number.isInteger(item.weaponIconRow)&&Number.isInteger(item.weaponIconCol)&&weaponSpriteSheet.complete&&weaponSpriteSheet.naturalWidth){
+  q.drawImage(weaponSpriteSheet,item.weaponIconCol*WEAPON_ICON_SIZE,item.weaponIconRow*WEAPON_ICON_SIZE,WEAPON_ICON_SIZE,WEAPON_ICON_SIZE,3,3,42,42);
+  q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);
+  return;
+ }
  const shape=item.iconShape||'gemring',c=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';
  q.fillStyle=c;q.strokeStyle='#0b0810';q.lineWidth=3;
  const rect=(x,y,w,h)=>{q.fillRect(x,y,w,h);q.strokeRect(x,y,w,h)};
@@ -702,12 +775,16 @@ function makeLoot(level,source='normal'){if(Math.random()<Math.min(.22,.07+game.
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
  const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
+ const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
+ const weaponIconRow=weaponCategory?weaponCategories.indexOf(weaponCategory):null;
+ const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
  return{
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`,
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
   theme:themed?.theme||'fantasy',
-  flavor:themed?.flavor||'Un objeto con más historia de la que conviene preguntar.',
-  defenseStat:inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
+  weaponCategory,weaponIconRow,weaponIconCol,
+  flavor:slot==='weapon'?`${weaponCategory}. El icono escala hacia la derecha según rareza y poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
+  defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
   affixes,passives,effects,
   desc:`Nivel ${itemLevel} · Poder ${score}`
  };
@@ -2026,7 +2103,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.14',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.15',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
