@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.23.0 - 2026-07-22
+
+- Añadido el segundo set completo de 200 armas ciberpunk steampunk desde la carpeta `weaponsCP/`.
+- Reemplazada la itemización de las 20 filas de armas por las categorías y nombres solicitados para el set CP.
+- Ajustada la carga de iconos para priorizar `weaponsCP/` y mantener `weapons/` y `resources/weapons/` como rutas de compatibilidad.
+- Rebalanceada la selección de filas de armas por rareza y nivel para evitar reliquias, artefactos y armas míticas en niveles tempranos, manteniendo coherencia con el set normal.
+- Actualizada la versión de la app a `v0.23 ARMAS CP` y la versión del paquete a `0.23.0`.
+
 ## v0.22.0 - 2026-07-22
 
 - Corregida la ruta principal de los iconos de armas para cargar desde la carpeta raíz `weapons/`.
