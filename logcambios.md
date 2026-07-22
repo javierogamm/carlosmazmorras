@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.25.0 - 2026-07-22
+
+- Reubicada la carga de iconos de espadas para que use la nueva carpeta por tipo `weapons/espadas/`.
+- Las filas de armas identificadas como espadas conservan sus nombres y progresión, pero cargan archivos `icon_r01_cXX.png` dentro de `weapons/espadas/`.
+- Añadidos metadatos de fila de recurso para separar la fila lógica del arma de la fila física usada por los nuevos packs por tipo.
+- Ajustado el render del arma equipada para ampliar los iconos fuente de 100x100 px al mostrarlos sobre el personaje.
+- Actualizada la versión visible de la app a `v0.25 ESPADAS` y la versión del paquete a `0.25.0`.
+
 ## v0.24.0 - 2026-07-22
 
 - Añadido el catálogo completo de 200 armaduras para iconos individuales desde la carpeta `armors/`, organizado en 20 filas de menor a mayor poder.
