@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.27.1 - 2026-07-22
+
+- Corregida la API de dungeons para leer la URL desde `SUPABASE_URL`, que es la variable configurada en Vercel, manteniendo `SUPABASE_ANON_KEY` como clave.
+- Actualizado el mensaje de error del cliente para indicar `SUPABASE_URL` y `SUPABASE_ANON_KEY`.
+- Actualizada la versión de la app a `0.27.1` y la versión visible a `v0.27.1 SUPABASE DUNGEONS`.
+
 ## v0.27.0 - 2026-07-22
 
 - Añadida pantalla previa obligatoria para seleccionar o crear dungeon antes de la creación de personaje.

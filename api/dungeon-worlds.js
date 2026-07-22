@@ -1,9 +1,9 @@
 const SUPABASE_TABLE='dungeon_world';
 
 function supabaseConfig(){
- const url=process.env.SUPABASE_KEY;
+ const url=process.env.SUPABASE_URL;
  const key=process.env.SUPABASE_ANON_KEY;
- if(!url||!key)throw new Error('Faltan SUPABASE_KEY o SUPABASE_ANON_KEY');
+ if(!url||!key)throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY');
  return {url:url.replace(/\/$/,''),key};
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
