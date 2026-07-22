@@ -485,80 +485,65 @@ function unlockSkillLoot(id){
 }
 
 
-const weaponSpriteSheet=new Image();
-weaponSpriteSheet.src='resources/armas1.png';
-weaponSpriteSheet.onload=()=>{if(game)updateUI()};
-const WEAPON_ICON_COLUMNS=10,WEAPON_ICON_ROWS=20;
-const WEAPON_GRID_OFFSET={left:10,top:7,right:10,bottom:47};
-const weaponCategories=[
- 'Espadas cortas',
- 'Katanas y hachas pesadas',
- 'Hachas de guerra y mazas con pinchos',
- 'Dagas, lanzas y alabardas',
- 'Arcos',
- 'Ballestas',
- 'Varitas mágicas',
- 'Guadañas',
- 'Mayales',
- 'Garras y guanteletes',
- 'Pistolas y armas de fuego mágicas',
- 'Hoces, armas curvas y armas exóticas',
- 'Látigos',
- 'Bastones mágicos',
- 'Martillos de guerra',
- 'Hachas mágicas',
- 'Lanzas cortas y jabalinas',
- 'Mandobles mágicos',
- 'Espadas legendarias',
- 'Armas artefacto y armas míticas'
+const weaponIconCache={};
+const WEAPON_ICON_COLUMNS=10;
+const weaponRows=[
+ {category:'Espadas básicas y elementales',legacy:['Espadas cortas'],stat:'strength',names:['Espada corta de hierro','Espada corta reforzada','Espada de bronce','Espada de acero sencillo','Espada de guardia','Espada de acero azulado','Espada de fuego','Espada venenosa','Espada de hielo','Espada arcana']},
+ {category:'Sables, mandobles y hachas pesadas',legacy:['Katanas y hachas pesadas'],stat:'strength',names:['Sable curvo','Sable oscuro','Espada dentada negra','Sable dorado','Mandoble del campeón','Hacha doble de hierro','Hacha doble de acero','Hacha pesada azulada','Hacha infernal','Maza estrellada']},
+ {category:'Hachas y mazas',legacy:['Hachas de guerra y mazas con pinchos'],stat:'vitality',names:['Hacha de leñador','Hacha de guerra','Hacha doble de veterano','Hacha doble reforzada','Hacha doble del guardia','Hacha solar','Hacha de acero oscuro','Hacha venenosa','Maza de púas negra','Maza de púas pesada']},
+ {category:'Dagas, lanzas y alabardas',legacy:['Dagas, lanzas y alabardas'],stat:'agility',names:['Daga de soldado','Alabarda de acero','Daga serrada','Alabarda lunar','Lanza de guardia','Lanza arcana violeta','Tridente de bronce','Tridente de acero','Lanza de cazador','Daga de asesino']},
+ {category:'Arcos',legacy:['Arcos'],stat:'agility',names:['Arco corto','Arco de cazador','Arco reforzado','Arco compuesto','Arco de la naturaleza','Arco del bosque ancestral','Arco de hielo','Arco arcano','Arco del vacío','Arco de guerra']},
+ {category:'Ballestas',legacy:['Ballestas'],stat:'agility',names:['Ballesta ligera','Ballesta de hierro','Ballesta de fuego','Ballesta reforzada','Ballesta pesada','Ballesta de precisión','Ballesta del cazador','Ballesta arcana','Ballesta del vacío','Ballesta dorada']},
+ {category:'Varitas mágicas',legacy:['Varitas mágicas'],stat:'intelligence',names:['Varita del aprendiz','Varita de agua','Varita de fuego','Varita de naturaleza','Varita de hielo','Varita de cristal arcano','Varita de amatista','Varita del vacío','Varita solar','Varita de luz']},
+ {category:'Guadañas',legacy:['Guadañas'],stat:'wisdom',names:['Guadaña campesina','Guadaña de hierro','Guadaña de hielo','Guadaña venenosa','Guadaña arcana','Guadaña sangrienta','Guadaña infernal','Guadaña solar','Guadaña glacial','Guadaña espectral']},
+ {category:'Mayales',legacy:['Mayales'],stat:'vitality',names:['Mayal de hierro','Mayal doble','Mayal de bronce','Mayal venenoso','Mayal de hielo','Mayal del bosque','Mayal arcano','Mayal solar','Mayal del vacío','Mayal de fuego arcano']},
+ {category:'Garras y guanteletes',legacy:['Garras y guanteletes'],stat:'strength',names:['Garras de madera endurecida','Garras de hierro','Garras de hielo','Garras de fuego','Garras venenosas','Garras arcanas','Guantelete del sol','Guantelete del guardián','Guantelete espectral','Guantelete de tormenta']},
+ {category:'Pistolas mágicas',legacy:['Pistolas y armas de fuego mágicas'],stat:'agility',names:['Pistola de chispa','Pistola dorada','Pistola del ojo rojo','Pistola del tirador','Pistola pesada','Pistola de hielo','Pistola de esmeralda','Pistola arcana','Pistola del vacío','Pistola celestial']},
+ {category:'Hoces y armas curvas',legacy:['Hoces, armas curvas y armas exóticas'],stat:'luck',names:['Hoz arcana','Hoz dentada','Látigo de cuero','Hojas gemelas oscuras','Hojas gemelas solares','Hojas gemelas de acero','Hoz lunar','Hoz carmesí','Hoz demoníaca','Hoz del vacío']},
+ {category:'Látigos',legacy:['Látigos'],stat:'agility',names:['Látigo de cadena','Látigo de cuero oscuro','Látigo de cuero reforzado','Látigo del bosque','Látigo arcano','Látigo carmesí','Látigo solar','Látigo de bronce','Látigo del cazador','Látigo de hielo']},
+ {category:'Bastones mágicos',legacy:['Bastones mágicos'],stat:'intelligence',names:['Bastón de madera sagrada','Bastón de hielo','Bastón solar','Bastón de agua','Bastón del fuego celestial','Bastón del glaciar','Bastón de amatista','Bastón del vacío','Bastón del fénix','Bastón del oráculo']},
+ {category:'Martillos de guerra',legacy:['Martillos de guerra'],stat:'vitality',names:['Martillo de piedra','Martillo de acero azul','Martillo arcano','Martillo dorado','Martillo de hierro pesado','Martillo de magma','Martillo de hielo','Martillo real','Martillo infernal','Martillo rúnico']},
+ {category:'Hachas mágicas',legacy:['Hachas mágicas'],stat:'intelligence',names:['Hacha de guerra de bronce','Hacha de acero oscuro','Hacha de hielo','Hacha venenosa','Hacha arcana','Hacha infernal','Hacha solar','Hacha de tormenta','Hacha de fuego','Hacha del vacío']},
+ {category:'Lanzas y jabalinas',legacy:['Lanzas cortas y jabalinas'],stat:'agility',names:['Jabalina de hierro','Lanza serrada','Lanza solar','Lanza venenosa','Lanza arcana','Lanza de fuego','Lanza esmeralda','Lanza de luz','Lanza real dorada','Lanza de acero negro']},
+ {category:'Espadas mágicas',legacy:['Mandobles mágicos'],stat:'strength',names:['Espada de sombra','Espada de fuego menor','Espada de hielo menor','Espada venenosa menor','Espada arcana menor','Espada solar menor','Espada glacial','Espada de tormenta','Espada infernal','Espada del sol esmeralda']},
+ {category:'Espadas legendarias',legacy:['Espadas legendarias'],stat:'strength',names:['Espada del abismo','Espada del fénix','Espada del glaciar eterno','Espada de la naturaleza salvaje','Espada del vacío','Espada del amanecer','Espada de la tormenta azul','Espada celestial','Espada del infierno','Espada del astro solar']},
+ {category:'Armas míticas y artefactos',legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Alabarda del emperador','Hojas gemelas celestiales','Alabarda del sol eterno','Alabarda del invierno','Hojas gemelas del vacío','Cetro del tiempo','Guadaña del eclipse','Guadaña del vacío ancestral','Guadaña de amatista','Alabarda del mar celestial']}
 ];
-const weaponCategoryNameParts={
- 'Espadas cortas':['Espada corta','Gladio','Sable corto'],
- 'Katanas y hachas pesadas':['Katana','Hacha pesada','Nodachi astillado'],
- 'Hachas de guerra y mazas con pinchos':['Hacha de guerra','Maza con pinchos','Lucero brutal'],
- 'Dagas, lanzas y alabardas':['Daga','Lanza','Alabarda'],
- 'Arcos':['Arco','Arco recurvo','Arco largo'],
- 'Ballestas':['Ballesta','Arbalesta','Ballesta de asedio'],
- 'Varitas mágicas':['Varita mágica','Vara rúnica','Aguja arcana'],
- 'Guadañas':['Guadaña','Segadora','Hoja de siega'],
- 'Mayales':['Mayal','Mangual','Cadena de guerra'],
- 'Garras y guanteletes':['Garras','Guanteletes','Puños dentados'],
- 'Pistolas y armas de fuego mágicas':['Pistola mágica','Trabuco rúnico','Cañón de bolsillo'],
- 'Hoces, armas curvas y armas exóticas':['Hoz curva','Chakrám','Cuchilla exótica'],
- 'Látigos':['Látigo','Azote rúnico','Cadena flexible'],
- 'Bastones mágicos':['Bastón mágico','Cetro','Báculo'],
- 'Martillos de guerra':['Martillo de guerra','Gran martillo','Mallo'],
- 'Hachas mágicas':['Hacha mágica','Hacha rúnica','Cortarrayos'],
- 'Lanzas cortas y jabalinas':['Lanza corta','Jabalina','Venablo'],
- 'Mandobles mágicos':['Mandoble mágico','Espadón rúnico','Hoja colosal'],
- 'Espadas legendarias':['Espada legendaria','Hoja ancestral','Filo de rey'],
- 'Armas artefacto y armas míticas':['Artefacto mítico','Reliquia armada','Arma imposible']
-};
-const weaponCategoryStats={
- 'Arcos':'agility','Ballestas':'agility','Pistolas y armas de fuego mágicas':'agility','Dagas, lanzas y alabardas':'agility','Lanzas cortas y jabalinas':'agility','Varitas mágicas':'intelligence','Bastones mágicos':'intelligence','Hachas mágicas':'intelligence','Mandobles mágicos':'strength','Espadas legendarias':'strength','Armas artefacto y armas míticas':'wisdom','Martillos de guerra':'vitality','Hachas de guerra y mazas con pinchos':'vitality','Katanas y hachas pesadas':'strength','Garras y guanteletes':'strength','Látigos':'agility','Guadañas':'wisdom','Mayales':'vitality','Hoces, armas curvas y armas exóticas':'luck','Espadas cortas':'strength'
-};
+const weaponCategories=weaponRows.map(r=>r.category);
+const weaponCategoryStats=Object.fromEntries(weaponRows.flatMap(r=>[r.category,...r.legacy].map(c=>[c,r.stat])));
+function weaponRowForCategory(category){return Math.max(0,weaponRows.findIndex(r=>r.category===category||r.legacy.includes(category)))}
 function weaponPowerColumn(itemLevel,rarity,score=0){
  const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name));
  const levelBoost=Math.min(1,Math.floor(Math.max(1,itemLevel)-1)/35);
  const scoreBoost=Math.min(1,Math.max(0,score-10)/140);
  return Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,Math.round(rarityIndex*1.8+levelBoost+scoreBoost)));
 }
-function weaponSpriteCell(){
- return{
-  x:WEAPON_GRID_OFFSET.left,
-  y:WEAPON_GRID_OFFSET.top,
-  w:(weaponSpriteSheet.naturalWidth-WEAPON_GRID_OFFSET.left-WEAPON_GRID_OFFSET.right)/WEAPON_ICON_COLUMNS,
-  h:(weaponSpriteSheet.naturalHeight-WEAPON_GRID_OFFSET.top-WEAPON_GRID_OFFSET.bottom)/WEAPON_ICON_ROWS
- };
-}
 function weaponCategoryForLoot(rarity){
  const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===rarity.name));
  const minRow=rarityIndex>=4?16:rarityIndex>=3?12:rarityIndex>=2?7:rarityIndex>=1?3:0;
  const maxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?12:9;
- return weaponCategories[minRow+rng(maxRow-minRow+1)];
+ return weaponRows[minRow+rng(maxRow-minRow+1)].category;
 }
-function weaponNameForCategory(category){
- return `${pick(weaponCategoryNameParts[category]||['Arma'])} ${pick(prefixes)}`;
+function weaponIconPath(row,col){return `resources/weapons/icon_r${String(row+1).padStart(2,'0')}_c${String(col+1).padStart(2,'0')}.png`}
+function weaponNameForCategory(category,col=0){
+ const row=weaponRows[weaponRowForCategory(category)]||weaponRows[0];
+ return row.names[Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,col))];
+}
+function normalizeWeaponIcon(item){
+ if(!item||item.slot!=='weapon')return item;
+ const row=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);
+ const col=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:0;
+ item.weaponIconRow=Math.max(0,Math.min(weaponRows.length-1,row));
+ item.weaponIconCol=Math.max(0,Math.min(WEAPON_ICON_COLUMNS-1,col));
+ item.weaponCategory=weaponRows[item.weaponIconRow]?.category||item.weaponCategory||weaponRows[0].category;
+ item.weaponIconPath=weaponIconPath(item.weaponIconRow,item.weaponIconCol);
+ return item;
+}
+function weaponIconImage(item){
+ normalizeWeaponIcon(item);
+ const src=item.weaponIconPath;if(!src)return null;
+ if(!weaponIconCache[src]){const img=new Image();img.src=src;weaponIconCache[src]=img}
+ return weaponIconCache[src];
 }
 
 const itemIconShapes={
@@ -578,11 +563,14 @@ const itemIconShapes={
 function drawItemIcon(canvas,item){
  const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,48,48);
  q.fillStyle='#21172a';q.fillRect(0,0,48,48);
- if(item?.slot==='weapon'&&Number.isInteger(item.weaponIconRow)&&Number.isInteger(item.weaponIconCol)&&weaponSpriteSheet.complete&&weaponSpriteSheet.naturalWidth){
-  const cell=weaponSpriteCell();
-  q.drawImage(weaponSpriteSheet,cell.x+item.weaponIconCol*cell.w,cell.y+item.weaponIconRow*cell.h,cell.w,cell.h,3,3,42,42);
-  q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);
-  return;
+ if(item?.slot==='weapon'){
+  const img=weaponIconImage(item);
+  if(img?.complete&&img.naturalWidth){
+   q.drawImage(img,3,3,42,42);
+   q.strokeStyle=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';q.lineWidth=2;q.strokeRect(2,2,44,44);
+   return;
+  }
+  if(img)img.onload=()=>drawItemIcon(canvas,item);
  }
  const shape=item.iconShape||'gemring',c=item.rarity==='legendary'?'#ffb746':item.rarity==='epic'?'#d68cff':item.rarity==='rare'?'#71b4ff':item.rarity==='uncommon'?'#75e39d':'#ddd';
  q.fillStyle=c;q.strokeStyle='#0b0810';q.lineWidth=3;
@@ -782,31 +770,32 @@ function encounterLootQuality(source='normal'){
 
 const classStarterWeaponCategories={
  yunque:'Martillos de guerra',
- berserker:'Katanas y hachas pesadas',
+ berserker:'Sables, mandobles y hachas pesadas',
  necromancer:'Guadañas',
- paladin:'Hachas de guerra y mazas con pinchos',
- jester:'Hoces, armas curvas y armas exóticas',
- sniper:'Pistolas y armas de fuego mágicas',
+ paladin:'Hachas y mazas',
+ jester:'Hoces y armas curvas',
+ sniper:'Pistolas mágicas',
  shaman:'Bastones mágicos',
  thief:'Dagas, lanzas y alabardas',
  cleric:'Mayales',
  entropyMage:'Varitas mágicas',
  bountyHunter:'Ballestas',
- druid:'Lanzas cortas y jabalinas',
+ druid:'Lanzas y jabalinas',
  monk:'Garras y guanteletes',
- engineer:'Pistolas y armas de fuego mágicas',
+ engineer:'Pistolas mágicas',
  seer:'Bastones mágicos',
  beastGuardian:'Garras y guanteletes'
 };
 function makeStarterWeapon(classId){
- const category=classStarterWeaponCategories[classId]||'Espadas cortas';
- const stat=weaponCategoryStats[category]||'strength';
+ const category=classStarterWeaponCategories[classId]||'Espadas básicas y elementales';
+ const row=weaponRowForCategory(category),col=0,canonicalCategory=weaponRows[row].category;
+ const stat=weaponCategoryStats[canonicalCategory]||'strength';
  const statLabel=DEFENSE_STAT_LABELS[stat]||'Fuerza';
  return{
   id:crypto.randomUUID(),slot:'weapon',iconShape:'blade',rarity:'common',label:'Común',itemLevel:1,score:8,
-  name:`${weaponNameForCategory(category)} de aprendiz`,
-  theme:'starter',weaponCategory:category,weaponIconRow:weaponCategories.indexOf(category),weaponIconCol:0,
-  flavor:`Arma inicial de clase: ${category}. Icono básico de la primera columna del spritesheet.`,
+  name:`${weaponNameForCategory(canonicalCategory,col)} de aprendiz`,
+  theme:'starter',weaponCategory:canonicalCategory,weaponIconRow:row,weaponIconCol:col,weaponIconPath:weaponIconPath(row,col),
+  flavor:`Arma inicial de clase: ${canonicalCategory}. Icono básico individual en resources/weapons.`,
   defenseStat:stat,
   affixes:[{key:stat,label:statLabel,value:1,percent:false}],passives:[],effects:[],
   desc:'Nivel 1 · Poder 8'
@@ -820,14 +809,15 @@ function makeLoot(level,source='normal'){if(Math.random()<Math.min(.22,.07+game.
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
  const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
  const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
- const weaponIconRow=weaponCategory?weaponCategories.indexOf(weaponCategory):null;
+ const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
  const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
+ const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
  return{
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
   theme:themed?.theme||'fantasy',
-  weaponCategory,weaponIconRow,weaponIconCol,
-  flavor:slot==='weapon'?`${weaponCategory}. El icono escala hacia la derecha según rareza y poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
+  weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
+  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. Las filas inferiores reservan armas más poderosas.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
   defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
   affixes,passives,effects,
   desc:`Nivel ${itemLevel} · Poder ${score}`
@@ -2161,7 +2151,7 @@ function renderClassChoices(){
 renderClassChoices();
 
 function serializeGame(){
- return JSON.stringify({version:'0.19',savedAt:new Date().toISOString(),game},null,2);
+ return JSON.stringify({version:'0.20',savedAt:new Date().toISOString(),game},null,2);
 }
 function downloadSave(){
  if(!game){alert('Primero inicia una partida.');return}
@@ -2179,7 +2169,7 @@ function restoreGame(data){
  while(game.player.equippedSkills.length<4)game.player.equippedSkills.push(null);
  game.player.className=game.player.className||classDefs[game.player.cls]?.name||'Clase desconocida';game.player.raceName=game.player.raceName||raceDefs[game.player.race]?.name||game.player.race;game.player.activePotions=game.player.activePotions||[];game.player.activeBuffs=game.player.activeBuffs||[];game.player.level=Math.min(LEVEL_CAP,game.player.level||1);game.player.nextXp=game.player.level<LEVEL_CAP?xpNeededForLevel(game.player.level):0;game.player.unspentStatPoints=game.player.unspentStatPoints||0;game.player.permanentPotionStats=game.player.permanentPotionStats||{};game.player.raceBonuses=game.player.raceBonuses||{...(raceDefs[game.player.race]?.bonuses||{})};
  game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);pendingSkillChoices=[];for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
- const migrate=i=>{if(!i)return i;i.itemLevel=i.itemLevel||game.player.level||1;i.affixes=i.affixes||[];i.passives=i.passives||[];i.effects=i.effects||[];i.score=i.score||i.power||0;return i};
+ const migrate=i=>{if(!i)return i;i.itemLevel=i.itemLevel||game.player.level||1;i.affixes=i.affixes||[];i.passives=i.passives||[];i.effects=i.effects||[];i.score=i.score||i.power||0;normalizeWeaponIcon(i);return i};
  game.inventory=game.inventory.map(migrate);for(const s of slots)game.player.equipment[s]=migrate(game.player.equipment[s]);recomputeDerived();
  anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
  startOverlay.classList.add('hidden');storyOverlay.classList.add('hidden');busy=false;updateUI();draw();banner('PARTIDA CARGADA');log('Partida restaurada desde JSON.','sys');

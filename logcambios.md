@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.20.0 - 2026-07-22
+
+- Sustituida la lectura del spritesheet por iconos individualizados en `resources/weapons`.
+- Registrado el catálogo completo de 20 filas y 10 columnas con nombres concretos de armas para generar objetos acordes a cada icono.
+- Los objetos de arma guardan ruta `weaponIconPath` con formato `icon_rXX_cYY.png` y usan esa imagen para inventario, botín y equipo.
+- Añadida normalización de metadatos de armas para compatibilidad con partidas/objetos generados antes del cambio.
+- Actualizada la versión de la app a `v0.20 ICONOS ARMAS` y la versión del paquete a `0.20.0`.
+
 ## v0.19.0 - 2026-07-22
 
 - Reajustada la grilla de iconos de armas observando los márgenes reales del PNG.
