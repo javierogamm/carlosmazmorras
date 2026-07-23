@@ -1,5 +1,18 @@
 # Log de cambios
 
+## v0.31.2 - 2026-07-23
+
+- Añadido selector de tipo de arma en el editor de objetos cuando el slot seleccionado es Arma.
+- Los objetos configurados de tipo arma guardan `weaponType`, su `weaponCategory` asociada, metadatos de icono y stat defensivo del tipo elegido.
+- La lista de configuración agrupa las armas dentro del slot Arma por tipo de arma, manteniendo el resto de slots como acordeones propios.
+- Actualizada la versión de la app y del paquete a `0.31.2` y la versión visible a `v0.31.2 TIPOS DE ARMA`.
+
+## v0.31.1 - 2026-07-23
+
+- Cambiada la lista de objetos configurados para agrupar los objetos ya creados por slot.
+- Añadido un acordeón desplegable por slot con contador de objetos y acciones existentes dentro de cada grupo.
+- Actualizada la versión de la app y del paquete a `0.31.1` y la versión visible a `v0.31.1 CONFIG POR SLOT`.
+
 ## v0.31.0 - 2026-07-22
 
 - Añadidos controles de zoom in/out en el visor de imagen cargada para recortar iconos de Items y Clases sin alterar el tamaño original del recurso.
