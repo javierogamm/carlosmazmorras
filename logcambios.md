@@ -1,3 +1,11 @@
+## v0.33.8 - 2026-07-23
+
+- Rebalanceado el escalado de combate para que la vida del personaje gane más margen por nivel y el daño enemigo crezca de forma menos brusca en niveles altos.
+- Añadidos límites de daño recibido ligados a la vida máxima del héroe para evitar muertes explosivas fuera de combates de jefe, conservando más presión en jefes.
+- Ajustado el escalado de enemigos configurados para que sus HP sigan creciendo con el nivel, pero el daño suba más despacio y sea comparable con la nueva vida del personaje.
+- Añadida una cola de animaciones sprite sobre el canvas para ataques básicos, habilidades lanzadas, bloqueos y esquivas, con efectos visuales diferenciados por tipo de acción.
+- Actualizada la versión de la app a `0.33.8`.
+
 # Log de cambios
 
 ## v0.33.7 - 2026-07-23

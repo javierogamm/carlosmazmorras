@@ -7,10 +7,11 @@ let CANVAS_SIZE=TILE*visibleTiles;
 function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE}
 applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
+let combatSprites=[];
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.33.7';
+const APP_VERSION='0.33.8';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1218,10 +1219,10 @@ function xpNeededForLevel(level){
 }
 function levelGrowth(level){
  return{
-  hp:5+Math.floor(level/5),
+  hp:7+Math.floor(level/4)+Math.floor(level/10),
   stamina:3+Math.floor(level/12),
   mana:3+Math.floor(level/12),
-  damage:(level%3===0?1:0)+(level%10===0?1:0),
+  damage:(level%4===0?1:0)+(level%12===0?1:0),
   armor:(level%4===0?1:0)+(level%15===0?1:0)
  };
 }
@@ -1231,18 +1232,24 @@ function levelScalePreview(level){
   level,
   xpForNext:level<LEVEL_CAP?xpNeededForLevel(level):0,
   cumulativeXp,
-  enemyHpMultiplier:+Math.pow(1.055,level-1).toFixed(2),
-  enemyDamageMultiplier:+Math.pow(1.035,level-1).toFixed(2),
+  enemyHpMultiplier:+Math.pow(1.047,level-1).toFixed(2),
+  enemyDamageMultiplier:+Math.pow(1.026,level-1).toFixed(2),
   lootQuality:+(1+Math.pow(level-1,0.72)*.18).toFixed(2)
  }
 }
 const LEVEL_100_FORECAST=[1,5,10,20,30,40,50,60,70,80,90,100].map(levelScalePreview);
 
+const COMBAT_BALANCE={
+ enemyHpLevelPow:1.047,enemyDamageLevelPow:1.026,
+ enemyHpFloor:.17,enemyDamageFloor:.105,
+ configuredHpLevel:.115,configuredDamageLevel:.064,
+ minHeroHitsToDie:4.2,bossMinHeroHitsToDie:6.5
+};
 function difficultyScale(){
  const p=game.player,f=game.floor||1,l=Math.min(LEVEL_CAP,p.level||1);
  return{
-  hp:Math.pow(1.055,l-1)*(1+(f-1)*.19),
-  damage:Math.pow(1.035,l-1)*(1+(f-1)*.13),
+  hp:Math.pow(COMBAT_BALANCE.enemyHpLevelPow,l-1)*(1+(f-1)*COMBAT_BALANCE.enemyHpFloor),
+  damage:Math.pow(COMBAT_BALANCE.enemyDamageLevelPow,l-1)*(1+(f-1)*COMBAT_BALANCE.enemyDamageFloor),
   xp:1+(f-1)*.09+Math.pow(l-1,.72)*.045,
   count:Math.min(35,Math.floor((f-1)/2)+Math.floor((l-1)/7)),
   eliteChance:Math.min(.42,.025*f+.0032*l)
@@ -1268,7 +1275,7 @@ function enemyUseSkill(e,dist){
   if((ranged&&dist<=Math.max(4,s.range||6))||(!ranged&&dist<=1)){
    const mult=e.boss?1.35:e.elite?1.15:1,amount=Math.max(2,Math.round((e.atk||e.damage||4)*mult*(s.tier?1+s.tier*.12:1)));
    if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
-   else{damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
+   else{damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`,{boss:e.boss,skillId:id});floating(s.icon||'✦',e.x,e.y,'#e68cff');queueCombatSprite('cast',{x:e.x,y:e.y},{x:game.player.x,y:game.player.y},{color:'#e68cff',icon:s.icon||'✦'})}
    e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
   }
  }
@@ -1481,6 +1488,9 @@ function attack(e,bonus=0,options={}){
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
  const crit=Math.random()<critChance();if(crit&&d>0)d=Math.round(d*1.75);
+ queueCombatSprite(skillId?'skill':'attack',{x:game.player.x,y:game.player.y},{x:e.x,y:e.y},{color:skillId?(skillDefs[skillId]?.resource==='mana'?'#b26cff':'#ffcf6a'):'#ffdf8a',icon:skillId?skillDefs[skillId]?.icon:'⚔'});
+ if(defense.mult===0)queueCombatSprite('dodge',{x:e.x,y:e.y},{x:e.x,y:e.y},{color:'#70dc9b'});
+ else if(defense.mult<1)queueCombatSprite('block',{x:e.x,y:e.y},{x:e.x,y:e.y},{color:'#74d8ff'});
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
@@ -1491,7 +1501,7 @@ function kill(e){
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
-function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo'){
+function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const p=game.player;
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount));
@@ -1499,11 +1509,14 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo')
  if(defenseDie===20){mult=0;result=`evasión perfecta con ${attackDefenseLabel(defenseStat)}`}
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
- const d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ const incoming=Math.min(amount,Math.max(1,Math.round(p.maxHp/(options.boss?COMBAT_BALANCE.bossMinHeroHitsToDie:COMBAT_BALANCE.minHeroHitsToDie))));
+ const d=Math.max(mult===0?0:1,Math.round(incoming*mult));
  let finalDamage=d;
  const lifeBuff=(p.activeBuffs||[]).find(b=>b.effects?.lifesteal);
  if(lifeBuff&&options?.skillId)healEntity(p,Math.max(1,Math.round(finalDamage*lifeBuff.effects.lifesteal)));
  if(p.counterReady&&d>0){p.counterReady.turns--;const attacker=(game.enemies||[]).filter(e=>e.hp>0).sort((a,b)=>gridDistance(p,a)-gridDistance(p,b))[0];if(attacker)attack(attacker,0,{dice:p.counterReady.damage,multiplier:.8});p.counterReady=null}
+ const source=(game.enemies||[]).filter(e=>e.hp>0).sort((a,b)=>gridDistance(p,a)-gridDistance(p,b))[0]||p;queueCombatSprite('attack',{x:source.x,y:source.y},{x:p.x,y:p.y},{color:'#ff6b6b'});
+ if(mult===0)queueCombatSprite('dodge',{x:p.x,y:p.y},{x:p.x,y:p.y},{color:'#70dc9b'});else if(mult<1)queueCombatSprite('block',{x:p.x,y:p.y},{x:p.x,y:p.y},{color:'#74d8ff'});
  p.hp-=d;
  if(p.hp<=0&&p.cheatDeathTurns>0){p.hp=1;p.cheatDeathTurns=0;banner('TE NIEGAS A MORIR');log('La habilidad evita la muerte y te deja con 1 de vida.','good')}
  floating(d?`-${d}`:'EVITA',p.x,p.y,d?'#ff6666':'#70dc9b');effect(d?'shake':'flash');
@@ -1745,8 +1758,8 @@ function enemyTurn(){if(game.over)return;if(game.player.shadowVeil){game.player.
   if(dist===1&&chosen!==game.player){
    const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');continue
   }
-  if(dist===1){if(e.type==='orcoKamikaze'){floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);continue}damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
-  if(['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&Math.random()<.45){damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
+  if(dist===1){if(e.type==='orcoKamikaze'){floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`,{boss:e.boss});e.hp=0;kill(e);continue}damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`,{boss:e.boss});if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
+  if(['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&Math.random()<.45){damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`,{boss:e.boss});floating('✦',e.x,e.y,'#be82ff');queueCombatSprite('cast',{x:e.x,y:e.y},{x:game.player.x,y:game.player.y},{color:'#be82ff',icon:'✦'});continue}
   if(dist<8){const opts=Math.random()<.5?[[Math.sign(game.player.x-e.x),0],[0,Math.sign(game.player.y-e.y)]]:[[0,Math.sign(game.player.y-e.y)],[Math.sign(game.player.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){e.x=nx;e.y=ny;break}}}
  }
  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();return}
@@ -1972,6 +1985,26 @@ function updateUI(){
  mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()"><span class="slotKey">A</span><span class="icon">⚔</span><b>ATACAR</b><span class="costTag">${baseAttackDice()} · ${attackRangeLabel()}</span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><b>${d.name}</b><span class="costTag">${d.cost} ${d.resource==='mana'?'MP':'STA'} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
+function cellToScreen(x,y,c=camera()){return{x:(x-c.x)*TILE,y:(y-c.y)*TILE}}
+function queueCombatSprite(kind,from,to,opts={}){
+ combatSprites.push({kind,from:{...from},to:{...(to||from)},t:0,color:opts.color||'#fff',icon:opts.icon||'',magic:!!opts.magic});
+ if(combatSprites.length>28)combatSprites=combatSprites.slice(-28);
+ requestAnimationFrame(animate)
+}
+function drawCombatSprites(c){
+ const keep=[];
+ for(const s of combatSprites){
+  s.t=Math.min(1,s.t+.14);const ease=1-Math.pow(1-s.t,2);
+  const x=s.from.x+(s.to.x-s.from.x)*ease,y=s.from.y+(s.to.y-s.from.y)*ease,p=cellToScreen(x,y,c);
+  ctx.save();ctx.globalAlpha=1-s.t*.15;ctx.translate(p.x+TILE/2,p.y+TILE/2);
+  if(s.kind==='skill'||s.kind==='cast'){ctx.strokeStyle=s.color;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,10+s.t*22,0,Math.PI*2);ctx.stroke();ctx.fillStyle=s.color;ctx.font='bold 24px monospace';ctx.textAlign='center';ctx.fillText(s.icon||'✦',0,8)}
+  else if(s.kind==='block'){ctx.strokeStyle=s.color;ctx.lineWidth=4;ctx.strokeRect(-18,-22,36,44);ctx.fillStyle='rgba(120,220,255,.18)';ctx.fillRect(-18,-22,36,44)}
+  else if(s.kind==='dodge'){ctx.strokeStyle=s.color;ctx.setLineDash([6,5]);ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,22+s.t*12,0,Math.PI*2);ctx.stroke()}
+  else{ctx.rotate((s.to.x-s.from.x||1)*.55);ctx.fillStyle=s.color;px(-4,-26,8,34,s.color);px(-12,-12,24,6,'#fff8')}
+  ctx.restore();if(s.t<1)keep.push(s)
+ }
+ combatSprites=keep
+}
 function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnimationFrame(animate)}else draw()}
 
 function drawTargetingOverlay(){
@@ -2008,6 +2041,7 @@ function draw(){
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){let p=sc(e.x,e.y);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
+ drawCombatSprites(c);
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
 }
@@ -2411,7 +2445,7 @@ function familyJsonFromDetails(name){return{schemaVersion:1,name,enemies:configE
 function normalizedEnemyFamilies(){const saved=configEnemyFamilies.map(r=>({...(r.family_json||{}),dbId:r.id,name:r.family_json?.name||r.family_name})).filter(f=>f.name&&f.enemies?.length);if(saved.length)return saved;return Object.values(enemyFamilies).map(f=>({name:f.name,floorTheme:f.floorTheme,enemies:f.enemies.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:false,tier:'i',statsBase:{hp:d.hp||12,atk:d.atk||d.damage||4,armor:0,xp:d.xp||8},skillIds:[],icon:''}}).concat(f.bosses.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:true,tier:'iii',statsBase:{hp:d.hp||60,atk:d.atk||d.damage||10,armor:2,xp:d.xp||35},skillIds:[],icon:''}}))}))}
 function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+rng(5)-2))}
 function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+stats.strength*.025+stats.intelligence*.02,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+stats.strength*.025+stats.intelligence*.02,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*COMBAT_BALANCE.configuredHpLevel)*t.hp*tierMult*bossMult*varMult*statHp),atk=Math.round((base.atk||4)*(1+lvl*COMBAT_BALANCE.configuredDamageLevel)*t.atk*tierMult*(boss?1.28:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
 function hydratePrecomputedEnemy(e){if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}return e}
