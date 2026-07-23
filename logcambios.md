@@ -1,5 +1,15 @@
 # Log de cambios
 
+## v0.33.0 - 2026-07-23
+
+- Añadida API `/api/enemy-family` para crear, listar, actualizar, borrar e importar familias completas desde la tabla `enemy_family` con `family_json`.
+- Añadida API `/api/enemy-detail` para administrar enemigos individuales desde la tabla `enemy_detail`.
+- Añadida pestaña de configuración de Enemigos con editor de iconos, selección de tipo, boss, tier, arma, stats separadas y selector múltiple de skills enemigas.
+- Añadida consolidación/exportación/importación de familias de enemigos en JSON incluyendo iconos hexadecimales.
+- Cambiada la generación de dungeons para asignar una familia por piso, ponderar más los tiers I, II y III, generar pocos bosses en pisos no-jefe y escalar nivel/stats/skills por piso.
+- Los bosses configurados se dibujan más grandes cuando usan icono personalizado.
+- Actualizada la versión de la app a `0.33.0`.
+
 ## v0.32.2 - 2026-07-23
 
 - Añadida edición individual de tiles dentro de un floor, cargando sus propiedades de tipo, dirección, colores, rotación e icono en el formulario.

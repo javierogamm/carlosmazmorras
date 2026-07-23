@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.32.2 EDIT FLOOR</title>
+<title>MAZMORRA // BOTÍN v0.33.0 ENEMY FAMILY</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.32.2 EDIT FLOOR</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.33.0 ENEMY FAMILY</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -96,8 +96,8 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.32.2 EDIT FLOOR</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button></div>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.33.0 ENEMY FAMILY</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -188,6 +188,39 @@
     <hr>
     <div id="configFloorsList" class="configItemsList"></div>
    </section>
+  </div>
+ </div>
+
+ <div class="configTabPanel hidden" id="configTabEnemies">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de familia de enemigos</h2>
+    <p class="small">Define familias completas en <code>enemy_family</code> y enemigos individuales en <code>enemy_detail</code>. El JSON de familia consolida todos los enemigos con sus iconos hexadecimales.</p>
+    <label>Imagen enemigo <input type="file" id="configEnemyImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configEnemyCropZoom" min="25" max="400" value="100"></label><button type="button" id="configEnemyMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configEnemyMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configEnemyCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final del enemigo a 50x50 px. Los jefes se renderizan más grandes en el tablero.</div></div>
+    <div class="configPreview"><canvas id="configEnemyIconPreview" width="50" height="50"></canvas><span id="configEnemyIconStatus" class="small">Sin icono</span></div>
+    <div class="configForm">
+     <label>Familia <input id="configEnemyFamilyName" maxlength="80" placeholder="Orquidos, No muertos..."></label>
+     <label>Clase libre <input id="configEnemyClass" maxlength="80" placeholder="Soldado, acólito..."></label>
+     <label>Tipo <select id="configEnemyType"><option>rogue</option><option>warrior</option><option>caster</option><option>invocador</option><option>clerigo</option><option>chaman</option><option>arquero</option><option>francotirador</option><option>tanque</option></select></label>
+     <label>Boss <select id="configEnemyBoss"><option value="no">no</option><option value="si">si</option></select></label>
+     <label>Tier <select id="configEnemyTier"><option value="i">I</option><option value="ii">II</option><option value="iii">III</option><option value="iv">IV</option></select></label>
+     <label>Arma <select id="configEnemyWeaponType"></select></label>
+     <label>Vida base <input id="configEnemyHp" type="number" min="1" value="12"></label>
+     <label>Ataque base <input id="configEnemyAtk" type="number" min="1" value="4"></label>
+     <label>Armadura base <input id="configEnemyArmor" type="number" min="0" value="0"></label>
+     <label>XP base <input id="configEnemyXp" type="number" min="1" value="8"></label>
+     <label class="configSkillSelectWrap">Skills <select id="configEnemySkills" multiple size="8"></select><span class="small">Puede usar más skills según su nivel y si es boss.</span></label>
+    </div>
+    <button class="start" id="saveConfigEnemyBtn" type="button">GUARDAR ENEMIGO</button>
+    <button id="newConfigEnemyBtn" type="button">NUEVO ENEMIGO</button>
+    <button class="start" id="saveEnemyFamilyBtn" type="button">CONSOLIDAR FAMILIA</button>
+    <button id="exportEnemyFamilyBtn" type="button">EXPORTAR FAMILIA</button>
+    <label class="importJsonBtn">IMPORTAR FAMILIA JSON<input type="file" id="importEnemyFamilyInput" accept=".json,application/json" multiple></label>
+    <div id="configEnemyStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Familias y enemigos</h2><div id="configEnemyFamiliesList" class="configItemsList"></div><hr><div id="configEnemiesList" class="configItemsList"></div></section>
   </div>
  </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
