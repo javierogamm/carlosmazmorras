@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.33.1 - 2026-07-23
+
+- Añadido un brillo interno y halo sutil a los iconos personalizados de enemigos para suavizar la pixelación y camuflar bordes claros o blancos.
+- Actualizada la versión de la app a `0.33.1`.
+
 ## v0.33.0 - 2026-07-23
 
 - Añadida API `/api/enemy-family` para crear, listar, actualizar, borrar e importar familias completas desde la tabla `enemy_family` con `family_json`.

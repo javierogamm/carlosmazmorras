@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.33.0';
+const APP_VERSION='0.33.1';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2409,7 +2409,26 @@ function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+
 function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
 function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
 function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();return floor===1?(families.find(f=>/orqu/i.test(f.name))||families[0]):pick(families)}
-function drawEnemyIconHex(hex,x,y,boss=false){if(!hex)return false;let img=tileImageCache.get('enemy:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('enemy:'+hex,img)}if(!img)return false;const size=boss?78:58,off=(64-size)/2,paint=()=>ctx.drawImage(img,x+off,y+off,size,size);if(img.complete){paint();return true}img.onload=()=>game&&draw();return false}
+function drawEnemyIconHex(hex,x,y,boss=false){
+ if(!hex)return false;
+ let img=tileImageCache.get('enemy:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('enemy:'+hex,img)}if(!img)return false;
+ const size=boss?78:58,off=(64-size)/2,dx=x+off,dy=y+off;
+ const paint=()=>{
+  const layer=document.createElement('canvas');layer.width=layer.height=size;
+  const lc=layer.getContext('2d');lc.imageSmoothingEnabled=false;lc.drawImage(img,0,0,size,size);
+  lc.globalCompositeOperation='source-atop';
+  const g=lc.createRadialGradient(size/2,size*.45,3,size/2,size/2,size*.58);
+  g.addColorStop(0,boss?'#fff1a84f':'#d7c6ff42');
+  g.addColorStop(.62,boss?'#ff9d2840':'#6b4cff35');
+  g.addColorStop(1,'#05030858');
+  lc.fillStyle=g;lc.fillRect(0,0,size,size);
+  ctx.save();
+  ctx.shadowColor=boss?'#ffb94a88':'#8e6dff77';ctx.shadowBlur=boss?10:7;ctx.shadowOffsetX=0;ctx.shadowOffsetY=0;
+  ctx.drawImage(layer,dx,dy,size,size);
+  ctx.restore();
+ };
+ if(img.complete){paint();return true}img.onload=()=>game&&draw();return false
+}
 async function fetchEnemyConfig(){try{const [f,d]=await Promise.all([fetch('/api/enemy-family').then(r=>r.json()),fetch('/api/enemy-detail').then(r=>r.json())]);configEnemyFamilies=Array.isArray(f)?f:[];configEnemyDetails=Array.isArray(d)?d:[];renderEnemyConfig()}catch(e){configEnemyStatus&&(configEnemyStatus.textContent='No se pudo cargar configuración de enemigos: '+e.message)}}
 function renderEnemySkillSelect(){const sel=document.getElementById('configEnemySkills');if(sel)sel.innerHTML=Object.entries(skillDefs).filter(([,d])=>d.enemyUsable).map(([id,d])=>`<option value="${id}">${d.icon||'•'} ${d.name}</option>`).join('')}
 function selectedEnemySkills(){return[...configEnemySkills.selectedOptions].map(o=>o.value)}
