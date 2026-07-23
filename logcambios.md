@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.33.8 - 2026-07-23
+
+- La importación de familias de enemigos ahora crea también los enemigos individuales asociados en `enemy_detail`.
+- Añadida normalización de enemigos importados para conservar familia, icono, clase, tipo, boss, tier, stats base, stats principales, arma y skills.
+- Actualizada la versión de la app a `0.33.8`.
+
 ## v0.33.7 - 2026-07-23
 
 - Reducido el tamaño del JSON de mundos precomputados al no duplicar los iconos hexadecimales de tilesets en cada floor, evitando el error `FUNCTION_PAYLOAD_TOO_LARGE` al crear mundos.
