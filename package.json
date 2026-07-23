@@ -1,6 +1,6 @@
 {
   "name": "mazmorra-botin",
-  "version": "0.32.2",
+  "version": "0.33.3",
   "private": true,
   "description": "MAZMORRA // BOTÍN, dungeon crawler web en HTML, CSS y JavaScript.",
   "scripts": {

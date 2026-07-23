@@ -1,5 +1,35 @@
 # Log de cambios
 
+## v0.33.3 - 2026-07-23
+
+- Corregida la creación de mundos con el nuevo sistema de enemigos para no serializar el icono hexadecimal completo en cada enemigo precomputado.
+- Añadida rehidratación de iconos de enemigos precomputados desde la configuración activa al entrar en un piso.
+- La familia de enemigos de cada floor ahora se elige aleatoriamente entre las familias existentes, incluyendo el primer piso.
+- Mejorado el mensaje de error al crear dungeons cuando el backend devuelve texto no JSON.
+- Actualizada la versión de la app a `0.33.3`.
+
+## v0.33.2 - 2026-07-23
+
+- Añadidas al editor de enemigos individuales las stats principales del juego: Fuerza, Vitalidad, Agilidad, Suerte, Inteligencia y Sabiduría.
+- Las stats principales se normalizan antes de guardar y se persisten en la columna `stats` de `enemy_detail`, separadas de `stats_base`.
+- El JSON consolidado de familia incluye ahora las stats principales normalizadas por enemigo, y el escalado usa esas stats para modular vida, daño y armadura.
+- Actualizada la versión de la app a `0.33.2`.
+
+## v0.33.1 - 2026-07-23
+
+- Añadido un brillo interno y halo sutil a los iconos personalizados de enemigos para suavizar la pixelación y camuflar bordes claros o blancos.
+- Actualizada la versión de la app a `0.33.1`.
+
+## v0.33.0 - 2026-07-23
+
+- Añadida API `/api/enemy-family` para crear, listar, actualizar, borrar e importar familias completas desde la tabla `enemy_family` con `family_json`.
+- Añadida API `/api/enemy-detail` para administrar enemigos individuales desde la tabla `enemy_detail`.
+- Añadida pestaña de configuración de Enemigos con editor de iconos, selección de tipo, boss, tier, arma, stats separadas y selector múltiple de skills enemigas.
+- Añadida consolidación/exportación/importación de familias de enemigos en JSON incluyendo iconos hexadecimales.
+- Cambiada la generación de dungeons para asignar una familia por piso, ponderar más los tiers I, II y III, generar pocos bosses en pisos no-jefe y escalar nivel/stats/skills por piso.
+- Los bosses configurados se dibujan más grandes cuando usan icono personalizado.
+- Actualizada la versión de la app a `0.33.0`.
+
 ## v0.32.2 - 2026-07-23
 
 - Añadida edición individual de tiles dentro de un floor, cargando sus propiedades de tipo, dirección, colores, rotación e icono en el formulario.
