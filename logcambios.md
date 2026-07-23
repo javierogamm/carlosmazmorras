@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.32.2 - 2026-07-23
+
+- Añadida edición individual de tiles dentro de un floor, cargando sus propiedades de tipo, dirección, colores, rotación e icono en el formulario.
+- Añadido borrado de tiles de suelo, muro o puerta desde el floor actual antes de consolidarlo en `config_floor`.
+- Añadidos botones para iniciar un tile nuevo y un floor nuevo sin perder la capacidad de editar floors existentes.
+- Ajustado el estilo de los nuevos botones de edición del configurador.
+- Actualizada la versión de la app a `0.32.2`.
+
 ## v0.32.1 - 2026-07-23
 
 - Rehecha la persistencia de floors para usar la tabla `config_floor` con columnas `floor_name` y `floor_json`.

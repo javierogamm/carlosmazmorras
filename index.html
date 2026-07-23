@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.32.1 CONFIG FLOOR</title>
+<title>MAZMORRA // BOTÍN v0.32.2 EDIT FLOOR</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.32.1 CONFIG FLOOR</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.32.2 EDIT FLOOR</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -96,7 +96,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.32.1 CONFIG FLOOR</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.32.2 EDIT FLOOR</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -167,7 +167,8 @@
      <label id="configWallDirectionWrap">Dirección muro <select id="configWallDirection"><option value="top">Arriba</option><option value="right">Derecha</option><option value="bottom">Abajo</option><option value="left">Izquierda</option><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option><option value="center">Centro</option></select></label>
      <label class="tileRotateLabel"><input id="configTileRotatable" type="checkbox" checked> Permitir rotación (muros)</label>
     </div>
-    <button class="start" id="addConfigTileBtn" type="button">AÑADIR TILE</button>
+    <button class="start" id="addConfigTileBtn" type="button">GUARDAR TILE EN FLOOR</button>
+    <button id="newConfigTileBtn" type="button">NUEVO TILE</button>
     <hr>
     <div class="configForm">
      <label>Nombre floor <input id="configFloorName" maxlength="80" value="Caverna verdeante"></label>
@@ -177,6 +178,7 @@
      <label>Puertas del floor <select id="configDoorTiles" multiple size="5"></select></label>
     </div>
     <button class="start" id="saveConfigFloorBtn" type="button">GUARDAR FLOOR EN CONFIG_FLOOR</button>
+    <button id="newConfigFloorBtn" type="button">NUEVO FLOOR</button>
     <button id="exportConfigTilesetBtn" type="button">EXPORTAR FLOOR</button>
     <div id="configTilesetStatus" class="small"></div>
    </section>
