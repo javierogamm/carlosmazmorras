@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.33.5 - 2026-07-23
+
+- Corregida la API de enemigos individuales para ajustarse al schema real de `enemy_detail`, eliminando referencias a la columna inexistente `stats`.
+- Las stats principales de enemigos se guardan ahora dentro del JSON de `stats_base` como `coreStats`, manteniendo compatibilidad con la edición y consolidación de familias.
+- Actualizada la versión de la app a `0.33.5`.
+
 ## v0.33.4 - 2026-07-23
 
 - Añadido importador JSON para floors desde la pestaña de tilesets, permitiendo cargar uno o varios archivos y consolidarlos en `config_floor`.
