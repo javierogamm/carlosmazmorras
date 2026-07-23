@@ -1,5 +1,23 @@
 # Log de cambios
 
+## v0.33.6 - 2026-07-23
+
+- Agrupados los enemigos individuales por familia en acordeones expandibles dentro del modo configuración.
+- Cambiado el selector de skills enemigas para añadir cada selección a un pool visible del enemigo, con chips eliminables antes de guardar.
+- Actualizada la versión de la app a `0.33.6`.
+
+## v0.33.5 - 2026-07-23
+
+- Corregida la API de enemigos individuales para ajustarse al schema real de `enemy_detail`, eliminando referencias a la columna inexistente `stats`.
+- Las stats principales de enemigos se guardan ahora dentro del JSON de `stats_base` como `coreStats`, manteniendo compatibilidad con la edición y consolidación de familias.
+- Actualizada la versión de la app a `0.33.5`.
+
+## v0.33.4 - 2026-07-23
+
+- Añadido importador JSON para floors desde la pestaña de tilesets, permitiendo cargar uno o varios archivos y consolidarlos en `config_floor`.
+- Añadido borde interior negro de 2 px sobre los iconos personalizados de enemigos, siguiendo el contorno alfa de la imagen.
+- Actualizada la versión de la app a `0.33.4`.
+
 ## v0.33.3 - 2026-07-23
 
 - Corregida la creación de mundos con el nuevo sistema de enemigos para no serializar el icono hexadecimal completo en cada enemigo precomputado.
