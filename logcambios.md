@@ -1,5 +1,31 @@
 # Log de cambios
 
+## v0.32.2 - 2026-07-23
+
+- Añadida edición individual de tiles dentro de un floor, cargando sus propiedades de tipo, dirección, colores, rotación e icono en el formulario.
+- Añadido borrado de tiles de suelo, muro o puerta desde el floor actual antes de consolidarlo en `config_floor`.
+- Añadidos botones para iniciar un tile nuevo y un floor nuevo sin perder la capacidad de editar floors existentes.
+- Ajustado el estilo de los nuevos botones de edición del configurador.
+- Actualizada la versión de la app a `0.32.2`.
+
+## v0.32.1 - 2026-07-23
+
+- Rehecha la persistencia de floors para usar la tabla `config_floor` con columnas `floor_name` y `floor_json`.
+- Eliminada la API previa de `config_tilesets` y añadida `/api/config-floor` con lectura, creación, actualización y borrado.
+- Ajustado el editor para consolidar un floor completo con sus tiles de suelo, muro y puerta dentro de `floor_json`, incluyendo las imágenes en `icon`.
+- Añadida dirección de muro en el editor y selección de tiles de muro según dirección real del mapa: arriba, abajo, izquierda, derecha, vertical, horizontal o centro.
+- Actualizada la versión de la app a `0.32.1`.
+
+## v0.32.0 - 2026-07-23
+
+- Añadida una pestaña de configuración de tilesets con editor de imagen, recorte y Magic eraser reutilizando el flujo visual del editor de items.
+- Añadida la definición de tiles de suelo, tiles de muro con opción de rotación y tiles de puerta.
+- Añadida la definición de `floors` como conjuntos de tiles de suelo, muro y puerta.
+- Añadido almacenamiento API para `config_tilesets` en Supabase.
+- Cambiado el motor visual de generación de pisos para escoger un floor aleatorio y guardar el recurso usado en la partida.
+- Forzado el primer piso para usar siempre el floor `Caverna verdeante`.
+- Actualizada la versión de la app a `0.32.0`.
+
 ## v0.31.2 - 2026-07-23
 
 - Añadido selector de tipo de arma en el editor de objetos cuando el slot seleccionado es Arma.
