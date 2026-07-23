@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.33.2 - 2026-07-23
+
+- Añadidas al editor de enemigos individuales las stats principales del juego: Fuerza, Vitalidad, Agilidad, Suerte, Inteligencia y Sabiduría.
+- Las stats principales se normalizan antes de guardar y se persisten en la columna `stats` de `enemy_detail`, separadas de `stats_base`.
+- El JSON consolidado de familia incluye ahora las stats principales normalizadas por enemigo, y el escalado usa esas stats para modular vida, daño y armadura.
+- Actualizada la versión de la app a `0.33.2`.
+
 ## v0.33.1 - 2026-07-23
 
 - Añadido un brillo interno y halo sutil a los iconos personalizados de enemigos para suavizar la pixelación y camuflar bordes claros o blancos.
