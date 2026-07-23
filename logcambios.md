@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.32.1 - 2026-07-23
+
+- Rehecha la persistencia de floors para usar la tabla `config_floor` con columnas `floor_name` y `floor_json`.
+- Eliminada la API previa de `config_tilesets` y añadida `/api/config-floor` con lectura, creación, actualización y borrado.
+- Ajustado el editor para consolidar un floor completo con sus tiles de suelo, muro y puerta dentro de `floor_json`, incluyendo las imágenes en `icon`.
+- Añadida dirección de muro en el editor y selección de tiles de muro según dirección real del mapa: arriba, abajo, izquierda, derecha, vertical, horizontal o centro.
+- Actualizada la versión de la app a `0.32.1`.
+
 ## v0.32.0 - 2026-07-23
 
 - Añadida una pestaña de configuración de tilesets con editor de imagen, recorte y Magic eraser reutilizando el flujo visual del editor de items.

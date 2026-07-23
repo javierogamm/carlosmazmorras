@@ -1,4 +1,4 @@
-const SUPABASE_TABLE='config_tilesets';
+const SUPABASE_TABLE='config_floor';
 
 function supabaseConfig(){
  const url=process.env.SUPABASE_URL;
@@ -7,22 +7,22 @@ function supabaseConfig(){
  return {url:url.replace(/\/$/,''),key};
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
-function cleanTileset(body){
- const tileset=body.tileset_json||body;
- return {nombre:body.nombre??tileset.name??'Tilesets consolidados',tileset_json:tileset};
+function cleanFloor(body){
+ const floor=body.floor_json||body;
+ return {floor_name:body.floor_name??floor.name??floor.floor_name??'Floor sin nombre',floor_json:floor};
 }
-function requestId(req){return req.query?.id||req.body?.id||req.body?.tileset_id||null}
+function requestId(req){return req.query?.id||req.body?.id||req.body?.floor_id||null}
 module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,tileset_json&order=created_at.desc`,{headers:headers(key)});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,floor_name,floor_json&order=floor_name.asc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
   }
   if(req.method==='POST'){
-   const row=cleanTileset(req.body||{});
+   const row=cleanFloor(req.body||{});
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
@@ -30,13 +30,21 @@ module.exports=async(req,res)=>{
   }
   if(req.method==='PUT'){
    const id=requestId(req);
-   if(!id)return res.status(400).json({error:'Falta id para actualizar tilesets'});
-   const row=cleanTileset(req.body||{});
+   if(!id)return res.status(400).json({error:'Falta id para actualizar el floor'});
+   const row=cleanFloor(req.body||{});
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
   }
-  res.setHeader('Allow','GET, POST, PUT');return res.status(405).json({error:'Método no permitido'});
+  if(req.method==='DELETE'){
+   const id=requestId(req);
+   if(!id)return res.status(400).json({error:'Falta id para borrar el floor'});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
  }catch(e){return res.status(500).json({error:e.message});}
 };

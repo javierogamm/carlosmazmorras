@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.32.0 TILESETS</title>
+<title>MAZMORRA // BOTÍN v0.32.1 CONFIG FLOOR</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.32.0 TILESETS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.32.1 CONFIG FLOOR</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -96,7 +96,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.32.0 TILESETS</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.32.1 CONFIG FLOOR</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -153,7 +153,7 @@
   <div class="configLayout">
    <section class="panel">
     <h2>Editor de tilesets</h2>
-    <p class="small">Define tiles de suelo, tiles de muro con rotación y floors como conjunto de suelos, muros y puertas. El primer piso usará siempre <b>Caverna verdeante</b>.</p>
+    <p class="small">Define un floor completo guardado en <code>config_floor</code>: tiles de suelo, muros direccionales con rotación y puertas. El primer piso usará siempre <b>Caverna verdeante</b>.</p>
     <label>Imagen tile <input type="file" id="configTileImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configTileCropZoom" min="25" max="400" value="100"></label><button type="button" id="configTileMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configTileMagicTolerance" min="0" max="160" value="38"></label></div>
     <div class="cropWrap"><canvas id="configTileCropCanvas" width="320" height="320"></canvas><div class="small">Recorta un tile cuadrado. El área seleccionada se redimensiona a 50x50 y en juego a 64x64.</div></div>
@@ -164,19 +164,20 @@
      <label>Color base <input id="configTileColor" type="color" value="#263927"></label>
      <label>Color secundario <input id="configTileAlt" type="color" value="#314832"></label>
      <label>Color acento <input id="configTileAccent" type="color" value="#8fbf63"></label>
-     <label class="tileRotateLabel"><input id="configTileRotatable" type="checkbox"> Permitir rotación (muros)</label>
+     <label id="configWallDirectionWrap">Dirección muro <select id="configWallDirection"><option value="top">Arriba</option><option value="right">Derecha</option><option value="bottom">Abajo</option><option value="left">Izquierda</option><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option><option value="center">Centro</option></select></label>
+     <label class="tileRotateLabel"><input id="configTileRotatable" type="checkbox" checked> Permitir rotación (muros)</label>
     </div>
     <button class="start" id="addConfigTileBtn" type="button">AÑADIR TILE</button>
     <hr>
     <div class="configForm">
      <label>Nombre floor <input id="configFloorName" maxlength="80" value="Caverna verdeante"></label>
      <label>Descripción <input id="configFloorStory" maxlength="160" value="Cavernas húmedas cubiertas de musgo, raíces y piedra viva."></label>
-     <label>Tiles de suelo <select id="configFloorTiles" multiple size="5"></select></label>
-     <label>Tiles de muro <select id="configWallTiles" multiple size="5"></select></label>
-     <label>Puertas <select id="configDoorTiles" multiple size="5"></select></label>
+     <label>Tiles de suelo del floor <select id="configFloorTiles" multiple size="5"></select></label>
+     <label>Tiles de muro del floor <select id="configWallTiles" multiple size="5"></select></label>
+     <label>Puertas del floor <select id="configDoorTiles" multiple size="5"></select></label>
     </div>
-    <button class="start" id="saveConfigFloorBtn" type="button">GUARDAR FLOOR</button>
-    <button id="exportConfigTilesetBtn" type="button">EXPORTAR TILESET</button>
+    <button class="start" id="saveConfigFloorBtn" type="button">GUARDAR FLOOR EN CONFIG_FLOOR</button>
+    <button id="exportConfigTilesetBtn" type="button">EXPORTAR FLOOR</button>
     <div id="configTilesetStatus" class="small"></div>
    </section>
    <section class="panel">
