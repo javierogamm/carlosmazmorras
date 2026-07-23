@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.33.4 - 2026-07-23
+
+- Añadido importador JSON para floors desde la pestaña de tilesets, permitiendo cargar uno o varios archivos y consolidarlos en `config_floor`.
+- Añadido borde interior negro de 2 px sobre los iconos personalizados de enemigos, siguiendo el contorno alfa de la imagen.
+- Actualizada la versión de la app a `0.33.4`.
+
 ## v0.33.3 - 2026-07-23
 
 - Corregida la creación de mundos con el nuevo sistema de enemigos para no serializar el icono hexadecimal completo en cada enemigo precomputado.
