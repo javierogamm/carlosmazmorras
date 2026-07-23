@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.33.2';
+const APP_VERSION='0.33.3';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1040,12 +1040,12 @@ function createDungeonWorldJson(name){
   const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
   const chests=[];for(let i=0;i<14+Math.floor(floor*.8);i++)chests.push({...free(),opened:false});
   const family=pickConfiguredFamilyForFloor(floor),enemies=[],isBossFloor=floor%2===0,count=32+floor*5+rng(13);
-  for(let i=0;i<count;i++){const p=free();enemies.push(buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,floor,false))}
+  for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,floor,false);e.enemyFamily=family.name;enemies.push(e)}
   const bossCount=isBossFloor?Math.min(4,1+Math.floor(floor/10)):(Math.random()<.08?1:0);let boss=null;
-  for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},floor,true);if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b}
+  for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},floor,true);b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b}
   const event=Math.random()<=.09?{id:pick(eventDefs).id}:null;
   const floorTileset=pickFloorTilesetForLevel(floor);
-  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(assignEnemySkills),enemyFamily:family.name,themeName:floorTileset.name,floorTileset,boss});
+  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset,boss:boss?compactEnemyForWorld(boss):null});
  }
  game=oldGame;
  return {schemaVersion:1,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),floors};
@@ -1054,7 +1054,7 @@ function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  const floorTileset=data.floorTileset||pickFloorTilesetForLevel(game.floor);
- Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>assignEnemySkills({...e})),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss});
+ Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
  banner(`PISO ${game.floor} · ${floorTileset.name||data.themeName||'Mundo precomputado'}`);log(`Entras en ${floorTileset.name||data.themeName||'la dungeon'}. Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');updateUI();draw();rollFloorEvent();return true;
 }
@@ -1347,13 +1347,13 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  const chests=[];for(let i=0;i<14+Math.floor(game.floor*.8);i++)chests.push({...free(),opened:false});
  const family=pickConfiguredFamilyForFloor(game.floor),enemies=[],isBossFloor=game.floor%2===0;
  const populationScale=1+Math.min(1.2,(game.player.level-1)*.012);
- const count=Math.round((32+game.floor*5+rng(13))*populationScale);for(let i=0;i<count;i++){const p=free();enemies.push(buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,game.floor,false))}
+ const count=Math.round((32+game.floor*5+rng(13))*populationScale);for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,game.floor,false);e.enemyFamily=family.name;enemies.push(e)}
  let boss=null;
  const bossCount=isBossFloor?Math.min(4,1+Math.floor(game.floor/10)):(Math.random()<.08?1:0);
  for(let bi=0;bi<bossCount;bi++){
   const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom;
   const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},game.floor,true);
-  if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b
+  b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b
  }
  const floorTileset=pickFloorTilesetForLevel(game.floor);
  Object.assign(game,{map,rooms,safeRooms,stairs,doors,keys,chests,enemies,enemyFamily:family.name,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss});
@@ -1361,7 +1361,7 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  banner(bossCount?`PISO ${game.floor} · ${bossCount} JEFE${bossCount>1?'S':''}`:`PISO ${game.floor} · ${floorTileset.name}`);log(`Entras en ${floorTileset.name}. Familia dominante: ${family.name}. ${count} enemigos y ${bossCount} jefe${bossCount===1?'':'s'}.`,'story');
  if(false){game.level2StoryShown=true;const n=pick(levelTwoNarratives);setTimeout(()=>{storyTitle.textContent='NIVEL 2 — '+n.title;storyBody.innerHTML=`<div class="narrative"><p>${n.text}</p><p><b>Objetivo:</b> derrota al jefe y rompe el sello de salida.</p></div>`;storyOverlay.classList.remove('hidden')},250)}
  const extra=difficultyScale().count;
- for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(!isSafeCell(exPos.x,exPos.y))game.enemies.push(buildConfiguredEnemy(weightedFamilyEnemy(family,false),exPos,game.floor,false))}}
+ for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(family,false),exPos,game.floor,false);ex.enemyFamily=family.name;game.enemies.push(ex)}}}
  updateUI();draw();rollFloorEvent();
 }
 
@@ -2409,7 +2409,10 @@ function normalizedEnemyFamilies(){const saved=configEnemyFamilies.map(r=>({...(
 function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+rng(5)-2))}
 function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
 function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+stats.strength*.025+stats.intelligence*.02,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
-function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();return floor===1?(families.find(f=>/orqu/i.test(f.name))||families[0]):pick(families)}
+function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
+function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
+function hydratePrecomputedEnemy(e){if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}return e}
+function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();return pick(families)}
 function drawEnemyIconHex(hex,x,y,boss=false){
  if(!hex)return false;
  let img=tileImageCache.get('enemy:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('enemy:'+hex,img)}if(!img)return false;
@@ -2458,8 +2461,8 @@ async function fetchDungeonWorlds(){
 }
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim();
- btn.disabled=true;status.textContent='Calculando pisos, enemigos, cofres, eventos y diseño de niveles...';
- try{const world_json=createDungeonWorldJson(name);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ btn.disabled=true;status.textContent='Cargando familias de enemigos y calculando pisos...';
+ try{if(!configEnemyFamilies.length&&!configEnemyDetails.length)await fetchEnemyConfig();const world_json=createDungeonWorldJson(name);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${data.id} CREADA`);
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }

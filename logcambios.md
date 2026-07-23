@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.33.3 - 2026-07-23
+
+- Corregida la creación de mundos con el nuevo sistema de enemigos para no serializar el icono hexadecimal completo en cada enemigo precomputado.
+- Añadida rehidratación de iconos de enemigos precomputados desde la configuración activa al entrar en un piso.
+- La familia de enemigos de cada floor ahora se elige aleatoriamente entre las familias existentes, incluyendo el primer piso.
+- Mejorado el mensaje de error al crear dungeons cuando el backend devuelve texto no JSON.
+- Actualizada la versión de la app a `0.33.3`.
+
 ## v0.33.2 - 2026-07-23
 
 - Añadidas al editor de enemigos individuales las stats principales del juego: Fuerza, Vitalidad, Agilidad, Suerte, Inteligencia y Sabiduría.
