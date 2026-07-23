@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.33.9 - 2026-07-23
+
+- Añadido `HABILIDADES.md` con el listado completo tabulado de habilidades, clase asociada, efecto/funcionamiento, recurso, coste, enfriamiento, desbloqueo, rareza, tipo y uso enemigo.
+- Actualizada la versión de la app a `0.33.9`.
+
 ## v0.33.8 - 2026-07-23
 
 - La importación de familias de enemigos ahora crea también los enemigos individuales asociados en `enemy_detail`.
