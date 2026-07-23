@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.33.6 - 2026-07-23
+
+- Agrupados los enemigos individuales por familia en acordeones expandibles dentro del modo configuración.
+- Cambiado el selector de skills enemigas para añadir cada selección a un pool visible del enemigo, con chips eliminables antes de guardar.
+- Actualizada la versión de la app a `0.33.6`.
+
 ## v0.33.5 - 2026-07-23
 
 - Corregida la API de enemigos individuales para ajustarse al schema real de `enemy_detail`, eliminando referencias a la columna inexistente `stats`.
