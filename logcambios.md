@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.33.7 - 2026-07-23
+
+- Reducido el tamaño del JSON de mundos precomputados al no duplicar los iconos hexadecimales de tilesets en cada floor, evitando el error `FUNCTION_PAYLOAD_TOO_LARGE` al crear mundos.
+- Añadida rehidratación de iconos de tilesets desde `config_floor` al cargar un piso precomputado, manteniendo la apariencia visual sin inflar el payload.
+- Actualizada la versión de la app a `0.33.7`.
+
 ## v0.33.6 - 2026-07-23
 
 - Agrupados los enemigos individuales por familia en acordeones expandibles dentro del modo configuración.
