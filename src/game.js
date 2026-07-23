@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.33.6';
+const APP_VERSION='0.33.7';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1045,7 +1045,7 @@ function createDungeonWorldJson(name){
   for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},floor,true);b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b}
   const event=Math.random()<=.09?{id:pick(eventDefs).id}:null;
   const floorTileset=pickFloorTilesetForLevel(floor);
-  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset,boss:boss?compactEnemyForWorld(boss):null});
+  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset:compactFloorTilesetForWorld(floorTileset),boss:boss?compactEnemyForWorld(boss):null});
  }
  game=oldGame;
  return {schemaVersion:1,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),floors};
@@ -1053,7 +1053,7 @@ function createDungeonWorldJson(name){
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
- const floorTileset=data.floorTileset||pickFloorTilesetForLevel(game.floor);
+ const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
  Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
  banner(`PISO ${game.floor} · ${floorTileset.name||data.themeName||'Mundo precomputado'}`);log(`Entras en ${floorTileset.name||data.themeName||'la dungeon'}. Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');updateUI();draw();rollFloorEvent();return true;
@@ -2102,6 +2102,9 @@ const defaultTilesetFloors=[
 ];
 function normalizedConfigFloors(){const saved=configFloors.map(r=>({...(r.floor_json||{}),dbId:r.id,name:r.floor_json?.name||r.floor_name})).filter(f=>f&&f.name);return saved.length?saved:defaultTilesetFloors}
 function pickFloorTilesetForLevel(level){const floors=normalizedConfigFloors();if(level===1)return floors.find(f=>f.name==='Caverna verdeante')||defaultTilesetFloors[0];return pick(floors)||defaultTilesetFloors[0]}
+function compactTileForWorld(tile){const {icon,...rest}=tile||{};return rest}
+function compactFloorTilesetForWorld(floorTileset){if(!floorTileset)return null;return{...floorTileset,floorTiles:(floorTileset.floorTiles||[]).map(compactTileForWorld),wallTiles:(floorTileset.wallTiles||[]).map(compactTileForWorld),doorTiles:(floorTileset.doorTiles||[]).map(compactTileForWorld)}}
+function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedConfigFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
 function activeFloorTileset(){return game?.floorTileset||pickFloorTilesetForLevel(game?.floor||1)}
 function wallDirectionForCell(gx,gy){const open=(x,y)=>game?.map?.[y]?.[x]===0,up=open(gx,gy-1),down=open(gx,gy+1),left=open(gx-1,gy),right=open(gx+1,gy);if(up&&down&&!left&&!right)return'vertical';if(left&&right&&!up&&!down)return'horizontal';if(down&&!up)return'top';if(up&&!down)return'bottom';if(right&&!left)return'left';if(left&&!right)return'right';return'center'}
 function wallRotationForDirection(direction){return {top:0,right:90,bottom:180,left:270,horizontal:90,vertical:0,center:0}[direction]||0}
