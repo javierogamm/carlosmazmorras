@@ -1,3 +1,49 @@
+## v0.34.5 - 2026-07-24
+
+- Reducida un 50% la vida base general de los enemigos mediante un multiplicador global aplicado a enemigos configurados y enemigos escalados.
+- La reducción de vida se aplica antes/después del escalado de mundo según la ruta de generación, manteniendo los sliders funcionales pero con una base mucho más baja.
+- Actualizada la versión de la app y del paquete a `0.34.5`.
+
+## v0.34.4 - 2026-07-24
+
+- La generación de enemigos por piso usa exclusivamente familias consolidadas desde la tabla `enemy_family`; se elimina el fallback automático al catálogo legacy embebido.
+- Marcado el modelo legacy `enemyFamilies` como obsoleto en el código para evitar que se use como fuente activa de generación.
+- La creación de dungeons ahora se bloquea con un error claro si no existe al menos una familia válida en `enemy_family`.
+- El selector de familias por piso se alimenta únicamente de filas consolidadas de `enemy_family`, garantizando que se carguen esos enemigos en el floor.
+- Actualizada la versión de la app y del paquete a `0.34.4`.
+
+## v0.34.3 - 2026-07-24
+
+- Rehecho el cálculo de daño recibido para normalizar cualquier fuente enemiga contra un presupuesto plano por piso/nivel antes de defensas, evitando golpes desproporcionados de enemigos configurados con ataque alto.
+- El slider de % daño recibido deja de multiplicar directamente todo el modelo y pasa a aportar un ajuste plano acotado sobre el daño normalizado.
+- Reducido de nuevo el multiplicador base de daño enemigo y bajada la CD defensiva para que los combates duren varias rondas y el héroe no muera en dos turnos.
+- Añadido al log de combate el desglose `base → normalizado` para detectar rápidamente fuentes de daño infladas.
+- Actualizada la versión de la app y del paquete a `0.34.3`.
+
+## v0.34.2 - 2026-07-24
+
+- Reducido el daño base efectivo de los enemigos para suavizar la dificultad general antes de aplicar defensas y multiplicadores de mundo.
+- Convertidos los porcentajes de configuración de mundo a sliders con rango limitado de 25% a 500% y pasos de 5%.
+- Añadida visualización en vivo del valor porcentual seleccionado en cada slider de dificultad.
+- Actualizada la versión de la app y del paquete a `0.34.2`.
+
+## v0.34.1 - 2026-07-24
+
+- Cambiada la edición de parámetros de mundo para que esté colapsada en un acordeón principal y solo se muestre al desplegarlo.
+- Separados los parámetros de creación de dungeon en dos acordeones internos: Dificultad para porcentajes y Historias para número de pisos y planificación por piso.
+- Añadida selección por cada piso de un floor existente de `config_floor` y una familia existente de `enemy_family`, evitando introducir nombres manuales.
+- El JSON del mundo guarda ahora un `floorPlan` por piso y la generación usa esa relación para elegir el floor visual y la familia enemiga correspondiente.
+- Actualizada la versión de la app y del paquete a `0.34.1`.
+
+## v0.34.0 - 2026-07-24
+
+- Duplicado el impacto de Vitalidad sobre la vida máxima añadiendo un bonus directo de +2 HP por punto de VIT y aumentando a +5 HP por cada punto adicional de VIT obtenido con equipo o mejoras.
+- El daño del jugador y de los enemigos ahora se modula por la stat principal más adecuada al tipo de daño: Fuerza/Agilidad para físico, Inteligencia/Sabiduría para mágico y Suerte/Sabiduría para utilidad ofensiva.
+- Las skills enemigas incorporan su modificador de stat ofensiva, y los ataques del jugador aplican los nuevos multiplicadores globales de mundo.
+- Añadidos parámetros editables al crear mundo: % daño recibido, % daño infligido, % vida enemiga, % XP recibida, número de floors y familias preferidas por piso.
+- El JSON consolidado del mundo guarda los parámetros usados y genera tantos pisos como indique la configuración.
+- Actualizada la versión de la app y del paquete a `0.34.0`.
+
 # Log de cambios
 
 ## v0.33.8 - 2026-07-23
