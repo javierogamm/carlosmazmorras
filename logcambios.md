@@ -1,3 +1,7 @@
+## v0.39.1 - Documentación del loot
+- Añadido `loot.md` con la descripción completa del sistema de loot: fuentes de botín, porcentajes, rarezas, Suerte, `rarityFind`, niveles de objeto, tiers, cofres, enemigos, eventos, pociones, objetos configurados, afijos, pasivas y habilidades como botín.
+- Actualizada la versión de la app y del paquete a `0.39.1`.
+
 ## v0.39.0 - Motor de daño consolidado
 - Unificada la ruta real de `execute`: `skillId: execute` queda como skill apuntada con umbral del 40% de vida, eliminando la rama legacy residual con umbral del 35%.
 - Corregida la progresión del dado de ataque básico por alcance para que el EV no baje al aumentar el alcance máximo del arma.
