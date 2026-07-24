@@ -1,3 +1,12 @@
+## v0.36.0 - 2026-07-24
+
+- Añadido el tipo de item `Poción` al configurador, con campos específicos para elegir efecto, potencia, duración, stat e habilidad aprendida.
+- Las pociones configuradas se guardan como consumibles y aparecen agrupadas como Pociones en la lista de objetos guardados.
+- La mochila permite usar pociones directamente y mantiene la equipación para objetos de equipo.
+- El motor aplica cura, regeneración, recuperación de stamina/maná, mejoras temporales o permanentes de stats, aprendizaje de habilidad, teletransporte a sala segura o escalera, invulnerabilidad e invisibilidad.
+- Añadido icono base de vial para pociones sin imagen personalizada.
+- Actualizada la versión de la app y del paquete a `0.36.0`.
+
 ## v0.35.0 - 2026-07-24
 
 - Añadida tabla de progresión de loot por mundo según el número de pisos configurado.

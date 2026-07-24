@@ -108,12 +108,21 @@
    <div class="configForm">
     <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
     <label>Tier <select id="configTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
-    <label>Slot <select id="configSlot"></select></label>
+    <label>Tipo de item <select id="configItemType"><option value="equipment">Equipo</option><option value="potion">Poción</option></select></label>
+    <label id="configSlotWrap">Slot <select id="configSlot"></select></label>
     <label>iLvl <input id="configIlvl" type="number" min="1" value="1"></label>
     <label id="configWeaponCategoryWrap">Tipo de arma <select id="configWeaponCategory"></select></label>
     <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
     <label class="configSkillSelectWrap">Habilidades <select id="configSkills" multiple size="8"></select><span class="small">Ctrl/Cmd + clic para asignar varias habilidades del set completo.</span></label>
+    <div id="configPotionFields" class="configPotionFields hidden">
+     <label>Efecto de poción <select id="configPotionEffect"><option value="heal">Cura</option><option value="regen">Regeneración</option><option value="stamina">Recuperación stamina</option><option value="mana">Recuperación maná</option><option value="temporaryStats">Incremento temporal de stats</option><option value="permanentStats">Incremento permanente de stats</option><option value="learnSkill">Aprender habilidad</option><option value="teleportSafe">Teletransporte a sala segura</option><option value="teleportStairs">Teletransporte a escalera de piso</option><option value="invulnerable">Invulnerabilidad</option><option value="invisible">Invisibilidad</option></select></label>
+     <label>Potencia % <input id="configPotionPower" type="number" min="0" value="25"></label>
+     <label>Turnos <input id="configPotionTurns" type="number" min="0" value="6"></label>
+     <label>Stat <select id="configPotionStat"><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
+     <label>Habilidad a aprender <select id="configPotionSkill"></select></label>
+     <p class="small">Para incrementos de stats desglosados usa el campo Stats, por ejemplo: strength:+2, wisdom:+1. Si Stats está vacío se usa la Stat seleccionada.</p>
+    </div>
     <div id="configStatsHelp" class="configStatsHelp"></div>
    </div>
    <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
