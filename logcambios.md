@@ -469,3 +469,10 @@
 - Añadida configuración mínima de proyecto con `package.json` y script de despliegue.
 - Añadido `vercel.json` para configuración de despliegue estático.
 - Actualizada la versión visible de la app a `v0.14 ESTRUCTURA` y la versión del paquete a `0.14.0`.
+
+## v0.38.0 - Loop de subida de nivel consolidado
+- Cambiado el flujo de subida de nivel para abrir inmediatamente un popup obligatorio al ganar nivel.
+- El popup permite distribuir 1 punto en una stat principal: Fuerza, Vitalidad, Agilidad, Suerte, Inteligencia o Sabiduría.
+- En los niveles 3, 5, 10, 15, 20, 25, 30, 35 y 40, el mismo popup añade una skill aleatoria de la clase.
+- Las skills aleatorias salen de cualquier tier disponible de la clase, pero las de tier III solo entran en el pool desde nivel 10.
+- Ajustado el loop posterior a ataques/skills para que, si el golpe mata a un enemigo y provoca subida de nivel, se atienda el popup antes de avanzar el turno enemigo.
