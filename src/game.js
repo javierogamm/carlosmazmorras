@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.36.8';
+const APP_VERSION='0.36.10';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -364,7 +364,7 @@ for(const skill of Object.values(skillDefs)){
  }
 }
 
-const classSkillMilestones={1:1,3:1,5:1,10:2,15:2,20:2,30:3,40:3};
+const classSkillMilestones={1:1,3:1,5:1,7:1,10:2,15:2,20:2,25:2,30:3,40:3,50:3};
 
 
 
@@ -911,6 +911,22 @@ const potionDefs=[
  {id:'dragonHeart',name:'Corazón de dragón licuado',tier:'legendary',kind:'permanent',desc:'+10 de vida máxima permanente.',effect:{maxHp:10}},
  {id:'shadowEssence',name:'Esencia de sombra',tier:'legendary',kind:'permanent',desc:'+2 Agilidad permanente.',effect:{agility:2}}
 ];
+const STARTER_HEALING_POTION_ID='109';
+const STARTER_HEALING_POTION_TEMPLATE={id:STARTER_HEALING_POTION_ID,type:'potion',slot:'consumable',rarity:'common',label:skillRarities.common?.label||'Común',name:'Pocion de curacion comun #109',desc:'Recupera 25% de vida.',potionId:'commonHealing109',kind:'instant',duration:0,effect:{healPct:.25},iconShape:'vial',itemLevel:1,score:8,quantity:1};
+function cloneStarterHealingPotion(){return {...STARTER_HEALING_POTION_TEMPLATE,id:STARTER_HEALING_POTION_ID,effect:{...STARTER_HEALING_POTION_TEMPLATE.effect},quantity:1}}
+function potionStackKey(item){return [item.type,item.potionId||'',item.name||'',item.rarity||'',item.kind||'',item.duration||0,JSON.stringify(item.effect||item.potionEffect||{})].join('|')}
+function addInventoryItem(item){
+ if(!game?.inventory||!item)return item;
+ if(item.type==='potion'){
+  const k=potionStackKey(item),existing=game.inventory.find(i=>i.type==='potion'&&potionStackKey(i)===k);
+  if(existing){existing.quantity=(existing.quantity||1)+(item.quantity||1);return existing}
+  item.quantity=item.quantity||1;
+ }
+ game.inventory.push(item);return item
+}
+function addStarterPotions(){for(let i=0;i<2;i++)addInventoryItem(cloneStarterHealingPotion())}
+function compactPotionStacks(){const original=[...(game?.inventory||[])];game.inventory=[];for(const item of original)addInventoryItem(item)}
+
 function potionRarityWeight(tier,quality){
  const base={common:50,uncommon:28,rare:14,epic:6,legendary:2}[tier]||1;
  return base*Math.max(.25,1+(quality-1)*({common:-.16,uncommon:-.06,rare:.10,epic:.22,legendary:.32}[tier]||0))
@@ -919,7 +935,7 @@ function makePotion(quality=1){
  let total=potionDefs.reduce((s,p)=>s+potionRarityWeight(p.tier,quality),0),roll=Math.random()*total;
  let def=potionDefs[0];
  for(const p of potionDefs){roll-=potionRarityWeight(p.tier,quality);if(roll<=0){def=p;break}}
- return{id:crypto.randomUUID(),type:'potion',slot:'consumable',rarity:def.tier,label:skillRarities[def.tier]?.label||def.tier,name:def.name,desc:def.desc,potionId:def.id,kind:def.kind,duration:def.duration||0,effect:{...def.effect},iconShape:'vial',itemLevel:Math.max(1,Math.round(quality))}
+ return{id:crypto.randomUUID(),type:'potion',slot:'consumable',rarity:def.tier,label:skillRarities[def.tier]?.label||def.tier,name:def.name,desc:def.desc,potionId:def.id,kind:def.kind,duration:def.duration||0,effect:{...def.effect},iconShape:'vial',itemLevel:Math.max(1,Math.round(quality)),quantity:1}
 }
 function nearestSafeRoom(){return [...(game.safeRooms||[])].sort((a,b)=>gridDistance(game.player,{x:a.cx,y:a.cy})-gridDistance(game.player,{x:b.cx,y:b.cy}))[0]}
 function usePotion(id){
@@ -939,7 +955,7 @@ function usePotion(id){
  }else{
   p.permanentPotionStats=p.permanentPotionStats||{};if(eff.skillId)learnSkill(eff.skillId);for(const [k,v] of Object.entries(eff.stats||eff))if(potionStatKeys.includes(k)||k==='maxHp')p.permanentPotionStats[k]=(p.permanentPotionStats[k]||0)+Number(v||0);message=`Mejora permanente: ${item.desc||describePotionEffect(item)}`
  }
- game.inventory=game.inventory.filter(i=>i.id!==item.id);recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name}: ${message}`,'loot');storyTitle.textContent='POCIÓN UTILIZADA';storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${message}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('closePotionMessage')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0)
+ if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(i=>i.id!==item.id);recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name}: ${message}`,'loot');storyTitle.textContent='POCIÓN UTILIZADA';storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${message}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('closePotionMessage')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0)
 }
 function tickPotionEffects(){
  const p=game.player;if(!p?.activePotions)return;
@@ -1069,7 +1085,8 @@ function reveal(cx,cy,r=game.player.vision){for(let y=Math.max(0,cy-r);y<=Math.m
 
 let pendingSkillChoices=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1,3,5,10,15,20,30,40];
+const CLASS_SKILL_LEVELS=[1,3,5,7,10,15,20,25,30,40,50];
+const SKILL_CHOICES_PER_POPUP=3;
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
@@ -1091,14 +1108,18 @@ function queueMissingClassSkillChoices(){
   if(level<=game.player.level&&!game.player.skillChoicesAwarded[level])queueClassSkillChoice(level,level===1&&game.player.level===1);
  }
 }
+function randomClassSkillChoices(tier){
+ const roman=['','I','II','III'][tier],tree=classSkillTrees[game.player.cls]?.[roman]||[];
+ return tree.filter(id=>!game.player.knownSkills.includes(id)).sort(()=>Math.random()-.5).slice(0,SKILL_CHOICES_PER_POPUP)
+}
 function processPendingSkillChoices(){
  if(!game?.player||game.player.unspentStatPoints>0||document.getElementById('statPointModal')?.classList.contains('open'))return;
  const modal=document.getElementById('skillChoiceModal');if(modal.classList.contains('open')||!pendingSkillChoices.length)return;
- const request=pendingSkillChoices.shift(),roman=['','I','II','III'][request.tier],tree=classSkillTrees[game.player.cls]?.[roman]||[];
- const choices=tree.filter(id=>!game.player.knownSkills.includes(id));
+ const request=pendingSkillChoices.shift(),roman=['','I','II','III'][request.tier];
+ const choices=randomClassSkillChoices(request.tier);
  if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';processPendingSkillChoices();return}
- document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · TIER ${roman}`;
- document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad; las demás podrán aparecer más adelante como botín o en enemigos.`;
+ document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
+ document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad aleatoria del pool de clase de tier ${roman}; las no elegidas podrán aparecer en próximos hitos, botín o enemigos.`;
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
@@ -1121,6 +1142,7 @@ function start(){
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
+ addStarterPotions();
  recomputeDerived();startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
@@ -1311,7 +1333,7 @@ function resolveFloorEvent(ev,prepared){
   banner('JEFE OPCIONAL');log(`${b.name} entra en combate.`,'story')
  }else if(ev.type==='reward'){
   const count=ev.id==='buriedArmory'?3:2;
-  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6)item.rarity=['rare','epic','legendary'][rng(3)];game.inventory.push(item);lootToast(item)}
+  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6)item.rarity=['rare','epic','legendary'][rng(3)];addInventoryItem(item);lootToast(item)}
   if(ev.id==='fairyCache'&&Math.random()<.65)unlockSkillLoot(randomLootableSkill());
   if(ev.id==='forgottenShrine'){game.player.hp=game.player.maxHp;game.player.mana=game.player.maxMana;game.player.stamina=game.player.maxStamina}
   if(ev.id==='smugglerLocker')game.player.gold+=40+game.floor*15;
@@ -1598,7 +1620,7 @@ function attack(e,bonus=0,options={}){
 }
 function kill(e){
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2));game.player.gold+=e.boss?75:3+rng(6);
- if(Math.random()<.13+game.player.stats.luck*.008||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');game.inventory.push(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
+ if(Math.random()<.13+game.player.stats.luck*.008||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
@@ -1660,7 +1682,7 @@ function checkTile(){
  const c=game.chests.find(c=>!c.opened&&c.x===p.x&&c.y===p.y);if(c)openChest(c);
  if(p.x===game.stairs.x&&p.y===game.stairs.y){if(game.boss&&game.enemies.includes(game.boss)){log('La salida está sellada mientras el jefe siga vivo.','combat')}else{game.floor++;generateFloor()}}
 }
-function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');game.inventory.push(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<.16+game.floor*.025)unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
+function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<.16+game.floor*.025)unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
 
 function applyBuff(id,name,turns,effects={}){
  const p=game.player;p.activeBuffs=p.activeBuffs||[];
@@ -1767,6 +1789,28 @@ function companionTurn(){
  }
  game.companions=game.companions.filter(c=>c.hp>0&&c.turns>0);draw()
 }
+function addSkillObject(kind,id,x,y,turns=6,power=1,radius=1){
+ game.skillObjects=game.skillObjects||[];
+ const d=skillDefs[id]||{};
+ game.skillObjects.push({id:`obj-${Date.now()}-${Math.random()}`,kind,skillId:id,name:d.name||kind,icon:d.icon||'◆',x,y,turns,power,radius});
+ reveal(x,y,Math.max(1,radius));
+ log(`${d.name||'Efecto'} deja una referencia visual en el tablero.`,'good')
+}
+function tickSkillObjects(){
+ game.skillObjects=game.skillObjects||[];
+ for(const o of [...game.skillObjects]){
+  if(o.kind==='trap'){
+   const targets=game.enemies.filter(e=>e.hp>0&&gridDistance(e,o)<=Math.max(1,o.radius));
+   if(targets.length){targets.forEach(e=>attack(e,0,{skillId:o.skillId,multiplier:1.15}));floating('¡MINA!',o.x,o.y,'#ffcc55');o.turns=0;continue}
+  }else if(o.kind==='decoy'){
+   o.turns--;continue
+  }else if(['totem','zone'].includes(o.kind)){
+   for(const e of game.enemies.filter(e=>e.hp>0&&gridDistance(e,o)<=Math.max(1,o.radius)))attack(e,0,{skillId:o.skillId,multiplier:.35});
+  }
+  o.turns--
+ }
+ game.skillObjects=game.skillObjects.filter(o=>o.turns>0)
+}
 function teleportPlayerTo(x,y){
  if(blocked(x,y)||game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))return false;
  game.player.x=x;game.player.y=y;anim.heroX=anim.targetX=x;anim.heroY=anim.targetY=y;reveal(x,y);return true
@@ -1817,7 +1861,9 @@ function applyCreativeClassEffect(id,target,x,y){
  if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'bleed',4,2+lvl*.5,'Sangrado');return true}
  if(['combo','comboMark','markedExecute','bountyExecute','packExecute','pierce','lineShot','ricochet','chain','blinkChain'].includes(effect)){hit(target,effect.includes('Execute')||effect==='markedExecute'?1.7:1.15);return true}
  if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',2,0,'Confuso');return true}
- if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){if(!teleportPlayerTo(x,y))return false;applyBuff(id,d.name,3+Math.floor(lvl/3),{armor:.12,damage:.08});if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
+ if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyBuff(id,d.name,3+Math.floor(lvl/3),{armor:.12,damage:.08});if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
+ if(['trap','rootZone'].includes(effect)){addSkillObject('trap',id,x,y,6+lvl,1+lvl*.2,1);return true}
+ if(['consecrate','stormTotem','areaDot'].includes(effect)){addSkillObject(effect==='stormTotem'?'totem':'zone',id,x,y,4+Math.floor(lvl/2),1+lvl*.15,2);return true}
  if(['summon','summonTurret','summonHealer','summonTank','summonScanner','summonElite','multiSummon','clones','clone'].includes(effect)){
   const kind=effect.includes('Turret')?'turret':effect.includes('Healer')?'healer':effect.includes('Tank')?'tank':effect.includes('clone')?'clone':(id==='necromancer_t1_2'||d.classId==='necromancer')?'skeleton':d.classId==='shaman'?'wolf':'companion';
   const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,7+lvl,1+lvl*.18);return true
@@ -1840,7 +1886,7 @@ function applyCreativeClassEffect(id,target,x,y){
 }
 
 function playerFinished(){
- busy=true;game.turn++;tickPotionEffects();tickBuffs();tickEnemyStatuses();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;game.turn++;tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
 }
@@ -2088,7 +2134,7 @@ function showEquippedItem(slot){
 function updateUI(){
  if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
- inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
@@ -2130,6 +2176,7 @@ function draw(){
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);doorSprite(p.x,p.y,d)}
  for(const k of game.keys)if(game.seen[k.y][k.x]){let p=sc(k.x,k.y);keySprite(p.x,p.y)}
  for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);chestSprite(p.x,p.y)}
+ for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){let p=sc(e.x,e.y);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
@@ -2137,6 +2184,9 @@ function draw(){
  drawTargetingOverlay();
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
+function skillObjectSprite(x,y,o){
+ const color=o.kind==='trap'?'#ffcc55':o.kind==='totem'?'#9f7bff':o.kind==='decoy'?'#d989ff':'#64e0a0';
+ ctx.save();ctx.globalAlpha=.88;ctx.fillStyle=color+'33';ctx.fillRect(x+8,y+8,TILE-16,TILE-16);ctx.strokeStyle=color;ctx.lineWidth=3;ctx.strokeRect(x+12,y+12,TILE-24,TILE-24);ctx.fillStyle=color;ctx.font='26px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(o.icon||'◆',x+TILE/2,y+TILE/2);ctx.font='10px monospace';ctx.fillText(`${o.turns}T`,x+TILE/2,y+TILE-11);ctx.restore()}
 
 const classVisuals={
  yunque:{body:'#66717d',accent:'#d3a94f',trim:'#313944',weapon:'hammer',head:'helm',bulk:2},
@@ -2732,9 +2782,9 @@ function restoreGame(data){
  game.player.equippedSkills=(game.player.equippedSkills||['smash','fortify',null,null]).slice(0,4);
  while(game.player.equippedSkills.length<4)game.player.equippedSkills.push(null);
  game.player.className=game.player.className||classDefs[game.player.cls]?.name||'Clase desconocida';game.player.raceName=game.player.raceName||raceDefs[game.player.race]?.name||game.player.race;game.player.activePotions=game.player.activePotions||[];game.player.activeBuffs=game.player.activeBuffs||[];game.player.level=Math.min(LEVEL_CAP,game.player.level||1);game.player.nextXp=game.player.level<LEVEL_CAP?xpNeededForLevel(game.player.level):0;game.player.unspentStatPoints=game.player.unspentStatPoints||0;game.player.permanentPotionStats=game.player.permanentPotionStats||{};game.player.raceBonuses=game.player.raceBonuses||{...(raceDefs[game.player.race]?.bonuses||{})};
- game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);pendingSkillChoices=[];for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
+ game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];game.skillObjects=game.skillObjects||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);pendingSkillChoices=[];for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
  const migrate=i=>{if(!i)return i;i.itemLevel=i.itemLevel||game.player.level||1;i.affixes=i.affixes||[];i.passives=i.passives||[];i.effects=i.effects||[];i.score=i.score||i.power||0;normalizeWeaponIcon(i);return i};
- game.inventory=game.inventory.map(migrate);for(const s of slots)game.player.equipment[s]=migrate(game.player.equipment[s]);recomputeDerived();
+ game.inventory=game.inventory.map(migrate);compactPotionStacks();for(const s of slots)game.player.equipment[s]=migrate(game.player.equipment[s]);recomputeDerived();
  anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
  startOverlay.classList.add('hidden');storyOverlay.classList.add('hidden');busy=false;updateUI();draw();banner('PARTIDA CARGADA');log('Partida restaurada desde JSON.','sys');
 }
