@@ -1,3 +1,10 @@
+## v0.36.7 - 2026-07-24
+
+- La opción `Aleatorio` para floors durante la generación de dungeons tira exclusivamente de los floors consolidados en Supabase (`config_floor`).
+- La generación se bloquea con un error claro si no hay floors consolidados en Supabase, evitando usar tilesets legacy por defecto para floors aleatorios.
+- La selección manual de floors por piso también se resuelve contra `config_floor`, manteniendo los valores vacíos como aleatorios desde Supabase.
+- Actualizada la versión de la app y del paquete a `0.36.7`.
+
 ## v0.36.6 - 2026-07-24
 
 - Añadido borde negro de 2px siguiendo la silueta alfa a los iconos recortados desde el configurador de objetos, clases y enemigos.
