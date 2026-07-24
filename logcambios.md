@@ -1,3 +1,10 @@
+## v0.37.0 - 2026-07-24
+
+- Añadida landing de login contra la tabla Supabase `public.user`: el endpoint `/api/user` valida usuario/contraseña existentes y crea nuevos usuarios con `config: false` (admin false).
+- El flujo de acceso redirige a usuarios no admin directamente a jugar y muestra a usuarios admin la selección Configurar/Jugar.
+- Corregido el popup de selección de habilidad al subir de nivel para que use capa fija global con z-index superior y no quede tapado por otros overlays.
+- Ajustado el orden del level up para resolver primero los puntos de stat y abrir después la selección de skill pendiente.
+
 ## v0.36.11 - 2026-07-24
 
 - Añadido `reglas de combate.md` con una revisión completa del motor de daño: fuentes de daño, fórmulas de ataque básico, skills, defensa, críticos, modificadores, progresión y cálculo de daño enemigo.

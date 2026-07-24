@@ -1662,7 +1662,7 @@ function gainXp(v){
   p.maxMana+=g.mana+Math.floor((p.stats.intelligence+p.stats.wisdom)/3);p.mana=p.maxMana;
   p.baseDamage+=g.damage;p.baseArmor+=g.armor;
   if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
-  banner(`NIVEL ${p.level}`);queueClassSkillChoice(p.level);queueStatPoint();
+  banner(`NIVEL ${p.level}`);queueStatPoint();queueClassSkillChoice(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
 }
@@ -2744,7 +2744,12 @@ async function createDungeonWorld(){
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;landingPlayBtn.onclick=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};landingConfigBtn.onclick=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;
+const enterPlay=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};
+landingPlayBtn.onclick=enterPlay;landingConfigBtn.onclick=enterConfig;
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;if(data.admin){adminLandingActions.classList.remove('hidden');loginForm.classList.add('hidden')}else enterPlay()}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');adminLandingActions.classList.add('hidden');loginForm.classList.remove('hidden');landingOverlay.classList.remove('hidden')};
 
 
 
