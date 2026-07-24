@@ -1,3 +1,10 @@
+## v0.37.2 - 2026-07-24
+
+- Recuperado el modal de selección de skill para la creación de personaje y para hitos de subida de nivel.
+- Revisado el pool de skills para usar directamente `classSkillTrees` por clase y tier, filtrando solo skills existentes en `skillDefs` y no aprendidas.
+- Añadida una salvaguarda cada 2 turnos que compara nivel del personaje y número esperado de skills de clase; si falta alguna, abre el modal del tier correspondiente.
+- Actualizada la versión visible y de paquete a `v0.37.2 SKILL GUARD`.
+
 ## v0.37.1 - 2026-07-24
 
 - Eliminado el popup de selección de skill por hitos de nivel: ya no se renderiza ni se abre el modal de elección.
