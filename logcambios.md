@@ -1,3 +1,9 @@
+## v0.34.5 - 2026-07-24
+
+- Reducida un 50% la vida base general de los enemigos mediante un multiplicador global aplicado a enemigos configurados y enemigos escalados.
+- La reducción de vida se aplica antes/después del escalado de mundo según la ruta de generación, manteniendo los sliders funcionales pero con una base mucho más baja.
+- Actualizada la versión de la app y del paquete a `0.34.5`.
+
 ## v0.34.4 - 2026-07-24
 
 - La generación de enemigos por piso usa exclusivamente familias consolidadas desde la tabla `enemy_family`; se elimina el fallback automático al catálogo legacy embebido.
