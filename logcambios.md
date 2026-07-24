@@ -1,3 +1,11 @@
+## v0.40.1 - Sala multiplayer y flujo de personajes
+- Rediseñado el hub post-login con botones integrados visualmente en el estilo de la app y acciones separadas por contexto.
+- Añadida API `/api/multi-session` para registrar entrada y salida de usuarios en la sala multiplayer con `login_time`, `logout_time` y `user_id`.
+- Añadido modal propio de multiplayer con selección/creación de personaje, continuar sesión, crear mundo, logout y lateral de usuarios activos en sala.
+- El flujo de nuevo personaje abre siempre el modal de raza/clase/nombre y al terminar guarda el personaje para dejarlo disponible antes de entrar a dungeon o multiplayer.
+- Añadido botón de crear mundo al hub y a multiplayer para abrir el modal existente de dificultad, floors y familias.
+- Actualizada la versión de la app y del paquete a `0.40.1`.
+
 ## v0.40.0 - Persistencia de personajes y sesiones
 - Añadidos endpoints Supabase `/api/user-pj` y `/api/dungeon-status` para guardar personajes por usuario, puntuaciones, estado alive/dead, último uso y sesiones persistentes de dungeon.
 - Añadido hub de juego tras login con puntuaciones, selección de personaje alive, nuevo personaje, continuar por `last_use`, acceso multiplayer y configurar para admins.
