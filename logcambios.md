@@ -1,3 +1,26 @@
+## v0.36.2 - 2026-07-24
+
+- Añadido `reglas json pociones.md` con instrucciones completas para generar JSON de pociones, efectos excluyentes, payloads válidos y lista de skills disponibles para aprendizaje.
+- Añadido `reglas json objetos.md` con reglas para generar JSON de objetos de equipo, slots, tiers, affixes, skills, pasivas y ejemplos de importación.
+- Actualizada la versión de la app y del paquete a `0.36.2`.
+
+## v0.36.1 - 2026-07-24
+
+- Reestructurado el configurador de pociones para que los efectos sean excluyentes mediante un único selector.
+- Cada efecto muestra solo sus características editables: recurso y modo numérico/porcentaje para curación, recurso/modo/turnos para regeneración, stat/valor/turnos para incrementos temporales, stat/valor para incrementos permanentes y habilidad para aprendizaje.
+- Eliminado el campo visible de iLvl del editor de items; el nivel interno se deriva del Tier seleccionado para mantener compatibilidad con el loot existente.
+- Adaptado el motor para soportar curación y regeneración de HP, maná o stamina en valores planos o porcentuales.
+- Actualizada la versión de la app y del paquete a `0.36.1`.
+
+## v0.36.0 - 2026-07-24
+
+- Añadido el tipo de item `Poción` al configurador, con campos específicos para elegir efecto, potencia, duración, stat e habilidad aprendida.
+- Las pociones configuradas se guardan como consumibles y aparecen agrupadas como Pociones en la lista de objetos guardados.
+- La mochila permite usar pociones directamente y mantiene la equipación para objetos de equipo.
+- El motor aplica cura, regeneración, recuperación de stamina/maná, mejoras temporales o permanentes de stats, aprendizaje de habilidad, teletransporte a sala segura o escalera, invulnerabilidad e invisibilidad.
+- Añadido icono base de vial para pociones sin imagen personalizada.
+- Actualizada la versión de la app y del paquete a `0.36.0`.
+
 ## v0.35.0 - 2026-07-24
 
 - Añadida tabla de progresión de loot por mundo según el número de pisos configurado.
