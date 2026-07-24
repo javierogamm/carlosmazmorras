@@ -1,3 +1,19 @@
+## v0.36.10 - 2026-07-24
+
+- Añadidos los hitos de selección de skill al subir a nivel 7, 25 y 50, manteniendo los ya existentes en 3, 5, 10, 15, 20, 30 y 40, además de la selección inicial de nivel 1.
+- La progresión de skills de clase queda escalonada por tier: Tier I en niveles 1, 3, 5 y 7; Tier II en 10, 15, 20 y 25; Tier III en 30, 40 y 50.
+- Cada popup muestra hasta 3 opciones aleatorias del pool de skills de la clase para el tier correspondiente, excluyendo skills ya aprendidas.
+- Actualizada la versión de la app y del paquete a `0.36.10`.
+
+## v0.36.9 - 2026-07-24
+
+- Añadida referencia visual persistente en el tablero para habilidades que dejan entidades o efectos sobre el suelo: minas/trampas, zonas, tótems y señuelos.
+- Las minas y trampas colocadas por skills permanecen visibles por turnos y explotan al detectar enemigos cercanos; las zonas y tótems aplican daño periódico mientras estén activos.
+- Las invocaciones existentes se mantienen como acompañantes visibles y las partidas cargadas inicializan también la nueva colección de objetos de habilidad.
+- Las partidas nuevas empiezan siempre con 2 unidades stackeadas de `Pocion de curacion comun #109`.
+- Las pociones iguales se agrupan por efecto en la mochila, muestran su cantidad y consumir una unidad reduce el stack antes de eliminarlo.
+- Actualizada la versión de la app y del paquete a `0.36.9`.
+
 ## v0.36.8 - 2026-07-24
 
 - Añadidos `rangeMin` y `rangeMax` a las armas para definir el alcance mínimo y máximo del ataque normal.
