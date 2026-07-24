@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.33.8 ENEMY IMPORT</title>
+<title>MAZMORRA // BOTÍN v0.36.4 ZIP IMPORT</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.33.8 ENEMY IMPORT</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.36.4 ZIP IMPORT</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -96,7 +96,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.33.8 ENEMY IMPORT</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.36.4 ZIP IMPORT</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -139,7 +139,7 @@
    <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
    <button id="newConfigItemBtn">NUEVO OBJETO</button>
    <button id="exportConfigJsonBtn">EXPORTAR JSON</button>
-   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigJsonInput" accept=".json,application/json" multiple></label>
+   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigJsonInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
    <div id="configStatus" class="small"></div>
   </section>
   <section class="panel">
@@ -200,7 +200,7 @@
     <button class="start" id="saveConfigFloorBtn" type="button">GUARDAR FLOOR EN CONFIG_FLOOR</button>
     <button id="newConfigFloorBtn" type="button">NUEVO FLOOR</button>
     <button id="exportConfigTilesetBtn" type="button">EXPORTAR FLOOR</button>
-    <label class="importJsonBtn">IMPORTAR FLOOR JSON<input type="file" id="importConfigFloorInput" accept=".json,application/json" multiple></label>
+    <label class="importJsonBtn">IMPORTAR FLOOR JSON<input type="file" id="importConfigFloorInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
     <div id="configTilesetStatus" class="small"></div>
    </section>
    <section class="panel">
@@ -244,7 +244,7 @@
     <button id="newConfigEnemyBtn" type="button">NUEVO ENEMIGO</button>
     <button class="start" id="saveEnemyFamilyBtn" type="button">CONSOLIDAR FAMILIA</button>
     <button id="exportEnemyFamilyBtn" type="button">EXPORTAR FAMILIA</button>
-    <label class="importJsonBtn">IMPORTAR FAMILIA JSON<input type="file" id="importEnemyFamilyInput" accept=".json,application/json" multiple></label>
+    <label class="importJsonBtn">IMPORTAR FAMILIA JSON<input type="file" id="importEnemyFamilyInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
     <div id="configEnemyStatus" class="small"></div>
    </section>
    <section class="panel"><h2>Familias y enemigos</h2><div id="configEnemyFamiliesList" class="configItemsList"></div><hr><div id="configEnemiesList" class="configItemsList"></div></section>
