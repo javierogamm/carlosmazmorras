@@ -1,3 +1,11 @@
+## v0.36.8 - 2026-07-24
+
+- Añadidos `rangeMin` y `rangeMax` a las armas para definir el alcance mínimo y máximo del ataque normal.
+- El ataque normal considera armas a distancia a varitas, arcos, ballestas, pistolas, rifles y escopetas, con rangos por defecto 1-4, 2-5, 1-4, 1-3, 2-5 y 1-2 respectivamente.
+- El editor de objetos permite editar el alcance mínimo y máximo de armas y guarda esos atributos en el JSON.
+- Actualizadas las instrucciones JSON de objetos/equipo con el nuevo contrato de alcance para armas.
+- Actualizada la versión de la app y del paquete a `0.36.8`.
+
 ## v0.36.7 - 2026-07-24
 
 - La opción `Aleatorio` para floors durante la generación de dungeons tira exclusivamente de los floors consolidados en Supabase (`config_floor`).

@@ -94,6 +94,14 @@ El campo `stats` puede escribirse como texto para el importador/editor: `strengt
 
 Los objetos con `slot: "weapon"` pueden declarar datos de arma. Si no los declaras, el motor intenta inferir icono/categoría al generar loot.
 
+### Alcance de ataque normal
+
+- Añade `rangeMin` y `rangeMax` para definir el alcance mínimo y máximo del ataque normal con esa arma.
+- Las armas a distancia son: `Varitas`, `Arcos`, `Ballestas`, `Pistolas`, `Rifles` y `Escopetas`.
+- Si el arma está dentro de esos tipos, el ataque normal usa selección de objetivo, exige línea de visión y solo permite enemigos entre `rangeMin` y `rangeMax`.
+- Alcances por defecto por tipo: `Varitas` 1-4, `Arcos` 2-5, `Ballestas` 1-4, `Pistolas` 1-3, `Rifles` 2-5, `Escopetas` 1-2.
+- Las armas cuerpo a cuerpo conservan `rangeMin: 1` y `rangeMax: 1`.
+
 ```json
 {
   "type": "equipment",
@@ -105,8 +113,10 @@ Los objetos con `slot: "weapon"` pueden declarar datos de arma. Si no los declar
   "score": 24,
   "icon": "",
   "damageDice": "1d8",
-  "weaponType": "Espadas básicas y elementales",
-  "weaponCategory": "Espadas básicas y elementales",
+  "rangeMin": 1,
+  "rangeMax": 1,
+  "weaponType": "Espadas",
+  "weaponCategory": "Armas blancas steampunk básicas",
   "defenseStat": "strength",
   "stats": "strength:+2, damage:+3",
   "affixes": [
