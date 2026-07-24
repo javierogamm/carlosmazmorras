@@ -1,3 +1,24 @@
+## v0.40.2 - Corrección de carga de piso al continuar sesión
+- Cada piso guardado en `dungeon_status` ahora incluye su mapa, salas, escalera, tileset visual y familia de enemigos, no solo el estado mutable (antes dependía de recalcular el piso por índice contra el mundo precomputado, lo que podía fallar y cargar un piso incorrecto/aleatorio).
+- "Continuar sesión" restaura el piso directamente desde ese snapshot autocontenido; si una sesión antigua no tiene snapshot completo, cae de forma segura al método anterior de regeneración por índice.
+- Actualizada la versión de la app y del paquete a `0.40.2`.
+
+## v0.40.1 - Mejoras en continuar sesión
+- La lista de sesiones de "Continuar sesión" ahora muestra nombre del mundo, piso y turno en lugar de solo el id del mundo.
+- El listado ligero de `dungeon_status` incluye el JSON de estado para poder mostrar piso/turno sin peticiones extra por sesión.
+- Al reanudar una sesión también se restaura la niebla de guerra (zonas ya exploradas del piso), además del personaje, inventario, turno, posición y estado de enemigos/cofres/puertas.
+- Actualizada la versión de la app y del paquete a `0.40.1`.
+
+## v0.40.0 - Persistencia de personajes y mundos
+- Añadidas tablas Supabase `user_pj` (personajes por usuario, vivos/muertos, con `pj_json` y `pj_score`) y `dungeon_status` (sesiones de mundo persistentes con turno, roster de jugadores y estado por piso) junto a sus endpoints `api/user-pj.js` y `api/dungeon-status.js`.
+- Sustituido el menú admin de 2 botones por un menú de 4 botones tras login para todos los usuarios: PUNTUACIONES, SINGLE PLAYER, MULTIPLAYER (inactivo) y CONFIGURAR (restringido a admins).
+- Añadida pantalla PUNTUACIONES con el ranking de todos los personajes (vivos y muertos) ordenado por `pj_score`, mostrando usuario, clase, raza, nivel y estado.
+- Añadido submenú SINGLE PLAYER: `Seleccionar personaje` (personajes vivos propios → elegir/crear mundo → entra directo a jugar), `Nuevo personaje` (crea personaje con la skill de nivel 1 y vuelve al submenú) y `Continuar sesión` (retoma una sesión guardada en `dungeon_status` restaurando piso, posición, turno y estado de enemigos/cofres/puertas).
+- El personaje (`pj_json`) y la sesión de mundo (`dungeon_status`) se guardan en Supabase al principio de cada turno del jugador.
+- Al morir un personaje se marca como `dead` en `user_pj` con su estado final y se elimina la sesión asociada en `dungeon_status`.
+- Puntuación de personaje calculada como nivel×100 + Σ ilvl equipado×5 + piso máximo alcanzado×50 + oro/10.
+- Actualizada la versión de la app y del paquete a `0.40.0`.
+
 ## v0.39.2 - Corrección del sistema de loot
 - Corregida la documentación de la tabla de pesos de rareza para que el peso de Raro coincida con la fórmula implementada `max(6, round(6 + ratio * 16))`.
 - Añadida segunda pasiva de Artefacto con 75% de probabilidad, manteniendo su pasiva garantizada.

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.37.2 SKILL GUARD</title>
+<title>MAZMORRA // BOTÍN v0.40.2 PERSISTENCIA</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.37.2 SKILL GUARD</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.40.2 PERSISTENCIA</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -94,15 +94,38 @@
    <button class="start" id="loginBtn" type="submit">SIGN IN</button>
   </form>
   <div id="loginStatus" class="small"></div>
-  <div class="landingActions hidden" id="adminLandingActions">
-   <button class="start" id="landingConfigBtn">CONFIGURAR</button>
-   <button class="start" id="landingPlayBtn">JUGAR</button>
+  <div class="landingActions hidden" id="mainMenuActions">
+   <button class="start" id="menuScoresBtn">PUNTUACIONES</button>
+   <button class="start" id="menuSingleBtn">SINGLE PLAYER</button>
+   <button class="start" id="menuMultiBtn" disabled>MULTIPLAYER</button>
+   <button class="start" id="menuConfigBtn">CONFIGURAR</button>
   </div>
  </div>
 </div>
 
+<div class="configScreen hidden" id="scoresScreen">
+ <header><h1>PUNTUACIONES</h1><div class="badge">RANKING</div></header>
+ <div id="scoresStatus" class="small">Cargando puntuaciones...</div>
+ <div class="scoresTable" id="scoresTable"></div>
+ <button class="backToLanding" id="backFromScoresBtn">VOLVER</button>
+</div>
+
+<div class="overlay hidden" id="singlePlayerOverlay">
+ <div class="modal">
+  <h2>SINGLE PLAYER</h2>
+  <div class="landingActions" id="singlePlayerActions">
+   <button class="start" id="spSelectCharBtn">SELECCIONAR PERSONAJE</button>
+   <button class="start" id="spNewCharBtn">NUEVO PERSONAJE</button>
+   <button class="start" id="spContinueBtn">CONTINUAR SESIÓN</button>
+  </div>
+  <div id="spListStatus" class="small hidden"></div>
+  <div class="worldList hidden" id="spList"></div>
+  <button class="backToLanding" id="backFromSingleBtn">VOLVER</button>
+ </div>
+</div>
+
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.37.2 SKILL GUARD</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.40.2 PERSISTENCIA</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -267,7 +290,8 @@
 <div class="overlay hidden" id="dungeonOverlay">
 <div class="modal">
 <h2>ELIGE O CREA UNA DUNGEON</h2>
-<p class="small">Antes de crear personaje debes seleccionar un mundo guardado o crear uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>
+<p class="small" id="dungeonCharacterLabel"></p>
+<p class="small">Selecciona un mundo guardado o crea uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>
 <label>Nombre del mundo <input id="worldNameInput" value="Mazmorra Consolidada" maxlength="40"></label>
 <details class="worldSettingsAccordion">
 <summary>Editar características del mundo</summary>
@@ -306,7 +330,7 @@
 <p class="small">Cada clase define sus atributos iniciales y su estilo de juego.</p>
 <div class="classGrid" id="classChoices"></div>
 <div id="classDetail" class="narrative"></div>
-<button class="start" id="startBtn">ENTRAR EN LA MAZMORRA</button>
+<button class="start" id="startBtn">CREAR PERSONAJE</button>
 </div>
 </div>
 

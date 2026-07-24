@@ -10,7 +10,8 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.39.2';
+let currentCharacter=null;
+const APP_VERSION='0.40.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1181,15 +1182,12 @@ function processClassSkillChoices(){
   learnSkill(b.dataset.pickSkill);
   game.player.skillChoicesAwarded[request.level]='chosen';
   modal.classList.remove('open');updateUI();
-  if(request.initial)openInitialNarrative();
+  if(request.initial)finishCharacterCreation();
   queueMissingClassSkillChoices();
   processClassSkillChoices();
  }))
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
-function openInitialNarrative(){
- const n=pick(levelOneNarratives);storyTitle.textContent='NIVEL 1 — '+n.title;storyBody.innerHTML=`<div class="narrative"><p>${n.text}</p><p><b>Objetivo:</b> encuentra la salida, saquea la fortaleza y derrota al Rey Tuercecolmillos.</p></div>`;storyOverlay.classList.remove('hidden')
-}
 
 function start(){
  const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
@@ -1961,12 +1959,12 @@ function applyCreativeClassEffect(id,target,x,y){
 
 function playerFinished(){
  if(document.getElementById('statPointModal')?.classList.contains('open')||document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=true;busy=false;updateUI();draw();return}
- busy=true;game.turn++;classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
 }
 
-function permanentDeath(){const p=game.player;game.over=true;try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
+function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
 function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');return}
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
  for(const e of [...game.enemies]){
@@ -2807,23 +2805,226 @@ async function fetchDungeonWorlds(){
   if(!data.length){status.textContent='No hay dungeons guardadas. Crea una nueva.';return}
   status.textContent=`${data.length} dungeon(s) disponibles.`;
   list.innerHTML=data.map(w=>`<button type="button" class="worldCard" data-world-id="${w.id}"><b>${w.world_name||'Dungeon sin nombre'}</b><span>#${w.id} · ${new Date(w.created_at).toLocaleString()}</span><small>${w.world_json?.floors?.length||0} pisos precomputados</small></button>`).join('');
-  list.querySelectorAll('[data-world-id]').forEach(btn=>btn.onclick=()=>{selectedDungeonWorld=data.find(w=>String(w.id)===btn.dataset.worldId);dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${selectedDungeonWorld.id} SELECCIONADA`)});
+  list.querySelectorAll('[data-world-id]').forEach(btn=>btn.onclick=()=>{selectedDungeonWorld=data.find(w=>String(w.id)===btn.dataset.worldId);enterWorldWithCharacter()});
  }catch(e){status.textContent=`Error: ${e.message}. Revisa SUPABASE_URL y SUPABASE_ANON_KEY en Vercel.`}
 }
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
  try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
-  selectedDungeonWorld=data;dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${data.id} CREADA`);
+  selectedDungeonWorld=data;enterWorldWithCharacter();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
 
+function sumEquippedItemLevel(equipment){
+ if(!equipment)return 0;
+ return Object.values(equipment).reduce((sum,item)=>sum+(item?.itemLevel||item?.score||0),0);
+}
+function computeScore(bundle){
+ const player=bundle?.player||{};
+ const level=player.level||1;
+ const ilvl=sumEquippedItemLevel(player.equipment);
+ const maxFloor=bundle?.maxFloorReached||1;
+ const gold=player.gold||0;
+ return Math.round(level*100+ilvl*5+maxFloor*50+gold/10);
+}
+function characterBundleFromGame(){
+ return {player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},bossesKilled:game.bossesKilled||0,chestsOpened:game.chestsOpened||0,maxFloorReached:Math.max(game.maxFloorReached||1,game.floor||1)};
+}
+
+async function finishCharacterCreation(){
+ const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},bossesKilled:0,chestsOpened:0,maxFloorReached:1};
+ const score=computeScore(bundle);
+ try{
+  const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudo guardar el personaje');
+  banner(`PERSONAJE ${bundle.player.name} CREADO`);
+ }catch(e){alert('Error al guardar el personaje: '+e.message)}
+ game=null;
+ startOverlay.classList.add('hidden');
+ app.classList.add('hidden');
+ openSinglePlayerScreen();
+}
+
+function openSinglePlayerScreen(){
+ landingOverlay.classList.add('hidden');
+ singlePlayerOverlay.classList.remove('hidden');
+ document.getElementById('spListStatus')?.classList.add('hidden');
+ document.getElementById('spList')?.classList.add('hidden');
+}
+function closeSinglePlayerScreen(){
+ singlePlayerOverlay.classList.add('hidden');
+ landingOverlay.classList.remove('hidden');
+}
+
+async function fetchMyCharacters(){
+ const r=await fetch(`/api/user-pj?nombre=${encodeURIComponent(window.currentUser.nombre)}`);
+ const data=await r.json();
+ if(!r.ok)throw new Error(data.error||'No se pudieron cargar tus personajes');
+ return Array.isArray(data)?data:[];
+}
+
+function openCharacterCreation(){
+ landingOverlay.classList.add('hidden');
+ singlePlayerOverlay.classList.add('hidden');
+ app.classList.remove('hidden');
+ startOverlay.classList.remove('hidden');
+ fetchConfigClasses();
+}
+
+async function openCharacterSelection(){
+ const status=document.getElementById('spListStatus'),list=document.getElementById('spList');
+ status.classList.remove('hidden');list.classList.remove('hidden');
+ status.textContent='Cargando tus personajes...';list.innerHTML='';
+ try{
+  const chars=(await fetchMyCharacters()).filter(c=>c.pj_status==='alive');
+  if(!chars.length){status.textContent='No tienes personajes vivos. Crea uno nuevo.';return}
+  status.textContent=`${chars.length} personaje(s) disponibles.`;
+  list.innerHTML=chars.map(c=>`<button type="button" class="worldCard" data-pj-id="${c.id}"><b>${c.pj_name||'Sin nombre'}</b><span>${c.pj_json?.player?.className||''} · ${c.pj_json?.player?.raceName||''} · Nivel ${c.pj_json?.player?.level||1}</span><small>Score ${Math.round(c.pj_score||0)} · Último uso ${c.last_use?new Date(c.last_use).toLocaleString():'-'}</small></button>`).join('');
+  list.querySelectorAll('[data-pj-id]').forEach(btn=>btn.onclick=()=>{
+   currentCharacter=chars.find(c=>String(c.id)===btn.dataset.pjId);
+   singlePlayerOverlay.classList.add('hidden');
+   app.classList.remove('hidden');
+   dungeonOverlay.classList.remove('hidden');
+   const p=currentCharacter.pj_json?.player;
+   document.getElementById('dungeonCharacterLabel').textContent=`Personaje: ${currentCharacter.pj_name} · ${p?.className||''} nivel ${p?.level||1}`;
+   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings();
+  });
+ }catch(e){status.textContent=`Error: ${e.message}`}
+}
+
+async function openSessionContinue(){
+ const status=document.getElementById('spListStatus'),list=document.getElementById('spList');
+ status.classList.remove('hidden');list.classList.remove('hidden');
+ status.textContent='Cargando sesiones...';list.innerHTML='';
+ try{
+  const [chars,sessionsRes,worldsRes]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status'),fetch('/api/dungeon-worlds')]);
+  const myIds=new Set(chars.map(c=>String(c.id)));
+  const sessions=await sessionsRes.json();
+  if(!sessionsRes.ok)throw new Error(sessions.error||'No se pudieron cargar las sesiones');
+  const worlds=await worldsRes.json();
+  if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
+  const mine=sessions.filter(s=>{try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
+  if(!mine.length){status.textContent='No tienes sesiones activas.';return}
+  status.textContent=`${mine.length} sesión(es) activas.`;
+  list.innerHTML=mine.map(s=>{
+   let ids=[];try{ids=JSON.parse(s.players_ID||'[]')}catch(e){}
+   const owner=chars.find(c=>ids.map(String).includes(String(c.id)));
+   const world=worlds.find(w=>String(w.id)===String(s.dungeon_world_id));
+   const floor=s.dungeon_status?.currentFloor||1,turn=s.dungeon_status?.turn||0;
+   return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${owner?.pj_name||'Sesión'}</b><span>${world?.world_name||('Mundo #'+s.dungeon_world_id)} · Piso ${floor}</span><small>Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button>`;
+  }).join('');
+  list.querySelectorAll('[data-session-id]').forEach(btn=>btn.onclick=()=>resumeSession(btn.dataset.sessionId));
+ }catch(e){status.textContent=`Error: ${e.message}`}
+}
+
+async function resumeSession(sessionId){
+ try{
+  const [statusRes,worldsRes]=await Promise.all([fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`),fetch('/api/dungeon-worlds')]);
+  const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||'No se pudo cargar la sesión');
+  const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
+  const world=worlds.find(w=>String(w.id)===String(session.dungeon_world_id));
+  if(!world)throw new Error('El mundo de esta sesión ya no existe.');
+  let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
+  const pjId=ids[0];
+  const pjRes=await fetch(`/api/user-pj?id=${encodeURIComponent(pjId)}`);
+  const pj=await pjRes.json();if(!pjRes.ok)throw new Error(pj.error||'No se pudo cargar el personaje');
+  if(!pj||pj.pj_status!=='alive')throw new Error('El personaje de esta sesión ya no está vivo.');
+  currentCharacter=pj;selectedDungeonWorld=world;
+  const state=session.dungeon_status||{};
+  const bundle=pj.pj_json||{};
+  const player=bundle.player;
+  const floorNum=state.currentFloor||1;
+  const overlay=state.floors?.[String(floorNum)]||null;
+  game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
+  singlePlayerOverlay.classList.add('hidden');
+  app.classList.remove('hidden');
+  if(overlay&&overlay.map){
+   Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:(overlay.seen&&overlay.seen.length)?overlay.seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))});
+   game.boss=game.enemies.find(e=>e.boss)||null;
+  }else{
+   generateFloor();
+   if(overlay){
+    if(overlay.enemies)game.enemies=overlay.enemies;
+    if(overlay.chests)game.chests=overlay.chests;
+    if(overlay.doors)game.doors=overlay.doors;
+    if(overlay.keys)game.keys=overlay.keys;
+    if(overlay.companions)game.companions=overlay.companions;
+    if(overlay.skillObjects)game.skillObjects=overlay.skillObjects;
+    if(overlay.seen&&overlay.seen.length)game.seen=overlay.seen;
+    game.boss=game.enemies.find(e=>e.boss)||null;
+   }
+  }
+  const pos=state.players?.[String(pj.id)];
+  if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
+  anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
+  recomputeDerived();updateUI();draw();banner(`SESIÓN RESTAURADA · PISO ${game.floor}`);
+ }catch(e){alert('Error al continuar la sesión: '+e.message)}
+}
+
+async function enterWorldWithCharacter(){
+ if(!currentCharacter){banner('Selecciona un personaje primero.');return}
+ dungeonOverlay.classList.add('hidden');
+ const bundle=currentCharacter.pj_json||{};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
+ generateFloor();
+ try{
+  const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:{turn:0,currentFloor:1,floors:{},players:{[currentCharacter.id]:{x:game.player.x,y:game.player.y,floor:1,facing:game.player.facing||1}}}})});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudo crear la sesión');
+  game.dungeonStatusId=data.id;
+ }catch(e){log(`No se pudo crear la sesión persistente: ${e.message}`,'sys')}
+ banner(`ENTRAS EN ${selectedDungeonWorld.world_name} CON ${game.player.name}`);
+}
+
+function persistTurnState(){
+ if(!game?.pjId)return;
+ const bundle=characterBundleFromGame();
+ game.maxFloorReached=bundle.maxFloorReached;
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ if(!game.dungeonStatusId)return;
+ const overlay={map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
+ const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{...(game.sessionFloors||{}),[game.floor]:overlay},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
+ game.sessionFloors=dungeonState.floors;
+ fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})}).catch(e=>console.error('No se pudo guardar la sesión',e));
+}
+
+async function finalizeCharacterDeath(){
+ if(!game?.pjId)return;
+ const bundle=characterBundleFromGame();
+ try{
+  await fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_status:'dead',last_use:new Date().toISOString()})});
+ }catch(e){console.error('No se pudo marcar el personaje como muerto',e)}
+ if(game.dungeonStatusId){
+  try{await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'DELETE'})}catch(e){console.error('No se pudo borrar la sesión',e)}
+ }
+}
+
+async function fetchScores(){
+ const status=document.getElementById('scoresStatus'),table=document.getElementById('scoresTable');
+ status.textContent='Cargando puntuaciones...';table.innerHTML='';
+ try{
+  const r=await fetch('/api/user-pj');const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar las puntuaciones');
+  if(!data.length){status.textContent='Todavía no hay personajes.';return}
+  status.textContent=`${data.length} personaje(s).`;
+  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const p=c.pj_json?.player||{};return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${p.className||'-'}</td><td>${p.raceName||'-'}</td><td>${p.level||1}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
+ }catch(e){status.textContent=`Error: ${e.message}`}
+}
+
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;
-const enterPlay=()=>{landingOverlay.classList.add('hidden');app.classList.remove('hidden');dungeonOverlay.classList.remove('hidden');fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};
 const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};
-landingPlayBtn.onclick=enterPlay;landingConfigBtn.onclick=enterConfig;
-loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;if(data.admin){adminLandingActions.classList.remove('hidden');loginForm.classList.add('hidden')}else enterPlay()}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
-backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');adminLandingActions.classList.add('hidden');loginForm.classList.remove('hidden');landingOverlay.classList.remove('hidden')};
+menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
+document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
+menuSingleBtn.onclick=openSinglePlayerScreen;
+document.getElementById('backFromSingleBtn').onclick=closeSinglePlayerScreen;
+document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
+document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
+document.getElementById('spContinueBtn').onclick=openSessionContinue;
+menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
 
 
