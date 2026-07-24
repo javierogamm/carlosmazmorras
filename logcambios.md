@@ -1,3 +1,10 @@
+## v0.36.6 - 2026-07-24
+
+- Añadido borde negro de 2px siguiendo la silueta alfa a los iconos recortados desde el configurador de objetos, clases y enemigos.
+- Las previsualizaciones de iconos configurados muestran el mismo borde de silueta para reflejar el resultado final.
+- Excluidos explícitamente los tiles de floors del borde de silueta para mantenerlos como texturas completas.
+- Actualizada la versión de la app y del paquete a `0.36.6`.
+
 ## v0.36.5 - 2026-07-24
 
 - Añadida la opción `Aleatorio/Aleatoria` en la configuración manual de floors y familias enemigas por planta.
