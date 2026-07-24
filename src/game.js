@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.34.3';
+const APP_VERSION='0.34.4';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -333,6 +333,8 @@ const classSkillMilestones={1:1,3:1,5:1,10:2,15:2,20:2,30:3,40:3};
 
 
 
+// OBSOLETO v0.34.4: modelo legacy de familias embebidas.
+// El juego ya no debe usar estas familias para generar pisos; la fuente activa es la tabla Supabase `enemy_family`.
 const enemyFamilies={
  orquidos:{
   name:'Orquidos',
@@ -1039,6 +1041,7 @@ storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)gen
 
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
+ if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
  const floors=[];
  const oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
@@ -2431,14 +2434,14 @@ function normalizeEnemyCoreStats(v,type='warrior'){const defaults={strength:2,vi
 function normalizeEnemyDetail(row){const stats=parseEnemyStatsBase(row.stats_base),type=row.type||'warrior',coreStats=normalizeEnemyCoreStats(stats.coreStats||stats.stats,type),boss=String(row.boss||'no').toLowerCase().startsWith('s');return{id:row.id,family:row.family||'Sin familia',name:row.class||type||'Enemigo',class:row.class||'',type,icon:row.icon||'',boss,tier:String(row.tier||'i').toLowerCase(),weaponType:row.weapon_type||'',stats:coreStats,statsBase:{hp:stats.hp||12,atk:stats.atk||stats.damage||4,armor:stats.armor||0,xp:stats.xp||8},skillIds:String(row.skill||'').split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean)}}
 function familyJsonFromDetails(name){return{schemaVersion:1,name,enemies:configEnemyDetails.map(normalizeEnemyDetail).filter(e=>e.family===name),weights:{tiers:enemyTierWeights,bossChance:.06},generatedAt:new Date().toISOString()}}
 function enemyDetailRowFromImportedEnemy(enemy,familyName){const e=normalizeEnemyDetail({...enemy,family:enemy.family||familyName,stats_base:enemy.stats_base||enemy.statsBase||enemy.stats||null,class:enemy.class||enemy.name||'',weapon_type:enemy.weapon_type||enemy.weaponType||'',skill:enemy.skill||enemy.skillIds||''});return{family:familyName,icon:e.icon||'',class:e.class||e.name||e.type,type:e.type,boss:e.boss?'si':'no',stats_base:JSON.stringify({...e.statsBase,coreStats:e.stats}),weapon_type:e.weaponType,tier:e.tier,skill:e.skillIds.join(',')}}
-function normalizedEnemyFamilies(){const saved=configEnemyFamilies.map(r=>({...(r.family_json||{}),dbId:r.id,name:r.family_json?.name||r.family_name})).filter(f=>f.name&&f.enemies?.length);if(saved.length)return saved;return Object.values(enemyFamilies).map(f=>({name:f.name,floorTheme:f.floorTheme,enemies:f.enemies.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:false,tier:'i',statsBase:{hp:d.hp||12,atk:d.atk||d.damage||4,armor:0,xp:d.xp||8},skillIds:[],icon:''}}).concat(f.bosses.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:true,tier:'iii',statsBase:{hp:d.hp||60,atk:d.atk||d.damage||10,armor:2,xp:d.xp||35},skillIds:[],icon:''}}))}))}
+function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.family_json||{}),dbId:r.id,name:r.family_json?.name||r.family_name,source:'enemy_family'})).filter(f=>f.name&&Array.isArray(f.enemies)&&f.enemies.length)}
 function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+rng(5)-2))}
 function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
 function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
 function hydratePrecomputedEnemy(e){if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}return e}
-function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();return pick(families)}
+function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();if(!families.length)throw new Error('No hay familias consolidadas en enemy_family. Crea o importa familias antes de generar la dungeon.');return pick(families)}
 function applyInnerAlphaOutline(q,size,px=2){
  const img=q.getImageData(0,0,size,size),src=new Uint8ClampedArray(img.data),dst=img.data;
  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
@@ -2503,7 +2506,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando familias de enemigos y calculando pisos...';
- try{if(!configEnemyFamilies.length&&!configEnemyDetails.length)await fetchEnemyConfig();const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ try{if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${data.id} CREADA`);
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }

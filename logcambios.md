@@ -1,3 +1,11 @@
+## v0.34.4 - 2026-07-24
+
+- La generación de enemigos por piso usa exclusivamente familias consolidadas desde la tabla `enemy_family`; se elimina el fallback automático al catálogo legacy embebido.
+- Marcado el modelo legacy `enemyFamilies` como obsoleto en el código para evitar que se use como fuente activa de generación.
+- La creación de dungeons ahora se bloquea con un error claro si no existe al menos una familia válida en `enemy_family`.
+- El selector de familias por piso se alimenta únicamente de filas consolidadas de `enemy_family`, garantizando que se carguen esos enemigos en el floor.
+- Actualizada la versión de la app y del paquete a `0.34.4`.
+
 ## v0.34.3 - 2026-07-24
 
 - Rehecho el cálculo de daño recibido para normalizar cualquier fuente enemiga contra un presupuesto plano por piso/nivel antes de defensas, evitando golpes desproporcionados de enemigos configurados con ataque alto.
