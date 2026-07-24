@@ -1,3 +1,9 @@
+## v0.36.11 - 2026-07-24
+
+- Añadido `reglas de combate.md` con una revisión completa del motor de daño: fuentes de daño, fórmulas de ataque básico, skills, defensa, críticos, modificadores, progresión y cálculo de daño enemigo.
+- Documentadas las notas de balance detectadas durante la revisión, incluyendo normalización de daño recibido y derivados no consumidos directamente por la fórmula principal.
+- Actualizada la versión de la app y del paquete a `0.36.11`.
+
 ## v0.36.10 - 2026-07-24
 
 - Añadidos los hitos de selección de skill al subir a nivel 7, 25 y 50, manteniendo los ya existentes en 3, 5, 10, 15, 20, 30 y 40, además de la selección inicial de nivel 1.
