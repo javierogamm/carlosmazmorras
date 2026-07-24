@@ -1,3 +1,9 @@
+## v0.36.5 - 2026-07-24
+
+- Añadida la opción `Aleatorio/Aleatoria` en la configuración manual de floors y familias enemigas por planta.
+- La selección aleatoria queda como valor por defecto en cada piso manual para mantener el comportamiento existente de generación aleatoria cuando no se fija una opción concreta.
+- Actualizada la versión de la app y del paquete a `0.36.5`.
+
 ## v0.36.4 - 2026-07-24
 
 - Eliminado el límite práctico de importación masiva de objetos al guardar cada JSON de forma individual, evitando payloads grandes en una única petición.
