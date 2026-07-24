@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.34.5';
+const APP_VERSION='0.35.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -66,6 +66,37 @@ const rarities=[
  {name:'legendary',label:'Legendario',weight:2,color:'#ffb746',affixes:[5,6],passives:1,effects:1,mult:2.10},
  {name:'artifact',label:'Artefacto',weight:.6,color:'#ff5bd6',affixes:[6,7],passives:1,effects:1,mult:2.65}
 ];
+const LOOT_RARITY_ORDER=rarities.map(r=>r.name);
+const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
+const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
+function lootProgressRatio(floor,totalFloors){return totalFloors<=1?1:(Math.max(1,Number(floor)||1)-1)/(Math.max(1,Number(totalFloors)||1)-1)}
+function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
+ const ratio=lootProgressRatio(floor,totalFloors),level=Number(playerLevel)||1;
+ let idx=2;
+ if(ratio>=.22||level>=LOOT_RARITY_MIN_PLAYER_LEVEL.epic)idx=3;
+ if(ratio>=.55&&level>=LOOT_RARITY_MIN_PLAYER_LEVEL.legendary)idx=4;
+ if(ratio>=.82&&level>=LOOT_RARITY_MIN_PLAYER_LEVEL.artifact)idx=5;
+ return Math.min(idx,LOOT_RARITY_ORDER.length-1);
+}
+function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
+ const f=Math.max(1,Number(floor)||1),lvl=Math.max(1,Number(playerLevel)||1),ratio=lootProgressRatio(f,totalFloors),base=Math.max(1,Math.round(lvl+f*.85));
+ return {min:Math.max(1,Math.floor(base+ratio*2)-1),max:Math.max(1,Math.ceil(base+2+ratio*5))};
+}
+function lootProgressionRow(floor,totalFloors,playerLevel=1){
+ const maxIndex=maxLootRarityIndexForProgress(floor,totalFloors,playerLevel),range=lootIlvlRangeForProgress(floor,totalFloors,playerLevel),ratio=lootProgressRatio(floor,totalFloors);
+ const weights={...LOOT_RARITY_BASE_WEIGHTS};
+ weights.common=Math.max(20,Math.round(72-ratio*54));
+ weights.uncommon=Math.max(16,Math.round(22+ratio*14));
+ weights.rare=Math.max(6,Math.round(6+ratio*16));
+ weights.epic=maxIndex>=3?Math.max(1,Math.round((ratio-.18)*18)):0;
+ weights.legendary=maxIndex>=4?Math.max(1,Math.round((ratio-.50)*9)):0;
+ weights.artifact=maxIndex>=5?Math.max(1,Math.round((ratio-.78)*5)):0;
+ for(let i=maxIndex+1;i<LOOT_RARITY_ORDER.length;i++)weights[LOOT_RARITY_ORDER[i]]=0;
+ return {floor,totalFloors,minCharacterLevel:playerLevel,itemLevel:range,allowedRarities:LOOT_RARITY_ORDER.slice(0,maxIndex+1),rarityWeights:weights};
+}
+function createLootProgressionTable(totalFloors){return Array.from({length:Math.max(1,Number(totalFloors)||1)},(_,i)=>lootProgressionRow(i+1,totalFloors,Math.max(1,Math.ceil((i+1)/2))))}
+function currentLootProgressionRow(floor=game?.floor||1,level=game?.player?.level||1){const table=selectedDungeonWorld?.world_json?.lootTable||game?.worldLootTable;if(table?.[floor-1])return lootProgressionRow(floor,table.length,level);return lootProgressionRow(floor,worldParams().floors||DEFAULT_WORLD_PARAMS.floors,level)}
+function lootRarityAllowed(name,row){return (row?.allowedRarities||LOOT_RARITY_ORDER).includes(name)}
 
 const skillDefs={
  smash:{rarity:'common',enemyUsable:true,name:'Golpe de Yunque',icon:'⚒',desc:'Daño en las 8 casillas adyacentes.',cd:4,unlock:'Inicial',resource:'stamina',cost:18,type:'physical'},
@@ -744,12 +775,12 @@ const legendaryEffects=[
  {id:'collector',name:'Coleccionista Patológico',desc:'Cada objeto equipado de rareza distinta otorga +3% a todas las estadísticas.'}
 ];
 function weightedRarity(level){
- const luck=game?.player?.stats?.luck||0;
- const bonus=(level-1)*.22+luck*.18+(game?.player?.derived?.rarityFind||0)*.25;
- const adjusted=rarities.map((r,i)=>({...r,w:Math.max(.2,r.weight*(1+(i-1)*bonus/45))}));
+ const luck=game?.player?.stats?.luck||0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
+ const bonus=(level-1)*.18+luck*.14+(game?.player?.derived?.rarityFind||0)*.18;
+ const adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
  let total=adjusted.reduce((s,r)=>s+r.w,0),roll=Math.random()*total;
  for(const r of adjusted){roll-=r.w;if(roll<=0)return r}
- return adjusted[0];
+ return adjusted[0]||rarities[0];
 }
 function affixValue(def,itemLevel,rarity){
  const scale=1+(itemLevel-1)*.16;
@@ -924,14 +955,14 @@ function makeStarterWeapon(classId){
  };
 }
 
-function makeConfiguredLoot(level){if(!configItems.length)return null;const row=pick(configItems),raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Number(item.itemLevel||row.ilvl||level||1);item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||weaponCategoryStats[item.weaponCategory]||'strength'}item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
+function makeConfiguredLoot(level){if(!configItems.length)return null;const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),eligible=configItems.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));if(!eligible.length)return null;const row=pick(eligible),raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||weaponCategoryStats[item.weaponCategory]||'strength'}item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
-function makeLoot(level,source='normal'){const configured=makeConfiguredLoot(level);if(configured&&Math.random()<.55)return configured;if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),configured=makeConfiguredLoot(level);if(configured&&Math.random()<.55)return configured;if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  const slot=pick(slots),rar=weightedRarity(level);
- const itemLevel=Math.max(1,level+rng(3)-1);
+ const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
  const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
@@ -1043,7 +1074,7 @@ storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)gen
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
  if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
- const floors=[];
+ const floors=[],lootTable=createLootProgressionTable(params.floors);
  const oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
  for(let floor=1;floor<=params.floors;floor++){
@@ -1051,7 +1082,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
   const targetRooms=30+Math.min(18,Math.floor(floor/2))+rng(7);
   for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
   for(let i=1;i<rooms.length;i++){let a=rooms[i-1],b=rooms[i],x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}}
-  game={floor,player:tempPlayer,worldParams:params};
+  game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
   const spawn=rooms[0],distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy),distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
   const stairRoom=distantRooms[0]||rooms.at(-1),bossRoom=distantRooms[1]||distantRooms[0]||rooms.at(-1),stairs={x:stairRoom.cx,y:stairRoom.cy};
   const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
@@ -1072,7 +1103,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
   floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset:compactFloorTilesetForWorld(floorTileset),boss:boss?compactEnemyForWorld(boss):null});
  }
  game=oldGame;
- return {schemaVersion:2,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,floors};
+ return {schemaVersion:3,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
 }
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;

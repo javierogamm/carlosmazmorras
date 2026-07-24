@@ -1,3 +1,12 @@
+## v0.35.0 - 2026-07-24
+
+- Añadida tabla de progresión de loot por mundo según el número de pisos configurado.
+- La generación de mundos guarda `lootTable` con rarezas permitidas, pesos e intervalo de iLvl por piso.
+- El primer piso queda limitado a Común, Infrecuente y Raro con peso dominante de Común.
+- Las rarezas e iLvl ahora crecen por progreso de piso y nivel de personaje, reservando Artefacto para pisos y personajes avanzados.
+- Los objetos configurados se filtran por la tabla de loot del piso y ajustan su iLvl al rango permitido.
+- Actualizada la versión de la app a `0.35.0`.
+
 ## v0.34.5 - 2026-07-24
 
 - Reducida un 50% la vida base general de los enemigos mediante un multiplicador global aplicado a enemigos configurados y enemigos escalados.
