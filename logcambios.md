@@ -1,3 +1,9 @@
+## v0.36.3 - 2026-07-24
+
+- Añadida comprobación de línea de visión para ataques y habilidades a distancia, bloqueada por muros y puertas cerradas.
+- Los enemigos y acompañantes respetan la misma línea de visión en skills/proyectiles a distancia, evitando impactos a través de obstáculos.
+- Actualizada la versión de la app y del paquete a `0.36.3`.
+
 ## v0.36.2 - 2026-07-24
 
 - Añadido `reglas json pociones.md` con instrucciones completas para generar JSON de pociones, efectos excluyentes, payloads válidos y lista de skills disponibles para aprendizaje.
