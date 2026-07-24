@@ -506,8 +506,23 @@ function skillRange(id){
  return 1;
 }
 function isRangedSkill(id){return skillDefs[id]?.type!=='utility'&&skillRange(id)>1}
-function visibleEnemiesInRange(range){
- return game.enemies.filter(e=>e.hp>0&&game.seen?.[e.y]?.[e.x]&&(Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y))<=range)
+function lineOfSightClear(from,to){
+ if(!game?.map)return false;
+ let x0=from.x,y0=from.y,x1=to.x,y1=to.y;
+ const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1;
+ let err=dx-dy;
+ while(!(x0===x1&&y0===y1)){
+  const e2=err*2;
+  if(e2>-dy){err-=dy;x0+=sx}
+  if(e2<dx){err+=dx;y0+=sy}
+  if(x0===x1&&y0===y1)return true;
+  if(blocked(x0,y0))return false;
+ }
+ return true
+}
+function hasLineOfSight(from,to){return lineOfSightClear(from,to)}
+function visibleEnemiesInRange(range,origin=game.player){
+ return game.enemies.filter(e=>e.hp>0&&game.seen?.[e.y]?.[e.x]&&(Math.abs(e.x-origin.x)+Math.abs(e.y-origin.y))<=range&&hasLineOfSight(origin,e))
 }
 
 function skillXpNeeded(level){return 8+level*6}
@@ -1350,16 +1365,17 @@ function assignEnemySkills(e){
  if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=e.boss?2+(Math.random()<.45?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
  return e
 }
-function enemyUseSkill(e,dist){
+function enemyUseSkill(e,dist,target=game.player){
  if(!e.skills?.length)return false;
  for(const id of e.skills){
   e.skillCooldowns[id]=Math.max(0,(e.skillCooldowns[id]||0)-1);
   const s=skillDefs[id];if(e.skillCooldowns[id]>0)continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
-  if((ranged&&dist<=Math.max(4,s.range||6))||(!ranged&&dist<=1)){
+  if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
    const mult=e.boss?1.35:e.elite?1.15:1,statMod=skillStatModifier(id,e),amount=Math.max(2,Math.round(((e.atk||e.damage||4)+statMod)*mult*(s.tier?1+s.tier*.12:1)));
    if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
-   else{damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
+   else if(target===game.player){damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
+   else{target.hp-=amount;floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')}
    e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
   }
  }
@@ -1835,12 +1851,12 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
   const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0)];
   const chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
-  if(enemyUseSkill(e,dist))continue;
+  if(enemyUseSkill(e,dist,chosen))continue;
   if(dist===1&&chosen!==game.player){
    const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');continue
   }
   if(dist===1){if(e.type==='orcoKamikaze'){floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);continue}damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
-  if(['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&Math.random()<.45){damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
+  if(chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
   if(dist<8){const opts=Math.random()<.5?[[Math.sign(game.player.x-e.x),0],[0,Math.sign(game.player.y-e.y)]]:[[0,Math.sign(game.player.y-e.y)],[Math.sign(game.player.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){e.x=nx;e.y=ny;break}}}
  }
  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();return}
@@ -1900,11 +1916,11 @@ function cancelTargeting(message='Apuntado cancelado.'){
  pendingTargetAction=null;document.getElementById('waitBtn')?.classList.remove('hidden');document.getElementById('cancelTargetBtn')?.classList.add('hidden');document.getElementById('gameStage')?.classList.remove('targeting');document.getElementById('targetHint')?.classList.add('hidden');if(message)log(message,'sys')
 }
 function gridDistance(a,b){return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y))}
-function validateTargetCell(x,y,range){return game.seen?.[y]?.[x]&&gridDistance(game.player,{x,y})<=range}
+function validateTargetCell(x,y,range){return game.seen?.[y]?.[x]&&gridDistance(game.player,{x,y})<=range&&hasLineOfSight(game.player,{x,y})}
 function targetedSkillDamage(id){const d=skillDefs[id],lvl=skillLevel(id),stat=d.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3;return Math.round((5+lvl*2+stat)*skillPowerMultiplier(id))}
 function resolveTargetedSkill(slot,x,y){
  const id=game.player.equippedSkills[slot],d=skillDefs[id];if(!id||!d)return false;
- const range=skillRange(id)||1;if(!validateTargetCell(x,y,range)){log(`Objetivo fuera de alcance (${range}).`,'sys');return false}
+ const range=skillRange(id)||1;if(!validateTargetCell(x,y,range)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
  if(game.player[d.resource]<d.cost){log(`Necesitas ${d.cost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
@@ -1921,7 +1937,7 @@ function resolveTargetedSkill(slot,x,y){
   used=true}
  }else if(mode==='area'){
   const radius=Math.min(4,1+Math.floor(skillLevel(id)/4)+(d.tier===3?1:0));
-  const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=radius&&game.seen?.[e.y]?.[e.x]);
+  const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=radius&&game.seen?.[e.y]?.[e.x]&&hasLineOfSight(game.player,e));
   if(d.classId&&applyCreativeClassEffect(id,targets[0]||null,x,y)){used=true}
   if(!used&&!targets.length){log('No hay enemigos dentro del área seleccionada.','sys');return false}
   const mult=['blackSun','worldBreaker'].includes(id)||d.classEffect==='massive'?1.65:d.classEffect==='ultimate'?1.35:1;
@@ -1940,7 +1956,7 @@ function beginBasicAttack(){
 function resolveBasicAttack(x,y){
  const range=pendingTargetAction?.range||weaponRange(),enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
  if(!enemy){log('Selecciona un enemigo.','sys');return false}
- if(!validateTargetCell(x,y,range)){log(`Enemigo fuera de alcance (${range}).`,'sys');return false}
+ if(!validateTargetCell(x,y,range)){log(`Enemigo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  attack(enemy,0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(range,false)});cancelTargeting('');playerFinished();return true
 }
 
@@ -2071,7 +2087,7 @@ function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnima
 function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;
  ctx.save();ctx.globalAlpha=.28;
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})<=range&&hasLineOfSight(game.player,{x:gx,y:gy})){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
  ctx.restore()
 }
 
