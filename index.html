@@ -240,6 +240,14 @@
 <h2>ELIGE O CREA UNA DUNGEON</h2>
 <p class="small">Antes de crear personaje debes seleccionar un mundo guardado o crear uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>
 <label>Nombre del mundo <input id="worldNameInput" value="Mazmorra Consolidada" maxlength="40"></label>
+<div class="worldParamsGrid">
+<label>% daño recibido <input id="worldDamageReceivedPct" type="number" value="100" min="1" max="999"></label>
+<label>% daño infligido <input id="worldDamageDealtPct" type="number" value="100" min="1" max="999"></label>
+<label>% vida enemiga <input id="worldLifePct" type="number" value="100" min="1" max="999"></label>
+<label>% XP recibida <input id="worldXpReceivedPct" type="number" value="100" min="1" max="999"></label>
+<label>Floors <input id="worldFloorsInput" type="number" value="20" min="1" max="100"></label>
+<label>Familias por piso <textarea id="worldFloorFamiliesInput" rows="3" placeholder="Una familia por línea, coma o ;. Si se acaban, se repite la última."></textarea></label>
+</div>
 <button class="start" id="createWorldBtn">CREAR DUNGEON Y CALCULAR CONTENIDOS</button>
 <h3>Dungeons guardadas</h3>
 <div id="worldStatus" class="small">Cargando dungeons...</div>

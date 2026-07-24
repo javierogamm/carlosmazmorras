@@ -10,12 +10,13 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.33.8';
+const APP_VERSION='0.34.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,floors:20,floorFamilies:''};
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
 const raceDefs={"humano": {"name": "Humano Desafortunado", "origin": "Canalla", "desc": "No destaca en nada salvo en meterse donde no debe.", "trait": "+10% de experiencia.", "bonuses": {"xpMult": 1.1}}, "enano": {"name": "Enano de la Forja Negra", "origin": "Alta fantasía", "desc": "Terco, blindado y convencido de que todo problema admite un martillo.", "trait": "+3 de armadura y +8 de vida.", "bonuses": {"armor": 3, "maxHp": 8}}, "elfoNocturno": {"name": "Elfo de la Luna Rota", "origin": "Alta fantasía", "desc": "Un exiliado de los bosques plateados con demasiados enemigos y muy pocas disculpas.", "trait": "+2 AGI, +1 SAB y +4% de evasión.", "bonuses": {"agility": 2, "wisdom": 1, "dodge": 4}}, "orcoLibre": {"name": "Orco de Compañía Libre", "origin": "Alta fantasía", "desc": "Mercenario, duelista y saqueador profesional. Cobra por adelantado.", "trait": "+2 FUE, +1 VIT y +8% de daño físico.", "bonuses": {"strength": 2, "vitality": 1, "physicalPower": 8}}, "draconido": {"name": "Dracónido de Brasa Azul", "origin": "Alta fantasía", "desc": "Su linaje promete dragones. De momento aporta humo, escamas y mal carácter.", "trait": "+1 FUE, +2 VIT y resistencia convertida en +2 armadura.", "bonuses": {"strength": 1, "vitality": 2, "armor": 2}}, "mediano": {"name": "Mediano Rompebolsas", "origin": "Canalla", "desc": "Pequeño, rápido y absolutamente incapaz de dejar un bolsillo sin revisar.", "trait": "+2 SUE, +1 AGI y +12% de hallazgo de rareza.", "bonuses": {"luck": 2, "agility": 1, "rarityFind": 12}}, "tiefling": {"name": "Tiefling de Taberna", "origin": "Alta fantasía", "desc": "Sangre infernal, sonrisa impecable y una deuda en cada reino conocido.", "trait": "+2 INT, +1 SUE y +8% de poder mágico.", "bonuses": {"intelligence": 2, "luck": 1, "magicPower": 8}}, "silvano": {"name": "Silvano de Corteza Férrea", "origin": "Alta fantasía", "desc": "Un espíritu del bosque que aprendió que la diplomacia funciona mejor con raíces gruesas.", "trait": "+2 VIT, +1 SAB y regeneración de vida al cambiar de piso.", "bonuses": {"vitality": 2, "wisdom": 1, "floorHeal": 10}}, "sintetico": {"name": "Sintético de Callejón", "origin": "Ciberpunk", "desc": "Construido con piezas legales, ilegales y varias que niegan haberlo conocido.", "trait": "+1 INT, +1 AGI, +10 stamina y +8 maná.", "bonuses": {"intelligence": 1, "agility": 1, "maxStamina": 10, "maxMana": 8}}, "neonita": {"name": "Neonita del Subnivel", "origin": "Ciberpunk", "desc": "Mutante urbano criado bajo anuncios luminosos y tuberías que nunca dejaron de gotear.", "trait": "+2 AGI, +1 SUE y +6% de crítico.", "bonuses": {"agility": 2, "luck": 1, "critChance": 6}}, "gnomoCable": {"name": "Gnomo Cableado", "origin": "Ciberpunk", "desc": "Ingeniero diminuto con seis herramientas, tres implantes y cero respeto por las garantías.", "trait": "+2 INT, +1 SAB y regeneración superior de maná.", "bonuses": {"intelligence": 2, "wisdom": 1, "manaRegen": 3}}, "cambiapieles": {"name": "Cambiapieles de los Bajos Fondos", "origin": "Canalla", "desc": "Imita caras, voces y firmas. El problema es recordar cuál era la suya.", "trait": "+1 a AGI, SUE e INT; +5% de evasión.", "bonuses": {"agility": 1, "luck": 1, "intelligence": 1, "dodge": 5}}};
 
@@ -781,11 +782,22 @@ function describeItem(item){item.defenseStat=item.defenseStat||inferWeaponDefens
  for(const e of item.effects||[])lines.push(`<span class="effectLine">✦ ${e.name}: ${e.desc}</span>`);
  return lines.join('');
 }
+function vitalityHpBonus(vitality){return Math.max(0,Math.floor(Number(vitality||0)*2))}
+function worldParams(){return game?.worldParams||selectedDungeonWorld?.world_json?.params||DEFAULT_WORLD_PARAMS}
+function pctMult(value){const n=Number(value);return Number.isFinite(n)?n/100:1}
+function damageDealtMultiplier(){return pctMult(worldParams().damageDealtPct)}
+function damageReceivedMultiplier(){return pctMult(worldParams().damageReceivedPct)}
+function xpReceivedMultiplier(){return pctMult(worldParams().xpReceivedPct)}
+function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct']){p[k]=Math.max(1,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k]))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.floorFamilies=String(p.floorFamilies||'').trim();return p}
+function readWorldParamsForm(){return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,floors:document.getElementById('worldFloorsInput')?.value,floorFamilies:document.getElementById('worldFloorFamiliesInput')?.value})}
+function worldFamilyForFloor(params,floor){const names=String(params?.floorFamilies||'').split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);if(!names.length)return null;return names[Math.min(names.length-1,Math.max(0,floor-1))]}
+function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldFamilyForFloor(params,floor);if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){if(rb[k])base[k]=(base[k]||0)+rb[k];if(pp[k])base[k]=(base[k]||0)+pp[k]}
- const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.vitality*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.intelligence*5+base.wisdom*3+(rb.maxMana||0),
+ const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.vitality*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.intelligence*5+base.wisdom*3+(rb.maxMana||0),
  critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:6+Math.floor(base.vitality/4)+(rb.staminaRegen||0),manaRegen:4+Math.floor(base.wisdom/4)+(rb.manaRegen||0),rarityFind:rb.rarityFind||0};
  const allStats={...base};
  for(const item of Object.values(p.equipment||{})){
@@ -796,7 +808,7 @@ function recomputeDerived(){
   }
   for(const pa of item.passives||[])d[pa.stat]=(d[pa.stat]||0)+pa.value;
  }
- d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*3);
+ d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*5);
  d.maxStamina+=Math.max(0,(allStats.vitality-base.vitality)*4+(allStats.agility-base.agility)*2);
  d.maxMana+=Math.max(0,(allStats.intelligence-base.intelligence)*5+(allStats.wisdom-base.wisdom)*3);
  d.damage+=Math.floor((allStats.strength-base.strength)*1.2);
@@ -1006,10 +1018,10 @@ function openInitialNarrative(){
 }
 
 function start(){
- const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3;
+ const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -1018,16 +1030,17 @@ function start(){
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
-function createDungeonWorldJson(name){
+function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
+ params=normalizeWorldParams(params);
  const floors=[];
  const oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
- for(let floor=1;floor<=20;floor++){
+ for(let floor=1;floor<=params.floors;floor++){
   const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
   const targetRooms=30+Math.min(18,Math.floor(floor/2))+rng(7);
   for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
   for(let i=1;i<rooms.length;i++){let a=rooms[i-1],b=rooms[i],x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}}
-  game={floor,player:tempPlayer};
+  game={floor,player:tempPlayer,worldParams:params};
   const spawn=rooms[0],distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy),distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
   const stairRoom=distantRooms[0]||rooms.at(-1),bossRoom=distantRooms[1]||distantRooms[0]||rooms.at(-1),stairs={x:stairRoom.cx,y:stairRoom.cy};
   const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
@@ -1039,7 +1052,7 @@ function createDungeonWorldJson(name){
   const doors=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1,v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}}
   const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
   const chests=[];for(let i=0;i<14+Math.floor(floor*.8);i++)chests.push({...free(),opened:false});
-  const family=pickConfiguredFamilyForFloor(floor),enemies=[],isBossFloor=floor%2===0,count=32+floor*5+rng(13);
+  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[],isBossFloor=floor%2===0,count=32+floor*5+rng(13);
   for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,floor,false);e.enemyFamily=family.name;enemies.push(e)}
   const bossCount=isBossFloor?Math.min(4,1+Math.floor(floor/10)):(Math.random()<.08?1:0);let boss=null;
   for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},floor,true);b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b}
@@ -1048,7 +1061,7 @@ function createDungeonWorldJson(name){
   floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset:compactFloorTilesetForWorld(floorTileset),boss:boss?compactEnemyForWorld(boss):null});
  }
  game=oldGame;
- return {schemaVersion:1,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),floors};
+ return {schemaVersion:2,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,floors};
 }
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
@@ -1266,7 +1279,7 @@ function enemyUseSkill(e,dist){
   const s=skillDefs[id];if(e.skillCooldowns[id]>0)continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
   if((ranged&&dist<=Math.max(4,s.range||6))||(!ranged&&dist<=1)){
-   const mult=e.boss?1.35:e.elite?1.15:1,amount=Math.max(2,Math.round((e.atk||e.damage||4)*mult*(s.tier?1+s.tier*.12:1)));
+   const mult=e.boss?1.35:e.elite?1.15:1,statMod=skillStatModifier(id,e),amount=Math.max(2,Math.round(((e.atk||e.damage||4)+statMod)*mult*(s.tier?1+s.tier*.12:1)));
    if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
    else{damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
    e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
@@ -1277,7 +1290,7 @@ function enemyUseSkill(e,dist){
 
 function scaleEnemy(e){
  const d=difficultyScale();
- e.maxHp=e.hp=Math.round((e.maxHp||e.hp)*d.hp);
+ e.maxHp=e.hp=Math.round((e.maxHp||e.hp)*d.hp*worldLifeMultiplier());
  e.damage=Math.max(1,Math.round(e.damage*d.damage));
  e.xp=Math.round((e.xp||5)*d.xp);
  if(!e.boss&&Math.random()<d.eliteChance){
@@ -1345,7 +1358,7 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  const doors=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1,v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}}
  const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
  const chests=[];for(let i=0;i<14+Math.floor(game.floor*.8);i++)chests.push({...free(),opened:false});
- const family=pickConfiguredFamilyForFloor(game.floor),enemies=[],isBossFloor=game.floor%2===0;
+ const family=pickConfiguredFamilyForFloorWithParams(game.floor,worldParams()),enemies=[],isBossFloor=game.floor%2===0;
  const populationScale=1+Math.min(1.2,(game.player.level-1)*.012);
  const count=Math.round((32+game.floor*5+rng(13))*populationScale);for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,game.floor,false);e.enemyFamily=family.name;enemies.push(e)}
  let boss=null;
@@ -1456,11 +1469,11 @@ function skillDiceExpr(id){
  if(d.resource==='mana')return tier>=3?'3d8+4':tier===2?'2d8+2':'1d8+2';
  return tier>=3?'3d8+5':tier===2?'2d8+3':'1d8+2'
 }
-function skillStatModifier(id){
- const d=skillDefs[id]||{},s=game.player.derived?.finalStats||game.player.stats;
- return d.resource==='mana'
-  ?Math.floor((s.intelligence*2+s.wisdom)/3)
-  :Math.floor((s.strength*2+s.agility)/3)
+function damageStatForType(type,resource){if(type==='magic'||resource==='mana')return'intelligence';if(type==='physical'||resource==='stamina')return'strength';return'luck'}
+function actorStatDamageBonus(actor,type='physical',resource='stamina'){const st=actor?.derived?.finalStats||actor?.stats||{};const primary=damageStatForType(type,resource),secondary=primary==='intelligence'?'wisdom':primary==='strength'?'agility':'wisdom';return Math.floor(((st[primary]||0)*2+(st[secondary]||0))/3)}
+function skillStatModifier(id,actor=game.player){
+ const d=skillDefs[id]||{},s=actor?.derived?.finalStats||actor?.stats||{};
+ return actorStatDamageBonus(actor,d.type,d.resource)
 }
 function activeBuffDamageMultiplier(){
  return (game.player.activeBuffs||[]).reduce((m,b)=>m*(1+(b.effects?.damage||0)),1)
@@ -1476,7 +1489,7 @@ function attack(e,bonus=0,options={}){
  const roll=rollDice(expr);
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()));
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -1491,7 +1504,7 @@ function kill(e){
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
-function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo'){
+function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const p=game.player;
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount));
@@ -1499,7 +1512,7 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo')
  if(defenseDie===20){mult=0;result=`evasión perfecta con ${attackDefenseLabel(defenseStat)}`}
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
- const d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ const d=Math.max(mult===0?0:1,Math.round(amount*mult*damageReceivedMultiplier()));
  let finalDamage=d;
  const lifeBuff=(p.activeBuffs||[]).find(b=>b.effects?.lifesteal);
  if(lifeBuff&&options?.skillId)healEntity(p,Math.max(1,Math.round(finalDamage*lifeBuff.effects.lifesteal)));
@@ -1516,7 +1529,7 @@ function queueStatPoint(){game.player.unspentStatPoints=(game.player.unspentStat
 function showStatPointModal(){const p=game.player;if(!p?.unspentStatPoints)return;const modal=document.getElementById('statPointModal'),grid=document.getElementById('statChoiceGrid'),labels={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processPendingSkillChoices()}}))}
 function gainXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
- v=Math.ceil(v*(p.raceBonuses?.xpMult||1));p.xp+=v;
+ v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
  while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
   p.xp-=p.nextXp;p.level++;
   const g=levelGrowth(p.level);
@@ -2412,7 +2425,7 @@ function enemyDetailRowFromImportedEnemy(enemy,familyName){const e=normalizeEnem
 function normalizedEnemyFamilies(){const saved=configEnemyFamilies.map(r=>({...(r.family_json||{}),dbId:r.id,name:r.family_json?.name||r.family_name})).filter(f=>f.name&&f.enemies?.length);if(saved.length)return saved;return Object.values(enemyFamilies).map(f=>({name:f.name,floorTheme:f.floorTheme,enemies:f.enemies.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:false,tier:'i',statsBase:{hp:d.hp||12,atk:d.atk||d.damage||4,armor:0,xp:d.xp||8},skillIds:[],icon:''}}).concat(f.bosses.map(id=>{const d=enemyDefs[id]||{};return{name:d.name||id,type:id,class:d.name||id,boss:true,tier:'iii',statsBase:{hp:d.hp||60,atk:d.atk||d.damage||10,armor:2,xp:d.xp||35},skillIds:[],icon:''}}))}))}
 function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+rng(5)-2))}
 function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+stats.strength*.025+stats.intelligence*.02,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(e)}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
 function hydratePrecomputedEnemy(e){if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}return e}
@@ -2479,9 +2492,9 @@ async function fetchDungeonWorlds(){
  }catch(e){status.textContent=`Error: ${e.message}. Revisa SUPABASE_URL y SUPABASE_ANON_KEY en Vercel.`}
 }
 async function createDungeonWorld(){
- const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim();
+ const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando familias de enemigos y calculando pisos...';
- try{if(!configEnemyFamilies.length&&!configEnemyDetails.length)await fetchEnemyConfig();const world_json=createDungeonWorldJson(name);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ try{if(!configEnemyFamilies.length&&!configEnemyDetails.length)await fetchEnemyConfig();const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;dungeonOverlay.classList.add('hidden');startOverlay.classList.remove('hidden');banner(`DUNGEON #${data.id} CREADA`);
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }

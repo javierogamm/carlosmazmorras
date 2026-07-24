@@ -1,3 +1,12 @@
+## v0.34.0 - 2026-07-24
+
+- Duplicado el impacto de Vitalidad sobre la vida máxima añadiendo un bonus directo de +2 HP por punto de VIT y aumentando a +5 HP por cada punto adicional de VIT obtenido con equipo o mejoras.
+- El daño del jugador y de los enemigos ahora se modula por la stat principal más adecuada al tipo de daño: Fuerza/Agilidad para físico, Inteligencia/Sabiduría para mágico y Suerte/Sabiduría para utilidad ofensiva.
+- Las skills enemigas incorporan su modificador de stat ofensiva, y los ataques del jugador aplican los nuevos multiplicadores globales de mundo.
+- Añadidos parámetros editables al crear mundo: % daño recibido, % daño infligido, % vida enemiga, % XP recibida, número de floors y familias preferidas por piso.
+- El JSON consolidado del mundo guarda los parámetros usados y genera tantos pisos como indique la configuración.
+- Actualizada la versión de la app y del paquete a `0.34.0`.
+
 # Log de cambios
 
 ## v0.33.8 - 2026-07-23
