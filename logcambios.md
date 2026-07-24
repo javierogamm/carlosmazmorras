@@ -1,3 +1,12 @@
+## v0.39.2 - Corrección del sistema de loot
+- Corregida la documentación de la tabla de pesos de rareza para que el peso de Raro coincida con la fórmula implementada `max(6, round(6 + ratio * 16))`.
+- Añadida segunda pasiva de Artefacto con 75% de probabilidad, manteniendo su pasiva garantizada.
+- Añadido cap del 65% a la probabilidad de skill desde cofre y al drop de objeto de enemigo normal.
+- El forzado de rareza del primer objeto en eventos `reward` ahora filtra por rarezas permitidas por la progresión de piso/nivel.
+- `weightedRarity()` ahora suma `lootLuck` temporal y usa Suerte final derivada.
+- El drop de objeto de enemigo normal ahora usa Suerte final derivada para alinearse con la rareza del botín.
+- Actualizada la versión de la app y del paquete a `0.39.2`.
+
 ## v0.39.1 - Documentación del loot
 - Añadido `loot.md` con la descripción completa del sistema de loot: fuentes de botín, porcentajes, rarezas, Suerte, `rarityFind`, niveles de objeto, tiers, cofres, enemigos, eventos, pociones, objetos configurados, afijos, pasivas y habilidades como botín.
 - Actualizada la versión de la app y del paquete a `0.39.1`.

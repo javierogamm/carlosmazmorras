@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.39.1';
+const APP_VERSION='0.39.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -67,7 +67,7 @@ const rarities=[
  {name:'rare',label:'Raro',weight:15,color:'#71b4ff',affixes:[3,4],passives:.45,effects:.12,mult:1.35},
  {name:'epic',label:'Épico',weight:8,color:'#d68cff',affixes:[4,5],passives:.85,effects:.42,mult:1.65},
  {name:'legendary',label:'Legendario',weight:2,color:'#ffb746',affixes:[5,6],passives:1,effects:1,mult:2.10},
- {name:'artifact',label:'Artefacto',weight:.6,color:'#ff5bd6',affixes:[6,7],passives:1,effects:1,mult:2.65}
+ {name:'artifact',label:'Artefacto',weight:.6,color:'#ff5bd6',affixes:[6,7],passives:1,effects:1,mult:2.65,secondPassive:.75}
 ];
 const LOOT_RARITY_ORDER=rarities.map(r=>r.name);
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
@@ -795,9 +795,10 @@ const legendaryEffects=[
  {id:'echo',name:'Eco de Firmware',desc:'10% de repetir gratuitamente una habilidad usada.'},
  {id:'collector',name:'Coleccionista Patológico',desc:'Cada objeto equipado de rareza distinta otorga +3% a todas las estadísticas.'}
 ];
+function activeLootLuck(){return (game?.player?.activePotions||[]).reduce((s,p)=>s+(Number(p.effect?.lootLuck)||0),0)}
 function weightedRarity(level){
- const luck=game?.player?.stats?.luck||0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
- const bonus=(level-1)*.18+luck*.14+(game?.player?.derived?.rarityFind||0)*.18;
+ const luck=game?.player?.derived?.finalStats?.luck??game?.player?.stats?.luck??0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
+ const bonus=(level-1)*.18+(luck+activeLootLuck())*.14+(game?.player?.derived?.rarityFind||0)*.18;
  const adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
  let total=adjusted.reduce((s,r)=>s+r.w,0),roll=Math.random()*total;
  for(const r of adjusted){roll-=r.w;if(roll<=0)return r}
@@ -824,6 +825,7 @@ function buildPassives(itemLevel,rarity){
  let count=0;
  if(Math.random()<rarity.passives)count++;
  if(rarity.name==='legendary'&&Math.random()<.55)count++;
+ if(rarity.name==='artifact'&&Math.random()<(rarity.secondPassive||0))count++;
  return chooseUnique(passivePool,count).map(p=>({...p,value:affixValue(p,itemLevel,rarity)}));
 }
 function buildEffects(rarity){
@@ -1389,7 +1391,7 @@ function resolveFloorEvent(ev,prepared){
   banner('JEFE OPCIONAL');log(`${b.name} entra en combate.`,'story')
  }else if(ev.type==='reward'){
   const count=ev.id==='buriedArmory'?3:2;
-  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6)item.rarity=['rare','epic','legendary'][rng(3)];addInventoryItem(item);lootToast(item)}
+  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6){const row=currentLootProgressionRow(game.floor,game.player.level),pool=['rare','epic','legendary'].filter(r=>lootRarityAllowed(r,row));if(pool.length){item.rarity=pick(pool);item.label=tierDefs[item.rarity]?.label||item.rarity}}addInventoryItem(item);lootToast(item)}
   if(ev.id==='fairyCache'&&Math.random()<.65)unlockSkillLoot(randomLootableSkill());
   if(ev.id==='forgottenShrine'){game.player.hp=game.player.maxHp;game.player.mana=game.player.maxMana;game.player.stamina=game.player.maxStamina}
   if(ev.id==='smugglerLocker')game.player.gold+=40+game.floor*15;
@@ -1677,7 +1679,7 @@ function attack(e,bonus=0,options={}){
 }
 function kill(e){
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2));game.player.gold+=e.boss?75:3+rng(6);
- if(Math.random()<.13+game.player.stats.luck*.008||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
+ if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
@@ -1754,7 +1756,7 @@ function checkTile(){
  const c=game.chests.find(c=>!c.opened&&c.x===p.x&&c.y===p.y);if(c)openChest(c);
  if(p.x===game.stairs.x&&p.y===game.stairs.y){if(game.boss&&game.enemies.includes(game.boss)){log('La salida está sellada mientras el jefe siga vivo.','combat')}else{game.floor++;generateFloor()}}
 }
-function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<.16+game.floor*.025)unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
+function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
 
 function applyBuff(id,name,turns,effects={}){
  const p=game.player;p.activeBuffs=p.activeBuffs||[];
