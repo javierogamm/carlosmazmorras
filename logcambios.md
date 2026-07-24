@@ -1,3 +1,11 @@
+## v0.36.1 - 2026-07-24
+
+- Reestructurado el configurador de pociones para que los efectos sean excluyentes mediante un único selector.
+- Cada efecto muestra solo sus características editables: recurso y modo numérico/porcentaje para curación, recurso/modo/turnos para regeneración, stat/valor/turnos para incrementos temporales, stat/valor para incrementos permanentes y habilidad para aprendizaje.
+- Eliminado el campo visible de iLvl del editor de items; el nivel interno se deriva del Tier seleccionado para mantener compatibilidad con el loot existente.
+- Adaptado el motor para soportar curación y regeneración de HP, maná o stamina en valores planos o porcentuales.
+- Actualizada la versión de la app y del paquete a `0.36.1`.
+
 ## v0.36.0 - 2026-07-24
 
 - Añadido el tipo de item `Poción` al configurador, con campos específicos para elegir efecto, potencia, duración, stat e habilidad aprendida.
