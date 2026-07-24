@@ -1,3 +1,9 @@
+## v0.40.2 - Corrección de creación y entrada con personaje persistente
+- Restaurada la selección obligatoria de skill inicial al crear un personaje, también cuando se crea desde el hub o desde multiplayer.
+- Corregida la carga de personajes persistidos para reconstruir una partida válida antes de generar el piso, evitando estados incompletos que dejaban la vista negra o bloqueaban movimiento/ataque.
+- La creación de personaje en modo hub/multiplayer guarda el personaje solo después de elegir la skill inicial y vuelve al contexto correcto sin entrar automáticamente al mundo.
+- Actualizada la versión de la app y del paquete a `0.40.2`.
+
 ## v0.40.1 - Sala multiplayer y flujo de personajes
 - Rediseñado el hub post-login con botones integrados visualmente en el estilo de la app y acciones separadas por contexto.
 - Añadida API `/api/multi-session` para registrar entrada y salida de usuarios en la sala multiplayer con `login_time`, `logout_time` y `user_id`.

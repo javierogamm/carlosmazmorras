@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.40.1';
+const APP_VERSION='0.40.2';
 let selectedCharacter=null,selectedDungeonSession=null,multiplayerMode=false,createCharacterOnly=false,currentMultiSession=null,multiRefreshTimer=null;
 let configItems=[];
 let configClasses=[];
@@ -1182,6 +1182,7 @@ function processClassSkillChoices(){
   learnSkill(b.dataset.pickSkill);
   game.player.skillChoicesAwarded[request.level]='chosen';
   modal.classList.remove('open');updateUI();
+  if(createCharacterOnly){persistTurnState().then(()=>{createCharacterOnly=false;game=null;startOverlay.classList.add('hidden');if(multiplayerMode)showMultiplayerLobby();else showCharacterHub()});return}
   if(request.initial)openInitialNarrative();
   queueMissingClassSkillChoices();
   processClassSkillChoices();
@@ -1199,7 +1200,7 @@ function start(){
  const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- if(selectedCharacter?.pj_json){game={...selectedCharacter.pj_json};game.player=selectedCharacter.pj_json.player||selectedCharacter.pj_json;game.dungeonWorldId=selectedDungeonWorld?.id||game.dungeonWorldId;game.dungeonWorldName=selectedDungeonWorld?.world_name||game.dungeonWorldName;startOverlay.classList.add('hidden');generateFloor();persistTurnState();return}
+ if(selectedCharacter?.pj_json){const saved=selectedCharacter.pj_json.player||selectedCharacter.pj_json;game={floor:saved.floor||1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{...saved,knownSkills:[...(saved.knownSkills||[])],skillProgress:{...(saved.skillProgress||{})},skillChoicesAwarded:{...(saved.skillChoicesAwarded||{})},equippedSkills:saved.equippedSkills||[null,null,null,null],cooldowns:{...(saved.cooldowns||{})},equipment:saved.equipment||equipment,stats:saved.stats||stats}}};recomputeDerived();startOverlay.classList.add('hidden');if(!game.player.knownSkills.length){queueClassSkillChoice(1,true)}else{generateFloor();persistTurnState()}return}
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
@@ -1207,7 +1208,6 @@ function start(){
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions();
  recomputeDerived();
- if(createCharacterOnly){createCharacterOnly=false;startOverlay.classList.add('hidden');persistTurnState().then(()=>{game=null;if(multiplayerMode)showMultiplayerLobby();else showCharacterHub()});return}
  startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
