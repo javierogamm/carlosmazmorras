@@ -1,3 +1,11 @@
+## v0.39.0 - Motor de daño consolidado
+- Unificada la ruta real de `execute`: `skillId: execute` queda como skill apuntada con umbral del 40% de vida, eliminando la rama legacy residual con umbral del 35%.
+- Corregida la progresión del dado de ataque básico por alcance para que el EV no baje al aumentar el alcance máximo del arma.
+- Rebalanceada la tabla de dados de skills para que física y magia genéricas compartan valores y todas las categorías dañinas superen al ataque básico por tier.
+- Igualado el exponente de DC de defensa enemiga y defensa del jugador a 0.75.
+- Documentada la conversión reforzada de armadura para Fuerza/Vitalidad como decisión intencional de builds tanque.
+- Aclarado que el escalado de enemigos configurados y legacy no se acumula en la generación normal; `scaleEnemy()` solo se aplica a enemigos de evento legacy.
+- Actualizada la versión de la app y del paquete a `0.39.0`.
 ## v0.37.2 - 2026-07-24
 
 - Recuperado el modal de selección de skill para la creación de personaje y para hitos de subida de nivel.

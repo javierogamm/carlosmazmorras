@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.36.11';
+const APP_VERSION='0.39.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1601,11 +1601,12 @@ function enemyDefenseScore(e,stat){
 function playerDefenseBonus(stat){
  const p=game.player,s=p.derived?.finalStats||p.stats,armorValue=Math.max(0,total('armor'));
  const base=Math.floor((s[stat]||0)*.85);
+ // Fuerza y Vitalidad conservan doble conversión de armadura: es intencional para que las builds tanque tengan una identidad defensiva clara.
  const armorPart=['strength','vitality'].includes(stat)?Math.floor(armorValue/3):Math.floor(armorValue/6);
  return base+armorPart
 }
 function resolveEnemyDefense(e,stat,attackPower){
- const die=rollDie(20),bonus=enemyDefenseScore(e,stat),dc=10+Math.max(1,Math.floor(attackPower*.55));
+ const die=rollDie(20),bonus=enemyDefenseScore(e,stat),dc=10+Math.max(1,Math.floor(attackPower*.75));
  let mult=1,result=`no supera la defensa de ${attackDefenseLabel(stat)}`;
  if(die===20){mult=0;result=`evita el ataque con ${attackDefenseLabel(stat)}`}
  else if(die+bonus>=dc){mult=.5;result=`resiste parcialmente con ${attackDefenseLabel(stat)}`}
@@ -1626,9 +1627,9 @@ function baseAttackDice(){
  const w=equippedWeapon(),r=weaponRange(w);
  if(!w)return'1d4';
  if(w.damageDice)return w.damageDice;
- if(r>=9)return'1d8';
- if(r>=7)return'1d6+1';
- if(r>=3)return'1d8+1';
+ if(r>=9)return'1d10';
+ if(r>=7)return'1d8+1';
+ if(r>=3)return'1d8';
  const text=`${w.name||''} ${w.iconShape||''}`.toLowerCase();
  if(/(martillo|hammer|hacha|axe|maza|mace)/.test(text))return'1d10';
  if(/(espada|sword|blade)/.test(text))return'1d8';
@@ -1638,12 +1639,12 @@ function baseAttackDice(){
 function skillDiceExpr(id){
  const d=skillDefs[id]||{},tier=d.tier||({common:1,uncommon:1,rare:2,epic:3,legendary:3}[d.rarity]||1);
  if(d.type==='utility'||['buff','shield','heal','utility'].includes(d.classEffect))return null;
- if(d.classEffect==='massive'||id==='blackSun'||id==='worldBreaker')return tier>=3?'4d8+6':'3d8+4';
- if(d.classEffect==='ultimate')return tier>=3?'4d6+5':'3d6+3';
- if(['aoe','multihit'].includes(d.classEffect)||AREA_SKILLS.has(id))return tier>=3?'3d6+4':tier===2?'2d6+3':'2d4+2';
- if(d.classEffect==='execute'||id==='execute')return tier>=3?'3d10+5':'2d8+3';
- if(d.resource==='mana')return tier>=3?'3d8+4':tier===2?'2d8+2':'1d8+2';
- return tier>=3?'3d8+5':tier===2?'2d8+3':'1d8+2'
+ if(d.classEffect==='massive'||id==='blackSun'||id==='worldBreaker')return tier>=3?'5d8+6':tier===2?'4d8+4':'3d8+4';
+ if(d.classEffect==='ultimate')return tier>=3?'5d6+3':tier===2?'4d6':'3d6+3';
+ if(['aoe','multihit'].includes(d.classEffect)||AREA_SKILLS.has(id))return tier>=3?'4d6+4':tier===2?'3d6+3':'2d6+3';
+ if(d.classEffect==='execute'||id==='execute')return tier>=3?'3d10+5':tier===2?'3d8+1':'2d8+3';
+ if(d.resource==='mana')return tier>=3?'4d8':tier===2?'3d8':'2d8+1';
+ return tier>=3?'4d8':tier===2?'3d8':'2d8+1'
 }
 function damageStatForType(type,resource){if(type==='magic'||resource==='mana')return'intelligence';if(type==='physical'||resource==='stamina')return'strength';return'luck'}
 function actorStatDamageBonus(actor,type='physical',resource='stamina'){const st=actor?.derived?.finalStats||actor?.stats||{};const primary=damageStatForType(type,resource),secondary=primary==='intelligence'?'wisdom':primary==='strength'?'agility':'wisdom';return Math.floor(((st[primary]||0)*2+(st[secondary]||0))/3)}
@@ -2098,33 +2099,32 @@ function useSkill(slot){
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id)});return}
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
  let used=!def.classEffect&&skillDefs[id]?.unlock!=='Botín';
- const skillMult=skillPowerMultiplier(id);if(id==='smash'){const a=near(1);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round(Math.floor(total('armor')/2)*skillMult)))}
+ const skillMult=skillPowerMultiplier(id);if(id==='smash'){const a=near(1);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round(Math.floor(total('armor')/2)*skillMult),{skillId:id}))}
  if(id==='fortify'){const turns=4+Math.floor(skillLevel(id)/2);applyBuff(id,'Fortificar',turns,{armor:.30});game.player.shield+=5+Math.floor(game.player.stats.vitality/2);used=true}
- if(id==='charge'){let target=null;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]])for(let n=1;n<=3;n++){const x=game.player.x+dx*n,y=game.player.y+dy*n,e=game.enemies.find(e=>e.x===x&&e.y===y);if(e){target={e,dx,dy,n};break}if(blocked(x,y))break;if(target)break}if(!target)used=false;else{for(let n=1;n<target.n;n++){game.player.x+=target.dx;game.player.y+=target.dy}attack(target.e,Math.round((game.player.stats.strength)*skillMult));reveal(game.player.x,game.player.y)}}
- if(id==='quake'){const a=near(2);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round((2+game.player.stats.intelligence+Math.floor(game.player.stats.wisdom/2))*skillMult)))}
+ if(id==='charge'){let target=null;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]])for(let n=1;n<=3;n++){const x=game.player.x+dx*n,y=game.player.y+dy*n,e=game.enemies.find(e=>e.x===x&&e.y===y);if(e){target={e,dx,dy,n};break}if(blocked(x,y))break;if(target)break}if(!target)used=false;else{for(let n=1;n<target.n;n++){game.player.x+=target.dx;game.player.y+=target.dy}attack(target.e,Math.round((game.player.stats.strength)*skillMult),{skillId:id});reveal(game.player.x,game.player.y)}}
+ if(id==='quake'){const a=near(2);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round((2+game.player.stats.intelligence+Math.floor(game.player.stats.wisdom/2))*skillMult),{skillId:id}))}
  if(id==='taunt'){const a=game.enemies.filter(e=>game.seen[e.y][e.x]);if(!a.length)used=false;else{game.player.debuff=2;a.forEach(e=>{if(Math.abs(e.x-game.player.x)>1)e.x+=Math.sign(game.player.x-e.x);if(Math.abs(e.y-game.player.y)>1)e.y+=Math.sign(game.player.y-e.y)});log('Todos te odian un poco más.','combat')}}
- if(id==='execute'){const a=near(1).sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp)[0];if(!a)used=false;else attack(a,Math.round((a.hp/a.maxHp<.35?total('damage')*2:2)*skillMult))}
  if(id==='lootMagnet'){let n=0;for(const c of game.chests)if(!c.opened&&Math.abs(c.x-game.player.x)+Math.abs(c.y-game.player.y)<=3){openChest(c);n++}for(const k of [...game.keys])if(Math.abs(k.x-game.player.x)+Math.abs(k.y-game.player.y)<=3){game.keys=game.keys.filter(x=>x!==k);game.player.keys++;n++}if(!n)used=false}
- if(id==='ironRain'){const a=game.enemies.filter(e=>game.seen[e.y][e.x]);if(!a.length)used=false;else for(let i=0;i<Math.min(6,a.length+2);i++)attack(pick(a),Math.round((3+game.player.stats.intelligence+rng(6))*skillMult))}
+ if(id==='ironRain'){const a=game.enemies.filter(e=>game.seen[e.y][e.x]);if(!a.length)used=false;else for(let i=0;i<Math.min(6,a.length+2);i++)attack(pick(a),Math.round((3+game.player.stats.intelligence+rng(6))*skillMult),{skillId:id})}
  
 
 
  if(!used&&def.classId&&def.targetMode==='self')used=applyCreativeClassEffect(id,null,game.player.x,game.player.y);
  if(!used&&def.classEffect){
   const lvl=skillLevel(id),power=skillPowerMultiplier(id),visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
-  const base=Math.round((4+lvl*2+(def.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3))*power);
-  if(def.classEffect==='ranged'&&nearest){attack(nearest,base);used=true}
+  const base=Math.round((8+lvl*3+(def.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3))*power);
+  if(def.classEffect==='ranged'&&nearest){attack(nearest,base,{skillId:id});used=true}
   else if(def.classEffect==='shield'){const turns=4+Math.floor(lvl/2);applyBuff(id,def.name,turns,{armor:.22+lvl*.01});game.player.shield+=8+lvl*4+Math.floor(game.player.stats.vitality/2);used=true}
-  else if(def.classEffect==='dash'&&nearest){const dx=Math.sign(nearest.x-game.player.x),dy=Math.sign(nearest.y-game.player.y);for(let i=0;i<3;i++){const nx=game.player.x+dx,ny=game.player.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==nearest&&e.x===nx&&e.y===ny)||nearest.x===nx&&nearest.y===ny)break;game.player.x=nx;game.player.y=ny}attack(nearest,base);reveal(game.player.x,game.player.y);used=true}
-  else if(def.classEffect==='debuff'&&nearest){attack(nearest,base);nearest.weakened=2+Math.floor(lvl/3);used=true}
-  else if(def.classEffect==='aoe'){const a=near(2+Math.floor(lvl/5));if(a.length){a.forEach(e=>attack(e,Math.round(base*.8)));used=true}}
+  else if(def.classEffect==='dash'&&nearest){const dx=Math.sign(nearest.x-game.player.x),dy=Math.sign(nearest.y-game.player.y);for(let i=0;i<3;i++){const nx=game.player.x+dx,ny=game.player.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==nearest&&e.x===nx&&e.y===ny)||nearest.x===nx&&nearest.y===ny)break;game.player.x=nx;game.player.y=ny}attack(nearest,base,{skillId:id});reveal(game.player.x,game.player.y);used=true}
+  else if(def.classEffect==='debuff'&&nearest){attack(nearest,base,{skillId:id});nearest.weakened=2+Math.floor(lvl/3);used=true}
+  else if(def.classEffect==='aoe'){const a=near(2+Math.floor(lvl/5));if(a.length){a.forEach(e=>attack(e,Math.round(base*.8),{skillId:id}));used=true}}
   else if(def.classEffect==='heal'){healEntity(game.player,base*2);game.player[def.resource]=Math.min(game.player[def.resource==='mana'?'maxMana':'maxStamina'],game.player[def.resource]+base);used=true}
-  else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7));used=true}
+  else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7),{skillId:id});used=true}
   else if(def.classEffect==='utility'){const radius=7+lvl;for(let y=Math.max(0,game.player.y-radius);y<Math.min(ROWS,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(COLS,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
-  else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25)));used=true}
-  else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)));used=true}
+  else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25),{skillId:id}));used=true}
+  else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)),{skillId:id});used=true}
   else if(def.classEffect==='buff'){const turns=6+Math.floor(lvl/2);applyBuff(id,def.name,turns,{damage:.15+lvl*.01,armor:.15+lvl*.01});game.player.shield+=5+lvl*2;used=true}
-  else if(def.classEffect==='massive'&&visible.length){visible.forEach(e=>attack(e,Math.round(base*1.7)));used=true}
+  else if(def.classEffect==='massive'&&visible.length){visible.forEach(e=>attack(e,Math.round(base*1.7),{skillId:id}));used=true}
  }
 
  if(!used&&def.type==='utility'){
@@ -2162,7 +2162,7 @@ function useSkill(slot){
  if(!used&&skillDefs[id]?.unlock==='Botín'&&def.type!=='utility'){
   const visible=visibleEnemiesInRange(skillRange(id));
   const nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
-  const lvl=skillLevel(id),base=4+lvl*2+(def.type==='magic'?game.player.stats.intelligence:game.player.stats.strength);
+  const lvl=skillLevel(id),base=8+lvl*3+(def.type==='magic'?game.player.stats.intelligence:game.player.stats.strength);
   if(id==='healingPulse'){healEntity(game.player,Math.round((8+lvl*4+game.player.stats.wisdom)*skillMult));used=true}
   else if(['mirrorWard','boneArmor'].includes(id)){game.player.shield+=(id==='boneArmor'?12:8)+lvl*4;used=true}
   else if(id==='bloodRush'){game.player.hp=Math.max(1,game.player.hp-5);game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+20+lvl*4);used=true}
@@ -2170,9 +2170,9 @@ function useSkill(slot){
   else if(nearest){
    if(['blackSun','worldBreaker','alchemicalNova','entropyWave','stormTotem','chainSpark','gravityWell','holyCircuit'].includes(id)){
     const targets=id==='blackSun'?visible:visible.slice(0,Math.min(6,2+lvl));
-    targets.forEach(e=>attack(e,Math.round(base*(id==='blackSun'?2.1:1.25)*skillMult)));used=true
+    targets.forEach(e=>attack(e,Math.round(base*(id==='blackSun'?2.1:1.25)*skillMult),{skillId:id}));used=true
    }else{
-    attack(nearest,Math.round(base*(def.rarity==='legendary'?2.4:def.rarity==='epic'?1.8:def.rarity==='rare'?1.45:1.15)*skillMult));
+    attack(nearest,Math.round(base*(def.rarity==='legendary'?2.4:def.rarity==='epic'?1.8:def.rarity==='rare'?1.45:1.15)*skillMult),{skillId:id});
     if(id==='shockTrap'||id==='ironHook')nearest.stunned=1;
     if(id==='quantumThief'){healEntity(game.player,5+lvl);game.player.mana=Math.min(game.player.maxMana,game.player.mana+5+lvl);game.player.gold+=2+lvl}
     used=true
