@@ -1,3 +1,11 @@
+## v0.34.1 - 2026-07-24
+
+- Cambiada la edición de parámetros de mundo para que esté colapsada en un acordeón principal y solo se muestre al desplegarlo.
+- Separados los parámetros de creación de dungeon en dos acordeones internos: Dificultad para porcentajes y Historias para número de pisos y planificación por piso.
+- Añadida selección por cada piso de un floor existente de `config_floor` y una familia existente de `enemy_family`, evitando introducir nombres manuales.
+- El JSON del mundo guarda ahora un `floorPlan` por piso y la generación usa esa relación para elegir el floor visual y la familia enemiga correspondiente.
+- Actualizada la versión de la app y del paquete a `0.34.1`.
+
 ## v0.34.0 - 2026-07-24
 
 - Duplicado el impacto de Vitalidad sobre la vida máxima añadiendo un bonus directo de +2 HP por punto de VIT y aumentando a +5 HP por cada punto adicional de VIT obtenido con equipo o mejoras.
