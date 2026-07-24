@@ -24,13 +24,8 @@ module.exports=async(req,res)=>{
   const users=await found.json();
   if(!found.ok)return res.status(found.status).json(users);
   const existing=Array.isArray(users)?users[0]:null;
-  if(existing){
-   if(String(existing.pass||'')!==pass)return res.status(401).json({error:'Contraseña incorrecta'});
-   return res.status(200).json(publicUser(existing));
-  }
-  const created=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({nombre,pass,config:false})});
-  const data=await created.json();
-  if(!created.ok)return res.status(created.status).json(data);
-  return res.status(200).json(publicUser(Array.isArray(data)?data[0]:data));
+  if(!existing)return res.status(404).json({error:'Usuario no existe'});
+  if(String(existing.pass||'')!==pass)return res.status(401).json({error:'Contraseña incorrecta'});
+  return res.status(200).json(publicUser(existing));
  }catch(e){return res.status(500).json({error:e.message});}
 };

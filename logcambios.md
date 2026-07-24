@@ -1,3 +1,35 @@
+## v0.40.4 - Login directo al hub
+- Simplificado el login para validar únicamente usuario existente, contraseña y flag admin, sin crear usuarios nuevos automáticamente.
+- El login correcto entra siempre directamente al hub de personajes/multiplayer; los admins usan el botón Configurar dentro del hub.
+- Corregidas las referencias a botones dinámicos del hub para usar `querySelector` sobre el modal y evitar errores que devolvían a la pantalla de credenciales.
+- Actualizada la versión de la app y del paquete a `0.40.4`.
+
+## v0.40.3 - Corrección del acceso post-login
+- Corregido el hub post-login para no evaluar `enterConfig` antes de su inicialización durante el login de jugadores no admin.
+- El botón Configurar del hub admin ahora resuelve la navegación al hacer clic, evitando que el login vuelva a la pantalla de credenciales vacía.
+- Actualizada la versión de la app y del paquete a `0.40.3`.
+
+## v0.40.2 - Corrección de creación y entrada con personaje persistente
+- Restaurada la selección obligatoria de skill inicial al crear un personaje, también cuando se crea desde el hub o desde multiplayer.
+- Corregida la carga de personajes persistidos para reconstruir una partida válida antes de generar el piso, evitando estados incompletos que dejaban la vista negra o bloqueaban movimiento/ataque.
+- La creación de personaje en modo hub/multiplayer guarda el personaje solo después de elegir la skill inicial y vuelve al contexto correcto sin entrar automáticamente al mundo.
+- Actualizada la versión de la app y del paquete a `0.40.2`.
+
+## v0.40.1 - Sala multiplayer y flujo de personajes
+- Rediseñado el hub post-login con botones integrados visualmente en el estilo de la app y acciones separadas por contexto.
+- Añadida API `/api/multi-session` para registrar entrada y salida de usuarios en la sala multiplayer con `login_time`, `logout_time` y `user_id`.
+- Añadido modal propio de multiplayer con selección/creación de personaje, continuar sesión, crear mundo, logout y lateral de usuarios activos en sala.
+- El flujo de nuevo personaje abre siempre el modal de raza/clase/nombre y al terminar guarda el personaje para dejarlo disponible antes de entrar a dungeon o multiplayer.
+- Añadido botón de crear mundo al hub y a multiplayer para abrir el modal existente de dificultad, floors y familias.
+- Actualizada la versión de la app y del paquete a `0.40.1`.
+
+## v0.40.0 - Persistencia de personajes y sesiones
+- Añadidos endpoints Supabase `/api/user-pj` y `/api/dungeon-status` para guardar personajes por usuario, puntuaciones, estado alive/dead, último uso y sesiones persistentes de dungeon.
+- Añadido hub de juego tras login con puntuaciones, selección de personaje alive, nuevo personaje, continuar por `last_use`, acceso multiplayer y configurar para admins.
+- El estado del personaje y de la sesión de mundo se serializa al inicio de cada turno mediante `persistTurnState()`, guardando puntuación, JSON del personaje y JSON de sesión con turno, piso, mapa, enemigos, loot y posición.
+- El flujo de mundo permite iniciar con un personaje nuevo o reusar uno seleccionado, preparando la base para sesiones persistentes y multiplayer.
+- Actualizada la versión de la app y del paquete a `0.40.0`.
+
 ## v0.39.2 - Corrección del sistema de loot
 - Corregida la documentación de la tabla de pesos de rareza para que el peso de Raro coincida con la fórmula implementada `max(6, round(6 + ratio * 16))`.
 - Añadida segunda pasiva de Artefacto con 75% de probabilidad, manteniendo su pasiva garantizada.

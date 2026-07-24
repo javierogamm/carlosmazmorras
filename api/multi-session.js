@@ -1,0 +1,9 @@
+const SUPABASE_TABLE='multi_session';
+function supabaseConfig(){const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;if(!url||!key)throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY');return{url:url.replace(/\/$/,''),key}}
+function headers(key){return{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'}}
+module.exports=async(req,res)=>{try{const{url,key}=supabaseConfig();
+ if(req.method==='GET'){const q='select=id,login_time,user_id,logout_time&logout_time=is.null&order=login_time.desc';const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?${q}`,{headers:headers(key)}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(data)}
+ if(req.method==='POST'){const user_id=String(req.body?.user_id||'').trim();if(!user_id)return res.status(400).json({error:'Falta user_id'});const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({user_id})}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data)}
+ if(req.method==='PUT'){const id=req.query?.id||req.body?.id;if(!id)return res.status(400).json({error:'Falta id'});const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({logout_time:req.body?.logout_time||new Date().toISOString()})}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data)}
+ res.setHeader('Allow','GET, POST, PUT');return res.status(405).json({error:'Método no permitido'});
+}catch(e){return res.status(500).json({error:e.message})}};
