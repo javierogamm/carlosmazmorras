@@ -1,3 +1,10 @@
+## v0.40.0 - Persistencia de personajes y sesiones
+- Añadidos endpoints Supabase `/api/user-pj` y `/api/dungeon-status` para guardar personajes por usuario, puntuaciones, estado alive/dead, último uso y sesiones persistentes de dungeon.
+- Añadido hub de juego tras login con puntuaciones, selección de personaje alive, nuevo personaje, continuar por `last_use`, acceso multiplayer y configurar para admins.
+- El estado del personaje y de la sesión de mundo se serializa al inicio de cada turno mediante `persistTurnState()`, guardando puntuación, JSON del personaje y JSON de sesión con turno, piso, mapa, enemigos, loot y posición.
+- El flujo de mundo permite iniciar con un personaje nuevo o reusar uno seleccionado, preparando la base para sesiones persistentes y multiplayer.
+- Actualizada la versión de la app y del paquete a `0.40.0`.
+
 ## v0.39.2 - Corrección del sistema de loot
 - Corregida la documentación de la tabla de pesos de rareza para que el peso de Raro coincida con la fórmula implementada `max(6, round(6 + ratio * 16))`.
 - Añadida segunda pasiva de Artefacto con 75% de probabilidad, manteniendo su pasiva garantizada.

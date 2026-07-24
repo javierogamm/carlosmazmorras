@@ -1,0 +1,10 @@
+const SUPABASE_TABLE='dungeon_status';
+function supabaseConfig(){const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;if(!url||!key)throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY');return{url:url.replace(/\/$/,''),key}}
+function headers(key){return{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'}}
+function clean(b){const s=b.dungeon_status||b.status||{};return{dungeon_world_id:String(b.dungeon_world_id||s.dungeonWorldId||''),players_ID:b.players_ID||b.playersId||(s.players||[]).join(','),dungeon_status:s}}
+module.exports=async(req,res)=>{try{const{url,key}=supabaseConfig();
+ if(req.method==='GET'){let q='select=id,created_at,dungeon_world_id,players_ID,dungeon_status&order=created_at.desc';if(req.query?.playerId)q+=`&players_ID=ilike.*${encodeURIComponent(req.query.playerId)}*`;if(req.query?.worldId)q+=`&dungeon_world_id=eq.${encodeURIComponent(req.query.worldId)}`;const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?${q}`,{headers:headers(key)}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(data)}
+ if(req.method==='POST'){const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(clean(req.body||{}))}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data)}
+ if(req.method==='PUT'){const id=req.query?.id||req.body?.id;if(!id)return res.status(400).json({error:'Falta id'});const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(clean(req.body||{}))}),data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data)}
+ res.setHeader('Allow','GET, POST, PUT');return res.status(405).json({error:'Método no permitido'});
+}catch(e){return res.status(500).json({error:e.message})}};
