@@ -11,7 +11,7 @@ let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
 let currentCharacter=null;
-const APP_VERSION='0.40.1';
+const APP_VERSION='0.40.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2935,24 +2935,31 @@ async function resumeSession(sessionId){
   const state=session.dungeon_status||{};
   const bundle=pj.pj_json||{};
   const player=bundle.player;
-  game={floor:state.currentFloor||1,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
+  const floorNum=state.currentFloor||1;
+  const overlay=state.floors?.[String(floorNum)]||null;
+  game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
-  generateFloor();
-  const overlay=state.floors?.[String(game.floor)];
-  if(overlay){
-   if(overlay.enemies)game.enemies=overlay.enemies;
-   if(overlay.chests)game.chests=overlay.chests;
-   if(overlay.doors)game.doors=overlay.doors;
-   if(overlay.keys)game.keys=overlay.keys;
-   if(overlay.companions)game.companions=overlay.companions;
-   if(overlay.skillObjects)game.skillObjects=overlay.skillObjects;
-   if(overlay.seen&&overlay.seen.length)game.seen=overlay.seen;
+  if(overlay&&overlay.map){
+   Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:(overlay.seen&&overlay.seen.length)?overlay.seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))});
    game.boss=game.enemies.find(e=>e.boss)||null;
+  }else{
+   generateFloor();
+   if(overlay){
+    if(overlay.enemies)game.enemies=overlay.enemies;
+    if(overlay.chests)game.chests=overlay.chests;
+    if(overlay.doors)game.doors=overlay.doors;
+    if(overlay.keys)game.keys=overlay.keys;
+    if(overlay.companions)game.companions=overlay.companions;
+    if(overlay.skillObjects)game.skillObjects=overlay.skillObjects;
+    if(overlay.seen&&overlay.seen.length)game.seen=overlay.seen;
+    game.boss=game.enemies.find(e=>e.boss)||null;
+   }
   }
   const pos=state.players?.[String(pj.id)];
-  if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing;anim.heroX=anim.targetX=pos.x;anim.heroY=anim.targetY=pos.y;anim.t=1;reveal(pos.x,pos.y)}
-  recomputeDerived();updateUI();draw();banner('SESIÓN RESTAURADA');
+  if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
+  anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
+  recomputeDerived();updateUI();draw();banner(`SESIÓN RESTAURADA · PISO ${game.floor}`);
  }catch(e){alert('Error al continuar la sesión: '+e.message)}
 }
 
@@ -2977,7 +2984,7 @@ function persistTurnState(){
  game.maxFloorReached=bundle.maxFloorReached;
  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- const overlay={enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
+ const overlay={map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
  const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{...(game.sessionFloors||{}),[game.floor]:overlay},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
  fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})}).catch(e=>console.error('No se pudo guardar la sesión',e));

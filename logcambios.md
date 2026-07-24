@@ -1,3 +1,8 @@
+## v0.40.2 - Corrección de carga de piso al continuar sesión
+- Cada piso guardado en `dungeon_status` ahora incluye su mapa, salas, escalera, tileset visual y familia de enemigos, no solo el estado mutable (antes dependía de recalcular el piso por índice contra el mundo precomputado, lo que podía fallar y cargar un piso incorrecto/aleatorio).
+- "Continuar sesión" restaura el piso directamente desde ese snapshot autocontenido; si una sesión antigua no tiene snapshot completo, cae de forma segura al método anterior de regeneración por índice.
+- Actualizada la versión de la app y del paquete a `0.40.2`.
+
 ## v0.40.1 - Mejoras en continuar sesión
 - La lista de sesiones de "Continuar sesión" ahora muestra nombre del mundo, piso y turno en lugar de solo el id del mundo.
 - El listado ligero de `dungeon_status` incluye el JSON de estado para poder mostrar piso/turno sin peticiones extra por sesión.
