@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.36.5 ALEATORIO MANUAL</title>
+<title>MAZMORRA // BOTÍN v0.37.2 SKILL GUARD</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.36.5 ALEATORIO MANUAL</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.37.2 SKILL GUARD</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -87,8 +87,14 @@
 <div class="overlay" id="landingOverlay">
  <div class="modal landingModal">
   <h2>MAZMORRA // BOTÍN</h2>
-  <p class="small">Elige si quieres configurar objetos personalizados o entrar a jugar.</p>
-  <div class="landingActions">
+  <p class="small">Inicia sesión para entrar. Si el usuario no existe se crea automáticamente como jugador no admin.</p>
+  <form class="loginForm" id="loginForm">
+   <label>Usuario <input id="loginName" name="nombre" autocomplete="username" maxlength="80" required></label>
+   <label>Contraseña <input id="loginPass" name="pass" type="password" autocomplete="current-password" maxlength="80" required></label>
+   <button class="start" id="loginBtn" type="submit">SIGN IN</button>
+  </form>
+  <div id="loginStatus" class="small"></div>
+  <div class="landingActions hidden" id="adminLandingActions">
    <button class="start" id="landingConfigBtn">CONFIGURAR</button>
    <button class="start" id="landingPlayBtn">JUGAR</button>
   </div>
@@ -96,7 +102,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.36.5 ALEATORIO MANUAL</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.37.2 SKILL GUARD</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
