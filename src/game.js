@@ -10,7 +10,7 @@ let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
-const APP_VERSION='0.36.1';
+const APP_VERSION='0.36.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];

@@ -1,3 +1,9 @@
+## v0.36.2 - 2026-07-24
+
+- Añadido `reglas json pociones.md` con instrucciones completas para generar JSON de pociones, efectos excluyentes, payloads válidos y lista de skills disponibles para aprendizaje.
+- Añadido `reglas json objetos.md` con reglas para generar JSON de objetos de equipo, slots, tiers, affixes, skills, pasivas y ejemplos de importación.
+- Actualizada la versión de la app y del paquete a `0.36.2`.
+
 ## v0.36.1 - 2026-07-24
 
 - Reestructurado el configurador de pociones para que los efectos sean excluyentes mediante un único selector.
