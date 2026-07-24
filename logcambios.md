@@ -1,3 +1,8 @@
+## v0.40.3 - Corrección del acceso post-login
+- Corregido el hub post-login para no evaluar `enterConfig` antes de su inicialización durante el login de jugadores no admin.
+- El botón Configurar del hub admin ahora resuelve la navegación al hacer clic, evitando que el login vuelva a la pantalla de credenciales vacía.
+- Actualizada la versión de la app y del paquete a `0.40.3`.
+
 ## v0.40.2 - Corrección de creación y entrada con personaje persistente
 - Restaurada la selección obligatoria de skill inicial al crear un personaje, también cuando se crea desde el hub o desde multiplayer.
 - Corregida la carga de personajes persistidos para reconstruir una partida válida antes de generar el piso, evitando estados incompletos que dejaban la vista negra o bloqueaban movimiento/ataque.
