@@ -364,7 +364,8 @@ for(const skill of Object.values(skillDefs)){
  }
 }
 
-const classSkillMilestones={1:1,3:1,5:1,7:1,10:2,15:2,20:2,25:2,30:3,40:3,50:3};
+const classSkillMilestones={1:1};
+const LEVEL_UP_RANDOM_SKILL_LEVELS=new Set([3,5,10,15,20,25,30,35,40]);
 
 
 
@@ -1085,7 +1086,7 @@ function reveal(cx,cy,r=game.player.vision){for(let y=Math.max(0,cy-r);y<=Math.m
 
 let pendingClassSkillRequests=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1,3,5,7,10,15,20,25,30,40,50];
+const CLASS_SKILL_LEVELS=[1];
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
@@ -1095,6 +1096,14 @@ function classSkillIdsForTier(tier){
  const roman=['','I','II','III'][tier];
  return (classSkillTrees[game.player.cls]?.[roman]||[]).filter(id=>skillDefs[id]);
 }
+function classSkillIdsForLevelReward(level){
+ const maxTier=level>=10?3:2,tree=classSkillTrees[game.player.cls]||{};
+ return Object.entries(tree).flatMap(([roman,ids])=>{
+  const tier={I:1,II:2,III:3}[roman]||0;
+  return tier&&tier<=maxTier?ids:[];
+ }).filter(id=>skillDefs[id]&&!game.player.knownSkills.includes(id));
+}
+function randomClassSkillForLevelReward(level){return pick(classSkillIdsForLevelReward(level))}
 function knownClassSkillIds(){
  if(!game?.player)return [];
  const all=new Set(Object.values(classSkillTrees[game.player.cls]||{}).flat());
@@ -1144,6 +1153,12 @@ function queueMissingClassSkillChoices(){
  if(missing)queueClassSkillChoice(missing.level,missing.initial);
 }
 function classSkillChoicesForTier(tier){return classSkillIdsForTier(tier).filter(id=>!game.player.knownSkills.includes(id))}
+function levelRewardLabel(level,skillId){
+ const s=skillDefs[skillId];
+ if(!s)return '';
+ const tier=['','I','II','III'][s.tier]||s.tier||'?';
+ return `<div class="levelRewardSkill"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${tier}</span><p>${s.desc}</p><span class="small">Skill aleatoria de ${game.player.className} desbloqueada al nivel ${level}.</span></div>`
+}
 function processClassSkillChoices(){
  if(!game?.player)return;
  if(game.player.unspentStatPoints>0||document.getElementById('statPointModal')?.classList.contains('open'))return;
@@ -1689,8 +1704,23 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
 }
 
 const statDescriptions={strength:'Aumenta daño físico y pruebas de fuerza.',vitality:'Aumenta vida y resistencia.',agility:'Aumenta evasión y movilidad.',luck:'Mejora crítico, botín y eventos.',intelligence:'Aumenta poder mágico y maná.',wisdom:'Mejora regeneración y percepción.'};
-function queueStatPoint(){game.player.unspentStatPoints=(game.player.unspentStatPoints||0)+1;showStatPointModal()}
-function showStatPointModal(){const p=game.player;if(!p?.unspentStatPoints)return;const modal=document.getElementById('statPointModal'),grid=document.getElementById('statChoiceGrid'),labels={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices()}}))}
+function queueStatPoint(level){
+ const p=game.player;p.unspentStatPoints=(p.unspentStatPoints||0)+1;p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];
+ const skillId=LEVEL_UP_RANDOM_SKILL_LEVELS.has(level)?randomClassSkillForLevelReward(level):null;
+ p.pendingLevelUpRewards.push({level,skillId});
+ showStatPointModal()
+}
+function showStatPointModal(){
+ const p=game.player;if(!p?.unspentStatPoints)return;
+ const modal=document.getElementById('statPointModal'),grid=document.getElementById('statChoiceGrid'),title=document.getElementById('statPointTitle'),text=document.getElementById('statPointText'),skill=document.getElementById('statPointSkillReward'),labels={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
+ if(!modal||!grid)return;
+ p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];const reward=p.pendingLevelUpRewards[0]||{};
+ if(title)title.textContent=`SUBIDA DE NIVEL${reward.level?` · NIVEL ${reward.level}`:''}`;
+ if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
+ if(skill)skill.innerHTML=reward.skillId?levelRewardLabel(reward.level,reward.skillId):'';
+ grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
+ grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice,reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;if(reward.skillId)learnSkill(reward.skillId);recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(reward.skillId)log(`Recompensa aleatoria de nivel ${reward.level}: ${skillDefs[reward.skillId].name}.`,'loot');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
+}
 function gainXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
@@ -1703,7 +1733,7 @@ function gainXp(v){
   p.maxMana+=g.mana+Math.floor((p.stats.intelligence+p.stats.wisdom)/3);p.mana=p.maxMana;
   p.baseDamage+=g.damage;p.baseArmor+=g.armor;
   if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
-  banner(`NIVEL ${p.level}`);queueStatPoint();queueClassSkillChoice(p.level);
+  banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
 }
@@ -1927,6 +1957,7 @@ function applyCreativeClassEffect(id,target,x,y){
 }
 
 function playerFinished(){
+ if(document.getElementById('statPointModal')?.classList.contains('open')||document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=true;busy=false;updateUI();draw();return}
  busy=true;game.turn++;classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
