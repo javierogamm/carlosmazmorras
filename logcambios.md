@@ -1,3 +1,14 @@
+## v0.41.1 - Correcciones de multijugador
+- Corregidas las habilidades que quedaban en gris y no se podían lanzar aunque sí se pudiera mover: al recibir el turno se actualizaba `busy` pero no se re-renderizaba la barra de habilidades, que conservaba el atributo `disabled` del turno anterior. Ahora `mpSetMyTurn()` refresca la interfaz.
+- Corregido el indicador de turno, que nombraba al jugador equivocado: el índice del jugador activo se actualizaba después de pintar el mensaje, por lo que mostraba al jugador que acababa de jugar en vez de al siguiente.
+- Añadida fase explícita "Turno de los enemigos..." en el indicador, en lugar de anunciar ya al siguiente jugador mientras actúan los enemigos.
+- Reducida drásticamente la espera entre turnos: el sondeo de estado compartido pasa de 3s a 1s y la pausa antes del turno enemigo de 500ms a 220ms.
+- Reducido el tamaño del estado enviado en cada turno, que era la causa principal de la lentitud: la niebla de guerra se serializa de forma compacta y solo se guarda el piso actual en vez de acumular todos los pisos visitados en cada escritura.
+- Corregido que un jugador no anfitrión cargara un piso aleatorio: ahora el anfitrión guarda el estado del piso nada más iniciar la partida, y quien se une carga ese piso exacto; si no hubiera estado guardado se recurre al piso precomputado del mundo en vez de generar uno nuevo, avisando con un error claro si tampoco existe.
+- Corregido que el anfitrión pudiera borrar del estado compartido a un jugador recién unido si este entraba mientras el anfitrión tenía el turno.
+- Las sesiones multijugador ya iniciadas vuelven a aparecer en la lista de sesiones a las que unirse (mostrando piso actual), ocultando las sesiones en las que ya participas.
+- Actualizada la versión de la app y del paquete a `0.41.1`.
+
 ## v0.41.0 - Multijugador cooperativo
 - Añadida presencia multijugador sobre la tabla `multi_session` (`api/multi-session.js`): login al entrar en MULTIPLAYER, heartbeat periódico (reutiliza `login_time` como último latido) y logout al salir; el panel MULTIPLAYER muestra en tiempo real los usuarios conectados (activos en los últimos 45s).
 - El botón MULTIPLAYER deja de estar inactivo: abre el nuevo panel con sesiones abiertas para unirse, botón para crear sesión y botón "Continuar sesión" con tus propias partidas multijugador.

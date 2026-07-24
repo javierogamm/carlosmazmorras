@@ -17,7 +17,7 @@ let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
-const APP_VERSION='0.41.0';
+const APP_VERSION='0.41.1';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1985,8 +1985,9 @@ async function playerFinishedMultiplayer(){
  const order=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:[game.pjId];
  const myIndex=order.findIndex(id=>String(id)===String(game.pjId));
  const isLast=myIndex===-1||myIndex===order.length-1;
- mpSetMyTurn(false);
  if(isLast){
+  game.activePlayerIndex=0;
+  mpSetMyTurn(false,'enemies');
   setTimeout(async()=>{
    if(!game.over){
     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
@@ -1994,13 +1995,14 @@ async function playerFinishedMultiplayer(){
    }
    if(!game.over){game.turn=(game.turn||0)+1;game.activePlayerIndex=0}
    await mpPersistTurnState();
-   updateUI();draw();
+   draw();
    if(!game.over){const freshOrder=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:order;mpSetMyTurn(String(freshOrder[0])===String(game.pjId))}
-  },500);
+  },220);
  }else{
   game.activePlayerIndex=myIndex+1;
+  mpSetMyTurn(false);
   await mpPersistTurnState();
-  updateUI();draw();
+  draw();
  }
 }
 
@@ -2994,8 +2996,7 @@ async function resumeSession(sessionId){
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
   if(overlay&&overlay.map){
-   Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:(overlay.seen&&overlay.seen.length)?overlay.seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))});
-   game.boss=game.enemies.find(e=>e.boss)||null;
+   applyFloorSnapshot(overlay);
   }else{
    generateFloor();
    if(overlay){
@@ -3005,7 +3006,7 @@ async function resumeSession(sessionId){
     if(overlay.keys)game.keys=overlay.keys;
     if(overlay.companions)game.companions=overlay.companions;
     if(overlay.skillObjects)game.skillObjects=overlay.skillObjects;
-    if(overlay.seen&&overlay.seen.length)game.seen=overlay.seen;
+    if(overlay.seen&&overlay.seen.length)game.seen=decodeSeen(overlay.seen);
     game.boss=game.enemies.find(e=>e.boss)||null;
    }
   }
@@ -3031,14 +3032,26 @@ async function enterWorldWithCharacter(){
  banner(`ENTRAS EN ${selectedDungeonWorld.world_name} CON ${game.player.name}`);
 }
 
+function encodeSeen(seen){return (seen||[]).map(row=>row.map(v=>v?1:0).join(''))}
+function decodeSeen(seen){
+ if(!seen||!seen.length)return Array.from({length:ROWS},()=>Array(COLS).fill(false));
+ if(typeof seen[0]==='string')return seen.map(row=>Array.from(row,ch=>ch==='1'));
+ return seen;
+}
+function floorSnapshot(){
+ return {map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen)};
+}
+function applyFloorSnapshot(overlay){
+ Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen)});
+ game.boss=(game.enemies||[]).find(e=>e.boss)||null;
+}
 function persistTurnState(){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- const overlay={map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
- const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{...(game.sessionFloors||{}),[game.floor]:overlay},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
+ const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
  fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})}).catch(e=>console.error('No se pudo guardar la sesión',e));
 }
@@ -3122,12 +3135,18 @@ async function refreshOpenSessions(){
  const status=document.getElementById('mpOpenStatus'),list=document.getElementById('mpOpenList');
  status.textContent='Cargando sesiones...';list.innerHTML='';
  try{
-  const r=await fetch('/api/dungeon-status');const sessions=await r.json();
+  const [chars,r]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status')]);
+  const sessions=await r.json();
   if(!r.ok)throw new Error(sessions.error||'No se pudieron cargar sesiones');
-  const open=sessions.filter(s=>s.dungeon_status?.multiplayer&&!s.dungeon_status?.started);
-  if(!open.length){status.textContent='No hay sesiones abiertas. Crea una.';return}
-  status.textContent=`${open.length} sesión(es) esperando jugadores.`;
-  list.innerHTML=open.map(s=>{const st=s.dungeon_status||{};const names=(st.roster||[]).map(r=>r.pjName).join(', ');return `<button type="button" class="worldCard" data-open-session="${s.id}"><b>${st.hostUser||'Anfitrión'}</b><span>Mundo #${s.dungeon_world_id} · ${names}</span><small>Creada ${new Date(s.created_at).toLocaleString()}</small></button>`}).join('');
+  const myIds=new Set(chars.map(c=>String(c.id)));
+  const open=sessions.filter(s=>{
+   if(!s.dungeon_status?.multiplayer)return false;
+   let ids=[];try{ids=JSON.parse(s.players_ID||'[]')||[]}catch(e){}
+   return !ids.some(id=>myIds.has(String(id)));
+  });
+  if(!open.length){status.textContent='No hay sesiones a las que unirse. Crea una.';return}
+  status.textContent=`${open.length} sesión(es) disponibles.`;
+  list.innerHTML=open.map(s=>{const st=s.dungeon_status||{};const names=(st.roster||[]).map(r=>r.pjName).join(', ');return `<button type="button" class="worldCard" data-open-session="${s.id}"><b>${st.hostUser||'Anfitrión'}</b><span>${st.started?`En curso · Piso ${st.currentFloor||1}`:'Sala de espera'} · ${names}</span><small>Creada ${new Date(s.created_at).toLocaleString()}</small></button>`}).join('');
   list.querySelectorAll('[data-open-session]').forEach(btn=>btn.onclick=()=>mpStartJoinFlow(btn.dataset.openSession));
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
@@ -3254,10 +3273,10 @@ async function mpEnterStartedSession(session){
   game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:st.activePlayerIndex||0,hostId:st.host,roster:st.roster||[]};
   app.classList.remove('hidden');
   if(overlay&&overlay.map){
-   Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:(overlay.seen&&overlay.seen.length)?overlay.seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))});
-   game.boss=game.enemies.find(e=>e.boss)||null;
-  }else{
-   generateFloor();
+   applyFloorSnapshot(overlay);
+  }else if(!loadPrecomputedFloor()){
+   if(String(st.host)===String(pj.id))generateFloor();
+   else throw new Error('El anfitrión todavía no ha generado el piso de esta sesión. Espera unos segundos e inténtalo de nuevo.');
   }
   const pos=st.players?.[String(pj.id)];
   if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
@@ -3267,9 +3286,9 @@ async function mpEnterStartedSession(session){
   const activeId=game.turnOrder[game.activePlayerIndex||0];
   mpSetMyTurn(String(activeId)===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,3000);
+  mpGamePollTimer=setInterval(mpPollGameState,1000);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
- }catch(e){alert('Error al entrar en la partida: '+e.message)}
+ }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');alert('Error al entrar en la partida: '+e.message)}
 }
 
 function mpSyncOtherPlayers(st){
@@ -3280,19 +3299,23 @@ function mpSyncOtherPlayers(st){
  });
 }
 
-function mpSetMyTurn(isMine){
+function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  busy=!isMine;
  const el=document.getElementById('mpTurnIndicator');
- if(!el)return;
- el.classList.remove('hidden');
- el.classList.toggle('myTurn',isMine);
- if(isMine){el.textContent='¡ES TU TURNO!'}
- else{
-  const activeId=game.turnOrder?.[game.activePlayerIndex||0];
-  const meta=(game.roster||[]).find(r=>String(r.pjId)===String(activeId));
-  el.textContent=`Esperando a ${meta?.nombre||meta?.pjName||'otro jugador'}...`;
+ if(el){
+  el.classList.remove('hidden');
+  el.classList.toggle('myTurn',isMine);
+  if(isMine)el.textContent='¡ES TU TURNO!';
+  else if(phase==='enemies')el.textContent='Turno de los enemigos...';
+  else{
+   const activeId=game.turnOrder?.[game.activePlayerIndex||0];
+   const meta=(game.roster||[]).find(r=>String(r.pjId)===String(activeId));
+   const who=meta?(meta.nombre?`${meta.nombre} (${meta.pjName})`:meta.pjName):'otro jugador';
+   el.textContent=`Esperando a ${who}...`;
+  }
  }
+ updateUI();
 }
 
 async function mpPollGameState(){
@@ -3305,11 +3328,12 @@ async function mpPollGameState(){
   game.roster=st.roster||game.roster;
   game.activePlayerIndex=st.activePlayerIndex||0;
   const amIActive=String(game.turnOrder[game.activePlayerIndex])===String(game.pjId);
+  mpSyncOtherPlayers(st);
   if(!game.myTurn){
    if((st.currentFloor||1)!==game.floor){
     game.floor=st.currentFloor||1;
     const overlay=st.floors?.[String(game.floor)];
-    if(overlay&&overlay.map)Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,seen:(overlay.seen&&overlay.seen.length)?overlay.seen:game.seen});
+    if(overlay&&overlay.map)Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,seen:decodeSeen(overlay.seen)});
     const spawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
     if(spawn){game.player.x=spawn.x;game.player.y=spawn.y;anim.heroX=anim.targetX=spawn.x;anim.heroY=anim.targetY=spawn.y;anim.t=1;reveal(spawn.x,spawn.y)}
    }
@@ -3325,7 +3349,6 @@ async function mpPollGameState(){
    }
    game.turn=st.turn??game.turn;
    game.sessionFloors=st.floors||game.sessionFloors;
-   mpSyncOtherPlayers(st);
    const myPos=st.players?.[String(game.pjId)];
    if(myPos&&(myPos.hp||0)<=0&&game.player.hp>0){game.player.hp=0;game.over=true;mpHandleDefeatWhileWaiting();return}
    recomputeDerived();updateUI();draw();
@@ -3347,8 +3370,7 @@ async function mpPersistTurnState(){
  game.maxFloorReached=bundle.maxFloorReached;
  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- const overlay={map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
- game.sessionFloors={...(game.sessionFloors||{}),[game.floor]:overlay};
+ game.sessionFloors={[game.floor]:floorSnapshot()};
  const myPos={x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
  const otherPositions={};
  const floorSpawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
@@ -3410,7 +3432,8 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
   const pdata=await pr.json();if(!pr.ok)throw new Error(pdata.error||'No se pudo iniciar la partida');
   if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
   mpLobbyOverlay.classList.add('hidden');
-  mpEnterStartedSession({...session,dungeon_status:st});
+  await mpEnterStartedSession({...session,dungeon_status:st});
+  if(game?.multiplayer)await mpPersistTurnState();
  }catch(e){alert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
