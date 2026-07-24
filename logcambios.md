@@ -1,3 +1,11 @@
+## v0.34.3 - 2026-07-24
+
+- Rehecho el cálculo de daño recibido para normalizar cualquier fuente enemiga contra un presupuesto plano por piso/nivel antes de defensas, evitando golpes desproporcionados de enemigos configurados con ataque alto.
+- El slider de % daño recibido deja de multiplicar directamente todo el modelo y pasa a aportar un ajuste plano acotado sobre el daño normalizado.
+- Reducido de nuevo el multiplicador base de daño enemigo y bajada la CD defensiva para que los combates duren varias rondas y el héroe no muera en dos turnos.
+- Añadido al log de combate el desglose `base → normalizado` para detectar rápidamente fuentes de daño infladas.
+- Actualizada la versión de la app y del paquete a `0.34.3`.
+
 ## v0.34.2 - 2026-07-24
 
 - Reducido el daño base efectivo de los enemigos para suavizar la dificultad general antes de aplicar defensas y multiplicadores de mundo.
