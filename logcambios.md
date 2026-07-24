@@ -1,3 +1,9 @@
+## v0.40.4 - Login directo al hub
+- Simplificado el login para validar únicamente usuario existente, contraseña y flag admin, sin crear usuarios nuevos automáticamente.
+- El login correcto entra siempre directamente al hub de personajes/multiplayer; los admins usan el botón Configurar dentro del hub.
+- Corregidas las referencias a botones dinámicos del hub para usar `querySelector` sobre el modal y evitar errores que devolvían a la pantalla de credenciales.
+- Actualizada la versión de la app y del paquete a `0.40.4`.
+
 ## v0.40.3 - Corrección del acceso post-login
 - Corregido el hub post-login para no evaluar `enterConfig` antes de su inicialización durante el login de jugadores no admin.
 - El botón Configurar del hub admin ahora resuelve la navegación al hacer clic, evitando que el login vuelva a la pantalla de credenciales vacía.
