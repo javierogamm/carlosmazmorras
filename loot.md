@@ -13,7 +13,7 @@ El loot usa 6 rarezas de equipo. Cada rareza define color, número de afijos, pr
 | Raro (`rare`) | Raro | 15 | 3-4 | 45% | 12% | x1.35 |
 | Épico (`epic`) | Épico | 8 | 4-5 | 85% | 42% | x1.65 |
 | Legendario (`legendary`) | Legendario | 2 | 5-6 | 100% + 55% de segunda pasiva | 100% | x2.10 |
-| Artefacto (`artifact`) | Artefacto | 0.6 | 6-7 | 100% | 100% | x2.65 |
+| Artefacto (`artifact`) | Artefacto | 0.6 | 6-7 | 100% + 75% de segunda pasiva | 100% | x2.65 |
 
 > Nota: los pesos legacy están definidos en la tabla `rarities`, pero la tirada normal actual usa la progresión por piso (`rarityWeights`) como base principal y solo cae al peso legacy si falta el peso de esa rareza en la fila de progresión.
 
@@ -62,10 +62,10 @@ Las rarezas por encima del máximo permitido se fuerzan a peso 0.
 | Piso | Ratio | Rarezas permitidas | Pesos aproximados |
 |---:|---:|---|---|
 | 1 | 0.00 | Común, Infrecuente, Raro | 72 / 22 / 6 |
-| 5 | 0.21 | Común, Infrecuente, Raro | 61 / 25 / 11 |
-| 6 | 0.26 | Común, Infrecuente, Raro, Épico | 58 / 26 / 12 / 1 |
-| 11 | 0.53 | Común, Infrecuente, Raro, Épico; Legendario solo si nivel >= 9 y ratio >= 0.55, por tanto aún no | 44 / 29 / 18 / 6 |
-| 12 | 0.58 | hasta Legendario si nivel >= 9 | 41 / 30 / 19 / 7 / 1 |
+| 5 | 0.21 | Común, Infrecuente, Raro | 61 / 25 / 9 |
+| 6 | 0.26 | Común, Infrecuente, Raro, Épico | 58 / 26 / 10 / 1 |
+| 11 | 0.53 | Común, Infrecuente, Raro, Épico; Legendario solo si nivel >= 9 y ratio >= 0.55, por tanto aún no | 44 / 29 / 14 / 6 |
+| 12 | 0.58 | hasta Legendario si nivel >= 9 | 41 / 30 / 15 / 7 / 1 |
 | 17 | 0.84 | hasta Artefacto si nivel >= 14 | 27 / 34 / 19 / 12 / 3 / 1 |
 | 20 | 1.00 | hasta Artefacto si nivel >= 14 | 20 / 36 / 22 / 15 / 5 / 1 |
 
@@ -74,7 +74,7 @@ Las rarezas por encima del máximo permitido se fuerzan a peso 0.
 La rareza final se elige con `weightedRarity(level)`. Primero se obtiene la fila de progresión del piso y después se ajusta cada peso con un bonus de calidad:
 
 ```text
-bonus = (level - 1) * 0.18 + Suerte * 0.14 + rarityFind * 0.18
+bonus = (level - 1) * 0.18 + (SuerteFinal + lootLuckTemporal) * 0.14 + rarityFind * 0.18
 pesoAjustado = max(0.2, pesoBase * (1 + (indiceRareza - 1) * bonus / 55))
 ```
 
@@ -90,10 +90,11 @@ Consecuencias:
 
 ### Fuentes de Suerte y rareza
 
-- La stat `luck` base de clase, raza, subidas de nivel, equipo y pociones permanentes/temporales afecta al bonus de rareza cuando forma parte de `game.player.stats` o stats finales según el caso de uso.
+- La Suerte final (`derived.finalStats.luck`) afecta al bonus de rareza, incluyendo base, raza, subidas, equipo y pociones permanentes/temporales de stats.
 - La raza Mediano Rompebolsas aporta `+2 SUE`, `+1 AGI` y `+12% de hallazgo de rareza` (`rarityFind`).
 - El pasivo de objeto `Olfato de Chatarra` (`treasure`) aporta `rarityFind` entre 4% y 18%, escalado por nivel de objeto y multiplicador de rareza.
 - El `rarityFind` acumulado desde pasivas y raza se suma en `derived.rarityFind`.
+- Los efectos temporales `lootLuck`, como `fortuneShot`, se suman solo para tiradas de botín.
 
 ## 5. Niveles de objeto (`iLvl`)
 
@@ -138,7 +139,7 @@ Al abrir un cofre:
 
 - siempre da 1 objeto;
 - tiene 24% de probabilidad de dar un segundo objeto;
-- tiene `16% + piso * 2.5%` de probabilidad de enseñar una habilidad lootable;
+- tiene `min(65%, 16% + piso * 2.5%)` de probabilidad de enseñar una habilidad lootable;
 - da oro: `5 + random(0..13)`.
 
 La skill `lootMagnet` abre cofres cercanos en radio Manhattan <= 3 y recoge llaves cercanas en el mismo radio. `dimensionalPocket` abre cofres ya explorados con un límite de `2 + floor(nivelSkill / 2)`.
@@ -151,7 +152,7 @@ Al matar un enemigo:
 - oro de jefe: 75;
 - XP normal: `8 + floor(piso / 2)`;
 - XP de jefe: 60;
-- probabilidad de objeto normal: `13% + SuerteBase * 0.8%`;
+- probabilidad de objeto normal: `min(65%, 13% + SuerteFinal * 0.8%)`;
 - jefes y jefes de evento siempre tiran un objeto;
 - si el enemigo es jefe, el loot se crea con `nivelJugador + 3` y fuente `boss`;
 - si el enemigo es élite, la fuente marcada es `elite`, pero la probabilidad base de soltar objeto no cambia salvo que sea jefe.
@@ -174,7 +175,7 @@ Los eventos de tipo `reward` dan recompensas especiales:
 - `buriedArmory`: 3 objetos.
 - Otros eventos de recompensa: 2 objetos.
 - Cada objeto se genera con `makeLoot(nivelJugador + piso + 2, 'specialReward')`.
-- El primer objeto tiene 60% de probabilidad de forzarse a Raro, Épico o Legendario al azar.
+- El primer objeto tiene 60% de probabilidad de forzarse a Raro, Épico o Legendario al azar, filtrando antes por las rarezas permitidas en la progresión actual de piso/nivel.
 - `fairyCache`: 65% de probabilidad adicional de enseñar una habilidad lootable.
 - `forgottenShrine`: restaura vida, maná y stamina al máximo.
 - `smugglerLocker`: da `40 + piso * 15` oro.
@@ -200,7 +201,7 @@ min(22%, 7% + piso * 2.5% + bonusBoss)
 
 Donde `bonusBoss` es 8% si la fuente es `boss`; otras fuentes no añaden bonus en esta fórmula.
 
-Las pociones usan `encounterLootQuality(source)` para su calidad y pueden tener efectos instantáneos, temporales o permanentes. Entre las definiciones existe `fortuneShot`, una poción épica con `lootLuck: 20` en su efecto descrito como `+20 de Suerte efectiva para botín durante 15 turnos`; en el estado actual, el motor de rareza usa `luck` y `rarityFind`, y no se observa una suma directa de `lootLuck` dentro de `weightedRarity()`.
+Las pociones usan `encounterLootQuality(source)` para su calidad y pueden tener efectos instantáneos, temporales o permanentes. Entre las definiciones existe `fortuneShot`, una poción épica con `lootLuck: 20` en su efecto descrito como `+20 de Suerte efectiva para botín durante 15 turnos`; `weightedRarity()` suma ese `lootLuck` temporal al bonus de Suerte para botín.
 
 ## 9. Afijos, pasivas y efectos especiales
 
@@ -225,7 +226,7 @@ La probabilidad de pasiva depende de la rareza:
 - Raro: 45% de 1 pasiva.
 - Épico: 85% de 1 pasiva.
 - Legendario: 100% de 1 pasiva y 55% de una segunda.
-- Artefacto: 100% de 1 pasiva.
+- Artefacto: 100% de 1 pasiva y 75% de una segunda.
 
 Pasivas disponibles: robo de vida, espinas, daño a enemigos bajos de vida, hallazgo de rareza, escudo por piso, recursos al matar, daño a jefes, armadura con poca vida, reducción de cooldown y aturdimiento.
 
@@ -267,21 +268,21 @@ Filtros de desbloqueo:
 | Sistema | Porcentaje |
 |---|---:|
 | Segundo objeto en cofre | 24% |
-| Skill desde cofre | `16% + piso * 2.5%` |
-| Drop de objeto de enemigo normal | `13% + SuerteBase * 0.8%` |
+| Skill desde cofre | `min(65%, 16% + piso * 2.5%)` |
+| Drop de objeto de enemigo normal | `min(65%, 13% + SuerteFinal * 0.8%)` |
 | Drop de objeto de jefe / jefe evento | 100% |
 | Poción en `makeLoot()` | `min(22%, 7% + piso * 2.5% + 8% si boss)` |
 | Objeto configurado si hay elegibles | 55% |
 | Skill desde enemigo con skills normal / élite / jefe | 5.5% / 18% / 38% |
 | Skill aleatoria fallback en enemigo normal/élite | 1.8% |
 | Skill aleatoria fallback en jefe / jefe evento | 100% en esa rama |
-| Primer objeto de evento reward forzado a Raro/Épico/Legendario | 60% |
+| Primer objeto de evento reward forzado a Raro/Épico/Legendario | 60%, limitado a rarezas permitidas |
 | Skill adicional en `fairyCache` | 65% |
 
 ## 12. Notas de implementación y balance
 
-- La Suerte usada en el drop de enemigos es `game.player.stats.luck`, no necesariamente la Suerte final derivada con equipo.
-- La calidad de rareza de objetos sí usa `derived.rarityFind`; este valor acumula pasivas como `Olfato de Chatarra` y bonus raciales.
+- La Suerte usada en el drop de enemigos es `derived.finalStats.luck`, igual que la Suerte usada para calidad en `weightedRarity()`, por lo que el equipo con Suerte afecta a cantidad y calidad.
+- La calidad de rareza de objetos también usa `derived.rarityFind`; este valor acumula pasivas como `Olfato de Chatarra` y bonus raciales.
 - El sistema diferencia cantidad de loot y calidad de loot: `rarityFind` mejora pesos de rareza, pero no aumenta directamente el número de cofres ni la probabilidad de que enemigos suelten objeto.
 - La progresión de mundo limita rarezas altas antes de aplicar Suerte. Por eso mucha Suerte al inicio mejora sobre todo Raro frente a Común, pero no crea Legendarios/Artefactos antes de los umbrales.
 - Los efectos de más `% de looteo` actualmente están representados como `rarityFind`: mejoran rareza, no cantidad.
