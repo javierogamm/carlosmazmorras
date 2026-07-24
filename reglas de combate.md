@@ -79,9 +79,9 @@ armor += floor((Vitalidad final - Vitalidad base) * 0.6)
 |---|---:|
 | Sin arma | `1d4` |
 | Arma con `damageDice` configurado | usa ese valor |
-| Arma de alcance máximo >= 9 | `1d8` |
-| Arma de alcance máximo >= 7 | `1d6+1` |
-| Arma de alcance máximo >= 3 | `1d8+1` |
+| Arma de alcance máximo >= 9 | `1d10` |
+| Arma de alcance máximo >= 7 | `1d8+1` |
+| Arma de alcance máximo >= 3 | `1d8` |
 | Martillo/hacha/maza | `1d10` |
 | Espada | `1d8` |
 | Daga | `1d6+1` |
@@ -162,12 +162,14 @@ El popup muestra hasta 3 opciones aleatorias no aprendidas del pool de la clase 
 | Categoría de skill | Tier I / común | Tier II / rare | Tier III / épica+ |
 |---|---:|---:|---:|
 | Utilidad, buff, shield, heal | Sin daño | Sin daño | Sin daño |
-| Massive / `blackSun` / `worldBreaker` | `3d8+4` | `3d8+4` | `4d8+6` |
-| Ultimate | `3d6+3` | `3d6+3` | `4d6+5` |
-| AoE / multihit / skills de área | `2d4+2` | `2d6+3` | `3d6+4` |
-| Execute / `execute` | `2d8+3` | `2d8+3` | `3d10+5` |
-| Magia genérica | `1d8+2` | `2d8+2` | `3d8+4` |
-| Física genérica | `1d8+2` | `2d8+3` | `3d8+5` |
+| Massive / `blackSun` / `worldBreaker` | `3d8+4` | `4d8+4` | `5d8+6` |
+| Ultimate | `3d6+3` | `4d6` | `5d6+3` |
+| AoE / multihit / skills de área | `2d6+3` | `3d6+3` | `4d6+4` |
+| Execute / `execute` | `2d8+3` | `3d8+1` | `3d10+5` |
+| Magia genérica | `2d8+1` | `3d8` | `4d8` |
+| Física genérica | `2d8+1` | `3d8` | `4d8` |
+
+Estos dados se comparan contra un ataque básico de referencia de EV 7.5 (`1d8+1` con statMod medio +2). Antes de `skillPowerMultiplier`, los mínimos objetivo son Tier I 9.75 (1.3×), Tier II 12 (1.6×) y Tier III 15 (2.0×); todos los dados de la tabla superan esos suelos y crecen de forma monótona por tier.
 
 ### 5.4 Atributo añadido por skills
 
@@ -203,7 +205,7 @@ raw = round((roll(skillDiceExpr) + statMod + bonus * 0.35) * multiplier * rangeM
 Multiplicadores específicos:
 
 - Objetivo único por rareza: común `1.1`, rara `1.4`, épica `1.75`, legendaria `2.2`.
-- Execute: multiplica además por `2.35` si el objetivo está por debajo del 40% de vida.
+- Execute: `skillId: 'execute'` usa la ruta apuntada (`targetMode: enemy`) y multiplica además por `2.35` si el objetivo está por debajo del 40% de vida.
 - Área: `massive/blackSun/worldBreaker` usan `1.65`; `ultimate` usa `1.35`; el resto `1`. Las áreas aplican además `* 0.85` y la penalización de área del rango.
 
 ### 5.6 Skills legacy/no apuntadas con daño explícito
@@ -215,7 +217,6 @@ Estas skills se resuelven sin selector o con comportamiento específico:
 | `smash` / Golpe de Yunque | Daño a enemigos adyacentes: bonus aproximado `Fuerza * skillPowerMultiplier`. |
 | `charge` / Embestida | Avanza hasta 3 casillas y golpea con bonus `Fuerza * skillPowerMultiplier`. |
 | `quake` / Terremoto | Daño a enemigos a 2 casillas con bonus `(2 + INT + floor(SAB/2)) * skillPowerMultiplier`. |
-| `execute` / Cláusula de demolición | Objetivo adyacente más herido; bonus `total('damage') * 2` si tiene <35% HP, si no `2`, multiplicado por skillPower. |
 | `ironRain` / Lluvia de hierro | Hasta `min(6, enemigosVisibles + 2)` impactos aleatorios; bonus `(3 + INT + 1d6-1) * skillPowerMultiplier`. |
 | `taunt` / Insulto estructural | No causa daño directo; atrae enemigos visibles y aplica debuff defensivo propio. |
 | `lootMagnet` | Sin daño; abre cofres y recoge llaves cercanas. |
@@ -225,7 +226,7 @@ Estas skills se resuelven sin selector o con comportamiento específico:
 Si una skill de botín no fue resuelta por una ruta especial:
 
 ```text
-base = 4 + nivelSkill * 2 + (INT si magic, FUE si physical)
+base = 8 + nivelSkill * 3 + (INT si magic, FUE si physical)
 ```
 
 - `healingPulse`: cura `(8 + nivelSkill * 4 + SAB) * skillPowerMultiplier`.
@@ -243,7 +244,7 @@ Cada ataque del jugador tira defensa enemiga:
 ```text
 defenseDie = 1d20
 defenseBonus = enemyDefenseScore(enemigo, statDefensa)
-DC = 10 + floor(rawDamage * 0.55)
+DC = 10 + floor(rawDamage * 0.75)
 ```
 
 Resultado:
@@ -333,7 +334,7 @@ maxHp = hp * mult
 damage = damage * (boss ? 1.35 : 1)
 ```
 
-Después, en rutas escaladas, `scaleEnemy()` puede modificar vida, daño, XP y elite.
+Los enemigos de evento usan esta ruta legacy y después `scaleEnemy()` sustituye vida/daño/XP desde esos valores base; las plantas configuradas de pisos usan `buildConfiguredEnemy()` y no vuelven a pasar por `scaleEnemy()`. Por tanto no se acumulan dos escalados de piso en la generación normal.
 
 ### 9.2 Escalado global por piso y nivel
 
@@ -443,6 +444,7 @@ El bonus defensivo del jugador:
 
 ```text
 base = floor(statDefensivaFinal * 0.85)
+// Intencional: Fuerza/Vitalidad reciben más conversión de armadura para sostener builds tanque.
 armorPart = stat es Fuerza/Vitalidad ? floor(armor / 3) : floor(armor / 6)
 playerDefenseBonus = base + armorPart
 ```
