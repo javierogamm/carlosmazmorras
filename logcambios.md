@@ -1,3 +1,10 @@
+## v0.34.2 - 2026-07-24
+
+- Reducido el daño base efectivo de los enemigos para suavizar la dificultad general antes de aplicar defensas y multiplicadores de mundo.
+- Convertidos los porcentajes de configuración de mundo a sliders con rango limitado de 25% a 500% y pasos de 5%.
+- Añadida visualización en vivo del valor porcentual seleccionado en cada slider de dificultad.
+- Actualizada la versión de la app y del paquete a `0.34.2`.
+
 ## v0.34.1 - 2026-07-24
 
 - Cambiada la edición de parámetros de mundo para que esté colapsada en un acordeón principal y solo se muestre al desplegarlo.
