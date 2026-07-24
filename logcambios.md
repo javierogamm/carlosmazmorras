@@ -1,3 +1,10 @@
+## v0.37.1 - 2026-07-24
+
+- Eliminado el popup de selección de skill por hitos de nivel: ya no se renderiza ni se abre el modal de elección.
+- Cambiada la progresión de habilidades de clase para aprender automáticamente una skill aleatoria disponible del tier correspondiente en los niveles indicados.
+- La habilidad automática queda marcada como concedida para no repetirse al cargar partidas o al revisar hitos pendientes.
+- Actualizada la versión visible y de paquete a `v0.37.1 AUTO SKILLS`.
+
 ## v0.37.0 - 2026-07-24
 
 - Añadida landing de login contra la tabla Supabase `public.user`: el endpoint `/api/user` valida usuario/contraseña existentes y crea nuevos usuarios con `config: false` (admin false).

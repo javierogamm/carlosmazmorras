@@ -1083,23 +1083,36 @@ function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas
 function reveal(cx,cy,r=game.player.vision){for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true}
 
 
-let pendingSkillChoices=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
 const CLASS_SKILL_LEVELS=[1,3,5,7,10,15,20,25,30,40,50];
-const SKILL_CHOICES_PER_POPUP=3;
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
- pendingSkillChoices=pendingSkillChoices||[];
+}
+function randomClassSkillForTier(tier){
+ const roman=['','I','II','III'][tier],tree=classSkillTrees[game.player.cls]?.[roman]||[];
+ const available=tree.filter(id=>skillDefs[id]&&!game.player.knownSkills.includes(id));
+ return available.length?pick(available):null;
 }
 function queueClassSkillChoice(level,initial=false){
+ if(!game?.player)return;
  ensureSkillChoiceState();
  const tier=classTierForLevel(level);
  if(!tier||game.player.skillChoicesAwarded[level])return;
- if(pendingSkillChoices.some(q=>q.level===level))return;
- game.player.skillChoicesAwarded[level]='queued';
- pendingSkillChoices.push({tier,level,initial});
- processPendingSkillChoices();
+ const skillId=randomClassSkillForTier(tier),roman=['','I','II','III'][tier];
+ if(!skillId){
+  game.player.skillChoicesAwarded[level]='complete';
+  log(`No quedan habilidades de clase tier ${roman} disponibles para nivel ${level}.`,'sys');
+  if(initial)openInitialNarrative();
+  return;
+ }
+ learnSkill(skillId);
+ game.player.skillChoicesAwarded[level]='auto';
+ const skill=skillDefs[skillId];
+ banner(`NUEVA HABILIDAD: ${skill.name}`);
+ log(`Nivel ${level}: aprendes automáticamente ${skill.name} (tier ${roman}).`,'loot');
+ updateUI();
+ if(initial)openInitialNarrative();
 }
 function queueMissingClassSkillChoices(){
  if(!game?.player)return;
@@ -1107,27 +1120,6 @@ function queueMissingClassSkillChoices(){
  for(const level of CLASS_SKILL_LEVELS){
   if(level<=game.player.level&&!game.player.skillChoicesAwarded[level])queueClassSkillChoice(level,level===1&&game.player.level===1);
  }
-}
-function randomClassSkillChoices(tier){
- const roman=['','I','II','III'][tier],tree=classSkillTrees[game.player.cls]?.[roman]||[];
- return tree.filter(id=>!game.player.knownSkills.includes(id)).sort(()=>Math.random()-.5).slice(0,SKILL_CHOICES_PER_POPUP)
-}
-function processPendingSkillChoices(){
- if(!game?.player||game.player.unspentStatPoints>0||document.getElementById('statPointModal')?.classList.contains('open'))return;
- const modal=document.getElementById('skillChoiceModal');if(modal.classList.contains('open')||!pendingSkillChoices.length)return;
- const request=pendingSkillChoices.shift(),roman=['','I','II','III'][request.tier];
- const choices=randomClassSkillChoices(request.tier);
- if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';processPendingSkillChoices();return}
- document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
- document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad aleatoria del pool de clase de tier ${roman}; las no elegidas podrán aparecer en próximos hitos, botín o enemigos.`;
- document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
- modal.classList.add('open');
- modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
-  learnSkill(b.dataset.pickSkill);
-  game.player.skillChoicesAwarded[request.level]='chosen';
-  modal.classList.remove('open');updateUI();
-  if(request.initial){openInitialNarrative()}else processPendingSkillChoices()
- }))
 }
 function openInitialNarrative(){
  const n=pick(levelOneNarratives);storyTitle.textContent='NIVEL 1 — '+n.title;storyBody.innerHTML=`<div class="narrative"><p>${n.text}</p><p><b>Objetivo:</b> encuentra la salida, saquea la fortaleza y derrota al Rey Tuercecolmillos.</p></div>`;storyOverlay.classList.remove('hidden')
@@ -2787,7 +2779,7 @@ function restoreGame(data){
  game.player.equippedSkills=(game.player.equippedSkills||['smash','fortify',null,null]).slice(0,4);
  while(game.player.equippedSkills.length<4)game.player.equippedSkills.push(null);
  game.player.className=game.player.className||classDefs[game.player.cls]?.name||'Clase desconocida';game.player.raceName=game.player.raceName||raceDefs[game.player.race]?.name||game.player.race;game.player.activePotions=game.player.activePotions||[];game.player.activeBuffs=game.player.activeBuffs||[];game.player.level=Math.min(LEVEL_CAP,game.player.level||1);game.player.nextXp=game.player.level<LEVEL_CAP?xpNeededForLevel(game.player.level):0;game.player.unspentStatPoints=game.player.unspentStatPoints||0;game.player.permanentPotionStats=game.player.permanentPotionStats||{};game.player.raceBonuses=game.player.raceBonuses||{...(raceDefs[game.player.race]?.bonuses||{})};
- game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];game.skillObjects=game.skillObjects||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);pendingSkillChoices=[];for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
+ game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];game.skillObjects=game.skillObjects||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
  const migrate=i=>{if(!i)return i;i.itemLevel=i.itemLevel||game.player.level||1;i.affixes=i.affixes||[];i.passives=i.passives||[];i.effects=i.effects||[];i.score=i.score||i.power||0;normalizeWeaponIcon(i);return i};
  game.inventory=game.inventory.map(migrate);compactPotionStacks();for(const s of slots)game.player.equipment[s]=migrate(game.player.equipment[s]);recomputeDerived();
  anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
