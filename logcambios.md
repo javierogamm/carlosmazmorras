@@ -1,3 +1,10 @@
+## v0.36.4 - 2026-07-24
+
+- Eliminado el límite práctico de importación masiva de objetos al guardar cada JSON de forma individual, evitando payloads grandes en una única petición.
+- Añadida lectura de archivos ZIP en los importadores de objetos, floors y familias de enemigos, extrayendo automáticamente todos los `.json` contenidos.
+- Actualizados los selectores de importación para aceptar `.zip` además de `.json`.
+- Actualizada la versión de la app y del paquete a `0.36.4`.
+
 ## v0.36.3 - 2026-07-24
 
 - Añadida comprobación de línea de visión para ataques y habilidades a distancia, bloqueada por muros y puertas cerradas.
