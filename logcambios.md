@@ -1,3 +1,9 @@
+## v0.40.1 - Mejoras en continuar sesión
+- La lista de sesiones de "Continuar sesión" ahora muestra nombre del mundo, piso y turno en lugar de solo el id del mundo.
+- El listado ligero de `dungeon_status` incluye el JSON de estado para poder mostrar piso/turno sin peticiones extra por sesión.
+- Al reanudar una sesión también se restaura la niebla de guerra (zonas ya exploradas del piso), además del personaje, inventario, turno, posición y estado de enemigos/cofres/puertas.
+- Actualizada la versión de la app y del paquete a `0.40.1`.
+
 ## v0.40.0 - Persistencia de personajes y mundos
 - Añadidas tablas Supabase `user_pj` (personajes por usuario, vivos/muertos, con `pj_json` y `pj_score`) y `dungeon_status` (sesiones de mundo persistentes con turno, roster de jugadores y estado por piso) junto a sus endpoints `api/user-pj.js` y `api/dungeon-status.js`.
 - Sustituido el menú admin de 2 botones por un menú de 4 botones tras login para todos los usuarios: PUNTUACIONES, SINGLE PLAYER, MULTIPLAYER (inactivo) y CONFIGURAR (restringido a admins).

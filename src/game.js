@@ -11,7 +11,7 @@ let selectedClass='yunque';
 let selectedRace='humano';
 let selectedDungeonWorld=null;
 let currentCharacter=null;
-const APP_VERSION='0.40.0';
+const APP_VERSION='0.40.1';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2899,15 +2899,22 @@ async function openSessionContinue(){
  status.classList.remove('hidden');list.classList.remove('hidden');
  status.textContent='Cargando sesiones...';list.innerHTML='';
  try{
-  const chars=await fetchMyCharacters();
+  const [chars,sessionsRes,worldsRes]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status'),fetch('/api/dungeon-worlds')]);
   const myIds=new Set(chars.map(c=>String(c.id)));
-  const r=await fetch('/api/dungeon-status');
-  const sessions=await r.json();
-  if(!r.ok)throw new Error(sessions.error||'No se pudieron cargar las sesiones');
+  const sessions=await sessionsRes.json();
+  if(!sessionsRes.ok)throw new Error(sessions.error||'No se pudieron cargar las sesiones');
+  const worlds=await worldsRes.json();
+  if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
   const mine=sessions.filter(s=>{try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
   if(!mine.length){status.textContent='No tienes sesiones activas.';return}
   status.textContent=`${mine.length} sesión(es) activas.`;
-  list.innerHTML=mine.map(s=>{let ids=[];try{ids=JSON.parse(s.players_ID||'[]')}catch(e){}const owner=chars.find(c=>ids.map(String).includes(String(c.id)));return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${owner?.pj_name||'Sesión'}</b><span>Mundo #${s.dungeon_world_id}</span><small>Creada ${new Date(s.created_at).toLocaleString()}</small></button>`}).join('');
+  list.innerHTML=mine.map(s=>{
+   let ids=[];try{ids=JSON.parse(s.players_ID||'[]')}catch(e){}
+   const owner=chars.find(c=>ids.map(String).includes(String(c.id)));
+   const world=worlds.find(w=>String(w.id)===String(s.dungeon_world_id));
+   const floor=s.dungeon_status?.currentFloor||1,turn=s.dungeon_status?.turn||0;
+   return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${owner?.pj_name||'Sesión'}</b><span>${world?.world_name||('Mundo #'+s.dungeon_world_id)} · Piso ${floor}</span><small>Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button>`;
+  }).join('');
   list.querySelectorAll('[data-session-id]').forEach(btn=>btn.onclick=()=>resumeSession(btn.dataset.sessionId));
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
@@ -2940,6 +2947,7 @@ async function resumeSession(sessionId){
    if(overlay.keys)game.keys=overlay.keys;
    if(overlay.companions)game.companions=overlay.companions;
    if(overlay.skillObjects)game.skillObjects=overlay.skillObjects;
+   if(overlay.seen&&overlay.seen.length)game.seen=overlay.seen;
    game.boss=game.enemies.find(e=>e.boss)||null;
   }
   const pos=state.players?.[String(pj.id)];
@@ -2969,7 +2977,7 @@ function persistTurnState(){
  game.maxFloorReached=bundle.maxFloorReached;
  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- const overlay={enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[]};
+ const overlay={enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:game.seen||[]};
  const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{...(game.sessionFloors||{}),[game.floor]:overlay},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
  fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})}).catch(e=>console.error('No se pudo guardar la sesión',e));
