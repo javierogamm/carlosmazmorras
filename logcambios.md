@@ -1,3 +1,16 @@
+## v0.41.0 - Multijugador cooperativo
+- Añadida presencia multijugador sobre la tabla `multi_session` (`api/multi-session.js`): login al entrar en MULTIPLAYER, heartbeat periódico (reutiliza `login_time` como último latido) y logout al salir; el panel MULTIPLAYER muestra en tiempo real los usuarios conectados (activos en los últimos 45s).
+- El botón MULTIPLAYER deja de estar inactivo: abre el nuevo panel con sesiones abiertas para unirse, botón para crear sesión y botón "Continuar sesión" con tus propias partidas multijugador.
+- Crear sesión reutiliza la selección/creación de personaje y de mundo existente; la sesión se guarda en `dungeon_status` con `dungeon_status.multiplayer:true` y `started:false` mientras está en sala de espera, visible para el resto de usuarios en "Sesiones abiertas".
+- Cualquier usuario puede unirse a una sesión abierta seleccionando o creando personaje; el anfitrión ve la sala de espera con el roster y pulsa "Iniciar partida" para arrancar en el piso 1.
+- Si un jugador se une a una partida ya iniciada, aparece directamente en el piso actual, en una casilla libre adyacente al personaje del anfitrión.
+- Turnos por ronda: los jugadores humanos actúan en el orden en que se unieron (`turnOrder`/`activePlayerIndex` en `dungeon_status`); solo cuando todos han jugado su turno actúan los enemigos. Un indicador en el HUD muestra de quién es el turno y bloquea la entrada mientras no te toca.
+- El estado del piso (mapa, tileset, familia de enemigos, enemigos vivos/muertos, cofres, puertas, llaves, niebla de guerra y posición de cada jugador) se sincroniza en `dungeon_status.dungeon_status` al final de cada turno; los clientes en espera hacen polling para reflejar los cambios sin recargar.
+- Los enemigos ahora también pueden elegir como objetivo a otros jugadores humanos de la partida, no solo al jugador local ni a los compañeros invocados.
+- Si un jugador muere en multijugador, se marca su personaje como `dead` y se le retira de la rotación de turnos, pero la sesión compartida sigue viva para el resto (a diferencia de un jugador en solitario, donde la sesión se elimina).
+- Añadido renderizado de otros jugadores en el tablero (icono/sprite de clase, barra de vida y nombre) reutilizando el mismo sistema de dibujo del héroe.
+- Actualizada la versión de la app y del paquete a `0.41.0`.
+
 ## v0.40.2 - Corrección de carga de piso al continuar sesión
 - Cada piso guardado en `dungeon_status` ahora incluye su mapa, salas, escalera, tileset visual y familia de enemigos, no solo el estado mutable (antes dependía de recalcular el piso por índice contra el mundo precomputado, lo que podía fallar y cargar un piso incorrecto/aleatorio).
 - "Continuar sesión" restaura el piso directamente desde ese snapshot autocontenido; si una sesión antigua no tiene snapshot completo, cae de forma segura al método anterior de regeneración por índice.
