@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.40.2 PERSISTENCIA</title>
+<title>MAZMORRA // BOTÍN v0.41.0 MULTIPLAYER</title>
 <link rel="stylesheet" href="./src/styles.css">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.40.2 PERSISTENCIA</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.41.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -41,6 +41,7 @@
   <div class="hudBar"><span>✦</span><div class="hudTrack"><i class="hudFill hudMana" id="hudManaFill"></i></div><span id="hudManaText"></span></div>
  </div>
  <div class="activeEffects" id="activeEffects"></div>
+ <div class="mpTurnIndicator hidden" id="mpTurnIndicator"></div>
  <div class="hudButtons">
   <button class="hudButton" id="hudEquipment" title="Equipo">⚔</button>
   <button class="hudButton" id="hudSkills" title="Habilidades">✷</button>
@@ -97,7 +98,7 @@
   <div class="landingActions hidden" id="mainMenuActions">
    <button class="start" id="menuScoresBtn">PUNTUACIONES</button>
    <button class="start" id="menuSingleBtn">SINGLE PLAYER</button>
-   <button class="start" id="menuMultiBtn" disabled>MULTIPLAYER</button>
+   <button class="start" id="menuMultiBtn">MULTIPLAYER</button>
    <button class="start" id="menuConfigBtn">CONFIGURAR</button>
   </div>
  </div>
@@ -124,8 +125,42 @@
  </div>
 </div>
 
+<div class="overlay hidden" id="multiplayerOverlay">
+ <div class="modal multiplayerModal">
+  <h2>MULTIPLAYER</h2>
+  <div class="multiplayerLayout">
+   <aside class="multiplayerOnline">
+    <h3>Conectados</h3>
+    <div id="onlineUsersList" class="onlineUsersList"><p class="small">Cargando...</p></div>
+   </aside>
+   <div class="multiplayerMain">
+    <div class="landingActions" id="multiplayerActions">
+     <button class="start" id="mpCreateBtn">CREAR SESIÓN</button>
+     <button class="start" id="mpContinueBtn">CONTINUAR SESIÓN</button>
+    </div>
+    <h3>Sesiones abiertas para unirse</h3>
+    <div id="mpOpenStatus" class="small">Cargando sesiones...</div>
+    <div class="worldList" id="mpOpenList"></div>
+   </div>
+  </div>
+  <button class="backToLanding" id="backFromMultiplayerBtn">VOLVER</button>
+ </div>
+</div>
+
+<div class="overlay hidden" id="mpLobbyOverlay">
+ <div class="modal">
+  <h2>SALA DE ESPERA</h2>
+  <p class="small" id="mpLobbyWorldLabel"></p>
+  <h3>Jugadores</h3>
+  <div id="mpLobbyRoster" class="worldList"></div>
+  <button class="start hidden" id="mpStartGameBtn">INICIAR PARTIDA</button>
+  <p class="small" id="mpLobbyWaitMsg">Esperando a que el anfitrión inicie la partida...</p>
+  <button class="backToLanding" id="backFromLobbyBtn">SALIR</button>
+ </div>
+</div>
+
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.40.2 PERSISTENCIA</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.41.0 MULTIPLAYER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
