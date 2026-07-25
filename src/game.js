@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.53.0';
+const APP_VERSION='0.53.1';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2626,7 +2626,11 @@ async function playerFinishedMultiplayer(){
      sendMpAction('enemy_phase_start',{});
      classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
+     const phaseStart=(game.mpTurnActions||[]).length;
      enemyTurn();
+     // local paced replay of the enemy phase (state is already final; visual only)
+     const enemyActs=(game.mpTurnActions||[]).slice(phaseStart).filter(a=>MP_ACTION_RENDERERS[a.kind]);
+     enemyActs.forEach((a,i)=>setTimeout(()=>{if(game?.multiplayer)try{MP_ACTION_RENDERERS[a.kind](a)}catch(e){}},i*140));
      if(MP_DEBUG_LATENCY)mpDebugEvent('enemy_phase_duration',{ms:performance.now()-t0,enemyCount:(game.enemies||[]).length});
      sendMpAction('enemy_phase_end',{});
     }
@@ -4305,6 +4309,7 @@ function sendMpAction(kind,data){
   mpTelemetryStart(eventId,{eventType:'action',sessionId:payload.sessionId,author:payload.author,turnSeq,actionSeq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
   const bytes=mpPayloadBytes(payload);
   mpTelemetryMark(eventId,'sentAt',{payloadBytes:bytes});
+  if(kind!=='floor_transition_start'){game.mpTurnActions=(game.mpTurnActions||[]).concat({kind,...data}).slice(-60)}
   rtChannel.send({type:'broadcast',event:'action',payload});
  }catch(e){mpReportError('sendMpAction',e,{kind})}
 }
@@ -4329,6 +4334,7 @@ function handleMpAction(message){
  if(!validateMpAction(message))return;
  if(processedActionIds.has(message.eventId))return; // duplicate: drop, don't replay the animation
  mpMarkActionProcessed(message.eventId);
+ game.mpLiveSeen=game.mpLiveSeen||{};const lk=`${message.author}|${message.turnSeq}`;game.mpLiveSeen[lk]=(game.mpLiveSeen[lk]||0)+1;
  mpTelemetryStart(message.eventId,{eventType:'action',sessionId:message.sessionId,author:message.author,turnSeq:message.turnSeq,actionSeq:message.actionSeq,sentAt:message.sentAt,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
  mpTelemetryMark(message.eventId,'receivedAt');
  enqueueRemoteAction(message);
@@ -4536,6 +4542,7 @@ function mpTurnPayload(nextIdx){
   trapsHit:(game.traps||[]).filter(t=>t.sprung||t.revealed).map(t=>[t.x,t.y,t.sprung?1:0]),
   altarsUsed:(game.altars||[]).filter(a=>a.used).map(a=>[a.x,a.y]),
   objective:game.objective||null,
+  actions:(game.mpTurnActions||[]).slice(-60),
   events:(game.mpPendingEvents||[]).slice(-6)
  };
 }
@@ -4550,6 +4557,7 @@ function mpPublishTurn(nextIdx){
  mpTelemetryStart(eventId,{eventType:'turn_commit',sessionId:String(game.dungeonStatusId),author:payload.author,turnSeq:payload.seq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
  mpTelemetryMark(eventId,'sentAt',{payloadBytes:mpPayloadBytes(payload)});
  mpSend('turn',payload);
+ game.mpTurnActions=[];
  mpScheduleResend();
  return payload;
 }
@@ -4592,6 +4600,27 @@ function mpOnRemoteTurn(sessionId,p){
  mpTelemetryMark(eventId,'appliedAt');
  mpSend('ack',{seq,by:String(game.pjId)});
  mpTelemetryMark(eventId,'renderedAt');
+}
+// Replays the author's recorded action sequence with pacing, then re-asserts
+// the committed positions. Display-only: state was already applied by the commit.
+function mpReplayTurnActions(p){
+ const acts=(p.actions||[]).filter(a=>MP_ACTION_RENDERERS[a.kind]);
+ if(!acts.length)return;
+ const lk=`${p.author}|${p.seq}`;
+ const seen=game.mpLiveSeen?.[lk]||0;
+ if(game.mpLiveSeen)delete game.mpLiveSeen[lk];
+ if(seen>=acts.length*.5)return; // already watched most of it live
+ acts.forEach((a,i)=>setTimeout(()=>{if(!game?.multiplayer)return;try{MP_ACTION_RENDERERS[a.kind](a)}catch(e){}},i*140));
+ setTimeout(()=>{ // final snap back to the committed truth
+  if(!game?.multiplayer)return;
+  mpApplyEnemyWire(p.enemies);
+  for(const [pid,pos] of Object.entries(p.players||{})){
+   if(String(pid)===String(game.pjId))continue;
+   const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(pid));
+   if(rp){rp.x=pos.x;rp.y=pos.y;rp.animT=1}
+  }
+  draw();
+ },acts.length*140+200);
 }
 function mpApplyLiveTurn(p){
  if(p.floor&&p.floor!==game.floor){mpRequestResync('floor');return} // floor change goes through the checkpoint
@@ -4637,6 +4666,7 @@ function mpApplyLiveTurn(p){
  recomputeDerived();
  mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex])===String(game.pjId));
  updateUI();draw();
+ mpReplayTurnActions(p);
 }
 function mpOnAck(p){
  if(!game?.mpLastSent||Number(p?.seq)!==Number(game.mpLastSent.seq))return;
@@ -5146,7 +5176,7 @@ function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  game.mpCapture=isMine;
  busy=!isMine;
- if(isMine){mpResetActionSeq();startPlayerAP()} // fresh actionSeq + action points for my turn
+ if(isMine){mpResetActionSeq();startPlayerAP();game.mpTurnActions=[]} // fresh actionSeq + points + recorder
  const el=document.getElementById('mpTurnIndicator');
  if(el){
   el.classList.remove('hidden');
@@ -5435,7 +5465,7 @@ renderClassChoices();
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabview').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
 function isTypingTarget(el){return ['INPUT','TEXTAREA','SELECT'].includes(el?.tagName)||el?.isContentEditable}
-addEventListener('keydown',e=>{if(isTypingTarget(e.target)||!configScreen.classList.contains('hidden'))return;const k=e.key.toLowerCase(),m={arrowup:[0,-1],arrowdown:[0,1],arrowleft:[-1,0],arrowright:[1,0]};if(k==='escape'&&pendingTargetAction){cancelTargeting();return}if(m[k]){e.preventDefault();if(!pendingTargetAction)move(...m[k]);return}if('1234'.includes(k)){e.preventDefault();useSkill(Number(k)-1);return}if(k==='a'){e.preventDefault();beginBasicAttack()}});
+addEventListener('keydown',e=>{if(isTypingTarget(e.target)||!configScreen.classList.contains('hidden'))return;const k=e.key.toLowerCase(),m={arrowup:[0,-1],arrowdown:[0,1],arrowleft:[-1,0],arrowright:[1,0]};if(k==='escape'&&pendingTargetAction){cancelTargeting();return}if(m[k]){e.preventDefault();if(!pendingTargetAction)move(...m[k]);return}if('1234'.includes(k)){e.preventDefault();useSkill(Number(k)-1);return}if(k==='a'){e.preventDefault();beginBasicAttack()}if(k==='e'){e.preventDefault();waitBtn.click()}});
 
 
 document.getElementById('game').addEventListener('click',ev=>{
