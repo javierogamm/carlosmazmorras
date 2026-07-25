@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.50.0';
+const APP_VERSION='0.51.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];

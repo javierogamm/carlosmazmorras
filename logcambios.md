@@ -1,3 +1,10 @@
+## v0.51.0 - Revisión técnica integral del multijugador
+- Añadido `multiplayer.md` en la raíz con la documentación consolidada de la arquitectura multijugador: presencia, creación/unión/reanudación de salas, modelo persistente, canal Realtime, REST directo y proxy, payloads, turnos, checkpoints, refrescos, recuperación y comercio.
+- Documentados los intervalos y mecanismos de refresco, las reglas de aceptación por `seq`/autor, el control de concurrencia por `rev`, los fallbacks ante pérdida de mensajes o Realtime y el comportamiento al cambiar de piso o cerrar la pestaña.
+- Registrados los riesgos encontrados y su prioridad: autoridad en cliente, dependencia de RLS no versionada, bloqueo al desconectarse el jugador activo, comercio no transaccional, uniones tardías sin límite, coste del polling, dependencia CDN y ventana de estado todavía no consolidado.
+- Incluida una hoja de ruta técnica con autenticación/RLS, servidor autoritativo, lease de turno, comercio transaccional, versionado de protocolo, separación del estado y observabilidad.
+- App y paquete actualizados a la versión `0.51.0`.
+
 ## v0.50.0 - Mobile-first game board layout, clean overlays, accessible vital bars
 - Reworked the game board area, which used to stack a dense pile of absolutely-positioned overlays (zoom slider, floor-type banner, HP/XP/stamina/mana HUD, quick buttons) directly on top of the canvas — the main cause of it "looking terrible on mobile" since they fought for the same cramped space as the map itself.
 - Zoom control moved out of the canvas and into a toolbar row above the board, next to the equipment/skills/minimap quick buttons (`.gameToolbar`). Nothing overlaps the map anymore for a static, always-visible control.
