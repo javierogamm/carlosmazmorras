@@ -16,6 +16,7 @@ let multiHeartbeatTimer=null;
 let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
+let mpLobbyResuming=false;
 let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
@@ -26,7 +27,7 @@ let configClasses=[];
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,floors:20,floorPlan:[],apMode:false};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,floors:20,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -870,13 +871,13 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
-function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
+function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies();const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value=''});}
-function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
@@ -1521,7 +1522,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
 
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
- const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale);
+ const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
  const combatRooms=rooms.filter(r=>r!==spawn&&(ROOM_TYPES[r.type]?.enemies?.[1]||0)>0);
  let placed=0;
  for(const r of combatRooms){
@@ -4779,7 +4780,17 @@ async function mpRefreshTrade(){
  if(!game?.multiplayer||!game.dungeonStatusId)return;
  try{
   const session=await dsGet(game.dungeonStatusId);
-  applyIncomingTradeState(session?.dungeon_status?.trade||null);
+  const st=session?.dungeon_status;
+  const rev=Number(st?.rev)||0;
+  // mpSaveSession() trusts game.mpStatusMirror as a CAS fast-path whenever its rev
+  // matches game.mpLastRev - but trade has its own polling loop, separate from the
+  // main game-state poll that normally keeps that mirror fresh. Without this, once
+  // the OTHER player accepts/applies the trade, checkAndApplyTrade() here would
+  // silently keep reading a stale mirror forever (the "both accepted" check inside
+  // its own mutate() would see outdated data and abort every time), so the trade
+  // would never actually complete on this side.
+  if(st&&rev>=(game.mpLastRev||0)){game.mpStatusMirror=st;game.mpLastRev=rev}
+  applyIncomingTradeState(st?.trade||null);
  }catch(e){}
 }
 function mpOnRemoteTrade(sessionId){
@@ -5055,13 +5066,15 @@ async function mpJoinSession(sessionId,pj){
  }catch(e){alert('Error al unirte: '+e.message)}
 }
 
-function openMpLobby(sessionId,isHost){
+function openMpLobby(sessionId,isHost,resuming=false){
  mpLobbySessionId=sessionId;
+ mpLobbyResuming=resuming;
  stopMultiHeartbeat();
  mpRealtimeConnect(sessionId);
  multiplayerOverlay.classList.add('hidden');
  mpLobbyOverlay.classList.remove('hidden');
  document.getElementById('mpStartGameBtn').classList.toggle('hidden',!isHost);
+ document.getElementById('mpStartGameBtn').textContent=resuming?'CONTINUAR PARTIDA':'INICIAR PARTIDA';
  document.getElementById('mpLobbyWaitMsg').classList.toggle('hidden',isHost);
  refreshMpLobby();
  if(mpLobbyPollTimer)clearInterval(mpLobbyPollTimer);
@@ -5073,9 +5086,13 @@ async function refreshMpLobby(){
   const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(mpLobbySessionId)}`);
   const session=await r.json();if(!r.ok)throw new Error(session.error||'Sesión no encontrada');
   const st=session.dungeon_status||{};
+  const ready=st.resumeReady||{};
   document.getElementById('mpLobbyWorldLabel').textContent=`Mundo #${session.dungeon_world_id}`;
-  document.getElementById('mpLobbyRoster').innerHTML=(st.roster||[]).map(r=>`<div class="worldCard"><b>${r.pjName}</b><span>${r.nombre} · ${r.className||''} nivel ${r.level||1}</span></div>`).join('');
-  if(st.started){
+  document.getElementById('mpLobbyRoster').innerHTML=(st.roster||[]).map(r=>`<div class="worldCard"><b>${r.pjName}</b><span>${r.nombre} · ${r.className||''} nivel ${r.level||1}</span>${mpLobbyResuming?`<small>${ready[r.pjId]?'✓ Listo':'Esperando...'}</small>`:''}</div>`).join('');
+  const allReady=!mpLobbyResuming||(st.roster||[]).every(r=>ready[r.pjId]);
+  document.getElementById('mpStartGameBtn').disabled=!allReady;
+  if(!mpLobbyResuming&&st.started){
+   // brand-new session: auto-enter joiners the moment the host presses start
    if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
    mpLobbyOverlay.classList.add('hidden');
    mpEnterStartedSession(session);
@@ -5425,8 +5442,14 @@ async function mpResumeSession(sessionId,chars){
   if(!myChar)throw new Error('No participas en esta sesión.');
   if(myChar.pj_status!=='alive')throw new Error('Tu personaje en esta sesión ya no está vivo.');
   currentCharacter=myChar;
-  if(st.started){multiplayerOverlay.classList.add('hidden');mpEnterStartedSession(session)}
-  else openMpLobby(sessionId,String(st.host)===String(myChar.id));
+  const isHost=String(st.host)===String(myChar.id);
+  if(st.started){
+   // resuming an already-started session: wait in the lobby for every party
+   // member to come back online instead of barging straight into the dungeon
+   // solo, so both players enter together
+   await mpSaveSession(sessionId,fresh=>({dungeon_status:{...fresh,resumeReady:{...(fresh.resumeReady||{}),[myChar.id]:true}}}));
+   openMpLobby(sessionId,isHost,true);
+  }else openMpLobby(sessionId,isHost);
  }catch(e){alert('Error al continuar la sesión: '+e.message)}
 }
 
@@ -5441,7 +5464,9 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
   const session=await r.json();if(!r.ok)throw new Error(session.error||'Sesión no encontrada');
   if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
   mpLobbyOverlay.classList.add('hidden');
-  await mpEnterStartedSession(session,true);
+  // resuming an already-started session must NOT regenerate floor 1 (starter=true
+  // is only for a brand-new session's very first launch)
+  await mpEnterStartedSession(session,!mpLobbyResuming);
  }catch(e){alert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
