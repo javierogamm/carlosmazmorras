@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.52.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.52.0">
+<title>MAZMORRA // BOTÍN v0.53.0 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.53.0">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.52.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -157,7 +157,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.52.0 MULTIPLAYER</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -330,6 +330,7 @@
 <details class="worldSettingsSubAccordion">
 <summary>Dificultad (% de cosas)</summary>
 <div class="worldParamsGrid">
+<label>Modo puntos de acción <input id="worldApMode" type="checkbox"><span>turnos con PA (30+AGI/2)</span></label>
 <label>% daño recibido <input id="worldDamageReceivedPct" type="range" value="100" min="25" max="500" step="5"><span id="worldDamageReceivedValue">100%</span></label>
 <label>% daño infligido <input id="worldDamageDealtPct" type="range" value="100" min="25" max="500" step="5"><span id="worldDamageDealtValue">100%</span></label>
 <label>% vida enemiga <input id="worldLifePct" type="range" value="100" min="25" max="500" step="5"><span id="worldLifeValue">100%</span></label>
@@ -375,7 +376,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.52.0"></script>
+<script src="./src/game.js?v=0.53.0"></script>
 
 </body>
 </html>
