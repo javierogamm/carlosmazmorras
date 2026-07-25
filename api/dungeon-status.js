@@ -27,6 +27,14 @@ module.exports=async(req,res)=>{
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?data[0]||null:data);
    }
+   // light=1: session list without the heavy floor snapshots (JSON projections)
+   if(req.query?.light){
+    const sel='id,created_at,dungeon_world_id,"players_ID",multiplayer:dungeon_status->multiplayer,started:dungeon_status->started,hostUser:dungeon_status->>hostUser,currentFloor:dungeon_status->currentFloor,turn:dungeon_status->turn,roster:dungeon_status->roster';
+    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${encodeURIComponent(sel)}&order=created_at.desc`,{headers:headers(key)});
+    const data=await r.json();
+    if(!r.ok)return res.status(r.status).json(data);
+    return res.status(200).json((Array.isArray(data)?data:[]).map(row=>({id:row.id,created_at:row.created_at,dungeon_world_id:row.dungeon_world_id,players_ID:row.players_ID,dungeon_status:{multiplayer:row.multiplayer===true,started:row.started===true,hostUser:row.hostUser,currentFloor:Number(row.currentFloor)||1,turn:Number(row.turn)||0,roster:row.roster||[]}})));
+   }
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,dungeon_world_id,"players_ID",dungeon_status&order=created_at.desc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
