@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.53.1';
+const APP_VERSION='0.53.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2171,7 +2171,7 @@ function attack(e,bonus=0,options={}){
 }
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
- game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2));game.player.gold+=e.boss?75:3+rng(6);
+ game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
@@ -2238,10 +2238,8 @@ function scaleFloorForParty(){
  }
  game.partyScaled=mult;
 }
-function gainXp(v){
+function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
- // multiplayer: experience is shared between the party members
- v=v/partySize();
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
  while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
   p.xp-=p.nextXp;p.level++;
@@ -2255,6 +2253,12 @@ function gainXp(v){
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
+}
+function gainXp(v,id){
+ // multiplayer: experience from a kill is split and shared with every party member
+ const share=v/partySize();
+ grantXp(share);
+ if(game?.multiplayer&&id)sendMpAction('xp_share',{id,amount:share});
 }
 function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))return;game.player.knownSkills.push(id);game.player.skillProgress=game.player.skillProgress||{};game.player.skillProgress[id]={level:1,xp:0,uses:0};const free=game.player.equippedSkills.findIndex(x=>!x);if(free>=0)game.player.equippedSkills[free]=id;log(`Nueva habilidad: ${skillDefs[id].name}.`,'loot')}
 function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
@@ -4300,6 +4304,10 @@ function mpDrainActionQueues(){
 // the local simulation or the turn_commit that follows it. kind/data shape is
 // documented in the action-kind list; keep payloads small (ids+coords only).
 function sendMpAction(kind,data){
+ if(!game?.multiplayer)return;
+ // recorded for the turn-commit replay regardless of transport; the live
+ // broadcast below is best-effort and only goes out when Realtime is ready
+ if(kind!=='floor_transition_start'){game.mpTurnActions=(game.mpTurnActions||[]).concat({kind,...data}).slice(-60)}
  if(!mpLive())return;
  try{
   const turnSeq=(game.mpSeq||0)+1,actionSeq=mpNextActionSeq();
@@ -4309,7 +4317,6 @@ function sendMpAction(kind,data){
   mpTelemetryStart(eventId,{eventType:'action',sessionId:payload.sessionId,author:payload.author,turnSeq,actionSeq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
   const bytes=mpPayloadBytes(payload);
   mpTelemetryMark(eventId,'sentAt',{payloadBytes:bytes});
-  if(kind!=='floor_transition_start'){game.mpTurnActions=(game.mpTurnActions||[]).concat({kind,...data}).slice(-60)}
   rtChannel.send({type:'broadcast',event:'action',payload});
  }catch(e){mpReportError('sendMpAction',e,{kind})}
 }
@@ -4448,6 +4455,13 @@ function renderEnemyPhaseEnd(){
  if(!game)return;
  game.mpEnemyPhaseRemote=false;
 }
+function renderRemoteXpShare(action){
+ game.mpXpGrantsApplied=game.mpXpGrantsApplied||new Set();
+ if(!action.id||game.mpXpGrantsApplied.has(action.id))return; // dedup: never grant the same kill's share twice
+ game.mpXpGrantsApplied.add(action.id);
+ if(typeof action.amount==='number')grantXp(action.amount);
+ updateUI();
+}
 function renderFloorTransitionStart(){
  if(!game)return;
  game.mpFloorTransitioning=true;
@@ -4475,6 +4489,7 @@ const MP_ACTION_RENDERERS={
  enemy_spell:renderRemoteSpell,
  enemy_heal:renderRemoteHeal,
  enemy_death:renderRemoteEnemyDeath,
+ xp_share:renderRemoteXpShare,
  enemy_phase_start:renderEnemyPhaseStart,
  enemy_phase_end:renderEnemyPhaseEnd,
  floor_transition_start:renderFloorTransitionStart
@@ -4603,14 +4618,15 @@ function mpOnRemoteTurn(sessionId,p){
 }
 // Replays the author's recorded action sequence with pacing, then re-asserts
 // the committed positions. Display-only: state was already applied by the commit.
-function mpReplayTurnActions(p){
+function mpReplayTurnActions(p,{skipFinalSnap=false}={}){
  const acts=(p.actions||[]).filter(a=>MP_ACTION_RENDERERS[a.kind]);
  if(!acts.length)return;
- const lk=`${p.author}|${p.seq}`;
+ const lk=`${p.author||p.turnAuthor}|${p.seq}`;
  const seen=game.mpLiveSeen?.[lk]||0;
  if(game.mpLiveSeen)delete game.mpLiveSeen[lk];
  if(seen>=acts.length*.5)return; // already watched most of it live
  acts.forEach((a,i)=>setTimeout(()=>{if(!game?.multiplayer)return;try{MP_ACTION_RENDERERS[a.kind](a)}catch(e){}},i*140));
+ if(skipFinalSnap)return; // caller already applied the authoritative state
  setTimeout(()=>{ // final snap back to the committed truth
   if(!game?.multiplayer)return;
   mpApplyEnemyWire(p.enemies);
@@ -5274,6 +5290,9 @@ function mpApplyRemoteState(st){
  }
  // replay combat events authored by the active client
  for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
+ // fallback (non-Realtime) path: replay the recorded action sequence too,
+ // since this checkpoint is the only way this client ever sees the turn
+ if(turnAuthoritative&&remoteFloor===game.floor&&st.actions?.length)mpReplayTurnActions(st,{skipFinalSnap:true});
  if(turnAuthoritative){
   const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
   mpSetMyTurn(amIActive);
@@ -5363,8 +5382,12 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false,check
   const prevSnap=fresh.floors?.[String(game.floor)];
   const outSnap=(!floorChanged&&prevSnap&&prevSnap.map)?{...prevSnap,...dynSnap}:floorSnap;
   const seq=Math.max(Number(fresh.seq)||0,game.mpSeq||0);
-  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents,seq}};
+  // carried so the fallback (non-Realtime) receiver can also replay the
+  // sequence instead of only ever seeing the final snapshot
+  const actions=(game.mpTurnActions||[]).slice(-60);
+  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents,seq,actions,turnAuthor:String(game.pjId)}};
  });
+ if(advance&&saved)game.mpTurnActions=[]; // this write committed the turn: start recording fresh
  if(saved){
   const written=saved.status;
   game.turnOrder=written.turnOrder||game.turnOrder;
