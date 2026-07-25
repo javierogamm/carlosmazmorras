@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.53.1';
+const APP_VERSION='0.53.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -4300,6 +4300,10 @@ function mpDrainActionQueues(){
 // the local simulation or the turn_commit that follows it. kind/data shape is
 // documented in the action-kind list; keep payloads small (ids+coords only).
 function sendMpAction(kind,data){
+ if(!game?.multiplayer)return;
+ // recorded for the turn-commit replay regardless of transport; the live
+ // broadcast below is best-effort and only goes out when Realtime is ready
+ if(kind!=='floor_transition_start'){game.mpTurnActions=(game.mpTurnActions||[]).concat({kind,...data}).slice(-60)}
  if(!mpLive())return;
  try{
   const turnSeq=(game.mpSeq||0)+1,actionSeq=mpNextActionSeq();
@@ -4309,7 +4313,6 @@ function sendMpAction(kind,data){
   mpTelemetryStart(eventId,{eventType:'action',sessionId:payload.sessionId,author:payload.author,turnSeq,actionSeq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
   const bytes=mpPayloadBytes(payload);
   mpTelemetryMark(eventId,'sentAt',{payloadBytes:bytes});
-  if(kind!=='floor_transition_start'){game.mpTurnActions=(game.mpTurnActions||[]).concat({kind,...data}).slice(-60)}
   rtChannel.send({type:'broadcast',event:'action',payload});
  }catch(e){mpReportError('sendMpAction',e,{kind})}
 }
@@ -4603,14 +4606,15 @@ function mpOnRemoteTurn(sessionId,p){
 }
 // Replays the author's recorded action sequence with pacing, then re-asserts
 // the committed positions. Display-only: state was already applied by the commit.
-function mpReplayTurnActions(p){
+function mpReplayTurnActions(p,{skipFinalSnap=false}={}){
  const acts=(p.actions||[]).filter(a=>MP_ACTION_RENDERERS[a.kind]);
  if(!acts.length)return;
- const lk=`${p.author}|${p.seq}`;
+ const lk=`${p.author||p.turnAuthor}|${p.seq}`;
  const seen=game.mpLiveSeen?.[lk]||0;
  if(game.mpLiveSeen)delete game.mpLiveSeen[lk];
  if(seen>=acts.length*.5)return; // already watched most of it live
  acts.forEach((a,i)=>setTimeout(()=>{if(!game?.multiplayer)return;try{MP_ACTION_RENDERERS[a.kind](a)}catch(e){}},i*140));
+ if(skipFinalSnap)return; // caller already applied the authoritative state
  setTimeout(()=>{ // final snap back to the committed truth
   if(!game?.multiplayer)return;
   mpApplyEnemyWire(p.enemies);
@@ -5274,6 +5278,9 @@ function mpApplyRemoteState(st){
  }
  // replay combat events authored by the active client
  for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
+ // fallback (non-Realtime) path: replay the recorded action sequence too,
+ // since this checkpoint is the only way this client ever sees the turn
+ if(turnAuthoritative&&remoteFloor===game.floor&&st.actions?.length)mpReplayTurnActions(st,{skipFinalSnap:true});
  if(turnAuthoritative){
   const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
   mpSetMyTurn(amIActive);
@@ -5363,8 +5370,12 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false,check
   const prevSnap=fresh.floors?.[String(game.floor)];
   const outSnap=(!floorChanged&&prevSnap&&prevSnap.map)?{...prevSnap,...dynSnap}:floorSnap;
   const seq=Math.max(Number(fresh.seq)||0,game.mpSeq||0);
-  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents,seq}};
+  // carried so the fallback (non-Realtime) receiver can also replay the
+  // sequence instead of only ever seeing the final snapshot
+  const actions=(game.mpTurnActions||[]).slice(-60);
+  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents,seq,actions,turnAuthor:String(game.pjId)}};
  });
+ if(advance&&saved)game.mpTurnActions=[]; // this write committed the turn: start recording fresh
  if(saved){
   const written=saved.status;
   game.turnOrder=written.turnOrder||game.turnOrder;
