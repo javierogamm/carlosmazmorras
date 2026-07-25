@@ -17,7 +17,7 @@ let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
-const APP_VERSION='0.41.2';
+const APP_VERSION='0.41.3';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1976,7 +1976,7 @@ function playerFinished(){
 }
 async function playerFinishedMultiplayer(){
  busy=true;
- if(game.over){await mpPersistTurnState(false);return}
+ if(game.over){await mpPersistTurnState({});return}
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -1986,22 +1986,19 @@ async function playerFinishedMultiplayer(){
  const myIndex=order.findIndex(id=>String(id)===String(game.pjId));
  const isLast=myIndex===-1||myIndex===order.length-1;
  if(isLast){
-  game.activePlayerIndex=0;
   mpSetMyTurn(false,'enemies');
   setTimeout(async()=>{
    if(!game.over){
     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
     enemyTurn();
    }
-   if(!game.over){game.turn=(game.turn||0)+1;game.activePlayerIndex=0}
-   await mpPersistTurnState(true);
+   await mpPersistTurnState({advance:true,includeOtherPlayers:true});
    draw();
-   if(!game.over){const freshOrder=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:order;mpSetMyTurn(String(freshOrder[0])===String(game.pjId))}
+   if(!game.over)mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex])===String(game.pjId));
   },220);
  }else{
-  game.activePlayerIndex=myIndex+1;
+  await mpPersistTurnState({advance:true});
   mpSetMyTurn(false);
-  await mpPersistTurnState(false);
   draw();
  }
 }
@@ -3179,7 +3176,7 @@ async function mpCreateHostSession(){
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
  const roster=[{pjId:currentCharacter.id,nombre:window.currentUser.nombre,pjName:currentCharacter.pj_name,className:bundle.player?.className,level:bundle.player?.level||1}];
- const status={multiplayer:true,started:false,host:currentCharacter.id,hostUser:window.currentUser.nombre,roster,turnOrder:[currentCharacter.id],activePlayerIndex:0,turn:0,currentFloor:1,floors:{},players:{}};
+ const status={multiplayer:true,started:false,host:currentCharacter.id,hostUser:window.currentUser.nombre,roster,turnOrder:[currentCharacter.id],activePlayerIndex:0,turn:0,currentFloor:1,floors:{},players:{},rev:0};
  try{
   const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:status})});
   const data=await r.json();
@@ -3213,29 +3210,64 @@ function mpFreeSpawnNear(map,enemies,occupiedList,base){
  return {x:base.x,y:base.y};
 }
 
+// Todas las escrituras de dungeon_status pasan por aquí: se relee el estado más
+// reciente, `mutate` construye el siguiente estado a partir de ESE estado fresco
+// (nunca de una copia local desfasada) y se escribe con concurrencia optimista
+// (columna dungeon_status->>rev). Si otro cliente escribió mientras tanto, la API
+// devuelve 409 y reintentamos desde una lectura nueva. Esto evita que un cliente
+// pise con datos viejos el turno/posición que otro acaba de guardar.
+async function mpSaveSession(id,mutate,{retries=6}={}){
+ if(!id)return null;
+ for(let attempt=0;attempt<retries;attempt++){
+  let session;
+  try{
+   const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`);
+   session=await r.json();
+   if(!r.ok)return null;
+  }catch(e){console.error('No se pudo leer la sesión multijugador',e);return null}
+  const fresh=session.dungeon_status||{};
+  const rev=Number(fresh.rev)||0;
+  const result=mutate(fresh,session);
+  if(!result)return null;
+  const nextStatus={...result.dungeon_status,rev:rev+1};
+  const payload={dungeon_status:nextStatus,expectedRev:rev};
+  if(result.players_ID!==undefined)payload.players_ID=result.players_ID;
+  try{
+   const pr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+   if(pr.status===409){await new Promise(res=>setTimeout(res,80+Math.random()*160));continue}
+   const pdata=await pr.json();
+   if(!pr.ok){console.error('No se pudo guardar la sesión multijugador',pdata);return null}
+   return {session,status:nextStatus};
+  }catch(e){console.error('No se pudo guardar la sesión multijugador',e);await new Promise(res=>setTimeout(res,120))}
+ }
+ console.error('No se pudo guardar el estado multijugador: demasiados conflictos de turno.');
+ return null;
+}
+
 async function mpJoinSession(sessionId,pj){
  try{
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
-  const session=await r.json();if(!r.ok)throw new Error(session.error||'No se pudo cargar la sesión');
-  const st=session.dungeon_status||{};
-  let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
-  if(!ids.map(String).includes(String(pj.id)))ids.push(pj.id);
-  const roster=st.roster||[];
-  if(!roster.some(r=>String(r.pjId)===String(pj.id)))roster.push({pjId:pj.id,nombre:window.currentUser.nombre,pjName:pj.pj_name,className:pj.pj_json?.player?.className,level:pj.pj_json?.player?.level||1});
-  const turnOrder=st.turnOrder||[];
-  if(!turnOrder.map(String).includes(String(pj.id)))turnOrder.push(pj.id);
-  let newStatus={...st,roster,turnOrder};
-  if(st.started){
-   const hostId=st.host,hostPos=st.players?.[String(hostId)],floorNum=st.currentFloor||1,overlay=st.floors?.[String(floorNum)];
-   const base=hostPos||selectedDungeonWorld?.world_json?.floors?.[floorNum-1]?.spawn||{x:0,y:0};
-   const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
-   const spawn=mpFreeSpawnNear(overlay?.map,overlay?.enemies,occupied,base);
-   newStatus.players={...st.players,[pj.id]:{x:spawn.x,y:spawn.y,floor:floorNum,facing:1,hp:pj.pj_json?.player?.hp,maxHp:pj.pj_json?.player?.maxHp,cls:pj.pj_json?.player?.cls,classIcon:pj.pj_json?.player?.classIcon,name:pj.pj_json?.player?.name,nombre:window.currentUser.nombre}};
-  }
-  const pr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({players_ID:JSON.stringify(ids),dungeon_status:newStatus})});
-  const pdata=await pr.json();if(!pr.ok)throw new Error(pdata.error||'No se pudo unir a la sesión');
+  let startedFlag=false;
+  const saved=await mpSaveSession(sessionId,(st,session)=>{
+   startedFlag=!!st.started;
+   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
+   if(!ids.map(String).includes(String(pj.id)))ids.push(pj.id);
+   const roster=st.roster||[];
+   if(!roster.some(r=>String(r.pjId)===String(pj.id)))roster.push({pjId:pj.id,nombre:window.currentUser.nombre,pjName:pj.pj_name,className:pj.pj_json?.player?.className,level:pj.pj_json?.player?.level||1});
+   const turnOrder=st.turnOrder||[];
+   if(!turnOrder.map(String).includes(String(pj.id)))turnOrder.push(pj.id);
+   const next={...st,roster,turnOrder};
+   if(st.started){
+    const hostId=st.host,hostPos=st.players?.[String(hostId)],floorNum=st.currentFloor||1,overlay=st.floors?.[String(floorNum)];
+    const base=hostPos||selectedDungeonWorld?.world_json?.floors?.[floorNum-1]?.spawn||{x:0,y:0};
+    const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
+    const spawn=mpFreeSpawnNear(overlay?.map,overlay?.enemies,occupied,base);
+    next.players={...st.players,[pj.id]:{x:spawn.x,y:spawn.y,floor:floorNum,facing:1,hp:pj.pj_json?.player?.hp,maxHp:pj.pj_json?.player?.maxHp,cls:pj.pj_json?.player?.cls,classIcon:pj.pj_json?.player?.classIcon,name:pj.pj_json?.player?.name,nombre:window.currentUser.nombre}};
+   }
+   return {dungeon_status:next,players_ID:JSON.stringify(ids)};
+  });
+  if(!saved)throw new Error('No se pudo unir a la sesión, inténtalo de nuevo.');
   currentCharacter=pj;
-  if(st.started){multiplayerOverlay.classList.add('hidden');mpEnterStartedSession({...session,dungeon_status:newStatus})}
+  if(startedFlag){multiplayerOverlay.classList.add('hidden');mpEnterStartedSession({id:sessionId,dungeon_world_id:saved.session.dungeon_world_id,dungeon_status:saved.status})}
   else openMpLobby(sessionId,false);
  }catch(e){alert('Error al unirte: '+e.message)}
 }
@@ -3305,7 +3337,8 @@ async function mpEnterStartedSession(session){
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
   mpGamePollTimer=setInterval(mpPollGameState,800);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
-  await mpPersistTurnState(false);
+  await mpPersistTurnState({});
+  mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex||0])===String(game.pjId));
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');alert('Error al entrar en la partida: '+e.message)}
 }
 
@@ -3383,42 +3416,49 @@ function mpHandleDefeatWhileWaiting(){
  storyOverlay.classList.remove('hidden');
 }
 
-async function mpFetchLatestStatus(){
- if(!game?.dungeonStatusId)return null;
- try{
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`);
-  const data=await r.json();
-  if(!r.ok)return null;
-  return data.dungeon_status||{};
- }catch(e){console.error('No se pudo releer la sesión multijugador',e);return null}
-}
-async function mpPersistTurnState(includeOtherPlayers){
+// advance: soy el jugador activo y acabo de terminar mi acción -> avanzar el
+//   turno (calculado siempre sobre el turnOrder/activePlayerIndex FRESCOS del
+//   servidor, nunca sobre la copia local, que es la causa de que un cliente
+//   "pisara" el turno recién avanzado por el otro).
+// includeOtherPlayers: solo lo marca el cliente que acaba de resolver
+//   enemyTurn() (el único momento en el que es autoritativo sobre el daño
+//   recibido por los demás); solo actualiza su HP, nunca su posición, que
+//   siempre se toma del estado fresco.
+async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- game.sessionFloors={[game.floor]:floorSnapshot()};
+ const floorSnap=floorSnapshot();
  const myPos={x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
- // Releemos el estado más reciente para no pisar con una copia local desfasada
- // la posición/vida de los demás jugadores (causa de "cruces" de personaje).
- const freshSt=(await mpFetchLatestStatus())||{};
- const basePlayers=freshSt.players||{};
- const otherPositions={};
- if(includeOtherPlayers){
-  const floorSpawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
-  for(const op of game.otherPlayers||[]){
-   let ox=op.x,oy=op.y;
-   if((op.floor||game.floor)!==game.floor&&floorSpawn){ox=floorSpawn.x;oy=floorSpawn.y}
-   otherPositions[op.pjId]={x:ox,y:oy,floor:game.floor,facing:op.facing||1,hp:op.hp,maxHp:op.maxHp,cls:op.cls,classIcon:op.classIcon,name:op.name,nombre:op.nombre};
+ const hpUpdates={};
+ if(includeOtherPlayers)for(const op of game.otherPlayers||[])hpUpdates[op.pjId]={hp:op.hp,maxHp:op.maxHp};
+ const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+  const turnOrder=(fresh.turnOrder&&fresh.turnOrder.length)?fresh.turnOrder:(game.turnOrder||[game.pjId]);
+  let activePlayerIndex=fresh.activePlayerIndex||0,turn=fresh.turn||0;
+  if(advance){
+   const myIndex=turnOrder.findIndex(id=>String(id)===String(game.pjId));
+   const isLast=myIndex===-1||myIndex===turnOrder.length-1;
+   activePlayerIndex=isLast?0:myIndex+1;
+   if(isLast)turn=(fresh.turn||0)+1;
   }
+  const players={...fresh.players,[game.pjId]:myPos};
+  for(const [pid,upd] of Object.entries(hpUpdates)){
+   const base=players[pid];
+   if(base)players[pid]={...base,...upd};
+  }
+  const roster=(fresh.roster&&fresh.roster.length)?fresh.roster:(game.roster||[]);
+  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{...fresh.floors,[game.floor]:floorSnap},players}};
+ });
+ if(saved){
+  const written=saved.status;
+  game.turnOrder=written.turnOrder||game.turnOrder;
+  game.activePlayerIndex=written.activePlayerIndex??game.activePlayerIndex;
+  game.turn=written.turn??game.turn;
+  game.roster=written.roster||game.roster;
+  game.sessionFloors=written.floors||game.sessionFloors;
  }
- const dungeonState={multiplayer:true,started:true,host:game.hostId,hostUser:(game.roster||[]).find(r=>String(r.pjId)===String(game.hostId))?.nombre,roster:game.roster||[],turnOrder:game.turnOrder||[game.pjId],activePlayerIndex:game.activePlayerIndex||0,turn:game.turn,currentFloor:game.floor,floors:game.sessionFloors,players:{...basePlayers,...otherPositions,[game.pjId]:myPos}};
- try{
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})});
-  const data=await r.json();
-  if(!r.ok)throw new Error(data.error||'No se pudo guardar la sesión');
- }catch(e){console.error('No se pudo guardar la sesión multijugador',e)}
 }
 
 async function mpOpenContinueList(){
@@ -3458,15 +3498,11 @@ document.getElementById('mpCreateBtn').onclick=mpStartCreateFlow;
 document.getElementById('mpContinueBtn').onclick=mpOpenContinueList;
 document.getElementById('mpStartGameBtn').onclick=async()=>{
  try{
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(mpLobbySessionId)}`);
-  const session=await r.json();if(!r.ok)throw new Error(session.error||'Sesión no encontrada');
-  const st=session.dungeon_status||{};
-  st.started=true;st.currentFloor=1;st.turn=0;st.activePlayerIndex=0;
-  const pr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(mpLobbySessionId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:st})});
-  const pdata=await pr.json();if(!pr.ok)throw new Error(pdata.error||'No se pudo iniciar la partida');
+  const saved=await mpSaveSession(mpLobbySessionId,st=>({dungeon_status:{...st,started:true,currentFloor:1,turn:0,activePlayerIndex:0}}));
+  if(!saved)throw new Error('No se pudo iniciar la partida, inténtalo de nuevo.');
   if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
   mpLobbyOverlay.classList.add('hidden');
-  await mpEnterStartedSession({...session,dungeon_status:st});
+  await mpEnterStartedSession({id:mpLobbySessionId,dungeon_world_id:saved.session.dungeon_world_id,dungeon_status:saved.status});
  }catch(e){alert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
