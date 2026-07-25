@@ -17,7 +17,8 @@ let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
-const APP_VERSION='0.41.3';
+let mpPollBusy=false;
+const APP_VERSION='0.42.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1065,7 +1066,7 @@ function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow
   desc:`Nivel ${itemLevel} · Poder ${score}`
  };
 }
-function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d)}
+function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
 function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
@@ -1331,6 +1332,7 @@ function currentEventStatValue(stat){
 function rollFloorEvent(){
  if(!game?.player||game.floorEventRolled)return;
  game.floorEventRolled=true;
+ if(game.multiplayer)return;
  let def=null;
  if(game.precomputedEvent){def={...eventDefs.find(e=>e.id===game.precomputedEvent.id)};delete game.precomputedEvent;}
  else{if(Math.random()>.09)return;def={...pick(eventDefs)}}
@@ -1976,7 +1978,7 @@ function playerFinished(){
 }
 async function playerFinishedMultiplayer(){
  busy=true;
- if(game.over){await mpPersistTurnState({});return}
+ if(game.over)return; // death flow persists its own state
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -1986,19 +1988,25 @@ async function playerFinishedMultiplayer(){
  const myIndex=order.findIndex(id=>String(id)===String(game.pjId));
  const isLast=myIndex===-1||myIndex===order.length-1;
  if(isLast){
+  // last player in the order resolves the enemy phase, then hands the turn back to player 1
   mpSetMyTurn(false,'enemies');
+  game.mpCapture=true;
+  game.mpEnemyPhase=true;
   setTimeout(async()=>{
-   if(!game.over){
-    classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
-    enemyTurn();
-   }
-   await mpPersistTurnState({advance:true,includeOtherPlayers:true});
+   try{
+    if(!game.over){
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     enemyTurn();
+    }
+    game.mpCapture=false;
+    await mpPersistTurnState({advance:true,includeOtherPlayers:true});
+   }finally{game.mpEnemyPhase=false}
    draw();
    if(!game.over)mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex])===String(game.pjId));
   },220);
  }else{
-  await mpPersistTurnState({advance:true});
   mpSetMyTurn(false);
+  await mpPersistTurnState({advance:true});
   draw();
  }
 }
@@ -2290,7 +2298,7 @@ function draw(){
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){let p=sc(e.x,e.y);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
- for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){let p=sc(rp.x,rp.y);remotePlayerSprite(p.x,p.y,rp)}
+ for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
@@ -2957,7 +2965,7 @@ async function openSessionContinue(){
   if(!sessionsRes.ok)throw new Error(sessions.error||'No se pudieron cargar las sesiones');
   const worlds=await worldsRes.json();
   if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
-  const mine=sessions.filter(s=>{try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
+  const mine=sessions.filter(s=>{if(s.dungeon_status?.multiplayer)return false;try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
   if(!mine.length){status.textContent='No tienes sesiones activas.';return}
   status.textContent=`${mine.length} sesión(es) activas.`;
   list.innerHTML=mine.map(s=>{
@@ -3060,8 +3068,24 @@ async function finalizeCharacterDeath(){
   await fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_status:'dead',last_use:new Date().toISOString()})});
  }catch(e){console.error('No se pudo marcar el personaje como muerto',e)}
  if(game.multiplayer){
-  game.turnOrder=(game.turnOrder||[]).filter(id=>String(id)!==String(game.pjId));
   if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+  const deadId=String(game.pjId);
+  game.turnOrder=(game.turnOrder||[]).filter(id=>String(id)!==deadId);
+  // remove the dead player from the shared turn order and mark hp 0 so nobody waits on them
+  await mpSaveSession(game.dungeonStatusId,fresh=>{
+   const order=(fresh.turnOrder||[]).map(String);
+   const idx=order.indexOf(deadId);
+   const newOrder=(fresh.turnOrder||[]).filter(id=>String(id)!==deadId);
+   let active=fresh.activePlayerIndex||0,turn=fresh.turn||0;
+   if(idx>-1){
+    if(idx<active)active--;
+    else if(idx===active&&idx===order.length-1){active=0;turn++}
+   }
+   if(active<0||active>=newOrder.length)active=0;
+   const players={...fresh.players};
+   if(players[deadId])players[deadId]={...players[deadId],hp:0};
+   return {dungeon_status:{...fresh,turnOrder:newOrder,activePlayerIndex:active,turn,players}};
+  });
   return;
  }
  if(game.dungeonStatusId){
@@ -3237,6 +3261,7 @@ async function mpSaveSession(id,mutate,{retries=6}={}){
    if(pr.status===409){await new Promise(res=>setTimeout(res,80+Math.random()*160));continue}
    const pdata=await pr.json();
    if(!pr.ok){console.error('No se pudo guardar la sesión multijugador',pdata);return null}
+   if(game&&String(id)===String(game.dungeonStatusId))game.mpLastRev=Math.max(game.mpLastRev||0,nextStatus.rev);
    return {session,status:nextStatus};
   }catch(e){console.error('No se pudo guardar la sesión multijugador',e);await new Promise(res=>setTimeout(res,120))}
  }
@@ -3298,7 +3323,10 @@ async function refreshMpLobby(){
  }catch(e){console.error(e)}
 }
 
-async function mpEnterStartedSession(session){
+// starter=true: the host is starting the game. The dungeon (floor 1 snapshot +
+// spawn positions for the WHOLE roster) is generated and written in the SAME
+// atomic write that sets started:true, so joiners always find a complete floor.
+async function mpEnterStartedSession(session,starter=false){
  try{
   const worldsRes=await fetch('/api/dungeon-worlds');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -3307,51 +3335,95 @@ async function mpEnterStartedSession(session){
   selectedDungeonWorld=world;
   const pj=currentCharacter;
   const bundle=pj.pj_json||{};
-  const st=session.dungeon_status||{};
-  const floorNum=st.currentFloor||1;
-  const overlay=st.floors?.[String(floorNum)]||null;
-  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:st.activePlayerIndex||0,hostId:st.host,roster:st.roster||[]};
+  let st=session.dungeon_status||{};
+  const floorNum=starter?1:(st.currentFloor||1);
+  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:starter?0:(st.activePlayerIndex||0),hostId:st.host,roster:st.roster||[],mpLastRev:Number(st.rev)||0,mpLastEvSeq:st.evSeq||0,mpPendingEvents:[]};
   app.classList.remove('hidden');
-  if(overlay&&overlay.map){
-   applyFloorSnapshot(overlay);
-  }else if(!loadPrecomputedFloor()){
-   if(String(st.host)===String(pj.id))generateFloor();
-   else throw new Error('El anfitrión todavía no ha generado el piso de esta sesión. Espera unos segundos e inténtalo de nuevo.');
-  }
-  const pos=st.players?.[String(pj.id)];
-  if(pos&&(pos.floor||floorNum)===floorNum){
-   game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing;
+  if(starter){
+   if(!loadPrecomputedFloor())generateFloor();
+   game.floorEventRolled=true;
+   // deterministic spawn cluster in turn order, host first
+   const order=(st.turnOrder&&st.turnOrder.length)?st.turnOrder:[pj.id];
+   const others=(st.roster||[]).filter(r=>String(r.pjId)!==String(pj.id));
+   const metas=await Promise.all(others.map(async r=>{try{const res=await fetch(`/api/user-pj?id=${encodeURIComponent(r.pjId)}`);const row=await res.json();return res.ok?row:null}catch(e){return null}}));
+   const base={x:game.player.x,y:game.player.y},players={},occupied=[];
+   for(const id of order){
+    const spot=mpFreeSpawnNear(game.map,game.enemies,occupied,base);
+    occupied.push(`${spot.x},${spot.y}`);
+    if(String(id)===String(pj.id)){
+     game.player.x=spot.x;game.player.y=spot.y;
+     players[id]={x:spot.x,y:spot.y,floor:1,facing:1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
+    }else{
+     const row=metas.find(m=>m&&String(m.id)===String(id)),rp=row?.pj_json?.player||{};
+     players[id]={x:spot.x,y:spot.y,floor:1,facing:1,hp:rp.hp??rp.maxHp??1,maxHp:rp.maxHp??1,cls:rp.cls,classIcon:rp.classIcon,name:rp.name||row?.pj_name,nombre:row?.nombre};
+    }
+   }
+   const snap=floorSnapshot();
+   const saved=await mpSaveSession(session.id,fresh=>({dungeon_status:{...fresh,multiplayer:true,started:true,currentFloor:1,turn:0,activePlayerIndex:0,floors:{1:snap},players,evSeq:0,events:[]}}));
+   if(!saved)throw new Error('No se pudo iniciar la partida, inténtalo de nuevo.');
+   st=saved.status;
+   game.turnOrder=st.turnOrder||game.turnOrder;game.roster=st.roster||game.roster;
   }else{
-   const hostPos=st.players?.[String(st.host)];
-   const worldSpawn=selectedDungeonWorld?.world_json?.floors?.[floorNum-1]?.spawn;
-   const base=hostPos||worldSpawn||{x:game.player.x,y:game.player.y};
-   const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
-   const spawn=mpFreeSpawnNear(game.map,game.enemies,occupied,base);
-   game.player.x=spawn.x;game.player.y=spawn.y;game.player.facing=1;
+   // joiners render the floor exclusively from the shared snapshot; wait for it if needed
+   let overlay=st.floors?.[String(game.floor)]||null;
+   for(let i=0;i<8&&!(overlay&&overlay.map);i++){
+    await new Promise(res=>setTimeout(res,800));
+    try{
+     const rr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(session.id)}`);
+     const s2=await rr.json();
+     if(rr.ok&&s2?.dungeon_status){st=s2.dungeon_status;game.floor=st.currentFloor||1;game.turn=st.turn||0;game.turnOrder=st.turnOrder||game.turnOrder;game.activePlayerIndex=st.activePlayerIndex||0;game.roster=st.roster||game.roster;game.mpLastRev=Number(st.rev)||0;game.mpLastEvSeq=st.evSeq||0;overlay=st.floors?.[String(game.floor)]||null}
+    }catch(e){}
+   }
+   if(overlay&&overlay.map)applyFloorSnapshot(overlay);
+   else{game.floorEventRolled=true;if(!loadPrecomputedFloor())throw new Error('El anfitrión todavía no ha generado la mazmorra. Vuelve a intentarlo en unos segundos.')}
+   const pos=st.players?.[String(pj.id)];
+   if(pos&&(pos.floor||game.floor)===game.floor){
+    game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing;
+   }else{
+    const hostPos=st.players?.[String(st.host)];
+    const base=hostPos||selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn||{x:game.player.x,y:game.player.y};
+    const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
+    const spawn=mpFreeSpawnNear(game.map,game.enemies,occupied,base);
+    game.player.x=spawn.x;game.player.y=spawn.y;game.player.facing=1;
+    // publish only my position so others see me immediately (no floor/turn touch)
+    const myEntry={x:spawn.x,y:spawn.y,floor:game.floor,facing:1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
+    await mpSaveSession(session.id,fresh=>({dungeon_status:{...fresh,players:{...fresh.players,[pj.id]:myEntry}}}));
+   }
   }
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
   mpSyncOtherPlayers(st);
   recomputeDerived();updateUI();draw();
-  const activeId=game.turnOrder[game.activePlayerIndex||0];
-  mpSetMyTurn(String(activeId)===String(game.pjId));
+  mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,800);
+  mpGamePollTimer=setInterval(mpPollGameState,400);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
-  await mpPersistTurnState({});
-  mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex||0])===String(game.pjId));
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');alert('Error al entrar en la partida: '+e.message)}
 }
 
 function mpSyncOtherPlayers(st){
  const players=st.players||{};
- game.otherPlayers=Object.entries(players).filter(([pid])=>String(pid)!==String(game.pjId)).map(([pid,pos])=>{
+ const prev=new Map((game.otherPlayers||[]).map(p=>[String(p.pjId),p]));
+ let moved=false;
+ game.otherPlayers=Object.entries(players).filter(([pid,pos])=>String(pid)!==String(game.pjId)&&(pos.floor||st.currentFloor||1)===game.floor).map(([pid,pos])=>{
   const meta=(game.roster||[]).find(r=>String(r.pjId)===String(pid))||{};
-  return {pjId:pid,x:pos.x,y:pos.y,floor:pos.floor,facing:pos.facing||1,hp:pos.hp??1,maxHp:pos.maxHp??1,name:pos.name||meta.pjName||'Jugador',nombre:pos.nombre||meta.nombre,cls:pos.cls,classIcon:pos.classIcon,equipment:{}};
+  const rp={pjId:pid,x:pos.x,y:pos.y,floor:pos.floor,facing:pos.facing||1,hp:pos.hp??1,maxHp:pos.maxHp??1,name:pos.name||meta.pjName||'Jugador',nombre:pos.nombre||meta.nombre,cls:pos.cls,classIcon:pos.classIcon,equipment:{},animT:1};
+  const old=prev.get(String(pid));
+  if(old&&(old.x!==pos.x||old.y!==pos.y)&&Math.abs(old.x-pos.x)+Math.abs(old.y-pos.y)<=3){rp.prevX=old.x;rp.prevY=old.y;rp.animT=0;moved=true}
+  return rp;
  });
+ if(moved)requestAnimationFrame(mpAnimateRemote);
+}
+function mpAnimateRemote(){
+ if(!game)return;
+ let more=false;
+ for(const rp of game.otherPlayers||[])if((rp.animT??1)<1){rp.animT=Math.min(1,rp.animT+.15);if(rp.animT<1)more=true}
+ draw();
+ if(more)requestAnimationFrame(mpAnimateRemote);
 }
 
 function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
+ game.mpCapture=isMine;
  busy=!isMine;
  const el=document.getElementById('mpTurnIndicator');
  if(el){
@@ -3369,48 +3441,82 @@ function mpSetMyTurn(isMine,phase){
  updateUI();
 }
 
+// High-frequency light poll: only refetch the full state when rev changed.
+// Stale responses (rev <= last applied) are discarded, which is what used to
+// cause crossed turns: an in-flight old read re-granting an already-passed turn.
 async function mpPollGameState(){
- if(!game?.multiplayer||!game.dungeonStatusId||game.over)return;
+ if(!game?.multiplayer||!game.dungeonStatusId||game.over||mpPollBusy||game.mpEnemyPhase)return;
+ mpPollBusy=true;
  try{
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`);
-  const session=await r.json();if(!r.ok)return;
-  const st=session.dungeon_status||{};
-  game.turnOrder=st.turnOrder&&st.turnOrder.length?st.turnOrder:game.turnOrder;
-  game.roster=st.roster||game.roster;
-  game.activePlayerIndex=st.activePlayerIndex||0;
-  const amIActive=String(game.turnOrder[game.activePlayerIndex])===String(game.pjId);
-  mpSyncOtherPlayers(st);
-  if(!game.myTurn){
-   if((st.currentFloor||1)!==game.floor){
-    game.floor=st.currentFloor||1;
-    const overlay=st.floors?.[String(game.floor)];
-    if(overlay&&overlay.map)Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,seen:decodeSeen(overlay.seen)});
-    const spawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
-    if(spawn){game.player.x=spawn.x;game.player.y=spawn.y;anim.heroX=anim.targetX=spawn.x;anim.heroY=anim.targetY=spawn.y;anim.t=1;reveal(spawn.x,spawn.y)}
-   }
-   const overlay=st.floors?.[String(game.floor)];
-   if(overlay){
-    game.enemies=overlay.enemies||game.enemies;
-    game.chests=overlay.chests||game.chests;
-    game.doors=overlay.doors||game.doors;
-    game.keys=overlay.keys||game.keys;
-    game.companions=overlay.companions||game.companions;
-    game.skillObjects=overlay.skillObjects||game.skillObjects;
-    game.boss=(game.enemies||[]).find(e=>e.boss)||null;
-   }
-   game.turn=st.turn??game.turn;
-   game.sessionFloors=st.floors||game.sessionFloors;
-   const myPos=st.players?.[String(game.pjId)];
-   if(myPos&&(myPos.hp||0)<=0&&game.player.hp>0){game.player.hp=0;game.over=true;mpHandleDefeatWhileWaiting();return}
-   if(myPos&&typeof myPos.hp==='number'&&myPos.hp>0&&myPos.hp!==game.player.hp)game.player.hp=Math.min(game.player.maxHp,myPos.hp);
-   recomputeDerived();updateUI();draw();
-  }
-  if(amIActive&&!game.myTurn)mpSetMyTurn(true);
+  const id=game.dungeonStatusId;
+  const lr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}&light=1`);
+  if(!lr.ok)return;
+  const lite=await lr.json();
+  if((Number(lite?.rev)||0)<=(game.mpLastRev||0))return;
+  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`);
+  if(!r.ok)return;
+  const session=await r.json();
+  const st=session?.dungeon_status||{};
+  const rev=Number(st.rev)||0;
+  if(rev<=(game.mpLastRev||0))return;
+  game.mpLastRev=rev;
+  mpApplyRemoteState(st);
  }catch(e){console.error('poll multiplayer error',e)}
+ finally{mpPollBusy=false}
+}
+
+function mpApplyRemoteState(st){
+ game.turnOrder=st.turnOrder&&st.turnOrder.length?st.turnOrder:game.turnOrder;
+ game.roster=st.roster||game.roster;
+ game.activePlayerIndex=st.activePlayerIndex||0;
+ game.turn=st.turn??game.turn;
+ game.sessionFloors=st.floors||game.sessionFloors;
+ const remoteFloor=st.currentFloor||1;
+ const overlay=st.floors?.[String(remoteFloor)];
+ const myPos=st.players?.[String(game.pjId)];
+ if(remoteFloor!==game.floor){
+  // another player descended: the whole party moves to the new floor
+  game.floor=remoteFloor;
+  game.floorEventRolled=true;
+  if(overlay&&overlay.map)applyFloorSnapshot(overlay);
+  else loadPrecomputedFloor();
+  const pos=(myPos&&(myPos.floor||remoteFloor)===remoteFloor)?myPos:(selectedDungeonWorld?.world_json?.floors?.[remoteFloor-1]?.spawn||{x:game.player.x,y:game.player.y});
+  game.player.x=pos.x;game.player.y=pos.y;
+  anim.heroX=anim.targetX=pos.x;anim.heroY=anim.targetY=pos.y;anim.t=1;
+  reveal(pos.x,pos.y);
+  banner(`PISO ${game.floor}`);
+ }else if(overlay&&!game.myTurn){
+  game.enemies=overlay.enemies||game.enemies;
+  game.chests=overlay.chests||game.chests;
+  game.doors=overlay.doors||game.doors;
+  game.keys=overlay.keys||game.keys;
+  game.companions=overlay.companions||game.companions;
+  game.skillObjects=overlay.skillObjects||game.skillObjects;
+  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
+  if(overlay.seen&&overlay.seen.length){
+   const remoteSeen=decodeSeen(overlay.seen);
+   for(let y=0;y<remoteSeen.length;y++)for(let x=0;x<remoteSeen[y].length;x++)if(remoteSeen[y][x]&&game.seen[y])game.seen[y][x]=true;
+  }
+ }
+ mpSyncOtherPlayers(st);
+ if(myPos&&typeof myPos.hp==='number'&&!game.myTurn){
+  if(myPos.hp<=0&&game.player.hp>0){game.player.hp=0;game.over=true;updateUI();draw();mpHandleDefeatWhileWaiting();return}
+  if(myPos.hp>0&&myPos.hp!==game.player.hp){
+   const diff=myPos.hp-game.player.hp;
+   game.player.hp=Math.min(game.player.maxHp,myPos.hp);
+   if(diff<0)floating(`${diff}`,game.player.x,game.player.y,'#ff8888');
+  }
+ }
+ // replay combat events authored by the active client
+ for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
+ const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
+ mpSetMyTurn(amIActive);
+ recomputeDerived();updateUI();draw();
 }
 
 function mpHandleDefeatWhileWaiting(){
  if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+ finalizeCharacterDeath();
  storyTitle.textContent='HAS CAÍDO';
  storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p></div>';
  storyOverlay.classList.remove('hidden');
@@ -3434,22 +3540,44 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
  const myPos={x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
  const hpUpdates={};
  if(includeOtherPlayers)for(const op of game.otherPlayers||[])hpUpdates[op.pjId]={hp:op.hp,maxHp:op.maxHp};
+ const events=(game.mpPendingEvents||[]).splice(0);
  const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
-  const turnOrder=(fresh.turnOrder&&fresh.turnOrder.length)?fresh.turnOrder:(game.turnOrder||[game.pjId]);
-  let activePlayerIndex=fresh.activePlayerIndex||0,turn=fresh.turn||0;
-  if(advance){
-   const myIndex=turnOrder.findIndex(id=>String(id)===String(game.pjId));
-   const isLast=myIndex===-1||myIndex===turnOrder.length-1;
-   activePlayerIndex=isLast?0:myIndex+1;
-   if(isLast)turn=(fresh.turn||0)+1;
-  }
+  let turnOrder=(fresh.turnOrder&&fresh.turnOrder.length)?fresh.turnOrder:(game.turnOrder||[game.pjId]);
+  let turn=fresh.turn||0;
+  const wasActiveId=String(turnOrder[fresh.activePlayerIndex||0]??'');
   const players={...fresh.players,[game.pjId]:myPos};
   for(const [pid,upd] of Object.entries(hpUpdates)){
    const base=players[pid];
    if(base)players[pid]={...base,...upd};
   }
+  // floor changed by me: relocate the whole party to the new floor spawn cluster
+  if((fresh.currentFloor||1)!==game.floor){
+   const occupied=[`${myPos.x},${myPos.y}`];
+   for(const pid of Object.keys(players)){
+    if(String(pid)===String(game.pjId))continue;
+    const spot=mpFreeSpawnNear(game.map,game.enemies,occupied,{x:myPos.x,y:myPos.y});
+    occupied.push(`${spot.x},${spot.y}`);
+    players[pid]={...players[pid],x:spot.x,y:spot.y,floor:game.floor,facing:1};
+   }
+  }
+  // dead players leave the turn order
+  turnOrder=turnOrder.filter(id=>{const p=players[String(id)];return !p||typeof p.hp!=='number'||p.hp>0});
+  if(!turnOrder.length)turnOrder=[game.pjId];
+  let activePlayerIndex;
+  if(advance&&(wasActiveId===String(game.pjId)||!wasActiveId)){
+   // only the active player may advance the turn pointer (prevents crossed turns)
+   const myIdx=turnOrder.findIndex(id=>String(id)===String(game.pjId));
+   const isLast=myIdx===-1||myIdx===turnOrder.length-1;
+   activePlayerIndex=isLast?0:myIdx+1;
+   if(isLast)turn=(fresh.turn||0)+1;
+  }else{
+   const idx=turnOrder.findIndex(id=>String(id)===wasActiveId);
+   activePlayerIndex=idx===-1?0:idx;
+  }
+  const evSeq=fresh.evSeq||0;
+  const outEvents=events.length?((fresh.events||[]).concat(events.map((e,i)=>({...e,i:evSeq+i+1}))).slice(-12)):(fresh.events||[]);
   const roster=(fresh.roster&&fresh.roster.length)?fresh.roster:(game.roster||[]);
-  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{...fresh.floors,[game.floor]:floorSnap},players}};
+  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:floorSnap},players,evSeq:evSeq+events.length,events:outEvents}};
  });
  if(saved){
   const written=saved.status;
@@ -3458,8 +3586,9 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
   game.turn=written.turn??game.turn;
   game.roster=written.roster||game.roster;
   game.sessionFloors=written.floors||game.sessionFloors;
- }
-}
+  game.mpLastEvSeq=Math.max(game.mpLastEvSeq||0,written.evSeq||0);
+  mpSyncOtherPlayers(written);
+ }}
 
 async function mpOpenContinueList(){
  const status=document.getElementById('mpOpenStatus'),list=document.getElementById('mpOpenList');
@@ -3498,11 +3627,12 @@ document.getElementById('mpCreateBtn').onclick=mpStartCreateFlow;
 document.getElementById('mpContinueBtn').onclick=mpOpenContinueList;
 document.getElementById('mpStartGameBtn').onclick=async()=>{
  try{
-  const saved=await mpSaveSession(mpLobbySessionId,st=>({dungeon_status:{...st,started:true,currentFloor:1,turn:0,activePlayerIndex:0}}));
-  if(!saved)throw new Error('No se pudo iniciar la partida, inténtalo de nuevo.');
+  // the dungeon is generated and written BEFORE started:true becomes visible to joiners
+  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(mpLobbySessionId)}`);
+  const session=await r.json();if(!r.ok)throw new Error(session.error||'Sesión no encontrada');
   if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
   mpLobbyOverlay.classList.add('hidden');
-  await mpEnterStartedSession({id:mpLobbySessionId,dungeon_world_id:saved.session.dungeon_world_id,dungeon_status:saved.status});
+  await mpEnterStartedSession(session,true);
  }catch(e){alert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
