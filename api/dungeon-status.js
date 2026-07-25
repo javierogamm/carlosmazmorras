@@ -40,9 +40,14 @@ module.exports=async(req,res)=>{
    const row={};
    if('dungeon_status' in body)row.dungeon_status=body.dungeon_status;
    if('players_ID' in body)row.players_ID=body.players_ID;
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   let filter=`id=eq.${encodeURIComponent(id)}`;
+   const expectedRev=body.expectedRev;
+   const hasExpectedRev=expectedRev!==undefined&&expectedRev!==null;
+   if(hasExpectedRev)filter+=`&dungeon_status->>rev=eq.${encodeURIComponent(String(expectedRev))}`;
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?${filter}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
+   if(hasExpectedRev&&Array.isArray(data)&&data.length===0)return res.status(409).json({conflict:true,error:'La sesión cambió mientras tanto, vuelve a intentarlo'});
    return res.status(200).json(data);
   }
   if(req.method==='DELETE'){
