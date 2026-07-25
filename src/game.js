@@ -19,7 +19,7 @@ let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.45.0';
+const APP_VERSION='0.46.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1019,6 +1019,17 @@ const classStarterWeaponCategories={
  beastGuardian:'Armas eléctricas pesadas'
 };
 function makeStarterWeapon(classId){
+ // config_items first: lowest-ilvl weapon of the class category (or any melee)
+ const weapons=configItems.filter(r=>((r.item_json||r).slot||r.slot)==='weapon');
+ if(weapons.length){
+  const cat=classStarterWeaponCategories[classId]||'';
+  let cands=weapons.filter(r=>((r.item_json||r).weaponCategory||'')===cat);
+  if(!cands.length)cands=weapons.filter(r=>configWeaponKind(r.item_json||r)==='melee');
+  if(!cands.length)cands=weapons;
+  cands=[...cands].sort((a,b)=>(Number((a.item_json||a).itemLevel||a.ilvl)||1)-(Number((b.item_json||b).itemLevel||b.ilvl)||1));
+  const item=configuredItemFromRow(cands[0],{itemLevel:{min:1,max:2}},1);
+  if(item){item.name=`${item.name} de aprendiz`;return item}
+ }
  const category=classStarterWeaponCategories[classId]||'Espadas básicas y elementales';
  const row=weaponRowForCategory(category),col=0,canonicalCategory=weaponRows[row].category;
  const stat=weaponCategoryStats[canonicalCategory]||'strength';
@@ -1035,12 +1046,26 @@ function makeStarterWeapon(classId){
 }
 
 function normalizeConfiguredPotion(item,row={}){if((item.type||row.type)!=='potion')return item;item.type='potion';item.slot='consumable';item.iconShape=item.iconShape||'vial';item.kind=item.kind||(['permanentStats','learnSkill'].includes(item.potionEffectType)?'permanent':['heal','stamina','mana','teleportSafe','teleportStairs'].includes(item.potionEffectType)?'instant':'temporary');item.duration=Number(item.duration)||Number(item.turns)||0;item.effect=item.effect||item.potionEffect||{};item.desc=item.desc||describePotionEffect(item);return item}
-function makeConfiguredLoot(level){if(!configItems.length)return null;const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),eligible=configItems.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));if(!eligible.length)return null;const row=pick(eligible),raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
+function configWeaponKind(item){
+ const text=`${item.weaponType||''} ${item.weaponCategory||''} ${item.name||item.nombre||''}`.toLowerCase();
+ if(/varita/.test(text))return 'magic';
+ if(/arco|ballesta|pistola|rifle|fusil|carabina|escopeta/.test(text)||(Number(item.rangeMax)||1)>1)return 'ranged';
+ return 'melee';
+}
+function makeConfiguredLoot(level){if(!configItems.length)return null;const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),eligible=configItems.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));if(!eligible.length)return null;
+ // prefer items whose base ilvl fits the floor's loot band
+ const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
+ const row=pick(inBand.length?inBand:eligible);
+ return configuredItemFromRow(row,lootRow,level)}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
-function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),configured=makeConfiguredLoot(level);if(configured&&Math.random()<.55)return configured;if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+// Itemization uses config_items exclusively; the random generator below only
+// remains as a fallback for when the table is empty or has no eligible rows.
+function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+ const configured=makeConfiguredLoot(level);if(configured)return configured;
  const slot=pick(slots),rar=weightedRarity(level);
  const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
@@ -1503,6 +1528,26 @@ function equipEnemy(e,floor=game?.floor||1){
  if(!gear)return e;
  e.enemyClassLabel=gear.label;
  const lvl=e.level||enemyLevelForFloor(floor);
+ const baseAtk=e.atk||e.damage||4;
+ // preferred source: config_items weapons matching the class kind
+ const pool=configItems.map(r=>({row:r,item:r.item_json||r})).filter(w=>(w.item.slot||w.row.slot)==='weapon'&&configWeaponKind(w.item)===gear.kind);
+ if(pool.length){
+  const lr=currentLootProgressionRow(floor,lvl);
+  let cands=pool.filter(w=>lootRarityAllowed(w.item.rarity||w.row.tier||'common',lr));
+  if(!cands.length)cands=pool;
+  cands=cands.map(w=>({...w,il:Number(w.item.itemLevel||w.row.ilvl)||1})).sort((a,b)=>Math.abs(a.il-lvl)-Math.abs(b.il-lvl));
+  const w=pick(cands.slice(0,Math.max(3,Math.ceil(cands.length*.4))));
+  const rarity=w.item.rarity||w.row.tier||'common',rIdx=Math.max(0,LOOT_RARITY_ORDER.indexOf(rarity));
+  const preset=weaponTypeRanges[w.item.weaponType]||null;
+  const rangeMin=gear.kind==='melee'?1:(Number(w.item.rangeMin)||preset?.min||1);
+  const rangeMax=gear.kind==='melee'?1:(Number(w.item.rangeMax)||preset?.max||4);
+  const dmgBonus=Math.max(1,Math.round(baseAtk*(.12+rIdx*.05)));
+  e.weapon={name:w.item.name||w.row.nombre||'Arma',kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,rarity,label:w.item.label||tierDefs[rarity]?.label||rarity,itemId:w.row.id};
+  e.atk=baseAtk+dmgBonus;e.damage=e.atk;
+  if(cls==='tanque')e.armor=(e.armor||0)+1+Math.floor(lvl/6);
+  return e;
+ }
+ // fallback (config_items empty or without weapons of this kind): synthetic weapon
  const rar=weightedRarity(lvl),rarIdx=Math.max(0,LOOT_RARITY_ORDER.indexOf(rar.name));
  let name,rangeMin=1,rangeMax=1;
  if(gear.kind==='melee'){
@@ -1513,10 +1558,9 @@ function equipEnemy(e,floor=game?.floor||1){
   rangeMin=r.min;rangeMax=r.max;
   name=`${ENEMY_WEAPON_BASENAMES[t]||t} ${ENEMY_WEAPON_QUALITY[rarIdx]||ENEMY_WEAPON_QUALITY[0]}`;
  }
- const baseAtk=e.atk||e.damage||4;
  const dmgBonus=Math.max(1,Math.round(baseAtk*(.12+rarIdx*.05)));
  e.weapon={name,kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,rarity:rar.name,label:rar.label};
- e.atk=(e.atk||e.damage||4)+dmgBonus;e.damage=e.atk;
+ e.atk=baseAtk+dmgBonus;e.damage=e.atk;
  if(cls==='tanque')e.armor=(e.armor||0)+1+Math.floor(lvl/6);
  return e;
 }
@@ -2058,7 +2102,7 @@ function playerFinished(){
 async function playerFinishedMultiplayer(){
  busy=true;
  if(game.over)return; // death flow persists its own state
- mpBroadcastMyPos(); // instant visual ping before the authoritative write
+ mpBroadcastAct(); // instant provisional visuals before the authoritative write
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -2079,6 +2123,7 @@ async function playerFinishedMultiplayer(){
      enemyTurn();
     }
     game.mpCapture=false;
+    mpBroadcastAct(); // enemy-phase results visible remotely before the write lands
     await mpPersistTurnState({advance:true,includeOtherPlayers:true});
    }finally{game.mpEnemyPhase=false}
    draw();
@@ -3006,6 +3051,7 @@ async function finishCharacterCreation(){
 }
 
 function openSinglePlayerScreen(){
+ if(!configItems.length)fetchConfigItems();
  landingOverlay.classList.add('hidden');
  singlePlayerOverlay.classList.remove('hidden');
  document.getElementById('spListStatus')?.classList.add('hidden');
@@ -3079,6 +3125,7 @@ async function openSessionContinue(){
 
 async function resumeSession(sessionId){
  try{
+  if(!configItems.length)fetchConfigItems();
   const [statusRes,worldsRes]=await Promise.all([fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`),fetch('/api/dungeon-worlds')]);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||'No se pudo cargar la sesión');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -3428,7 +3475,7 @@ async function mpRealtimeConnect(sessionId){
   rtChannelSessionId=String(sessionId);
   rtChannel=rtClient.channel(`ds-${sessionId}`,{config:{broadcast:{self:false}}});
   rtChannel.on('broadcast',{event:'state'},({payload})=>mpOnRemoteBroadcast(sessionId,payload));
-  rtChannel.on('broadcast',{event:'pos'},({payload})=>mpOnRemotePos(sessionId,payload));
+  rtChannel.on('broadcast',{event:'act'},({payload})=>mpOnRemoteAct(sessionId,payload));
   rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
  })();
  try{await rtConnectPromise}finally{rtConnectPromise=null}
@@ -3456,22 +3503,68 @@ function mpBroadcastState(id,status){
 // Instant, display-only position ping fired the moment a player ends an action,
 // before the authoritative write lands. Touches no turn state, so a late or
 // duplicated ping cannot cross turns.
-function mpBroadcastMyPos(){
+// Provisional action event (~1.5KB): fired the instant an action or the enemy
+// phase resolves locally, BEFORE the authoritative write. Receivers apply it
+// as display-only state (positions, enemy hp, doors, log lines) so the
+// opponent's turn is visible in ~0.2s. It never touches rev/turnOrder/
+// activePlayerIndex, so it cannot cross turns; the committed state that
+// follows (rev-guarded) confirms or corrects everything.
+function mpBroadcastAct(){
  if(!game?.multiplayer||!rtChannel||!rtReady||String(rtChannelSessionId)!==String(game.dungeonStatusId))return;
- try{rtChannel.send({type:'broadcast',event:'pos',payload:{pjId:game.pjId,x:game.player.x,y:game.player.y,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp}})}catch(e){}
+ const base=game.mpEnemyBaseline||[];
+ const payload={
+  pjId:game.pjId,baseRev:game.mpLastRev||0,
+  pos:{x:game.player.x,y:game.player.y,facing:game.player.facing||1},
+  me:{hp:game.player.hp,maxHp:game.player.maxHp},
+  enemies:base.map(e=>[e.x,e.y,e.hp]),
+  playersHp:Object.fromEntries((game.otherPlayers||[]).map(p=>[p.pjId,p.hp])),
+  doorsOpen:(game.doors||[]).filter(d=>d.open).map(d=>[d.x,d.y]),
+  chestsOpened:(game.chests||[]).filter(c=>c.opened).map(c=>[c.x,c.y]),
+  keysLeft:(game.keys||[]).map(k=>[k.x,k.y]),
+  events:(game.mpPendingEvents||[]).slice(-4)
+ };
+ try{rtChannel.send({type:'broadcast',event:'act',payload})}catch(e){}
 }
-function mpOnRemotePos(sessionId,p){
- if(!game?.multiplayer||String(game.dungeonStatusId)!==String(sessionId)||!p||String(p.pjId)===String(game.pjId))return;
+function mpOnRemoteAct(sessionId,p){
+ if(!game?.multiplayer||game.over||String(game.dungeonStatusId)!==String(sessionId)||!p||String(p.pjId)===String(game.pjId))return;
+ if(game.myTurn||game.mpEnemyPhase)return;
+ if((p.baseRev||0)<(game.mpLastRev||0))return; // already superseded by committed state
  const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(p.pjId));
- if(!rp)return;
- if(rp.x!==p.x||rp.y!==p.y){
-  if(Math.abs(rp.x-p.x)+Math.abs(rp.y-p.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
-  rp.x=p.x;rp.y=p.y;
+ if(rp&&p.pos){
+  if(rp.x!==p.pos.x||rp.y!==p.pos.y){
+   if(Math.abs(rp.x-p.pos.x)+Math.abs(rp.y-p.pos.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
+   rp.x=p.pos.x;rp.y=p.pos.y;
+  }
+  rp.facing=p.pos.facing||rp.facing;
+  if(p.me){if(typeof p.me.hp==='number')rp.hp=p.me.hp;if(typeof p.me.maxHp==='number')rp.maxHp=p.me.maxHp}
  }
- rp.facing=p.facing||rp.facing;
- if(typeof p.hp==='number')rp.hp=p.hp;
- if(typeof p.maxHp==='number')rp.maxHp=p.maxHp;
- draw();
+ // enemy view, aligned to the shared committed order (skip on any mismatch)
+ if(Array.isArray(p.enemies)&&p.enemies.length===(game.enemies||[]).length){
+  p.enemies.forEach(([x,y,hp],i)=>{
+   const e=game.enemies[i];if(!e)return;
+   if(typeof hp==='number'&&hp<e.hp)floating(`-${e.hp-hp}`,e.x,e.y,'#ffd27a');
+   e.x=x;e.y=y;if(typeof hp==='number')e.hp=hp;
+  });
+ }
+ // my own hp as dealt by the opponent's enemy phase (death waits for committed state)
+ const myHp=p.playersHp?.[String(game.pjId)]??p.playersHp?.[game.pjId];
+ if(typeof myHp==='number'&&myHp<game.player.hp){
+  floating(`-${game.player.hp-myHp}`,game.player.x,game.player.y,'#ff8888');
+  game.player.hp=Math.max(1,myHp);
+ }
+ if(Array.isArray(p.doorsOpen))for(const [x,y] of p.doorsOpen){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
+ if(Array.isArray(p.chestsOpened))for(const [x,y] of p.chestsOpened){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
+ if(Array.isArray(p.keysLeft))game.keys=(game.keys||[]).filter(k=>p.keysLeft.some(([x,y])=>x===k.x&&y===k.y));
+ for(const ev of p.events||[]){
+  if(!ev?.m)continue;
+  game.mpRecentEvents=game.mpRecentEvents||[];
+  if(game.mpRecentEvents.includes(ev.m))continue;
+  log(ev.m,ev.c||'combat');
+  game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>10)game.mpRecentEvents.shift();
+ }
+ updateUI();draw();
+ // insurance: if the state broadcast gets lost, resync quickly instead of waiting for the safety poll
+ setTimeout(()=>{if(game?.multiplayer&&!game.myTurn)mpPollGameState()},350);
 }
 function mpOnRemoteBroadcast(sessionId,payload){
  const st=payload?.status,rev=Number(payload?.rev)||0;
@@ -3616,6 +3709,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
+  if(!configItems.length)fetchConfigItems();
   await mpRealtimeConnect(session.id);
   const worldsRes=await fetch('/api/dungeon-worlds');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -3713,6 +3807,7 @@ function mpAnimateRemote(){
 function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  game.mpCapture=isMine;
+ if(isMine)game.mpEnemyBaseline=(game.enemies||[]).slice(); // committed-order refs for act diffs
  busy=!isMine;
  const el=document.getElementById('mpTurnIndicator');
  if(el){
@@ -3796,7 +3891,7 @@ function mpApplyRemoteState(st){
   }
  }
  // replay combat events authored by the active client
- for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
+ for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
  const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
  mpSetMyTurn(amIActive);
  recomputeDerived();updateUI();draw();

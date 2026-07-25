@@ -1,3 +1,16 @@
+## v0.46.0 - Instant opponent-turn visuals (provisional act events) + config_items-only itemization
+### Latency: the opponent's whole turn is now visible in ~0.2s
+- The position ping grows into a full provisional `act` broadcast (~1.5KB) fired the instant an action or the enemy phase resolves locally, BEFORE the authoritative write: opponent position/facing/hp, per-enemy position+hp (aligned to the shared committed order, applied only when lengths match), damage floaters, doors opened, chests opened, keys taken and the combat log lines. Receivers render it immediately as display-only state.
+- Turn safety is untouched: `act` events carry no rev/turnOrder/activePlayerIndex, are ignored while it's your own turn, are dropped if already superseded (`baseRev` < last applied rev), and the turn itself is still granted exclusively by the committed rev-guarded state. A lost, late or duplicated act cannot cross turns — worst case you see the result twice or 0.3s early.
+- The enemy phase broadcasts its act right after resolving, so the other player watches enemy movement/damage ~0.2s after resolution instead of waiting for the write+state broadcast; log lines shown provisionally are deduped when the authoritative event replay arrives.
+- Insurance: receiving an act schedules a quick resync 350ms later in case the state broadcast is lost, instead of waiting for the 1.2s safety poll.
+### Itemization: config_items is the single source
+- Loot from chests/bosses now always comes from `config_items` (rarity filtered by the floor's loot band, preferring rows whose base ilvl fits the band, level clamped as before). The old random item generator only remains as a fallback when the table is empty or has no eligible rows. Potion drops are unchanged.
+- Enemy equipment draws from `config_items` weapons matching the class kind (ranged/magic/melee via weapon type, category, name or range), picking among the rarities allowed on that floor with ilvl closest to the enemy's level; range comes from the item (or its weapon-type preset) and the damage bonus scales with the item's rarity. Synthetic weapon names remain only as fallback.
+- Starter weapons prefer the lowest-ilvl config weapon of the class's category (then any melee config weapon), falling back to the legacy starter.
+- `config_items` is now loaded in every flow that needs it: single-player screen, session resume and multiplayer game entry.
+- App and package version bumped to `0.46.0`.
+
 ## v0.45.0 - Turn sync tuning: instant position pings, no write echo, slimmer broadcasts
 - Instant movement: the moment a player ends an action, a tiny display-only `pos` ping (position/facing/hp) is broadcast before the authoritative write, so the other player sees the move in ~0.2s. It touches no turn state, so a late or duplicated ping cannot cross turns.
 - Writes no longer download their own echo: `dsPatch` uses `Prefer: return=minimal,count=exact` on the first (fast-path) attempt, detecting the rev CAS conflict via the Content-Range count instead of a ~50KB row representation. A missing header is treated as a conflict and the retry falls back to the representation path, so correctness is preserved.
