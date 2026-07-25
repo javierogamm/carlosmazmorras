@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.51.0';
+const APP_VERSION='0.52.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1938,12 +1938,13 @@ function enemyUseSkill(e,dist,target=game.player){
    if(s.classEffect==='heal'&&['clerigo','chaman'].includes(enemyClassOf(e))){
     const ally=game.enemies.filter(o=>o!==e&&o.hp>0&&o.hp<o.maxHp&&Math.abs(o.x-e.x)+Math.abs(o.y-e.y)<=4).sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp)[0];
     const beneficiary=ally||e;
+    if(game.multiplayer)sendMpAction('enemy_heal',{enemyId:e.eid,targetType:'enemy',targetId:beneficiary.eid,visualAmount:Math.round(amount*.9)});
     healEntity(beneficiary,Math.round(amount*.9),beneficiary.x,beneficiary.y);floating('✚',beneficiary.x,beneficiary.y,'#8dffa8');
     log(`${e.name} usa ${s.name} y cura a ${beneficiary===e?'sí mismo':beneficiary.name}.`,'combat');
    }
-   else if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
-   else if(target===game.player){damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
-   else{target.hp-=amount;floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')}
+   else if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},icon:'✦'});healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
+   else if(target===game.player){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},icon:s.icon||'✦'});damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
+   else{const ref=mpEntityRef(target);if(game.multiplayer&&ref)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:target.x,y:target.y},targetType:ref.type,targetId:ref.id,visualAmount:amount,icon:s.icon||'✦'});target.hp-=amount;floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')}
    e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
   }
  }
@@ -2162,11 +2163,13 @@ function attack(e,bonus=0,options={}){
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
  const crit=Math.random()<critChance();if(crit&&d>0)d=Math.round(d*1.75);
+ if(game?.multiplayer){mpEnsureEnemyIds();sendMpAction(isRangedSkill(skillId)||weaponIsRanged(equippedWeapon())?'ranged_attack':'attack',{attackerType:'player',attackerId:game.pjId,targetType:'enemy',targetId:e.eid,visualAmount:d,result:crit?'critical':d?'hit':'evaded'})}
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
 }
 function kill(e){
+ if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2));game.player.gold+=e.boss?75:3+rng(6);
  if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
@@ -2259,13 +2262,13 @@ function blocked(x,y){const d=game.doors.find(d=>d.x===x&&d.y===y);return game.m
 function move(dx,dy){
  if(!game||busy||game.over)return;const p=game.player,nx=p.x+dx,ny=p.y+dy,d=game.doors.find(d=>d.x===nx&&d.y===ny);
  if(dx)p.facing=dx>0?1:-1;
- if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(d.locked)p.keys--;d.open=true;log('Abres una puerta.','sys');playerFinished();return}
+ if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(d.locked)p.keys--;d.open=true;sendMpAction('open_door',{at:{x:nx,y:ny}});log('Abres una puerta.','sys');playerFinished();return}
  if(blocked(nx,ny))return;
- const e=game.enemies.find(e=>e.x===nx&&e.y===ny);if(e)attack(e);else{anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile()}
+ const e=game.enemies.find(e=>e.x===nx&&e.y===ny);if(e)attack(e);else{const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile()}
  playerFinished();
 }
 function checkTile(){
- const p=game.player,k=game.keys.find(k=>k.x===p.x&&k.y===p.y);if(k){game.keys=game.keys.filter(x=>x!==k);p.keys++;log('Recoges una llave.','loot')}
+ const p=game.player,k=game.keys.find(k=>k.x===p.x&&k.y===p.y);if(k){game.keys=game.keys.filter(x=>x!==k);p.keys++;if(game.multiplayer)sendMpAction('pickup',{at:{x:p.x,y:p.y},icon:'🔑'});log('Recoges una llave.','loot')}
  detectNearbyTraps();
  const trap=(game.traps||[]).find(t=>!t.sprung&&t.x===p.x&&t.y===p.y);if(trap)springTrap(trap);
  const altar=(game.altars||[]).find(a=>!a.used&&a.x===p.x&&a.y===p.y);if(altar)useAltar(altar);
@@ -2273,6 +2276,7 @@ function checkTile(){
  if(p.x===game.stairs.x&&p.y===game.stairs.y){
   const block=stairsBlockedReason();
   if(block){log(block,'combat');return}
+  if(game.multiplayer)sendMpAction('floor_transition_start',{});
   game.floor++;generateFloor();
  }
 }
@@ -2349,19 +2353,21 @@ function detectNearbyTraps(){
 }
 function springTrap(t){
  t.sprung=true;t.revealed=true;
+ if(game.multiplayer)sendMpAction('trigger_trap',{at:{x:t.x,y:t.y}});
  floating('¡TRAMPA!',t.x,t.y,'#ff9d4f');
  damagePlayer(t.dmg||6,'agility','Trampa oculta');
  log('Pisas una trampa oculta.','combat');
 }
 function useAltar(a){
  a.used=true;
+ if(game.multiplayer)sendMpAction('activate_altar',{at:{x:a.x,y:a.y}});
  const p=game.player;
  if(a.kind==='heal'){healEntity(p,Math.round(p.maxHp*.45));log('El altar restaura buena parte de tu vida.','good')}
  else if(a.kind==='shield'){p.shield=(p.shield||0)+Math.round(12+game.floor*1.5);log('El altar te envuelve en un escudo.','good')}
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
 }
-function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
+function openChest(c){c.opened=true;game.chestsOpened++;if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
 
 function applyBuff(id,name,turns,effects={}){
  const p=game.player;p.activeBuffs=p.activeBuffs||[];
@@ -2591,8 +2597,12 @@ async function playerFinishedMultiplayer(){
   setTimeout(async()=>{
    try{
     if(!game.over){
+     sendMpAction('enemy_phase_start',{});
      classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     const t0=MP_DEBUG_LATENCY?performance.now():0;
      enemyTurn();
+     if(MP_DEBUG_LATENCY)mpDebugEvent('enemy_phase_duration',{ms:performance.now()-t0,enemyCount:(game.enemies||[]).length});
+     sendMpAction('enemy_phase_end',{});
     }
     game.mpCapture=false;
     game.turn=(game.turn||0)+1;
@@ -2642,6 +2652,7 @@ async function mpCheckpoint(opts={}){
 
 function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
 function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');return}
+ if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
  for(const e of [...game.enemies]){
   if(game.over)return;
@@ -2650,11 +2661,13 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
   const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0),...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
   const chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
+  const chosenRef=game.multiplayer?mpEntityRef(chosen):null;
   if(enemyUseSkill(e,dist,chosen))continue;
   const w=e.weapon,wRanged=w&&w.kind!=='melee'&&(w.rangeMax||1)>1;
   // shoot/cast with the equipped ranged weapon
   if(wRanged&&dist>1&&dist<=w.rangeMax&&hasLineOfSight(e,chosen)&&Math.random()<.85){
    const dmg=Math.max(1,Math.round(e.atk||e.damage||4));
+   if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:chosen===game.player?dmg:Math.round(dmg*.9),result:w.kind==='magic'?'spell':'ranged'});
    floating(w.kind==='magic'?'✦':'➶',e.x,e.y,w.kind==='magic'?'#be82ff':'#ffd27a');
    if(chosen===game.player)damagePlayer(dmg,w.kind==='magic'?'wisdom':'agility',`${e.name} dispara su ${w.name}`);
    else{const d2=Math.max(1,Math.round(dmg*.9));chosen.hp-=d2;floating(`-${d2}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} dispara a ${chosen.name} con su ${w.name}.`,'combat')}
@@ -2664,17 +2677,18 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
   if(wRanged&&dist===1&&Math.random()<.5){
    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-.5);
    let stepped=false;
-   for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(Math.abs(nx-chosen.x)+Math.abs(ny-chosen.y)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){e.x=nx;e.y=ny;stepped=true;break}}
+   for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(Math.abs(nx-chosen.x)+Math.abs(ny-chosen.y)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});stepped=true;break}}
    if(stepped)continue;
   }
   if(dist===1&&chosen!==game.player){
+   if(game.multiplayer&&chosenRef){const dmgv=Math.max(1,Math.round(e.atk||e.damage||4));sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:dmgv})}
    const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');continue
   }
-  if(dist===1){if(e.type==='orcoKamikaze'){floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);continue}damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
-  if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
+  if(dist===1){if(e.type==='orcoKamikaze'){if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:e.atk+5,result:'explode'});floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);continue}if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0))});damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
+  if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},targetType:'player',targetId:String(game.pjId),visualAmount:e.atk,icon:'✦'});damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
   // shooters hold position while target is in range and sight
   if(wRanged&&dist<=w.rangeMax&&hasLineOfSight(e,chosen))continue;
-  if(dist<8){const opts=Math.random()<.5?[[Math.sign(chosen.x-e.x),0],[0,Math.sign(chosen.y-e.y)]]:[[0,Math.sign(chosen.y-e.y)],[Math.sign(chosen.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){e.x=nx;e.y=ny;break}}}
+  if(dist<8){const opts=Math.random()<.5?[[Math.sign(chosen.x-e.x),0],[0,Math.sign(chosen.y-e.y)]]:[[0,Math.sign(chosen.y-e.y)],[Math.sign(chosen.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});break}}}
  }
  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();return}
 }
@@ -2753,6 +2767,7 @@ function resolveTargetedSkill(slot,x,y){
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
  if(game.player[d.resource]<d.cost){log(`Necesitas ${d.cost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
  const mode=skillTargetMode(id),rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
+ if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(mode==='enemy'){
   const enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
   if(d.classId&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
@@ -2791,6 +2806,7 @@ function resolveBasicAttack(x,y){
 function useSkill(slot){
  if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}if(game.player[def.resource]<def.cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id)});return}
+ if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
  let used=!def.classEffect&&skillDefs[id]?.unlock!=='Botín';
  const skillMult=skillPowerMultiplier(id);if(id==='smash'){const a=near(1);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round(Math.floor(total('armor')/2)*skillMult),{skillId:id}))}
@@ -2961,7 +2977,7 @@ function draw(){
  for(const k of game.keys)if(game.seen[k.y][k.x]){let p=sc(k.x,k.y);keySprite(p.x,p.y)}
  for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);chestSprite(p.x,p.y)}
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
- for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){let p=sc(e.x,e.y);enemySprite(p.x,p.y,e)}
+ for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){const t=e.animT??1,ix=(e.prevX??e.x)+(e.x-(e.prevX??e.x))*t,iy=(e.prevY??e.y)+(e.y-(e.prevY??e.y))*t;let p=sc(ix,iy);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
@@ -3759,6 +3775,7 @@ async function finalizeCharacterDeath(){
   stopMpTradePolling();
   const deadId=String(game.pjId);
   mpClearLiveTimers();
+  mpResetActionQueues();
   game.mpSeq=(game.mpSeq||0)+1; // death outranks any in-flight live turn
   game.turnOrder=(game.turnOrder||[]).filter(id=>String(id)!==deadId);
   // remove the dead player from the shared turn order and mark hp 0 so nobody waits on them
@@ -3834,8 +3851,8 @@ function logoutMultiSession(){
 }
 function leaveMultiplayerScreen(){
  logoutMultiSession();
- mpFlushCheckpointBeacon();mpClearLiveTimers();
- mpRealtimeDisconnect();
+ mpFlushCheckpointBeacon();
+ cleanupMultiplayerRuntime();
  if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
  multiplayerOverlay.classList.add('hidden');
  landingOverlay.classList.remove('hidden');
@@ -4010,9 +4027,11 @@ async function mpRealtimeConnect(sessionId){
  if(rtConnectPromise)await rtConnectPromise.catch(()=>{});
  if(rtChannel&&String(rtChannelSessionId)===String(sessionId))return;
  rtConnectPromise=(async()=>{
+  mpSetRealtimeStatus('connecting');
   const cfg=await loadRtConfig();
-  if(!cfg||!window.supabase)return;
+  if(!cfg||!window.supabase){mpSetRealtimeStatus('error');return}
   mpRealtimeDisconnect();
+  mpSetRealtimeStatus('connecting'); // mpRealtimeDisconnect() reset it to idle
   if(!rtClient)rtClient=window.supabase.createClient(cfg.url,cfg.key);
   rtChannelSessionId=String(sessionId);
   rtChannel=rtClient.channel(`ds-${sessionId}`,{config:{broadcast:{self:false}}});
@@ -4022,13 +4041,18 @@ async function mpRealtimeConnect(sessionId){
   rtChannel.on('broadcast',{event:'need'},({payload})=>mpOnNeed(payload));
   rtChannel.on('broadcast',{event:'full'},({payload})=>mpOnFull(payload));
   rtChannel.on('broadcast',{event:'trade'},()=>mpOnRemoteTrade(sessionId));
-  rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
+  rtChannel.on('broadcast',{event:'action'},({payload})=>handleMpAction(payload));
+  rtChannel.subscribe(status=>{
+   // Supabase statuses: SUBSCRIBED | CHANNEL_ERROR | TIMED_OUT | CLOSED
+   mpSetRealtimeStatus(status==='SUBSCRIBED'?'subscribed':status==='CHANNEL_ERROR'?'error':status==='TIMED_OUT'?'degraded':status==='CLOSED'?'closed':'connecting');
+  });
  })();
  try{await rtConnectPromise}finally{rtConnectPromise=null}
 }
 function mpRealtimeDisconnect(){
  if(rtChannel){try{rtClient?.removeChannel(rtChannel)}catch(e){}}
- rtChannel=null;rtChannelSessionId=null;rtReady=false;
+ rtChannel=null;rtChannelSessionId=null;
+ mpSetRealtimeStatus('idle');
 }
 function mpBroadcastState(id,status){
  if(!rtChannel||!rtReady||String(rtChannelSessionId)!==String(id))return;
@@ -4046,9 +4070,377 @@ function mpBroadcastState(id,status){
  }catch(e){}
  try{rtChannel.send({type:'broadcast',event:'state',payload:{rev:status.rev,status:wire}})}catch(e){}
 }
-// Instant, display-only position ping fired the moment a player ends an action,
-// before the authoritative write lands. Touches no turn state, so a late or
-// duplicated ping cannot cross turns.
+// =============================================================================
+// MULTIPLAYER REALTIME VISUAL ACTIONS
+// -----------------------------------------------------------------------------
+// Separates FOUR concerns that used to be conflated into a single "turn"
+// broadcast sent only once the whole action (and, worse, the whole enemy
+// phase) had already resolved locally:
+//   1. Immediate visual playback  -> ephemeral `action` broadcasts (this block)
+//   2. Definitive turn state      -> `turn` broadcast, semantically `turn_commit`
+//      (see mpTurnPayload/mpPublishTurn/mpOnRemoteTurn below; unchanged CAS,
+//      seq, ACK, resend, need/full, checkpoint machinery)
+//   3. Periodic persistence       -> mpCheckpoint (unchanged)
+//   4. Recovery from loss/disconnect -> need/full + DB poll (unchanged)
+//
+// `action` messages are pure visual sugar: fire-and-forget, deduplicated by
+// eventId, ordered best-effort per author with a short buffer/timeout, never
+// written to Supabase, never authoritative. The authoritative state keeps
+// arriving exactly as before via `turn`; if an `action` is lost, delayed, or
+// duplicated, the worst case is a missed/doubled animation - the next
+// `turn_commit` still reconciles position/HP/enemies/etc. correctly.
+// =============================================================================
+
+const MP_PROTOCOL_VERSION=2;
+// Toggle from the console with: localStorage.mpDebugLatency='1' (or '0' to disable)
+const MP_DEBUG_LATENCY=(()=>{try{return localStorage.getItem('mpDebugLatency')==='1'}catch(e){return false}})();
+
+// ---- Telemetry --------------------------------------------------------------
+// Centralized so latency can be localized to created->sent, sent->received,
+// received->applied or applied->rendered without console.log scattered around.
+const MP_TELEMETRY_MAX=300;
+const mpTelemetryLog=[];
+const mpTelemetryEvents=new Map();
+function mpDebugEvent(stage,data){
+ if(!MP_DEBUG_LATENCY)return;
+ const entry={stage,...data,loggedAt:Date.now()};
+ mpTelemetryLog.push(entry);
+ if(mpTelemetryLog.length>MP_TELEMETRY_MAX)mpTelemetryLog.shift();
+ console.debug('[mp]',stage,entry);
+}
+function mpTelemetryStart(eventId,base){
+ if(!MP_DEBUG_LATENCY)return;
+ mpTelemetryEvents.set(eventId,{eventId,...base,createdAt:Date.now()});
+ if(mpTelemetryEvents.size>MP_TELEMETRY_MAX){const k=mpTelemetryEvents.keys().next().value;mpTelemetryEvents.delete(k)}
+}
+function mpTelemetryMark(eventId,field,extra){
+ if(!MP_DEBUG_LATENCY)return;
+ const rec=mpTelemetryEvents.get(eventId);if(!rec)return;
+ rec[field]=Date.now();
+ if(extra)Object.assign(rec,extra);
+ mpDebugEvent(field,rec);
+}
+function mpPayloadBytes(payload){
+ try{return new Blob([JSON.stringify(payload)]).size}catch(e){try{return JSON.stringify(payload).length}catch(e2){return -1}}
+}
+// Non-critical (visual) errors are logged and swallowed: the game must keep
+// running on turn_commit even if a visual ping fails end to end.
+function mpReportError(context,error,metadata){
+ console.error(`[mp:${context}]`,error?.message||error,metadata||'');
+ mpDebugEvent('error',{context,message:String(error?.message||error),...metadata});
+}
+
+// ---- Explicit Realtime connection state --------------------------------------
+// A channel object existing is not the same as Realtime being usable: track
+// the actual Supabase status so callers can tell "connecting" from "degraded".
+let mpRealtimeStatus='idle'; // idle|connecting|subscribed|degraded|error|closed
+let mpTransportMode='fallback'; // realtime|fallback
+function mpSyncRealtimeStatusToGame(){
+ if(!game)return;
+ game.mpRealtimeStatus=mpRealtimeStatus;
+ game.mpRealtimeReady=mpRealtimeStatus==='subscribed';
+ game.mpTransportMode=mpTransportMode;
+}
+function mpSetRealtimeStatus(status){
+ mpRealtimeStatus=status;
+ mpTransportMode=status==='subscribed'?'realtime':'fallback';
+ rtReady=status==='subscribed';
+ mpSyncRealtimeStatusToGame();
+ mpAdjustPollInterval();
+ mpUpdateConnBadge();
+ mpDebugEvent('realtime_status',{status,transportMode:mpTransportMode});
+}
+function mpUpdateConnBadge(){
+ const el=document.getElementById('mpConnBadge');
+ if(!el)return;
+ if(!game?.multiplayer){el.classList.add('hidden');return}
+ el.classList.remove('hidden');
+ el.classList.toggle('mpConnDegraded',mpRealtimeStatus!=='subscribed');
+ el.textContent=mpRealtimeStatus==='subscribed'?'● TIEMPO REAL':mpRealtimeStatus==='connecting'?'○ CONECTANDO...':'○ MODO DEGRADADO';
+ el.title=mpRealtimeStatus==='subscribed'?'Conexión en tiempo real activa':'Sin tiempo real: usando guardado periódico como respaldo';
+}
+
+// ---- Per-author visual action queue (reorder tolerance + small stabilizer) --
+const MP_ACTION_REORDER_WAIT_MS=80;
+const MP_REMOTE_ACTION_BUFFER_MS=80;
+const MP_PROCESSED_EVENT_TTL_MS=60_000;
+const MP_PROCESSED_EVENT_MAX=500;
+const processedActionIds=new Map(); // eventId -> Date.now(), capped + TTL-pruned
+const mpAuthorQueues=new Map();     // author -> {expected, items:Map(actionSeq->{message,arrivedAt,dueAt})}
+let mpActionSeqCounter=0;
+let mpActionDrainTimer=null;
+
+function mpNextActionSeq(){return ++mpActionSeqCounter}
+function mpResetActionSeq(){mpActionSeqCounter=0}
+function mpMarkActionProcessed(eventId){
+ mpPruneProcessedActions();
+ processedActionIds.set(eventId,Date.now());
+ if(processedActionIds.size>MP_PROCESSED_EVENT_MAX){const k=processedActionIds.keys().next().value;processedActionIds.delete(k)}
+}
+function mpPruneProcessedActions(){
+ const cutoff=Date.now()-MP_PROCESSED_EVENT_TTL_MS;
+ for(const [id,t] of processedActionIds)if(t<cutoff)processedActionIds.delete(id);
+}
+// Queues are keyed by (author, turnSeq): actionSeq restarts at 1 every turn
+// (see sendMpAction), so the "expected" counter must reset per turn too, or a
+// reused actionSeq from a new turn could never satisfy a stale expectation
+// left over from the previous one.
+function mpQueueKey(author,turnSeq){return `${author}|${turnSeq}`}
+function mpAuthorQueue(author,turnSeq){
+ const key=mpQueueKey(author,turnSeq);
+ let q=mpAuthorQueues.get(key);
+ if(!q){q={expected:1,items:new Map()};mpAuthorQueues.set(key,q)}
+ return q;
+}
+// Once a turn_commit for `seq` (or later) has been applied, any queued visual
+// actions for turnSeq<=seq are moot - the confirmed state already supersedes
+// them - so drop them instead of leaking queue entries forever.
+function mpPruneActionQueuesUpTo(seq){
+ for(const key of mpAuthorQueues.keys()){
+  const turnSeq=Number(key.split('|')[1]);
+  if(Number.isFinite(turnSeq)&&turnSeq<=seq)mpAuthorQueues.delete(key);
+ }
+}
+// Called on floor change, resync, reconnect or leaving: stale visual actions
+// must never be replayed against a state they no longer describe.
+function mpResetActionQueues(){
+ mpAuthorQueues.clear();
+ processedActionIds.clear();
+ mpResetActionSeq();
+ if(mpActionDrainTimer){clearInterval(mpActionDrainTimer);mpActionDrainTimer=null}
+ game&&(game.mpEnemyPhaseRemote=false);
+}
+function mpArmActionDrain(){
+ if(mpActionDrainTimer)return;
+ mpActionDrainTimer=setInterval(mpDrainActionQueues,20);
+}
+// Strict per-author ordering with a bounded wait for the expected actionSeq.
+// If the gap-filler doesn't show up within MP_ACTION_REORDER_WAIT_MS, skip
+// ahead and play what's available - turn_commit reconciles the true state
+// regardless, so a permanently-stuck queue is worse than a small skip.
+function mpDrainActionQueues(){
+ const now=Date.now();
+ let anyPending=false;
+ for(const q of mpAuthorQueues.values()){
+  while(true){
+   const next=q.items.get(q.expected);
+   if(next){
+    if(next.dueAt<=now){
+     mpPlayRemoteAction(next.message);
+     q.items.delete(q.expected);
+     q.expected++;
+     continue;
+    }
+    anyPending=true;break;
+   }
+   let forced=false;
+   for(const [seq,item] of q.items){
+    if(seq>q.expected&&now-item.arrivedAt>=MP_ACTION_REORDER_WAIT_MS&&item.dueAt<=now){q.expected=seq;forced=true;break}
+   }
+   if(forced)continue;
+   if(q.items.size>0)anyPending=true;
+   break;
+  }
+ }
+ if(!anyPending&&mpActionDrainTimer){clearInterval(mpActionDrainTimer);mpActionDrainTimer=null}
+}
+
+// ---- Sending ------------------------------------------------------------
+// Fire-and-forget: never awaited by callers, so a visual ping can never delay
+// the local simulation or the turn_commit that follows it. kind/data shape is
+// documented in the action-kind list; keep payloads small (ids+coords only).
+function sendMpAction(kind,data){
+ if(!mpLive())return;
+ try{
+  const turnSeq=(game.mpSeq||0)+1,actionSeq=mpNextActionSeq();
+  const eventId=`${game.pjId}-${turnSeq}-${actionSeq}-${Math.random().toString(36).slice(2,8)}`;
+  const now=Date.now();
+  const payload={protocolVersion:MP_PROTOCOL_VERSION,type:'action',sessionId:String(game.dungeonStatusId),eventId,author:String(game.pjId),turnSeq,actionSeq,createdAt:now,sentAt:now,floor:game.floor,action:{kind,...data}};
+  mpTelemetryStart(eventId,{eventType:'action',sessionId:payload.sessionId,author:payload.author,turnSeq,actionSeq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
+  const bytes=mpPayloadBytes(payload);
+  mpTelemetryMark(eventId,'sentAt',{payloadBytes:bytes});
+  rtChannel.send({type:'broadcast',event:'action',payload});
+ }catch(e){mpReportError('sendMpAction',e,{kind})}
+}
+
+// ---- Receiving ------------------------------------------------------------
+// Validates protocol/session/floor/author/eventId/entity before anything is
+// queued; never applies persistent state, never writes to Supabase.
+function validateMpAction(message){
+ if(!message||message.type!=='action')return false;
+ const ver=message.protocolVersion;
+ if(ver!==undefined&&ver>MP_PROTOCOL_VERSION){mpReportError('protocol',new Error('acción con protocolo más nuevo, ignorada'),{ver});return false}
+ if(!game?.multiplayer||String(message.sessionId)!==String(game.dungeonStatusId))return false;
+ if(!message.eventId||!message.author||!message.action?.kind)return false;
+ if(String(message.author)===String(game.pjId))return false; // never replay my own actions
+ const rosterIds=new Set((game.roster||[]).map(r=>String(r.pjId)));
+ if(rosterIds.size&&!rosterIds.has(String(message.author)))return false; // author must belong to this session
+ if(message.floor!==undefined&&message.floor!==game.floor)return false; // stale floor: drop
+ if(!MP_ACTION_RENDERERS[message.action.kind])return false; // unsupported kind: ignore, don't guess
+ return true;
+}
+function handleMpAction(message){
+ if(!validateMpAction(message))return;
+ if(processedActionIds.has(message.eventId))return; // duplicate: drop, don't replay the animation
+ mpMarkActionProcessed(message.eventId);
+ mpTelemetryStart(message.eventId,{eventType:'action',sessionId:message.sessionId,author:message.author,turnSeq:message.turnSeq,actionSeq:message.actionSeq,sentAt:message.sentAt,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
+ mpTelemetryMark(message.eventId,'receivedAt');
+ enqueueRemoteAction(message);
+}
+function enqueueRemoteAction(message){
+ const author=String(message.author);
+ const q=mpAuthorQueue(author,message.turnSeq);
+ const seq=Number(message.actionSeq)||1;
+ const age=Date.now()-(Number(message.sentAt)||Date.now());
+ const dueAt=Date.now()+Math.max(0,MP_REMOTE_ACTION_BUFFER_MS-age);
+ q.items.set(seq,{message,arrivedAt:Date.now(),dueAt});
+ mpArmActionDrain();
+}
+function mpPlayRemoteAction(message){
+ if(!game?.multiplayer||message.floor!==undefined&&message.floor!==game.floor)return; // floor moved on while queued
+ mpTelemetryMark(message.eventId,'appliedAt');
+ const renderer=MP_ACTION_RENDERERS[message.action.kind];
+ try{renderer&&renderer(message.action,message)}catch(e){mpReportError('render',e,{kind:message.action.kind})}
+ mpTelemetryMark(message.eventId,'renderedAt');
+}
+
+// ---- Renderers --------------------------------------------------------------
+// Pure visual playback. Never mutate persistent/logical fields (hp, inventory,
+// door/chest/trap/altar flags, gold, xp) - those flow exclusively through
+// turn_commit. Movement reuses the existing prevX/prevY/animT interpolation
+// layer (the same one turn_commit reconciliation already drives), which is
+// the minimal visual/logical split this codebase needs: confirmed x/y/hp is
+// the logical state, prevX/prevY/animT is the visual state, for both players
+// and (now) enemies.
+function mpFx(text,x,y,color){if(game.seen?.[y]?.[x])floating(text,x,y,color)}
+function mpFindOtherPlayer(pid){return (game.otherPlayers||[]).find(r=>String(r.pjId)===String(pid))}
+// Companions aren't part of the synced entity model (no shared id other
+// clients can resolve), so a target/attacker that is a companion has no
+// visualizable reference and is skipped rather than guessed at.
+function mpEntityRef(entity){
+ if(!entity)return null;
+ if(entity===game.player)return {type:'player',id:String(game.pjId)};
+ if(entity.pjId!==undefined)return {type:'player',id:String(entity.pjId)};
+ if(entity.eid!==undefined)return {type:'enemy',id:entity.eid};
+ return null;
+}
+function mpFindEnemy(eid){return (game.enemies||[]).find(e=>e.eid===eid)}
+function mpStartEntityAnim(entity,to){
+ if(!entity)return;
+ if(entity.x!==to.x||entity.y!==to.y){
+  if(Math.abs(entity.x-to.x)+Math.abs(entity.y-to.y)<=4){entity.prevX=entity.x;entity.prevY=entity.y;entity.animT=0}
+  entity.x=to.x;entity.y=to.y;
+ }
+ requestAnimationFrame(mpAnimateRemote);
+}
+function renderRemoteMove(action){
+ const entity=action.entityType==='enemy'?mpFindEnemy(action.entityId):mpFindOtherPlayer(action.entityId);
+ if(!entity||!action.to)return;
+ mpStartEntityAnim(entity,action.to);
+ if(action.entityType!=='enemy'&&action.direction)entity.facing=action.direction;
+ draw();
+}
+function renderRemoteAttack(action){
+ const target=action.targetType==='player'?(String(action.targetId)===String(game.pjId)?game.player:mpFindOtherPlayer(action.targetId)):mpFindEnemy(action.targetId);
+ if(!target)return;
+ const crit=action.result==='critical';
+ mpFx(action.result==='evaded'?'EVITA':`${crit?'CRIT ':''}${typeof action.visualAmount==='number'?'-'+action.visualAmount:''}`,target.x,target.y,action.result==='evaded'?'#70dc9b':crit?'#ffd75c':'#ff8888');
+ effect('flash');
+ draw();
+}
+function renderRemoteSpell(action){
+ const at=action.target||action.origin;if(!at)return;
+ mpFx(action.icon||'✦',at.x,at.y,'#be82ff');
+ effect('flash');
+ draw();
+}
+function renderRemoteHeal(action){
+ const target=action.targetId?(String(action.targetId)===String(game.pjId)?game.player:mpFindOtherPlayer(action.targetId)):null;
+ const at=target||action.origin;if(!at)return;
+ mpFx(typeof action.visualAmount==='number'?`+${action.visualAmount}`:'✚',at.x,at.y,'#8dffa8');
+ draw();
+}
+function renderRemoteInteract(action){
+ if(!action.at)return;
+ mpFx(action.icon||'✦',action.at.x,action.at.y,'#ffd68b');
+ draw();
+}
+function renderRemoteTrap(action){
+ if(!action.at)return;
+ mpFx('¡TRAMPA!',action.at.x,action.at.y,'#ff9d4f');
+ effect('shake');
+ draw();
+}
+function renderRemoteAltar(action){
+ if(!action.at)return;
+ mpFx('✦',action.at.x,action.at.y,'#9be8ff');
+ draw();
+}
+function renderRemoteDeath(action){
+ const at=action.at||(action.entityType==='enemy'?mpFindEnemy(action.entityId):null);
+ if(!at)return;
+ mpFx('💀',at.x,at.y,'#cfc7d8');
+ draw();
+}
+function renderRemoteEnemyDeath(action){
+ const e=mpFindEnemy(action.entityId);
+ mpFx('💀',(e&&e.x)??action.at?.x,(e&&e.y)??action.at?.y,'#cfc7d8');
+ draw();
+}
+function renderEnemyPhaseStart(){
+ if(!game)return;
+ game.mpEnemyPhaseRemote=true;
+ if(!game.myTurn)mpSetMyTurn(false,'enemies');
+}
+function renderEnemyPhaseEnd(){
+ if(!game)return;
+ game.mpEnemyPhaseRemote=false;
+}
+function renderFloorTransitionStart(){
+ if(!game)return;
+ game.mpFloorTransitioning=true;
+ mpResetActionQueues(); // nothing queued for the old floor should survive into the new one
+}
+// Closed, explicit map: never dispatch a renderer by string lookup from
+// unchecked network input beyond this table (no eval, no dynamic function names).
+const MP_ACTION_RENDERERS={
+ move:renderRemoteMove,
+ attack:renderRemoteAttack,
+ ranged_attack:renderRemoteAttack,
+ spell:renderRemoteSpell,
+ heal:renderRemoteHeal,
+ use_item:renderRemoteHeal,
+ interact:renderRemoteInteract,
+ open_door:renderRemoteInteract,
+ close_door:renderRemoteInteract,
+ open_chest:renderRemoteInteract,
+ pickup:renderRemoteInteract,
+ trigger_trap:renderRemoteTrap,
+ activate_altar:renderRemoteAltar,
+ death_animation:renderRemoteDeath,
+ enemy_move:renderRemoteMove,
+ enemy_attack:renderRemoteAttack,
+ enemy_spell:renderRemoteSpell,
+ enemy_heal:renderRemoteHeal,
+ enemy_death:renderRemoteEnemyDeath,
+ enemy_phase_start:renderEnemyPhaseStart,
+ enemy_phase_end:renderEnemyPhaseEnd,
+ floor_transition_start:renderFloorTransitionStart
+};
+
+// ---- Lifecycle ---------------------------------------------------------------
+// Idempotent: safe to call more than once (leaving twice, dying then leaving,
+// etc.) without throwing, and it must not let a stale callback from a
+// previous session touch a new one.
+function cleanupMultiplayerRuntime(){
+ stopMpTradePolling();
+ mpClearLiveTimers();
+ mpRealtimeDisconnect();
+ mpResetActionQueues();
+ mpSetRealtimeStatus('idle');
+}
+
+
 // ---- Live turn sync (ephemeral, front-to-front) -----------------------------
 // Turn authority no longer needs a DB round trip. A logical clock `seq` orders
 // every turn transition, and a transition is only ever authored by the player
@@ -4075,6 +4467,9 @@ function mpApplyEnemyWire(list){
   const e=byId.get(eid);
   if(!e)continue; // unknown enemy: the checkpoint/resync path will reconcile
   if(typeof hp==='number'&&hp<e.hp)floating(`-${e.hp-hp}`,e.x,e.y,'#ffd27a');
+  // reconciliation: small position deltas animate the correction, large ones
+  // snap - the same rule already used for other players (mpApplyLiveTurn)
+  if((e.x!==x||e.y!==y)&&Math.abs(e.x-x)+Math.abs(e.y-y)<=4){e.prevX=e.x;e.prevY=e.y;e.animT=0;requestAnimationFrame(mpAnimateRemote)}
   e.x=x;e.y=y;if(typeof hp==='number')e.hp=hp;
   keep.push(e);
  }
@@ -4084,6 +4479,7 @@ function mpApplyEnemyWire(list){
 function mpTurnPayload(nextIdx){
  mpEnsureEnemyIds();
  return {
+  protocolVersion:MP_PROTOCOL_VERSION,type:'turn_commit',
   seq:(game.mpSeq||0)+1,author:String(game.pjId),nextIdx,turn:game.turn||0,floor:game.floor,
   players:Object.fromEntries([[String(game.pjId),{x:game.player.x,y:game.player.y,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp}],
    ...(game.otherPlayers||[]).map(p=>[String(p.pjId),{x:p.x,y:p.y,facing:p.facing,hp:p.hp,maxHp:p.maxHp}])]),
@@ -4104,6 +4500,9 @@ function mpPublishTurn(nextIdx){
  game.mpSeq=payload.seq;
  game.mpLastSent=payload;
  game.mpAckedBy=new Set();
+ const eventId=`commit-${payload.author}-${payload.seq}`;
+ mpTelemetryStart(eventId,{eventType:'turn_commit',sessionId:String(game.dungeonStatusId),author:payload.author,turnSeq:payload.seq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
+ mpTelemetryMark(eventId,'sentAt',{payloadBytes:mpPayloadBytes(payload)});
  mpSend('turn',payload);
  mpScheduleResend();
  return payload;
@@ -4129,18 +4528,33 @@ function mpScheduleResend(){
 }
 function mpOnRemoteTurn(sessionId,p){
  if(!game?.multiplayer||game.over||String(game.dungeonStatusId)!==String(sessionId)||!p)return;
+ // Unknown-newer protocol: can't safely interpret the payload shape, so ask
+ // for a resync instead of silently misapplying it. No version at all means
+ // a pre-protocol-versioning peer (or an old cached tab) - still accepted.
+ if(p.protocolVersion!==undefined&&p.protocolVersion>MP_PROTOCOL_VERSION){mpReportError('protocol',new Error('turn_commit con protocolo más nuevo'),{ver:p.protocolVersion});mpRequestResync('protocol');return}
  if(String(p.author)===String(game.pjId))return;
  const seq=Number(p.seq)||0,local=game.mpSeq||0;
+ const eventId=`commit-${p.author}-${seq}`;
+ mpTelemetryStart(eventId,{eventType:'turn_commit',sessionId,author:String(p.author),turnSeq:seq,channelStatus:mpRealtimeStatus,transportMode:mpTransportMode});
+ mpTelemetryMark(eventId,'receivedAt');
  if(seq<=local){mpSend('ack',{seq,by:String(game.pjId)});return} // duplicate: re-ack and drop
  if(seq>local+1){mpRequestResync('gap');return}                  // gap: never apply out of order
  const expected=String((game.turnOrder||[])[game.activePlayerIndex||0]??'');
  if(expected&&String(p.author)!==expected){mpRequestResync('author');return} // not the active player
  game.mpSeq=seq;
  mpApplyLiveTurn(p);
+ mpTelemetryMark(eventId,'appliedAt');
  mpSend('ack',{seq,by:String(game.pjId)});
+ mpTelemetryMark(eventId,'renderedAt');
 }
 function mpApplyLiveTurn(p){
  if(p.floor&&p.floor!==game.floor){mpRequestResync('floor');return} // floor change goes through the checkpoint
+ // the round this commit closes is done: any queued ephemeral actions for it
+ // (or older) are superseded by the confirmed state, and the enemy phase (if
+ // any) has necessarily concluded by the time a commit lands
+ mpPruneActionQueuesUpTo(game.mpSeq||0);
+ game.mpEnemyPhaseRemote=false;
+ game.mpFloorTransitioning=false;
  game.turn=p.turn??game.turn;
  for(const [pid,pos] of Object.entries(p.players||{})){
   if(String(pid)===String(game.pjId)){
@@ -4203,6 +4617,7 @@ function mpOnNeed(p){
 }
 function mpOnFull(p){
  if(!game?.multiplayer||!p||String(p.to)!==String(game.pjId))return;
+ if(p.state?.protocolVersion!==undefined&&p.state.protocolVersion>MP_PROTOCOL_VERSION){mpReportError('protocol',new Error('full con protocolo más nuevo'),{ver:p.state.protocolVersion});return}
  const seq=Number(p.seq)||0;
  if(seq<=(game.mpSeq||0))return;
  if(Array.isArray(p.turnOrder)&&p.turnOrder.length)game.turnOrder=p.turnOrder;
@@ -4647,6 +5062,7 @@ async function mpEnterStartedSession(session,starter=false){
   }
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
   if(!game.mpStatusMirror)game.mpStatusMirror=st;
+  mpSyncRealtimeStatusToGame();mpUpdateConnBadge(); // the connect above ran before `game` existed; stamp it now
   mpSyncOtherPlayers(st);
   recomputeDerived();updateUI();draw();
   mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
@@ -4675,6 +5091,7 @@ function mpAnimateRemote(){
  if(!game)return;
  let more=false;
  for(const rp of game.otherPlayers||[])if((rp.animT??1)<1){rp.animT=Math.min(1,rp.animT+.15);if(rp.animT<1)more=true}
+ for(const e of game.enemies||[])if((e.animT??1)<1){e.animT=Math.min(1,e.animT+.15);if(e.animT<1)more=true}
  draw();
  if(more)requestAnimationFrame(mpAnimateRemote);
 }
@@ -4683,12 +5100,13 @@ function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  game.mpCapture=isMine;
  busy=!isMine;
+ if(isMine)mpResetActionSeq(); // fresh actionSeq numbering for my upcoming turn
  const el=document.getElementById('mpTurnIndicator');
  if(el){
   el.classList.remove('hidden');
   el.classList.toggle('myTurn',isMine);
   if(isMine)el.textContent='¡ES TU TURNO!';
-  else if(phase==='enemies')el.textContent='Turno de los enemigos...';
+  else if(phase==='enemies'||game.mpEnemyPhaseRemote)el.textContent='Turno de los enemigos...';
   else{
    const activeId=game.turnOrder?.[game.activePlayerIndex||0];
    const meta=(game.roster||[]).find(r=>String(r.pjId)===String(activeId));
@@ -4733,16 +5151,19 @@ function mpApplyRemoteState(st){
  if(turnAuthoritative){
   game.activePlayerIndex=st.activePlayerIndex||0;
   game.turn=st.turn??game.turn;
-  if(stSeq>localSeq)game.mpSeq=stSeq;
+  if(stSeq>localSeq){game.mpSeq=stSeq;mpPruneActionQueuesUpTo(stSeq);game.mpEnemyPhaseRemote=false}
  }
  game.sessionFloors=st.floors||game.sessionFloors;
  const remoteFloor=st.currentFloor||1;
  const overlay=st.floors?.[String(remoteFloor)];
  const myPos=st.players?.[String(game.pjId)];
  if(remoteFloor!==game.floor){
-  // another player descended: the whole party moves to the new floor
+  // another player descended: the whole party moves to the new floor, and any
+  // visual actions still queued for the old floor must never be replayed here
+  mpResetActionQueues();
   game.floor=remoteFloor;
   game.floorEventRolled=true;
+  game.mpFloorTransitioning=false;
   if(overlay&&overlay.map)applyFloorSnapshot(overlay);
   else loadPrecomputedFloor();
   const pos=(myPos&&(myPos.floor||remoteFloor)===remoteFloor)?myPos:(selectedDungeonWorld?.world_json?.floors?.[remoteFloor-1]?.spawn||{x:game.player.x,y:game.player.y});
@@ -4927,7 +5348,7 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
 document.getElementById('backFromLobbyBtn').onclick=()=>{
  if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
  mpLobbySessionId=null;
- mpRealtimeDisconnect();
+ cleanupMultiplayerRuntime();
  mpLobbyOverlay.classList.add('hidden');
  multiplayerOverlay.classList.remove('hidden');
  refreshOpenSessions();

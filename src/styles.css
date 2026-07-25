@@ -221,3 +221,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .tradeAvailable{display:grid;gap:6px;max-height:220px;overflow:auto}
 .tradeActions{display:flex;gap:8px;flex-wrap:wrap}
 #tradeCancelBtn{background:#3a2030;border-color:#7a3a4a;color:#ffb3c2}
+
+/* Discreet realtime connection indicator, only visible in multiplayer. */
+.mpConnBadge{font-size:9px;letter-spacing:.03em;color:#70dc9b;display:flex;align-items:center;padding:0 6px;white-space:nowrap}
+.mpConnBadge.mpConnDegraded{color:#ffb454}
