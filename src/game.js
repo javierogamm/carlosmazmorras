@@ -2594,7 +2594,7 @@ function actionDone(kind){
  if(!apModeOn())return playerFinished();
  if(game.player.ap==null)startPlayerAP();
  game.player.ap=Math.max(0,game.player.ap-AP_COSTS[kind]);
- busy=false;updateUI();draw();
+ busy=false;updateUI();requestAnimationFrame(animate);
 }
 function playerFinished(){
  if(document.getElementById('statPointModal')?.classList.contains('open')||document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=true;busy=false;updateUI();draw();return}
