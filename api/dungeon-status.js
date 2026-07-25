@@ -15,6 +15,13 @@ module.exports=async(req,res)=>{
   if(req.method==='GET'){
    const id=req.query?.id||null;
    if(id){
+    // light=1: only the optimistic-lock revision, for cheap high-frequency polling
+    if(req.query?.light){
+     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,rev:dungeon_status->>rev&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
+     const data=await r.json();
+     if(!r.ok)return res.status(r.status).json(data);
+     return res.status(200).json(Array.isArray(data)?data[0]||null:data);
+    }
     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
