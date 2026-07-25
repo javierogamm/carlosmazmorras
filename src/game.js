@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.49.0';
+const APP_VERSION='0.50.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2914,7 +2914,7 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
@@ -3006,11 +3006,11 @@ function showTab(name){
 function updateGameHud(){
  if(!game?.player)return;
  const p=game.player,need=p.level>=LEVEL_CAP?1:(p.nextXp||xpNeededForLevel(p.level));
- const set=(fill,text,val,max)=>{const f=document.getElementById(fill),t=document.getElementById(text);if(f)f.style.width=`${Math.max(0,Math.min(100,val/max*100))}%`;if(t)t.textContent=`${Math.ceil(val)}/${Math.ceil(max)}`};
- set('hudHpFill','hudHpText',p.hp,p.maxHp);
- set('hudXpFill','hudXpText',p.level>=LEVEL_CAP?1:p.xp,need);if(p.level>=LEVEL_CAP){const t=document.getElementById('hudXpText');if(t)t.textContent='MÁX'}
- set('hudStaminaFill','hudStaminaText',p.stamina,p.maxStamina);
- set('hudManaFill','hudManaText',p.mana,p.maxMana);
+ const set=(fill,text,val,max,bar)=>{const f=document.getElementById(fill),t=document.getElementById(text),b=bar&&document.getElementById(bar),pct=Math.max(0,Math.min(100,val/max*100));if(f)f.style.width=`${pct}%`;if(t)t.textContent=`${Math.ceil(val)}/${Math.ceil(max)}`;if(b)b.setAttribute('aria-valuenow',Math.round(pct))};
+ set('hudHpFill','hudHpText',p.hp,p.maxHp,'hudHpBar');
+ set('hudXpFill','hudXpText',p.level>=LEVEL_CAP?1:p.xp,need,'hudXpBar');if(p.level>=LEVEL_CAP){const t=document.getElementById('hudXpText');if(t)t.textContent='MÁX'}
+ set('hudStaminaFill','hudStaminaText',p.stamina,p.maxStamina,'hudStaminaBar');
+ set('hudManaFill','hudManaText',p.mana,p.maxMana,'hudManaBar');
  drawMinimap();
 }
 function drawMinimap(){
@@ -3340,7 +3340,7 @@ function enemySprite(x,y,e){
  else if(['abomination','FurnaceTyrant'].includes(shape)){R(7,11,50,45,c);R(1,22,15,31,a);R(48,18,15,37,a);for(let i=0;i<3;i++)R(17+i*13,24,7,7,'#ffe57a');if(shape==='FurnaceTyrant'){R(12,7,40,9,'#5a2116');R(18,43,28,8,'#ff6537')}}
  if(e.elite){ctx.strokeStyle='#d77cff';ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54);R(27,6,10,4,'#d77cff')}
  if(e.boss){ctx.strokeStyle='#ffcb57';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
- if(e.hp<e.maxHp){R(8,4,48,5,'#330d14');R(8,4,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
+ if(e.hp<e.maxHp){R(8,58,48,5,'#330d14');R(8,58,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
 }
 
 
@@ -4965,37 +4965,6 @@ function renderClassChoices(){
 }
 renderClassChoices();
 
-function serializeGame(){
- return JSON.stringify({version:'0.25',savedAt:new Date().toISOString(),game},null,2);
-}
-function downloadSave(){
- if(!game){alert('Primero inicia una partida.');return}
- const blob=new Blob([serializeGame()],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download=`mazmorra-botin-${game.player.name.replace(/[^a-z0-9_-]/gi,'_')}-piso-${game.floor}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
- log('Partida exportada a JSON.','sys');
-}
-function restoreGame(data){
- if(!data||!data.game||!data.game.player||!data.game.map)throw new Error('El archivo no contiene una partida válida.');
- game=data.game;
- game.player.equipment=Object.assign(Object.fromEntries(slots.map(s=>[s,null])),game.player.equipment||{});
- game.player.cooldowns=game.player.cooldowns||{};
- game.player.knownSkills=game.player.knownSkills||['smash','fortify'];game.player.skillProgress=game.player.skillProgress||{};for(const id of game.player.knownSkills)game.player.skillProgress[id]=game.player.skillProgress[id]||{level:1,xp:0,uses:0};
- game.player.equippedSkills=(game.player.equippedSkills||['smash','fortify',null,null]).slice(0,4);
- while(game.player.equippedSkills.length<4)game.player.equippedSkills.push(null);
- game.player.className=game.player.className||classDefs[game.player.cls]?.name||'Clase desconocida';game.player.raceName=game.player.raceName||raceDefs[game.player.race]?.name||game.player.race;game.player.activePotions=game.player.activePotions||[];game.player.activeBuffs=game.player.activeBuffs||[];game.player.level=Math.min(LEVEL_CAP,game.player.level||1);game.player.nextXp=game.player.level<LEVEL_CAP?xpNeededForLevel(game.player.level):0;game.player.unspentStatPoints=game.player.unspentStatPoints||0;game.player.permanentPotionStats=game.player.permanentPotionStats||{};game.player.raceBonuses=game.player.raceBonuses||{...(raceDefs[game.player.race]?.bonuses||{})};
- game.inventory=game.inventory||[];game.achievements=game.achievements||{};game.safeRooms=game.safeRooms||[];game.companions=game.companions||[];game.skillObjects=game.skillObjects||[];for(const c of game.companions){c.friendly=true;c.hp=c.hp||12;c.maxHp=c.maxHp||c.hp;c.shape=c.shape||'allyCompanion'};game.player.skillChoicesAwarded=game.player.skillChoicesAwarded||{};for(const e of game.enemies||[])e.statuses=e.statuses||[];ensureAttackDefenseMetadata();setTimeout(()=>queueMissingClassSkillChoices(),0);pendingClassSkillRequests=[];for(const e of game.enemies||[]){e.skills=e.skills||[];e.skillCooldowns=e.skillCooldowns||{}}
- const migrate=i=>{if(!i)return i;i.itemLevel=i.itemLevel||game.player.level||1;i.affixes=i.affixes||[];i.passives=i.passives||[];i.effects=i.effects||[];i.score=i.score||i.power||0;normalizeWeaponIcon(i);return i};
- game.inventory=game.inventory.map(migrate);compactPotionStacks();for(const s of slots)game.player.equipment[s]=migrate(game.player.equipment[s]);recomputeDerived();
- anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
- startOverlay.classList.add('hidden');storyOverlay.classList.add('hidden');busy=false;updateUI();draw();banner('PARTIDA CARGADA');log('Partida restaurada desde JSON.','sys');
-}
-document.getElementById('saveGameBtn').onclick=downloadSave;
-document.getElementById('loadGameInput').onchange=async e=>{
- const file=e.target.files?.[0];if(!file)return;
- try{const data=JSON.parse(await file.text());restoreGame(data)}
- catch(err){alert('No se pudo cargar la partida: '+err.message)}
- finally{e.target.value=''}
-};
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabview').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
 function isTypingTarget(el){return ['INPUT','TEXTAREA','SELECT'].includes(el?.tagName)||el?.isContentEditable}
