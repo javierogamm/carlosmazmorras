@@ -1,3 +1,12 @@
+## v0.49.0 - Multiplayer item trade
+- New "Comercio" tab in the side panel, visible only in multiplayer. Lists the other living party members; pick one to propose a trade. Both sides then add/remove items from their own inventory into the deal and accept; once both have accepted, the swap executes automatically.
+- Trade state lives in `dungeon_status.trade` (one active trade at a time per session, between exactly two players) and every mutation goes through the same rev-guarded CAS write already used for turns (`mpSaveSession`): a trade can only be proposed if none is open, and the item swap can only ever be applied once per side, because the write that records "I've applied my half" only succeeds if the trade is still the expected one, both sides are still accepted, and that side hadn't already applied. This is the same pattern that already keeps turns from crossing, reused here to make trading crossing-proof and duplication-proof.
+- Items stay in each player's own inventory (and keep persisting normally through the regular character save) until the swap actually commits, so a reload or crash mid-trade never loses an item. While offered, an item is only soft-locked - it cannot be equipped, used (potions) or auto-sold (the `transmute` skill) until it's withdrawn from the offer; changing your own offer resets both sides' acceptance.
+- Cancelling is safe at any point for either side: the write that cancels only succeeds if the trade is still the one both clients think it is, so a cancel racing against an in-flight apply can never half-execute a swap - verified with a standalone protocol simulation (propose/offer/accept/apply in any order, double-invoked applies, and cancel-immediately-before-apply all leave inventories exactly where they should be).
+- Delivery is prompt without depending on the slow safety poll: a lightweight `trade` broadcast on the existing realtime channel tells peers to refetch trade state immediately, with a dedicated 1.5-2.5s poll as fallback while a session is active (independent of the turn-sync timers, since trading isn't gated by whose turn it is).
+- A new trade proposal targeting you announces itself (banner + log) the moment it's seen, even if the Comercio tab isn't open.
+- App and package version bumped to `0.49.0`.
+
 ## v0.48.0 - Floor archetypes + room typologies, shared XP and party-scaled enemy HP
 ### Multiplayer balance
 - Experience is now split between the party: `gainXp` divides by the number of living participants, so a 2-player run no longer doubles total XP income.
