@@ -18,7 +18,8 @@ let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
 let mpPollBusy=false;
-const APP_VERSION='0.42.0';
+let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
+const APP_VERSION='0.43.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -3112,6 +3113,7 @@ function renderCharacterCards(chars){
 async function enterMultiplayerScreen(){
  landingOverlay.classList.add('hidden');
  multiplayerOverlay.classList.remove('hidden');
+ loadRtConfig();
  if(!multiSessionId)await loginMultiSession();
  refreshOnlineUsers();
  refreshOpenSessions();
@@ -3135,6 +3137,7 @@ function logoutMultiSession(){
 }
 function leaveMultiplayerScreen(){
  logoutMultiSession();
+ mpRealtimeDisconnect();
  if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
  multiplayerOverlay.classList.add('hidden');
  landingOverlay.classList.remove('hidden');
@@ -3234,6 +3237,107 @@ function mpFreeSpawnNear(map,enemies,occupiedList,base){
  return {x:base.x,y:base.y};
 }
 
+// ---- Multiplayer low-latency transport -------------------------------------
+// Hot-path reads/writes go straight to Supabase REST (no serverless cold
+// starts) and committed writes are pushed to the other clients via Supabase
+// Realtime broadcast. /api/dungeon-status remains as fallback and polling
+// stays as a 2s safety net. Correctness is unchanged: every apply and every
+// write still goes through the rev optimistic lock, so a late/out-of-order
+// message can never re-grant an already-passed turn.
+async function loadRtConfig(){
+ if(rtConfig!==undefined)return rtConfig;
+ try{
+  const r=await fetch('/api/rt-config');
+  rtConfig=r.ok?await r.json():null;
+  if(rtConfig&&!rtConfig.url)rtConfig=null;
+ }catch(e){rtConfig=null}
+ return rtConfig;
+}
+function dsHeaders(){return {apikey:rtConfig.key,Authorization:`Bearer ${rtConfig.key}`,'Content-Type':'application/json'}}
+async function dsGet(id){
+ if(rtConfig?.url){
+  try{
+   const r=await fetch(`${rtConfig.url}/rest/v1/dungeon_status?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:dsHeaders()});
+   if(r.ok){const d=await r.json();return Array.isArray(d)?d[0]||null:d}
+  }catch(e){}
+ }
+ const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`);
+ const d=await r.json();
+ return r.ok?d:null;
+}
+async function dsGetRev(id){
+ if(rtConfig?.url){
+  try{
+   const r=await fetch(`${rtConfig.url}/rest/v1/dungeon_status?select=rev:dungeon_status->>rev&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:dsHeaders()});
+   if(r.ok){const d=await r.json();return Number((Array.isArray(d)?d[0]:d)?.rev)||0}
+  }catch(e){}
+ }
+ const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}&light=1`);
+ if(!r.ok)return null;
+ return Number((await r.json())?.rev)||0;
+}
+// returns {ok,conflict,data}
+async function dsPatch(id,row,expectedRev){
+ if(rtConfig?.url){
+  try{
+   let f=`id=eq.${encodeURIComponent(id)}`;
+   if(expectedRev!==undefined&&expectedRev!==null)f+=`&dungeon_status->>rev=eq.${encodeURIComponent(String(expectedRev))}`;
+   const r=await fetch(`${rtConfig.url}/rest/v1/dungeon_status?${f}`,{method:'PATCH',headers:{...dsHeaders(),Prefer:'return=representation'},body:JSON.stringify(row)});
+   if(r.ok){
+    const d=await r.json();
+    if(expectedRev!==undefined&&expectedRev!==null&&Array.isArray(d)&&!d.length)return {ok:false,conflict:true};
+    return {ok:true,data:d};
+   }
+  }catch(e){}
+ }
+ const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...row,expectedRev})});
+ if(r.status===409)return {ok:false,conflict:true};
+ const d=await r.json().catch(()=>null);
+ return {ok:r.ok,data:d};
+}
+let rtConnectPromise=null;
+async function mpRealtimeConnect(sessionId){
+ if(rtConnectPromise)await rtConnectPromise.catch(()=>{});
+ if(rtChannel&&String(rtChannelSessionId)===String(sessionId))return;
+ rtConnectPromise=(async()=>{
+  const cfg=await loadRtConfig();
+  if(!cfg||!window.supabase)return;
+  mpRealtimeDisconnect();
+  if(!rtClient)rtClient=window.supabase.createClient(cfg.url,cfg.key);
+  rtChannelSessionId=String(sessionId);
+  rtChannel=rtClient.channel(`ds-${sessionId}`,{config:{broadcast:{self:false}}});
+  rtChannel.on('broadcast',{event:'state'},({payload})=>mpOnRemoteBroadcast(sessionId,payload));
+  rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
+ })();
+ try{await rtConnectPromise}finally{rtConnectPromise=null}
+}
+function mpRealtimeDisconnect(){
+ if(rtChannel){try{rtClient?.removeChannel(rtChannel)}catch(e){}}
+ rtChannel=null;rtChannelSessionId=null;rtReady=false;
+}
+function mpBroadcastState(id,status){
+ if(!rtChannel||!rtReady||String(rtChannelSessionId)!==String(id))return;
+ try{rtChannel.send({type:'broadcast',event:'state',payload:{rev:status.rev,status}})}catch(e){}
+}
+function mpOnRemoteBroadcast(sessionId,payload){
+ const st=payload?.status,rev=Number(payload?.rev)||0;
+ if(!st||!rev)return;
+ if(game?.multiplayer&&String(game.dungeonStatusId)===String(sessionId)){
+  if(game.over||game.mpEnemyPhase)return; // safety net poll catches up afterwards
+  if(rev<=(game.mpLastRev||0))return;
+  game.mpLastRev=rev;
+  mpApplyRemoteState(st);
+ }else if(String(mpLobbySessionId||'')===String(sessionId)&&!game){
+  refreshMpLobby();
+ }
+}
+function mpAdjustPollInterval(){
+ if(!game?.multiplayer||!mpGamePollTimer)return;
+ clearInterval(mpGamePollTimer);
+ mpGamePollTimer=setInterval(mpPollGameState,rtReady?2000:400);
+}
+// -----------------------------------------------------------------------------
+
 // Todas las escrituras de dungeon_status pasan por aquí: se relee el estado más
 // reciente, `mutate` construye el siguiente estado a partir de ESE estado fresco
 // (nunca de una copia local desfasada) y se escribe con concurrencia optimista
@@ -3243,25 +3347,35 @@ function mpFreeSpawnNear(map,enemies,occupiedList,base){
 async function mpSaveSession(id,mutate,{retries=6}={}){
  if(!id)return null;
  for(let attempt=0;attempt<retries;attempt++){
-  let session;
-  try{
-   const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`);
-   session=await r.json();
-   if(!r.ok)return null;
-  }catch(e){console.error('No se pudo leer la sesión multijugador',e);return null}
-  const fresh=session.dungeon_status||{};
+  let session,fresh;
+  // fast path (first attempt only): reuse the last applied state instead of
+  // re-reading. The rev CAS below still rejects the write if it was stale.
+  const mirror=game?.mpStatusMirror;
+  if(attempt===0&&game&&String(id)===String(game.dungeonStatusId)&&mirror&&(Number(mirror.rev)||0)===(game.mpLastRev||0)){
+   fresh=mirror;
+   session={id,dungeon_status:mirror};
+  }else{
+   try{
+    session=await dsGet(id);
+    if(!session)return null;
+   }catch(e){console.error('No se pudo leer la sesión multijugador',e);return null}
+   fresh=session.dungeon_status||{};
+  }
   const rev=Number(fresh.rev)||0;
   const result=mutate(fresh,session);
   if(!result)return null;
   const nextStatus={...result.dungeon_status,rev:rev+1};
-  const payload={dungeon_status:nextStatus,expectedRev:rev};
-  if(result.players_ID!==undefined)payload.players_ID=result.players_ID;
+  const row={dungeon_status:nextStatus};
+  if(result.players_ID!==undefined)row.players_ID=result.players_ID;
   try{
-   const pr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-   if(pr.status===409){await new Promise(res=>setTimeout(res,80+Math.random()*160));continue}
-   const pdata=await pr.json();
-   if(!pr.ok){console.error('No se pudo guardar la sesión multijugador',pdata);return null}
-   if(game&&String(id)===String(game.dungeonStatusId))game.mpLastRev=Math.max(game.mpLastRev||0,nextStatus.rev);
+   const pr=await dsPatch(id,row,rev);
+   if(pr.conflict){await new Promise(res=>setTimeout(res,60+Math.random()*120));continue}
+   if(!pr.ok){console.error('No se pudo guardar la sesión multijugador',pr.data);return null}
+   if(game&&String(id)===String(game.dungeonStatusId)){
+    game.mpLastRev=Math.max(game.mpLastRev||0,nextStatus.rev);
+    game.mpStatusMirror=nextStatus;
+   }
+   mpBroadcastState(id,nextStatus);
    return {session,status:nextStatus};
   }catch(e){console.error('No se pudo guardar la sesión multijugador',e);await new Promise(res=>setTimeout(res,120))}
  }
@@ -3299,6 +3413,7 @@ async function mpJoinSession(sessionId,pj){
 
 function openMpLobby(sessionId,isHost){
  mpLobbySessionId=sessionId;
+ mpRealtimeConnect(sessionId);
  multiplayerOverlay.classList.add('hidden');
  mpLobbyOverlay.classList.remove('hidden');
  document.getElementById('mpStartGameBtn').classList.toggle('hidden',!isHost);
@@ -3328,6 +3443,7 @@ async function refreshMpLobby(){
 // atomic write that sets started:true, so joiners always find a complete floor.
 async function mpEnterStartedSession(session,starter=false){
  try{
+  await mpRealtimeConnect(session.id);
   const worldsRes=await fetch('/api/dungeon-worlds');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
   const world=worlds.find(w=>String(w.id)===String(session.dungeon_world_id));
@@ -3367,11 +3483,10 @@ async function mpEnterStartedSession(session,starter=false){
    // joiners render the floor exclusively from the shared snapshot; wait for it if needed
    let overlay=st.floors?.[String(game.floor)]||null;
    for(let i=0;i<8&&!(overlay&&overlay.map);i++){
-    await new Promise(res=>setTimeout(res,800));
+    await new Promise(res=>setTimeout(res,500));
     try{
-     const rr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(session.id)}`);
-     const s2=await rr.json();
-     if(rr.ok&&s2?.dungeon_status){st=s2.dungeon_status;game.floor=st.currentFloor||1;game.turn=st.turn||0;game.turnOrder=st.turnOrder||game.turnOrder;game.activePlayerIndex=st.activePlayerIndex||0;game.roster=st.roster||game.roster;game.mpLastRev=Number(st.rev)||0;game.mpLastEvSeq=st.evSeq||0;overlay=st.floors?.[String(game.floor)]||null}
+     const s2=await dsGet(session.id);
+     if(s2?.dungeon_status){st=s2.dungeon_status;game.floor=st.currentFloor||1;game.turn=st.turn||0;game.turnOrder=st.turnOrder||game.turnOrder;game.activePlayerIndex=st.activePlayerIndex||0;game.roster=st.roster||game.roster;game.mpLastRev=Number(st.rev)||0;game.mpLastEvSeq=st.evSeq||0;overlay=st.floors?.[String(game.floor)]||null}
     }catch(e){}
    }
    if(overlay&&overlay.map)applyFloorSnapshot(overlay);
@@ -3391,11 +3506,12 @@ async function mpEnterStartedSession(session,starter=false){
    }
   }
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
+  if(!game.mpStatusMirror)game.mpStatusMirror=st;
   mpSyncOtherPlayers(st);
   recomputeDerived();updateUI();draw();
   mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,400);
+  mpGamePollTimer=setInterval(mpPollGameState,rtReady?2000:400);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');alert('Error al entrar en la partida: '+e.message)}
 }
@@ -3449,14 +3565,11 @@ async function mpPollGameState(){
  mpPollBusy=true;
  try{
   const id=game.dungeonStatusId;
-  const lr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}&light=1`);
-  if(!lr.ok)return;
-  const lite=await lr.json();
-  if((Number(lite?.rev)||0)<=(game.mpLastRev||0))return;
-  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(id)}`);
-  if(!r.ok)return;
-  const session=await r.json();
-  const st=session?.dungeon_status||{};
+  const liteRev=await dsGetRev(id);
+  if(liteRev===null||liteRev<=(game.mpLastRev||0))return;
+  const session=await dsGet(id);
+  if(!session)return;
+  const st=session.dungeon_status||{};
   const rev=Number(st.rev)||0;
   if(rev<=(game.mpLastRev||0))return;
   game.mpLastRev=rev;
@@ -3466,6 +3579,7 @@ async function mpPollGameState(){
 }
 
 function mpApplyRemoteState(st){
+ game.mpStatusMirror=st;
  game.turnOrder=st.turnOrder&&st.turnOrder.length?st.turnOrder:game.turnOrder;
  game.roster=st.roster||game.roster;
  game.activePlayerIndex=st.activePlayerIndex||0;
@@ -3638,6 +3752,7 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
 document.getElementById('backFromLobbyBtn').onclick=()=>{
  if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
  mpLobbySessionId=null;
+ mpRealtimeDisconnect();
  mpLobbyOverlay.classList.add('hidden');
  multiplayerOverlay.classList.remove('hidden');
  refreshOpenSessions();
