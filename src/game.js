@@ -19,7 +19,7 @@ let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.46.0';
+const APP_VERSION='0.47.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2102,7 +2102,6 @@ function playerFinished(){
 async function playerFinishedMultiplayer(){
  busy=true;
  if(game.over)return; // death flow persists its own state
- mpBroadcastAct(); // instant provisional visuals before the authoritative write
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -2123,17 +2122,48 @@ async function playerFinishedMultiplayer(){
      enemyTurn();
     }
     game.mpCapture=false;
-    mpBroadcastAct(); // enemy-phase results visible remotely before the write lands
-    await mpPersistTurnState({advance:true,includeOtherPlayers:true});
+    game.turn=(game.turn||0)+1;
+    await mpAdvanceTurn(0);
    }finally{game.mpEnemyPhase=false}
    draw();
-   if(!game.over)mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex])===String(game.pjId));
+   if(!game.over)mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
   },60);
  }else{
   mpSetMyTurn(false);
-  await mpPersistTurnState({advance:true});
+  await mpAdvanceTurn(myIndex+1);
   draw();
  }
+}
+
+// Single exit point for "my turn is over". Live mode publishes the transition
+// over the channel (instant, no DB) and only checkpoints the DB every
+// MP_CHECKPOINT_EVERY rounds or on events that must survive a reload. Without
+// realtime it degrades to the previous behaviour: one DB write per turn.
+async function mpAdvanceTurn(nextIdx){
+ if(!game?.multiplayer)return;
+ const live=mpLive();
+ if(live){
+  game.activePlayerIndex=nextIdx;
+  mpPublishTurn(nextIdx);
+  game.mpPendingEvents=[];
+  game.mpDirty=true;
+  const roundsDone=game.turn||0;
+  const roundClosed=nextIdx===0; // I just resolved the enemy phase
+  const mustCheckpoint=game.floor!==game.mpCheckpointFloor||(roundClosed&&roundsDone-(game.mpCheckpointTurn||0)>=MP_CHECKPOINT_EVERY);
+  if(mustCheckpoint)await mpCheckpoint({advance:false});
+  }else{
+  await mpPersistTurnState({advance:true,includeOtherPlayers:true});
+ }
+}
+
+// DB checkpoint: persists the authoritative state so a reload/reconnect can
+// resume. Carries the live `seq` so peers and checkpoints stay comparable.
+async function mpCheckpoint(opts={}){
+ if(!game?.multiplayer||!game.dungeonStatusId)return;
+ game.mpCheckpointTurn=game.turn||0;
+ game.mpCheckpointFloor=game.floor;
+ game.mpDirty=false;
+ await mpPersistTurnState({advance:false,includeOtherPlayers:true,checkpoint:true,...opts});
 }
 
 function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
@@ -3219,6 +3249,8 @@ async function finalizeCharacterDeath(){
  if(game.multiplayer){
   if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
   const deadId=String(game.pjId);
+  mpClearLiveTimers();
+  game.mpSeq=(game.mpSeq||0)+1; // death outranks any in-flight live turn
   game.turnOrder=(game.turnOrder||[]).filter(id=>String(id)!==deadId);
   // remove the dead player from the shared turn order and mark hp 0 so nobody waits on them
   await mpSaveSession(game.dungeonStatusId,fresh=>{
@@ -3233,7 +3265,7 @@ async function finalizeCharacterDeath(){
    if(active<0||active>=newOrder.length)active=0;
    const players={...fresh.players};
    if(players[deadId])players[deadId]={...players[deadId],hp:0};
-   return {dungeon_status:{...fresh,turnOrder:newOrder,activePlayerIndex:active,turn,players}};
+   return {dungeon_status:{...fresh,turnOrder:newOrder,activePlayerIndex:active,turn,players,seq:Math.max(Number(fresh.seq)||0,game.mpSeq||0)}};
   });
   return;
  }
@@ -3293,6 +3325,7 @@ function logoutMultiSession(){
 }
 function leaveMultiplayerScreen(){
  logoutMultiSession();
+ mpFlushCheckpointBeacon();mpClearLiveTimers();
  mpRealtimeDisconnect();
  if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
  multiplayerOverlay.classList.add('hidden');
@@ -3475,7 +3508,10 @@ async function mpRealtimeConnect(sessionId){
   rtChannelSessionId=String(sessionId);
   rtChannel=rtClient.channel(`ds-${sessionId}`,{config:{broadcast:{self:false}}});
   rtChannel.on('broadcast',{event:'state'},({payload})=>mpOnRemoteBroadcast(sessionId,payload));
-  rtChannel.on('broadcast',{event:'act'},({payload})=>mpOnRemoteAct(sessionId,payload));
+  rtChannel.on('broadcast',{event:'turn'},({payload})=>mpOnRemoteTurn(sessionId,payload));
+  rtChannel.on('broadcast',{event:'ack'},({payload})=>mpOnAck(payload));
+  rtChannel.on('broadcast',{event:'need'},({payload})=>mpOnNeed(payload));
+  rtChannel.on('broadcast',{event:'full'},({payload})=>mpOnFull(payload));
   rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
  })();
  try{await rtConnectPromise}finally{rtConnectPromise=null}
@@ -3503,69 +3539,184 @@ function mpBroadcastState(id,status){
 // Instant, display-only position ping fired the moment a player ends an action,
 // before the authoritative write lands. Touches no turn state, so a late or
 // duplicated ping cannot cross turns.
-// Provisional action event (~1.5KB): fired the instant an action or the enemy
-// phase resolves locally, BEFORE the authoritative write. Receivers apply it
-// as display-only state (positions, enemy hp, doors, log lines) so the
-// opponent's turn is visible in ~0.2s. It never touches rev/turnOrder/
-// activePlayerIndex, so it cannot cross turns; the committed state that
-// follows (rev-guarded) confirms or corrects everything.
-function mpBroadcastAct(){
- if(!game?.multiplayer||!rtChannel||!rtReady||String(rtChannelSessionId)!==String(game.dungeonStatusId))return;
- const base=game.mpEnemyBaseline||[];
- const payload={
-  pjId:game.pjId,baseRev:game.mpLastRev||0,
-  pos:{x:game.player.x,y:game.player.y,facing:game.player.facing||1},
-  me:{hp:game.player.hp,maxHp:game.player.maxHp},
-  enemies:base.map(e=>[e.x,e.y,e.hp]),
-  playersHp:Object.fromEntries((game.otherPlayers||[]).map(p=>[p.pjId,p.hp])),
+// ---- Live turn sync (ephemeral, front-to-front) -----------------------------
+// Turn authority no longer needs a DB round trip. A logical clock `seq` orders
+// every turn transition, and a transition is only ever authored by the player
+// who was active at the previous seq. A receiver accepts a `turn` message only
+// when BOTH hold:
+//   1. msg.seq === localSeq + 1   (no replays, no gaps, no reordering)
+//   2. msg.author === turnOrder[localActiveIndex]  (only the active player may pass)
+// Because exactly one client satisfies (2) for any given seq, two clients can
+// never both believe it is their turn. Duplicates (seq <= localSeq) are
+// dropped; gaps (seq > localSeq+1) trigger a resync instead of being applied.
+// The DB is written only as a checkpoint (see MP_CHECKPOINT_EVERY).
+const MP_CHECKPOINT_EVERY=10;      // full rounds between DB checkpoints
+const MP_RESEND_MS=600;            // active player re-sends its transition until acked
+
+function mpLive(){return !!(rtChannel&&rtReady&&game?.multiplayer&&String(rtChannelSessionId)===String(game.dungeonStatusId))}
+function mpSend(event,payload){if(!mpLive())return false;try{rtChannel.send({type:'broadcast',event,payload});return true}catch(e){return false}}
+function mpEnsureEnemyIds(){let n=0;for(const e of game.enemies||[]){if(e.eid===undefined)e.eid=`e${n}`;n++}}
+function mpEnemyWire(){return (game.enemies||[]).map(e=>[e.eid,e.x,e.y,e.hp])}
+function mpApplyEnemyWire(list){
+ if(!Array.isArray(list))return;
+ const byId=new Map((game.enemies||[]).map(e=>[e.eid,e]));
+ const keep=[];
+ for(const [eid,x,y,hp] of list){
+  const e=byId.get(eid);
+  if(!e)continue; // unknown enemy: the checkpoint/resync path will reconcile
+  if(typeof hp==='number'&&hp<e.hp)floating(`-${e.hp-hp}`,e.x,e.y,'#ffd27a');
+  e.x=x;e.y=y;if(typeof hp==='number')e.hp=hp;
+  keep.push(e);
+ }
+ if(keep.length)game.enemies=keep; // enemies missing from the wire died
+ game.boss=(game.enemies||[]).find(e=>e.boss)||null;
+}
+function mpTurnPayload(nextIdx){
+ mpEnsureEnemyIds();
+ return {
+  seq:(game.mpSeq||0)+1,author:String(game.pjId),nextIdx,turn:game.turn||0,floor:game.floor,
+  players:Object.fromEntries([[String(game.pjId),{x:game.player.x,y:game.player.y,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp}],
+   ...(game.otherPlayers||[]).map(p=>[String(p.pjId),{x:p.x,y:p.y,facing:p.facing,hp:p.hp,maxHp:p.maxHp}])]),
+  enemies:mpEnemyWire(),
   doorsOpen:(game.doors||[]).filter(d=>d.open).map(d=>[d.x,d.y]),
   chestsOpened:(game.chests||[]).filter(c=>c.opened).map(c=>[c.x,c.y]),
   keysLeft:(game.keys||[]).map(k=>[k.x,k.y]),
-  events:(game.mpPendingEvents||[]).slice(-4)
+  events:(game.mpPendingEvents||[]).slice(-6)
  };
- try{rtChannel.send({type:'broadcast',event:'act',payload})}catch(e){}
 }
-function mpOnRemoteAct(sessionId,p){
- if(!game?.multiplayer||game.over||String(game.dungeonStatusId)!==String(sessionId)||!p||String(p.pjId)===String(game.pjId))return;
- if(game.myTurn||game.mpEnemyPhase)return;
- if((p.baseRev||0)<(game.mpLastRev||0))return; // already superseded by committed state
- const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(p.pjId));
- if(rp&&p.pos){
-  if(rp.x!==p.pos.x||rp.y!==p.pos.y){
-   if(Math.abs(rp.x-p.pos.x)+Math.abs(rp.y-p.pos.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
-   rp.x=p.pos.x;rp.y=p.pos.y;
+// Called by the active player right after resolving its action (and the enemy
+// phase). Publishes the transition live; the DB write is a separate concern.
+function mpPublishTurn(nextIdx){
+ const payload=mpTurnPayload(nextIdx);
+ game.mpSeq=payload.seq;
+ game.mpLastSent=payload;
+ game.mpAckedBy=new Set();
+ mpSend('turn',payload);
+ mpScheduleResend();
+ return payload;
+}
+function mpScheduleResend(){
+ clearTimeout(game.mpResendTimer);
+ game.mpResendAttempts=0;
+ const tick=()=>{
+  if(!game?.multiplayer||!game.mpLastSent)return;
+  const need=(game.turnOrder||[]).filter(id=>String(id)!==String(game.pjId)).length;
+  if((game.mpAckedBy?.size||0)>=need)return;
+  if((game.mpResendAttempts||0)>=5){
+   // peer never acked: persist through the DB so their poll picks it up
+   console.warn('turno sin confirmar por el otro jugador: guardando checkpoint');
+   mpCheckpoint();
+   return;
   }
-  rp.facing=p.pos.facing||rp.facing;
-  if(p.me){if(typeof p.me.hp==='number')rp.hp=p.me.hp;if(typeof p.me.maxHp==='number')rp.maxHp=p.me.maxHp}
+  game.mpResendAttempts++;
+  mpSend('turn',game.mpLastSent);
+  game.mpResendTimer=setTimeout(tick,MP_RESEND_MS);
+ };
+ game.mpResendTimer=setTimeout(tick,MP_RESEND_MS);
+}
+function mpOnRemoteTurn(sessionId,p){
+ if(!game?.multiplayer||game.over||String(game.dungeonStatusId)!==String(sessionId)||!p)return;
+ if(String(p.author)===String(game.pjId))return;
+ const seq=Number(p.seq)||0,local=game.mpSeq||0;
+ if(seq<=local){mpSend('ack',{seq,by:String(game.pjId)});return} // duplicate: re-ack and drop
+ if(seq>local+1){mpRequestResync('gap');return}                  // gap: never apply out of order
+ const expected=String((game.turnOrder||[])[game.activePlayerIndex||0]??'');
+ if(expected&&String(p.author)!==expected){mpRequestResync('author');return} // not the active player
+ game.mpSeq=seq;
+ mpApplyLiveTurn(p);
+ mpSend('ack',{seq,by:String(game.pjId)});
+}
+function mpApplyLiveTurn(p){
+ if(p.floor&&p.floor!==game.floor){mpRequestResync('floor');return} // floor change goes through the checkpoint
+ game.turn=p.turn??game.turn;
+ for(const [pid,pos] of Object.entries(p.players||{})){
+  if(String(pid)===String(game.pjId)){
+   // only the enemy-phase resolver (nextIdx 0) is authoritative over my hp
+   if(Number(p.nextIdx)===0&&typeof pos.hp==='number'&&pos.hp<game.player.hp){floating(`-${game.player.hp-pos.hp}`,game.player.x,game.player.y,'#ff8888');game.player.hp=Math.max(0,pos.hp)}
+   continue;
+  }
+  const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(pid));
+  if(!rp)continue;
+  if(rp.x!==pos.x||rp.y!==pos.y){
+   if(Math.abs(rp.x-pos.x)+Math.abs(rp.y-pos.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
+   rp.x=pos.x;rp.y=pos.y;
+  }
+  rp.facing=pos.facing||rp.facing;
+  if(typeof pos.hp==='number')rp.hp=pos.hp;
+  if(typeof pos.maxHp==='number')rp.maxHp=pos.maxHp;
  }
- // enemy view, aligned to the shared committed order (skip on any mismatch)
- if(Array.isArray(p.enemies)&&p.enemies.length===(game.enemies||[]).length){
-  p.enemies.forEach(([x,y,hp],i)=>{
-   const e=game.enemies[i];if(!e)return;
-   if(typeof hp==='number'&&hp<e.hp)floating(`-${e.hp-hp}`,e.x,e.y,'#ffd27a');
-   e.x=x;e.y=y;if(typeof hp==='number')e.hp=hp;
-  });
- }
- // my own hp as dealt by the opponent's enemy phase (death waits for committed state)
- const myHp=p.playersHp?.[String(game.pjId)]??p.playersHp?.[game.pjId];
- if(typeof myHp==='number'&&myHp<game.player.hp){
-  floating(`-${game.player.hp-myHp}`,game.player.x,game.player.y,'#ff8888');
-  game.player.hp=Math.max(1,myHp);
- }
- if(Array.isArray(p.doorsOpen))for(const [x,y] of p.doorsOpen){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
- if(Array.isArray(p.chestsOpened))for(const [x,y] of p.chestsOpened){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
+ mpApplyEnemyWire(p.enemies);
+ for(const [x,y] of p.doorsOpen||[]){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
+ for(const [x,y] of p.chestsOpened||[]){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
  if(Array.isArray(p.keysLeft))game.keys=(game.keys||[]).filter(k=>p.keysLeft.some(([x,y])=>x===k.x&&y===k.y));
  for(const ev of p.events||[]){
   if(!ev?.m)continue;
   game.mpRecentEvents=game.mpRecentEvents||[];
   if(game.mpRecentEvents.includes(ev.m))continue;
   log(ev.m,ev.c||'combat');
-  game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>10)game.mpRecentEvents.shift();
+  game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>12)game.mpRecentEvents.shift();
  }
+ game.activePlayerIndex=Number(p.nextIdx)||0;
+ if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;recomputeDerived();updateUI();draw();mpHandleDefeatWhileWaiting();return}
+ recomputeDerived();
+ mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex])===String(game.pjId));
  updateUI();draw();
- // insurance: if the state broadcast gets lost, resync quickly instead of waiting for the safety poll
- setTimeout(()=>{if(game?.multiplayer&&!game.myTurn)mpPollGameState()},350);
 }
+function mpOnAck(p){
+ if(!game?.mpLastSent||Number(p?.seq)!==Number(game.mpLastSent.seq))return;
+ game.mpAckedBy=game.mpAckedBy||new Set();
+ game.mpAckedBy.add(String(p.by));
+ const need=(game.turnOrder||[]).filter(id=>String(id)!==String(game.pjId)).length;
+ if(game.mpAckedBy.size>=need)clearTimeout(game.mpResendTimer);
+}
+// Recovery: ask whoever holds a newer seq for a full live snapshot. Falls back
+// to the DB checkpoint if nobody answers.
+function mpRequestResync(reason){
+ if(!game?.multiplayer)return;
+ const now=Date.now();
+ if(now-(game.mpLastResyncAt||0)<700)return;
+ game.mpLastResyncAt=now;
+ mpSend('need',{by:String(game.pjId),seq:game.mpSeq||0,reason});
+ clearTimeout(game.mpResyncFallback);
+ game.mpResyncFallback=setTimeout(()=>{if(game?.multiplayer&&!game.over)mpPollGameState()},900);
+}
+function mpOnNeed(p){
+ if(!game?.multiplayer||!p||String(p.by)===String(game.pjId))return;
+ if((game.mpSeq||0)<=(Number(p.seq)||0))return; // we are not ahead: nothing to offer
+ mpSend('full',{seq:game.mpSeq||0,by:String(game.pjId),to:String(p.by),activeIdx:game.activePlayerIndex||0,turnOrder:game.turnOrder||[],state:mpTurnPayload(game.activePlayerIndex||0)});
+}
+function mpOnFull(p){
+ if(!game?.multiplayer||!p||String(p.to)!==String(game.pjId))return;
+ const seq=Number(p.seq)||0;
+ if(seq<=(game.mpSeq||0))return;
+ if(Array.isArray(p.turnOrder)&&p.turnOrder.length)game.turnOrder=p.turnOrder;
+ game.mpSeq=seq;
+ const st=p.state||{};
+ if(st.floor&&st.floor!==game.floor){mpPollGameState();return}
+ mpApplyLiveTurn({...st,nextIdx:Number(p.activeIdx)||0,seq});
+}
+// If the player whose turn it is goes quiet (tab closed, lost packet), ask for
+// a resync rather than stalling forever. Never grants a turn by itself.
+function mpClearLiveTimers(){
+ if(!game)return;
+ clearTimeout(game.mpResendTimer);clearTimeout(game.mpResyncFallback);
+ game.mpResendTimer=game.mpResyncFallback=null;
+}
+// Best-effort checkpoint when the tab goes away, so unsaved live turns are not
+// lost. Uses keepalive + the rev CAS: if someone wrote more recently it simply
+// loses, which is correct.
+function mpFlushCheckpointBeacon(){
+ if(!game?.multiplayer||!game.mpDirty||!game.dungeonStatusId||!game.mpStatusMirror)return;
+ try{
+  const st={...game.mpStatusMirror,turn:game.turn||0,currentFloor:game.floor,activePlayerIndex:game.activePlayerIndex||0,turnOrder:game.turnOrder||[],seq:game.mpSeq||0,rev:(game.mpLastRev||0)+1,
+   players:{...(game.mpStatusMirror.players||{}),[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre}},
+   floors:{[game.floor]:{...(game.mpStatusMirror.floors?.[String(game.floor)]||{}),...floorSnapshotDynamic()}}};
+  fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:st,expectedRev:game.mpLastRev||0})});
+  game.mpDirty=false;
+ }catch(e){}
+}
+addEventListener('pagehide',mpFlushCheckpointBeacon);
+addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')mpFlushCheckpointBeacon()});
 function mpOnRemoteBroadcast(sessionId,payload){
  const st=payload?.status,rev=Number(payload?.rev)||0;
  if(!st||!rev)return;
@@ -3598,7 +3749,7 @@ async function mpForceFullSync(){
 function mpAdjustPollInterval(){
  if(!game?.multiplayer||!mpGamePollTimer)return;
  clearInterval(mpGamePollTimer);
- mpGamePollTimer=setInterval(mpPollGameState,rtReady?1200:400);
+ mpGamePollTimer=setInterval(mpPollGameState,rtReady?6000:400);
 }
 // -----------------------------------------------------------------------------
 
@@ -3720,7 +3871,7 @@ async function mpEnterStartedSession(session,starter=false){
   const bundle=pj.pj_json||{};
   let st=session.dungeon_status||{};
   const floorNum=starter?1:(st.currentFloor||1);
-  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:starter?0:(st.activePlayerIndex||0),hostId:st.host,roster:st.roster||[],mpLastRev:Number(st.rev)||0,mpLastEvSeq:st.evSeq||0,mpPendingEvents:[]};
+  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:starter?0:(st.activePlayerIndex||0),hostId:st.host,roster:st.roster||[],mpLastRev:Number(st.rev)||0,mpLastEvSeq:st.evSeq||0,mpPendingEvents:[],mpSeq:Number(st.seq)||0,mpCheckpointTurn:st.turn||0,mpCheckpointFloor:starter?1:(st.currentFloor||1)};
   app.classList.remove('hidden');
   if(starter){
    if(!loadPrecomputedFloor())generateFloor();
@@ -3778,8 +3929,9 @@ async function mpEnterStartedSession(session,starter=false){
   recomputeDerived();updateUI();draw();
   mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,rtReady?1200:400);
-  banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
+  mpGamePollTimer=setInterval(mpPollGameState,rtReady?6000:400);
+  mpEnsureEnemyIds();
+   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');startMultiHeartbeat();alert('Error al entrar en la partida: '+e.message)}
 }
 
@@ -3807,7 +3959,6 @@ function mpAnimateRemote(){
 function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  game.mpCapture=isMine;
- if(isMine)game.mpEnemyBaseline=(game.enemies||[]).slice(); // committed-order refs for act diffs
  busy=!isMine;
  const el=document.getElementById('mpTurnIndicator');
  if(el){
@@ -3849,10 +4000,18 @@ async function mpPollGameState(){
 function mpApplyRemoteState(st){
  if(st.slimFloors){st={...st};delete st.slimFloors}
  game.mpStatusMirror=st;
+ // A DB checkpoint is only authoritative over the live channel when it is not
+ // behind it. An older checkpoint (seq < local seq) may refresh the map/floor
+ // but must never move the turn pointer back — that is what would cross turns.
+ const stSeq=Number(st.seq)||0,localSeq=game.mpSeq||0;
+ const turnAuthoritative=!mpLive()||stSeq>=localSeq;
  game.turnOrder=st.turnOrder&&st.turnOrder.length?st.turnOrder:game.turnOrder;
  game.roster=st.roster||game.roster;
- game.activePlayerIndex=st.activePlayerIndex||0;
- game.turn=st.turn??game.turn;
+ if(turnAuthoritative){
+  game.activePlayerIndex=st.activePlayerIndex||0;
+  game.turn=st.turn??game.turn;
+  if(stSeq>localSeq)game.mpSeq=stSeq;
+ }
  game.sessionFloors=st.floors||game.sessionFloors;
  const remoteFloor=st.currentFloor||1;
  const overlay=st.floors?.[String(remoteFloor)];
@@ -3892,13 +4051,16 @@ function mpApplyRemoteState(st){
  }
  // replay combat events authored by the active client
  for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
- const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
- mpSetMyTurn(amIActive);
+ if(turnAuthoritative){
+  const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
+  mpSetMyTurn(amIActive);
+  }
  recomputeDerived();updateUI();draw();
 }
 
 function mpHandleDefeatWhileWaiting(){
  if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+ mpClearLiveTimers();
  finalizeCharacterDeath();
  storyTitle.textContent='HAS CAÍDO';
  storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p></div>';
@@ -3913,7 +4075,7 @@ function mpHandleDefeatWhileWaiting(){
 //   enemyTurn() (el único momento en el que es autoritativo sobre el daño
 //   recibido por los demás); solo actualiza su HP, nunca su posición, que
 //   siempre se toma del estado fresco.
-async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
+async function mpPersistTurnState({advance=false,includeOtherPlayers=false,checkpoint=false}={}){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
@@ -3932,7 +4094,7 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
  const events=(game.mpPendingEvents||[]).splice(0);
  const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
   let turnOrder=(fresh.turnOrder&&fresh.turnOrder.length)?fresh.turnOrder:(game.turnOrder||[game.pjId]);
-  let turn=fresh.turn||0;
+  let turn=checkpoint?(game.turn||0):(fresh.turn||0);
   const wasActiveId=String(turnOrder[fresh.activePlayerIndex||0]??'');
   const players={...fresh.players,[game.pjId]:myPos};
   for(const [pid,upd] of Object.entries(hpUpdates)){
@@ -3954,7 +4116,13 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
   turnOrder=turnOrder.filter(id=>{const p=players[String(id)];return !p||typeof p.hp!=='number'||p.hp>0});
   if(!turnOrder.length)turnOrder=[game.pjId];
   let activePlayerIndex;
-  if(advance&&(wasActiveId===String(game.pjId)||!wasActiveId)){
+  if(checkpoint){
+   // live mode: the channel already decided whose turn it is; the checkpoint
+   // only records it (guarded by seq so an older checkpoint can never win)
+   const idx=turnOrder.findIndex(id=>String(id)===String((game.turnOrder||[])[game.activePlayerIndex||0]));
+   activePlayerIndex=idx===-1?(game.activePlayerIndex||0):idx;
+   if(activePlayerIndex>=turnOrder.length)activePlayerIndex=0;
+  }else if(advance&&(wasActiveId===String(game.pjId)||!wasActiveId)){
    // only the active player may advance the turn pointer (prevents crossed turns)
    const myIdx=turnOrder.findIndex(id=>String(id)===String(game.pjId));
    const isLast=myIdx===-1||myIdx===turnOrder.length-1;
@@ -3970,7 +4138,8 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
   // same floor: merge dynamic state over the stored static layout (much smaller write)
   const prevSnap=fresh.floors?.[String(game.floor)];
   const outSnap=(!floorChanged&&prevSnap&&prevSnap.map)?{...prevSnap,...dynSnap}:floorSnap;
-  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents}};
+  const seq=Math.max(Number(fresh.seq)||0,game.mpSeq||0);
+  return {dungeon_status:{...fresh,multiplayer:true,started:true,host:fresh.host||game.hostId,hostUser:fresh.hostUser||(roster.find(r=>String(r.pjId)===String(fresh.host||game.hostId))?.nombre),roster,turnOrder,activePlayerIndex,turn,currentFloor:game.floor,floors:{[game.floor]:outSnap},players,evSeq:evSeq+events.length,events:outEvents,seq}};
  });
  if(saved){
   const written=saved.status;
