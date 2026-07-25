@@ -20,13 +20,13 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.52.0';
+const APP_VERSION='0.53.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,floors:20,floorPlan:[]};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,floors:20,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -573,21 +573,21 @@ const SWORD_SPRITE_GAP=15;
 const SWORD_SPRITE_SIZE=50;
 const weaponRows=[
  {category:'Armas blancas steampunk básicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:0,legacy:['Espadas cortas'],stat:'strength',names:['Cuchillo de mecánico', 'Daga de caldera', 'Estoque dentado', 'Machete industrial', 'Espada de acero pulido', 'Sable de oficial', 'Garrote remachado', 'Hacha de ingeniero', 'Lanza de latón', 'Maza de pistón']},
- {category:'Armas a distancia mecánicas',legacy:['Katanas y hachas pesadas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola de chispa', 'Revólver de latón', 'Pistola de presión', 'Cañón de mano', 'Carabina compacta', 'Ballesta mecánica', 'Arco de poleas', 'Sierra arrojadiza', 'Bomba de relojería', 'Dron escarabajo']},
+ {category:'Armas a distancia mecánicas',legacy:['Katanas y hachas pesadas'],stat:'strength',iconFolder:'weaponsCP',names:['Pistola de chispa', 'Revólver de latón', 'Pistola de presión', 'Cañón de mano', 'Carabina compacta', 'Ballesta mecánica', 'Arco de poleas', 'Sierra arrojadiza', 'Bomba de relojería', 'Dron escarabajo']},
  {category:'Armas pesadas steampunk',legacy:['Hachas de guerra y mazas con pinchos'],stat:'vitality',iconFolder:'weaponsCP',names:['Garrote de clavos', 'Mayal de engranajes', 'Hacha de vapor', 'Martillo industrial', 'Puñal de válvula', 'Alabarda mecánica', 'Mayal de presión', 'Guantelete de impacto', 'Látigo de cobre', 'Escudo de turbina']},
  {category:'Espadas eléctricas iniciales',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:1,legacy:['Dagas, lanzas y alabardas'],stat:'strength',names:['Daga de bobina', 'Kukri electrificado', 'Sable de dientes', 'Espada conductora', 'Espada de plasma azul', 'Estoque de descarga', 'Bastón de bobina Tesla', 'Hacha de inducción', 'Lanza de arco eléctrico', 'Maza acumuladora']},
- {category:'Armas de fuego eléctricas',legacy:['Arcos'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola de condensador', 'Revólver voltaico', 'Pistola de bobina azul', 'Cañón eléctrico corto', 'Fusil de arco', 'Rifle de inducción', 'Ballesta de energía', 'Arco voltaico', 'Mina de pulso', 'Granada de plasma azul']},
+ {category:'Armas de fuego eléctricas',legacy:['Arcos'],stat:'strength',iconFolder:'weaponsCP',names:['Pistola de condensador', 'Revólver voltaico', 'Pistola de bobina azul', 'Cañón eléctrico corto', 'Fusil de arco', 'Rifle de inducción', 'Ballesta de energía', 'Arco voltaico', 'Mina de pulso', 'Granada de plasma azul']},
  {category:'Armas eléctricas pesadas',legacy:['Ballestas'],stat:'vitality',iconFolder:'weaponsCP',names:['Maza de bobina', 'Mayal voltaico', 'Hacha de inducción pesada', 'Martillo Tesla', 'Daga de plasma concentrado', 'Alabarda de tormenta', 'Cadena de descarga', 'Guantelete eléctrico', 'Látigo voltaico', 'Dron de descarga']},
  {category:'Armas de latón refinadas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:2,legacy:['Varitas mágicas'],stat:'strength',names:['Espada de duelista mecánico', 'Sable del capitán aéreo', 'Machete de engranajes', 'Espada de relojero', 'Hoja ceremonial de latón', 'Estoque de autómata', 'Maza solar mecánica', 'Hacha de aviador', 'Lanza de pistón', 'Bastón giroscópico']},
- {category:'Armamento steampunk avanzado',legacy:['Guadañas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola neumática', 'Revólver de triple cámara', 'Pistola de turbina', 'Cañón de presión reforzado', 'Fusil de vapor azul', 'Rifle de caldera', 'Ballesta de autómata', 'Arco de precisión mecánico', 'Mina de engranajes', 'Granada de presión']},
+ {category:'Armamento steampunk avanzado',legacy:['Guadañas'],stat:'strength',iconFolder:'weaponsCP',names:['Pistola neumática', 'Revólver de triple cámara', 'Pistola de turbina', 'Cañón de presión reforzado', 'Fusil de vapor azul', 'Rifle de caldera', 'Ballesta de autómata', 'Arco de precisión mecánico', 'Mina de engranajes', 'Granada de presión']},
  {category:'Reliquias mecánicas',legacy:['Mayales'],stat:'wisdom',iconFolder:'weaponsCP',names:['Bastón del gran engranaje', 'Mayal de relojería', 'Hacha del maquinista', 'Martillo de núcleo azul', 'Daga del inventor', 'Alabarda del reloj eterno', 'Cadena de engranajes gemelos', 'Guantelete del constructor', 'Látigo de transmisión', 'Araña mecánica']},
- {category:'Armas ciberpunk de neón',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:3,legacy:['Garras y guanteletes'],stat:'agility',names:['Daga de neón azul', 'Kukri de neón violeta', 'Hoja monomolecular cian', 'Espada de plasma magenta', 'Mandoble holográfico', 'Estoque de energía violeta', 'Bastón de plasma dual', 'Hacha de neón', 'Lanza fotónica', 'Maza de núcleo violeta']},
- {category:'Armas de fuego ciberpunk',legacy:['Pistolas y armas de fuego mágicas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola inteligente', 'Subfusil de neón', 'Pistola de plasma compacta', 'Cañón sónico', 'Rifle de pulsos', 'Fusil de partículas', 'Ballesta magnética', 'Arco holográfico', 'Mina de pulso violeta', 'Granada de antimateria']},
+ {category:'Armas ciberpunk de neón',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:3,legacy:['Garras y guanteletes'],stat:'strength',names:['Daga de neón azul', 'Kukri de neón violeta', 'Hoja monomolecular cian', 'Espada de plasma magenta', 'Mandoble holográfico', 'Estoque de energía violeta', 'Bastón de plasma dual', 'Hacha de neón', 'Lanza fotónica', 'Maza de núcleo violeta']},
+ {category:'Armas de fuego ciberpunk',legacy:['Pistolas y armas de fuego mágicas'],stat:'strength',iconFolder:'weaponsCP',names:['Pistola inteligente', 'Subfusil de neón', 'Pistola de plasma compacta', 'Cañón sónico', 'Rifle de pulsos', 'Fusil de partículas', 'Ballesta magnética', 'Arco holográfico', 'Mina de pulso violeta', 'Granada de antimateria']},
  {category:'Armas ciberpunk pesadas',legacy:['Hoces, armas curvas y armas exóticas'],stat:'vitality',iconFolder:'weaponsCP',names:['Maza de núcleo oscuro', 'Mayal de plasma', 'Hacha de combate cibernética', 'Martillo de sobrecarga', 'Daga de datos corruptos', 'Alabarda de fase', 'Cadena de energía', 'Guantelete de fuerza', 'Látigo neuronal', 'Dron depredador']},
  {category:'Armas térmicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:4,legacy:['Látigos'],stat:'strength',names:['Daga incandescente', 'Kukri térmico', 'Sable de fuego', 'Espada láser roja', 'Mandoble de magma', 'Estoque ígneo', 'Bastón de combustión', 'Hacha térmica', 'Lanza de fusión', 'Maza de reactor rojo']},
  {category:'Armas criogénicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:5,legacy:['Bastones mágicos'],stat:'intelligence',names:['Daga criogénica', 'Kukri de hielo tecnológico', 'Sable glacial', 'Espada láser azul', 'Mandoble criónico', 'Estoque de escarcha', 'Bastón de congelación', 'Hacha criogénica', 'Lanza de hielo comprimido', 'Maza de núcleo glacial']},
  {category:'Armas tóxicas y biotecnológicas',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:6,legacy:['Martillos de guerra'],stat:'luck',names:['Daga biocortante', 'Kukri venenoso', 'Sable de ácido', 'Espada de plasma verde', 'Mandoble biotecnológico', 'Estoque tóxico', 'Pistola de esporas', 'Hacha corrosiva', 'Lanza de bioenergía', 'Granada química']},
- {category:'Armas de pólvora industrial',legacy:['Hachas mágicas'],stat:'agility',iconFolder:'weaponsCP',names:['Pistola de percusión', 'Escopeta recortada', 'Revólver de cañones múltiples', 'Fusil pesado de vapor', 'Ametralladora de engranajes', 'Lanzagranadas industrial', 'Ballesta de asedio compacta', 'Arco neumático', 'Cañón portátil', 'Mortero de hombro']},
+ {category:'Armas de pólvora industrial',legacy:['Hachas mágicas'],stat:'strength',iconFolder:'weaponsCP',names:['Pistola de percusión', 'Escopeta recortada', 'Revólver de cañones múltiples', 'Fusil pesado de vapor', 'Ametralladora de engranajes', 'Lanzagranadas industrial', 'Ballesta de asedio compacta', 'Arco neumático', 'Cañón portátil', 'Mortero de hombro']},
  {category:'Artillería steampunk',legacy:['Lanzas cortas y jabalinas'],stat:'vitality',iconFolder:'weaponsCP',names:['Pistola lanzallamas', 'Fusil rotatorio de vapor', 'Cañón de bobina mecánico', 'Lanzacohetes de latón', 'Rifle explosivo', 'Mortero de presión', 'Ballesta pesada plegable', 'Mina magnética', 'Cañón automático', 'Torreta mecánica']},
  {category:'Artefactos de energía',legacy:['Mandobles mágicos'],stat:'intelligence',iconFolder:'weaponsCP',names:['Núcleo de plasma azul', 'Portal de fase', 'Proyector de singularidad', 'Garra gravitatoria', 'Cuchilla del vacío', 'Orbe de agujero negro', 'Cañón dimensional', 'Reactor temporal', 'Reloj de estasis', 'Mina de singularidad']},
  {category:'Armas tecnomágicas legendarias',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:7,legacy:['Espadas legendarias'],stat:'wisdom',names:['Pistola del reloj divino', 'Sable de energía dorada', 'Hoja sierra de plasma', 'Espada del núcleo celeste', 'Mandoble del cronoingeniero', 'Bastón del sol mecánico', 'Hacha de tormenta Tesla', 'Lanza del autómata real', 'Maza del gran reloj', 'Dron serafín mecánico']},
@@ -870,8 +870,8 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
-function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,floors,floorPlan:rows})}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
+function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
@@ -1641,7 +1641,7 @@ function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)ma
 
 const eventStats=['strength','vitality','agility','luck','intelligence','wisdom'];
 const eventDefs=[
- {id:'goblinHorde',type:'horde',name:'Horda de saqueadores',stat:'agility',threshold:10,
+ {id:'goblinHorde',type:'horde',name:'Horda de saqueadores',stat:'strength',threshold:10,
   detected:'Escuchas botas, risas y metal barato antes de que doblen la esquina.',
   hidden:'Una horda cae sobre ti desde pasadizos laterales.',
   desc:'Una banda numerosa de enemigos invade el piso.'},
@@ -1653,7 +1653,7 @@ const eventDefs=[
   detected:'Notas que las sombras se mueven un instante antes que sus dueños.',
   hidden:'Las sombras se separan de las paredes y atacan.',
   desc:'Criaturas rápidas y numerosas surgen de la oscuridad.'},
- {id:'dartHall',type:'trap',name:'Galería de dardos',stat:'agility',threshold:9,
+ {id:'dartHall',type:'trap',name:'Galería de dardos',stat:'strength',threshold:9,
   detected:'Ves pequeños agujeros alineados en las paredes.',
   hidden:'Un clic. Luego demasiados dardos.',
   desc:'Una trampa inflige daño y aplica ralentización.'},
@@ -1701,7 +1701,7 @@ const eventDefs=[
   detected:'Una losa demasiado pesada oculta un compartimento.',
   hidden:'No reparas en la losa sellada.',
   desc:'Armas y armaduras de buena calidad.'},
- {id:'thievesDeal',type:'reward',name:'Trato de ladrones',stat:'agility',threshold:11,
+ {id:'thievesDeal',type:'reward',name:'Trato de ladrones',stat:'strength',threshold:11,
   detected:'Una marca de tiza señala una reunión clandestina.',
   hidden:'Los ladrones se marchan antes de que llegues.',
   desc:'Oro, consumibles y posibilidad de objeto épico.'}
@@ -1998,6 +1998,7 @@ function updateRestButton(){
  const btn=document.getElementById('waitBtn');if(!btn)return;
  const room=campAtPlayer();
  if(room){btn.textContent=room.rested?'DESCANSADO':'DESCANSAR';btn.disabled=!!room.rested;btn.dataset.rest='1'}
+ else if(apModeOn()){if(game.player.ap==null)startPlayerAP();btn.textContent=`PASAR TURNO (${game.player.ap} PA)`;btn.disabled=!!(game.multiplayer&&!game.myTurn);delete btn.dataset.rest}
  else{btn.textContent='ESPERAR';btn.disabled=false;delete btn.dataset.rest}
 }
 
@@ -2262,10 +2263,13 @@ function blocked(x,y){const d=game.doors.find(d=>d.x===x&&d.y===y);return game.m
 function move(dx,dy){
  if(!game||busy||game.over)return;const p=game.player,nx=p.x+dx,ny=p.y+dy,d=game.doors.find(d=>d.x===nx&&d.y===ny);
  if(dx)p.facing=dx>0?1:-1;
- if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(d.locked)p.keys--;d.open=true;sendMpAction('open_door',{at:{x:nx,y:ny}});log('Abres una puerta.','sys');playerFinished();return}
+ if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(!apCan('move'))return;if(d.locked)p.keys--;d.open=true;sendMpAction('open_door',{at:{x:nx,y:ny}});log('Abres una puerta.','sys');actionDone('move');return}
  if(blocked(nx,ny))return;
- const e=game.enemies.find(e=>e.x===nx&&e.y===ny);if(e)attack(e);else{const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile()}
- playerFinished();
+ const e=game.enemies.find(e=>e.x===nx&&e.y===ny);
+ if(e){if(!apCan('attack'))return;attack(e);actionDone('attack');return}
+ if(!apCan('move'))return;
+ const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
+ actionDone('move');
 }
 function checkTile(){
  const p=game.player,k=game.keys.find(k=>k.x===p.x&&k.y===p.y);if(k){game.keys=game.keys.filter(x=>x!==k);p.keys++;if(game.multiplayer)sendMpAction('pickup',{at:{x:p.x,y:p.y},icon:'🔑'});log('Recoges una llave.','loot')}
@@ -2570,6 +2574,28 @@ function applyCreativeClassEffect(id,target,x,y){
  return true
 }
 
+// ---- Action-point turn system ------------------------------------------------
+// Always on in multiplayer; opt-in per dungeon in single player (world param
+// apMode). A turn is a pool of points: attack/skill 10, move 5. The turn only
+// passes via the PASAR TURNO button; enemies get their own pool (20 + AGI).
+const AP_COSTS={move:5,attack:10,skill:10};
+function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode))}
+function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};return 30+Math.ceil((st.agility||0)/2)}
+function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
+function apCan(kind){
+ if(!apModeOn())return true;
+ if(game.player.ap==null)startPlayerAP();
+ if(game.player.ap>=AP_COSTS[kind])return true;
+ log(`Sin puntos de acción para ${kind==='move'?'moverte':'esa acción'} (${game.player.ap} PA). Pasa turno.`,'sys');
+ return false;
+}
+// Replaces the old per-action playerFinished(): spends points and keeps the turn.
+function actionDone(kind){
+ if(!apModeOn())return playerFinished();
+ if(game.player.ap==null)startPlayerAP();
+ game.player.ap=Math.max(0,game.player.ap-AP_COSTS[kind]);
+ busy=false;updateUI();requestAnimationFrame(animate);
+}
 function playerFinished(){
  if(document.getElementById('statPointModal')?.classList.contains('open')||document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=true;busy=false;updateUI();draw();return}
  if(game.multiplayer){
@@ -2578,7 +2604,7 @@ function playerFinished(){
  }
  busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
- setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
+ setTimeout(()=>{enemyTurn();startPlayerAP();busy=false;updateUI();draw()},500);
 }
 async function playerFinishedMultiplayer(){
  busy=true;
@@ -2654,15 +2680,16 @@ function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDe
 function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
- for(const e of [...game.enemies]){
-  if(game.over)return;
-  if(!game.seen[e.y][e.x])continue;
-  if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)continue;
+ // One decision per call; returns the AP cost (0 = nothing left to do this turn).
+ const enemySingleAction=e=>{
+  if(game.over)return 0;
+  if(!game.seen[e.y][e.x])return 0;
+  if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)return 0;
   const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0),...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
   const chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
   const chosenRef=game.multiplayer?mpEntityRef(chosen):null;
-  if(enemyUseSkill(e,dist,chosen))continue;
+  if(enemyUseSkill(e,dist,chosen))return AP_COSTS.skill;
   const w=e.weapon,wRanged=w&&w.kind!=='melee'&&(w.rangeMax||1)>1;
   // shoot/cast with the equipped ranged weapon
   if(wRanged&&dist>1&&dist<=w.rangeMax&&hasLineOfSight(e,chosen)&&Math.random()<.85){
@@ -2671,24 +2698,40 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
    floating(w.kind==='magic'?'✦':'➶',e.x,e.y,w.kind==='magic'?'#be82ff':'#ffd27a');
    if(chosen===game.player)damagePlayer(dmg,w.kind==='magic'?'wisdom':'agility',`${e.name} dispara su ${w.name}`);
    else{const d2=Math.max(1,Math.round(dmg*.9));chosen.hp-=d2;floating(`-${d2}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} dispara a ${chosen.name} con su ${w.name}.`,'combat')}
-   continue;
+   return AP_COSTS.attack;
   }
   // ranged classes try to back away from melee contact
   if(wRanged&&dist===1&&Math.random()<.5){
    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-.5);
    let stepped=false;
    for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(Math.abs(nx-chosen.x)+Math.abs(ny-chosen.y)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});stepped=true;break}}
-   if(stepped)continue;
+   if(stepped)return AP_COSTS.move;
   }
   if(dist===1&&chosen!==game.player){
    if(game.multiplayer&&chosenRef){const dmgv=Math.max(1,Math.round(e.atk||e.damage||4));sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:dmgv})}
-   const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');continue
+   const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');return AP_COSTS.attack
   }
-  if(dist===1){if(e.type==='orcoKamikaze'){if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:e.atk+5,result:'explode'});floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);continue}if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0))});damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);continue}
-  if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},targetType:'player',targetId:String(game.pjId),visualAmount:e.atk,icon:'✦'});damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');continue}
+  if(dist===1){if(e.type==='orcoKamikaze'){if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:e.atk+5,result:'explode'});floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);return AP_COSTS.attack}if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0))});damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);return AP_COSTS.attack}
+  if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},targetType:'player',targetId:String(game.pjId),visualAmount:e.atk,icon:'✦'});damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');return AP_COSTS.attack}
   // shooters hold position while target is in range and sight
-  if(wRanged&&dist<=w.rangeMax&&hasLineOfSight(e,chosen))continue;
-  if(dist<8){const opts=Math.random()<.5?[[Math.sign(chosen.x-e.x),0],[0,Math.sign(chosen.y-e.y)]]:[[0,Math.sign(chosen.y-e.y)],[Math.sign(chosen.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});break}}}
+  if(wRanged&&dist<=w.rangeMax&&hasLineOfSight(e,chosen))return 0;
+  if(dist<8){const opts=Math.random()<.5?[[Math.sign(chosen.x-e.x),0],[0,Math.sign(chosen.y-e.y)]]:[[0,Math.sign(chosen.y-e.y)],[Math.sign(chosen.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});return AP_COSTS.move}}}
+ 
+  return 0;
+ };
+ for(const e of [...game.enemies]){
+  if(game.over)return;
+  if(e.hp<=0)continue;
+  // AP mode: each enemy keeps acting (in order) until its pool runs out.
+  let ap=apModeOn()?20+Math.ceil(e.stats?.agility||0):AP_COSTS.attack;
+  while(ap>0){
+   const cost=enemySingleAction(e);
+   if(!cost)break;
+   ap-=cost;
+   if(!apModeOn())break; // legacy mode: exactly one action per enemy
+   if(game.over)return;
+   if(e.hp<=0||!game.enemies.includes(e))break;
+  }
  }
  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();return}
 }
@@ -2787,20 +2830,22 @@ function resolveTargetedSkill(slot,x,y){
   if(!used){targets.forEach(e=>attack(e,0,{skillId:id,multiplier:mult*rangeMult*.85}));floating('ÁREA',x,y,'#d989ff');used=true}
  }
  if(!used)return false;
- game.player[d.resource]-=d.cost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');playerFinished();return true
+ if(!apCan('skill'))return false;
+ game.player[d.resource]-=d.cost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill');return true
 }
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
  const weapon=equippedWeapon();
  if(weaponIsRanged(weapon)){const bounds=weaponRangeBounds(weapon);beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min});return}
  const adjacent=game.enemies.filter(e=>gridDistance(game.player,e)<=1);
- if(adjacent.length===1){attack(adjacent[0]);playerFinished()}else if(adjacent.length>1){beginTargeting({kind:'attack',mode:'enemy',range:1})}else log('No hay ningún enemigo al alcance del arma.','sys')
+ if(adjacent.length===1){if(!apCan('attack'))return;attack(adjacent[0]);actionDone('attack')}else if(adjacent.length>1){beginTargeting({kind:'attack',mode:'enemy',range:1})}else log('No hay ningún enemigo al alcance del arma.','sys')
 }
 function resolveBasicAttack(x,y){
  const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
  if(!enemy){log('Selecciona un enemigo.','sys');return false}
  if(!validateTargetCell(x,y,range,minRange)){log(`Enemigo fuera de alcance (${minRange}-${range}) o sin línea de visión.`,'sys');return false}
- attack(enemy,0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(range,false)});cancelTargeting('');playerFinished();return true
+ if(!apCan('attack'))return false;
+ attack(enemy,0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(range,false)});cancelTargeting('');actionDone('attack');return true
 }
 
 function useSkill(slot){
@@ -2891,7 +2936,8 @@ function useSkill(slot){
  }
 
  if(!used){log('No hay un objetivo válido.','sys');return}
- game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');playerFinished();
+ if(!apCan('skill'))return;
+ game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill');
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
 function equipItem(id){
@@ -5100,7 +5146,7 @@ function mpSetMyTurn(isMine,phase){
  game.myTurn=isMine;
  game.mpCapture=isMine;
  busy=!isMine;
- if(isMine)mpResetActionSeq(); // fresh actionSeq numbering for my upcoming turn
+ if(isMine){mpResetActionSeq();startPlayerAP()} // fresh actionSeq + action points for my turn
  const el=document.getElementById('mpTurnIndicator');
  if(el){
   el.classList.remove('hidden');
