@@ -2171,7 +2171,7 @@ function attack(e,bonus=0,options={}){
 }
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
- game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2));game.player.gold+=e.boss?75:3+rng(6);
+ game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
@@ -2238,10 +2238,8 @@ function scaleFloorForParty(){
  }
  game.partyScaled=mult;
 }
-function gainXp(v){
+function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
- // multiplayer: experience is shared between the party members
- v=v/partySize();
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
  while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
   p.xp-=p.nextXp;p.level++;
@@ -2255,6 +2253,12 @@ function gainXp(v){
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
+}
+function gainXp(v,id){
+ // multiplayer: experience from a kill is split and shared with every party member
+ const share=v/partySize();
+ grantXp(share);
+ if(game?.multiplayer&&id)sendMpAction('xp_share',{id,amount:share});
 }
 function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))return;game.player.knownSkills.push(id);game.player.skillProgress=game.player.skillProgress||{};game.player.skillProgress[id]={level:1,xp:0,uses:0};const free=game.player.equippedSkills.findIndex(x=>!x);if(free>=0)game.player.equippedSkills[free]=id;log(`Nueva habilidad: ${skillDefs[id].name}.`,'loot')}
 function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
@@ -4451,6 +4455,13 @@ function renderEnemyPhaseEnd(){
  if(!game)return;
  game.mpEnemyPhaseRemote=false;
 }
+function renderRemoteXpShare(action){
+ game.mpXpGrantsApplied=game.mpXpGrantsApplied||new Set();
+ if(!action.id||game.mpXpGrantsApplied.has(action.id))return; // dedup: never grant the same kill's share twice
+ game.mpXpGrantsApplied.add(action.id);
+ if(typeof action.amount==='number')grantXp(action.amount);
+ updateUI();
+}
 function renderFloorTransitionStart(){
  if(!game)return;
  game.mpFloorTransitioning=true;
@@ -4478,6 +4489,7 @@ const MP_ACTION_RENDERERS={
  enemy_spell:renderRemoteSpell,
  enemy_heal:renderRemoteHeal,
  enemy_death:renderRemoteEnemyDeath,
+ xp_share:renderRemoteXpShare,
  enemy_phase_start:renderEnemyPhaseStart,
  enemy_phase_end:renderEnemyPhaseEnd,
  floor_transition_start:renderFloorTransitionStart
