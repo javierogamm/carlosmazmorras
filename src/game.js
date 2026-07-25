@@ -17,7 +17,7 @@ let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
-const APP_VERSION='0.41.1';
+const APP_VERSION='0.41.2';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -1976,7 +1976,7 @@ function playerFinished(){
 }
 async function playerFinishedMultiplayer(){
  busy=true;
- if(game.over){await mpPersistTurnState();return}
+ if(game.over){await mpPersistTurnState(false);return}
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -1994,14 +1994,14 @@ async function playerFinishedMultiplayer(){
     enemyTurn();
    }
    if(!game.over){game.turn=(game.turn||0)+1;game.activePlayerIndex=0}
-   await mpPersistTurnState();
+   await mpPersistTurnState(true);
    draw();
    if(!game.over){const freshOrder=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:order;mpSetMyTurn(String(freshOrder[0])===String(game.pjId))}
   },220);
  }else{
   game.activePlayerIndex=myIndex+1;
   mpSetMyTurn(false);
-  await mpPersistTurnState();
+  await mpPersistTurnState(false);
   draw();
  }
 }
@@ -3201,6 +3201,17 @@ async function mpStartJoinFlow(sessionId){
 }
 
 function isWalkableTile(map,x,y){return !!(map&&map[y]&&map[y][x]===0)}
+function mpFreeSpawnNear(map,enemies,occupiedList,base){
+ if(!base)return null;
+ if(!map)return {x:base.x,y:base.y};
+ const occupied=occupiedList||[];
+ const candidates=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1],[2,0],[-2,0],[0,2],[0,-2]];
+ for(const [dx,dy] of candidates){
+  const pos={x:base.x+dx,y:base.y+dy};
+  if(isWalkableTile(map,pos.x,pos.y)&&!(enemies||[]).some(e=>e.x===pos.x&&e.y===pos.y)&&!occupied.includes(`${pos.x},${pos.y}`))return pos;
+ }
+ return {x:base.x,y:base.y};
+}
 
 async function mpJoinSession(sessionId,pj){
  try{
@@ -3216,12 +3227,9 @@ async function mpJoinSession(sessionId,pj){
   let newStatus={...st,roster,turnOrder};
   if(st.started){
    const hostId=st.host,hostPos=st.players?.[String(hostId)],floorNum=st.currentFloor||1,overlay=st.floors?.[String(floorNum)];
-   let spawn={x:hostPos?.x||0,y:hostPos?.y||0};
-   if(overlay?.map&&hostPos){
-    const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
-    const free=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]].map(([dx,dy])=>({x:hostPos.x+dx,y:hostPos.y+dy})).find(pos=>isWalkableTile(overlay.map,pos.x,pos.y)&&!(overlay.enemies||[]).some(e=>e.x===pos.x&&e.y===pos.y)&&!occupied.includes(`${pos.x},${pos.y}`));
-    if(free)spawn=free;
-   }
+   const base=hostPos||selectedDungeonWorld?.world_json?.floors?.[floorNum-1]?.spawn||{x:0,y:0};
+   const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
+   const spawn=mpFreeSpawnNear(overlay?.map,overlay?.enemies,occupied,base);
    newStatus.players={...st.players,[pj.id]:{x:spawn.x,y:spawn.y,floor:floorNum,facing:1,hp:pj.pj_json?.player?.hp,maxHp:pj.pj_json?.player?.maxHp,cls:pj.pj_json?.player?.cls,classIcon:pj.pj_json?.player?.classIcon,name:pj.pj_json?.player?.name,nombre:window.currentUser.nombre}};
   }
   const pr=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({players_ID:JSON.stringify(ids),dungeon_status:newStatus})});
@@ -3240,7 +3248,7 @@ function openMpLobby(sessionId,isHost){
  document.getElementById('mpLobbyWaitMsg').classList.toggle('hidden',isHost);
  refreshMpLobby();
  if(mpLobbyPollTimer)clearInterval(mpLobbyPollTimer);
- mpLobbyPollTimer=setInterval(refreshMpLobby,4000);
+ mpLobbyPollTimer=setInterval(refreshMpLobby,2000);
 }
 async function refreshMpLobby(){
  if(!mpLobbySessionId)return;
@@ -3279,15 +3287,25 @@ async function mpEnterStartedSession(session){
    else throw new Error('El anfitrión todavía no ha generado el piso de esta sesión. Espera unos segundos e inténtalo de nuevo.');
   }
   const pos=st.players?.[String(pj.id)];
-  if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
+  if(pos&&(pos.floor||floorNum)===floorNum){
+   game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing;
+  }else{
+   const hostPos=st.players?.[String(st.host)];
+   const worldSpawn=selectedDungeonWorld?.world_json?.floors?.[floorNum-1]?.spawn;
+   const base=hostPos||worldSpawn||{x:game.player.x,y:game.player.y};
+   const occupied=Object.values(st.players||{}).map(p=>`${p.x},${p.y}`);
+   const spawn=mpFreeSpawnNear(game.map,game.enemies,occupied,base);
+   game.player.x=spawn.x;game.player.y=spawn.y;game.player.facing=1;
+  }
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
   mpSyncOtherPlayers(st);
   recomputeDerived();updateUI();draw();
   const activeId=game.turnOrder[game.activePlayerIndex||0];
   mpSetMyTurn(String(activeId)===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,1000);
+  mpGamePollTimer=setInterval(mpPollGameState,800);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
+  await mpPersistTurnState(false);
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');alert('Error al entrar en la partida: '+e.message)}
 }
 
@@ -3351,6 +3369,7 @@ async function mpPollGameState(){
    game.sessionFloors=st.floors||game.sessionFloors;
    const myPos=st.players?.[String(game.pjId)];
    if(myPos&&(myPos.hp||0)<=0&&game.player.hp>0){game.player.hp=0;game.over=true;mpHandleDefeatWhileWaiting();return}
+   if(myPos&&typeof myPos.hp==='number'&&myPos.hp>0&&myPos.hp!==game.player.hp)game.player.hp=Math.min(game.player.maxHp,myPos.hp);
    recomputeDerived();updateUI();draw();
   }
   if(amIActive&&!game.myTurn)mpSetMyTurn(true);
@@ -3364,7 +3383,16 @@ function mpHandleDefeatWhileWaiting(){
  storyOverlay.classList.remove('hidden');
 }
 
-async function mpPersistTurnState(){
+async function mpFetchLatestStatus(){
+ if(!game?.dungeonStatusId)return null;
+ try{
+  const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`);
+  const data=await r.json();
+  if(!r.ok)return null;
+  return data.dungeon_status||{};
+ }catch(e){console.error('No se pudo releer la sesión multijugador',e);return null}
+}
+async function mpPersistTurnState(includeOtherPlayers){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
@@ -3372,14 +3400,20 @@ async function mpPersistTurnState(){
  if(!game.dungeonStatusId)return;
  game.sessionFloors={[game.floor]:floorSnapshot()};
  const myPos={x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};
+ // Releemos el estado más reciente para no pisar con una copia local desfasada
+ // la posición/vida de los demás jugadores (causa de "cruces" de personaje).
+ const freshSt=(await mpFetchLatestStatus())||{};
+ const basePlayers=freshSt.players||{};
  const otherPositions={};
- const floorSpawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
- for(const op of game.otherPlayers||[]){
-  let ox=op.x,oy=op.y;
-  if((op.floor||game.floor)!==game.floor&&floorSpawn){ox=floorSpawn.x;oy=floorSpawn.y}
-  otherPositions[op.pjId]={x:ox,y:oy,floor:game.floor,facing:op.facing||1,hp:op.hp,maxHp:op.maxHp,cls:op.cls,classIcon:op.classIcon,name:op.name,nombre:op.nombre};
+ if(includeOtherPlayers){
+  const floorSpawn=selectedDungeonWorld?.world_json?.floors?.[game.floor-1]?.spawn;
+  for(const op of game.otherPlayers||[]){
+   let ox=op.x,oy=op.y;
+   if((op.floor||game.floor)!==game.floor&&floorSpawn){ox=floorSpawn.x;oy=floorSpawn.y}
+   otherPositions[op.pjId]={x:ox,y:oy,floor:game.floor,facing:op.facing||1,hp:op.hp,maxHp:op.maxHp,cls:op.cls,classIcon:op.classIcon,name:op.name,nombre:op.nombre};
+  }
  }
- const dungeonState={multiplayer:true,started:true,host:game.hostId,hostUser:(game.roster||[]).find(r=>String(r.pjId)===String(game.hostId))?.nombre,roster:game.roster||[],turnOrder:game.turnOrder||[game.pjId],activePlayerIndex:game.activePlayerIndex||0,turn:game.turn,currentFloor:game.floor,floors:game.sessionFloors,players:{...otherPositions,[game.pjId]:myPos}};
+ const dungeonState={multiplayer:true,started:true,host:game.hostId,hostUser:(game.roster||[]).find(r=>String(r.pjId)===String(game.hostId))?.nombre,roster:game.roster||[],turnOrder:game.turnOrder||[game.pjId],activePlayerIndex:game.activePlayerIndex||0,turn:game.turn,currentFloor:game.floor,floors:game.sessionFloors,players:{...basePlayers,...otherPositions,[game.pjId]:myPos}};
  try{
   const r=await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})});
   const data=await r.json();
@@ -3433,7 +3467,6 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
   if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
   mpLobbyOverlay.classList.add('hidden');
   await mpEnterStartedSession({...session,dungeon_status:st});
-  if(game?.multiplayer)await mpPersistTurnState();
  }catch(e){alert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
