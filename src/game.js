@@ -20,7 +20,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.50.0';
+const APP_VERSION='0.51.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2570,15 +2570,13 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
 }
 async function playerFinishedMultiplayer(){
  busy=true;
  if(game.over)return; // death flow persists its own state
- game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
- game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
  if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
@@ -2922,7 +2920,9 @@ function updateUI(){
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()"><span class="slotKey">A</span><span class="icon">⚔</span><b>ATACAR</b><span class="costTag">${baseAttackDice()} · ${attackRangeLabel()}</span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><b>${d.name}</b><span class="costTag">${d.cost} ${d.resource==='mana'?'MP':'STA'} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
+ // detail moves into the title tooltip instead of stacking extra lines.
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
 function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnimationFrame(animate)}else draw()}

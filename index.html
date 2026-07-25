@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.50.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.50.0">
+<title>MAZMORRA // BOTÍN v0.51.0 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.51.0">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.50.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.51.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -32,14 +32,14 @@
   <button class="hudButton" id="hudMap" title="Mostrar u ocultar minimapa" aria-label="Mostrar u ocultar minimapa">🗺</button>
  </div>
 </div>
-<div class="vitalBars" id="vitalBars">
- <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥ VIDA</span><span class="vbValue" id="hudHpText"></span></div>
- <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★ XP</span><span class="vbValue" id="hudXpText"></span></div>
- <div class="vitalBar vbStamina" role="progressbar" aria-label="Stamina" aria-valuemin="0" aria-valuemax="100" id="hudStaminaBar"><i id="hudStaminaFill"></i><span class="vbLabel">⚡ STA</span><span class="vbValue" id="hudStaminaText"></span></div>
- <div class="vitalBar vbMana" role="progressbar" aria-label="Maná" aria-valuemin="0" aria-valuemax="100" id="hudManaBar"><i id="hudManaFill"></i><span class="vbLabel">✦ MANÁ</span><span class="vbValue" id="hudManaText"></span></div>
-</div>
 <div class="gameStage" id="gameStage">
 <canvas id="game" width="512" height="512"></canvas>
+<div class="vitalBars" id="vitalBars">
+ <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
+ <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★</span><span class="vbValue" id="hudXpText"></span></div>
+ <div class="vitalBar vbStamina" role="progressbar" aria-label="Stamina" aria-valuemin="0" aria-valuemax="100" id="hudStaminaBar"><i id="hudStaminaFill"></i><span class="vbLabel">⚡</span><span class="vbValue" id="hudStaminaText"></span></div>
+ <div class="vitalBar vbMana" role="progressbar" aria-label="Maná" aria-valuemin="0" aria-valuemax="100" id="hudManaBar"><i id="hudManaFill"></i><span class="vbLabel">✦</span><span class="vbValue" id="hudManaText"></span></div>
+</div>
 <div class="activeEffects" id="activeEffects"></div>
 <div class="mpTurnIndicator hidden" id="mpTurnIndicator"></div>
 <div class="minimapWrap minimapHidden" id="minimapWrap"><canvas id="minimap" width="150" height="150"></canvas></div>
@@ -156,7 +156,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.50.0 MULTIPLAYER</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.51.0 MULTIPLAYER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -374,7 +374,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.50.0"></script>
+<script src="./src/game.js?v=0.51.0"></script>
 
 </body>
 </html>
