@@ -1,3 +1,33 @@
+## v0.48.0 - Floor archetypes + room typologies, shared XP and party-scaled enemy HP
+### Multiplayer balance
+- Experience is now split between the party: `gainXp` divides by the number of living participants, so a 2-player run no longer doubles total XP income.
+- Enemy HP scales +25% per additional player (`partyHpMultiplier`). It is applied once when the floor is built, so the shared snapshot already carries the scaled values to every client and cannot be double-applied (`partyScaled` guard).
+
+### Floor archetype system
+Every floor now picks an archetype by weighted probability, gated by depth, the expected enemy tier for that depth, and which specials appeared recently (per-archetype cooldown, plus a hard rule that superboss/bossrush never chain back to back). Measured over 400 x 20-floor runs: standard 41.7%, laberinto 11.9%, horda 10.9%, tesoro 9.3%, elites 7.6%, supervivencia 6.4%, contrarreloj 5.4%, superboss 4.1%, bossrush 2.7% - the harder archetypes are the rarest and start deepest (superboss floor 8+, contrarreloj 7+, supervivencia 6+, bossrush 12+).
+- **Estándar**: balanced reference floor, mixed rooms, boss on even floors.
+- **Superjefe**: one boss 1-3 tiers above normal (extra hp/damage/armour/phases and re-rolled skills), few normal enemies, preparation rooms with altars before the boss room, exceptional rewards, announced on arrival. Never chains with another heavy floor.
+- **Laberinto**: many small rooms, knots and dead ends, loops and shortcuts, low enemy density, the most traps, exit hard to locate. A connectivity spine guarantees a valid entry->exit route.
+- **Horda**: large arenas, waves of individually weaker enemies (tierBias -1), exit sealed until every wave is cleared, elites appearing between waves, spawn cap to protect performance.
+- **Élites**: lowest enemy count of all archetypes but a very high elite ratio, tier bias +1, miniboss, superior rewards.
+- **Boss rush**: several boss arenas chained, minibosses plus a clearly stronger final boss, rest/altar rooms in between, the richest rewards.
+- **Tesoro**: ~4x the chests of a normal floor, high rarity bonus, low initial resistance, plenty of traps and guard posts.
+- **Supervivencia**: no exit at first - survive N turns against escalating reinforcements and the stairs appear.
+- **Contrarreloj**: turn limit to reach the exit; running out makes the floor hostile (collapse damage and elite spawns) instead of an instant loss.
+
+### Room typology system
+14 room types (filler, combat, ambush, guard post, elite den, vault, arena, hub, trap room, shrine, dead end, corridor knot, boss arena, prep room), each defining size, shape, number of exits, enemy count/tier/composition, initial enemy placement (edges for ambushes), cover density, traps, interactive elements, chests and event chance. Archetypes and rooms are complementary: each archetype supplies its own room-type weights, so a laberinto is built mostly of knots and dead ends while a horda is built of arenas.
+- Cover is real: pillars are carved as wall cells inside rooms, so they block movement and line of sight. They are never placed on a room's border ring or on the centre/spawn/stairs, which is what guarantees no room can be sealed off.
+- New floor features: **traps** (hidden, revealed by an agility/luck check when adjacent, damage on trigger) and **altars** (heal, shield or damage/armour blessing, one use each), both rendered, inspectable and synced in multiplayer.
+- Verified over 360 generated floors across all archetypes: zero unreachable stairs and zero unreachable bosses.
+
+### Supporting changes
+- `buildFloorPlan()` is now the single floor builder shared by the pre-generated world JSON and the live generator, so single player and multiplayer produce identical structures. World JSON is now `schemaVersion: 4` and carries archetype, objective, traps and altars; older v3 worlds still load and default to the standard archetype.
+- Floor completion is driven by the objective (`stairs`, `bossKill`, `survive`, `waves`, `timed`) via `stairsBlockedReason()`, with objective ticking hooked into the single-player turn and the multiplayer enemy phase, and the state carried in the live turn payload and the snapshot.
+- New objective HUD above the map showing the archetype and what is required, highlighted when time is running out.
+- Archetype reward bonus feeds the loot rarity roll, so treasure/elite/boss floors really do drop better.
+- App and package version bumped to `0.48.0`.
+
 ## v0.47.0 - Live turn sync over the channel; the DB becomes a checkpoint every 10 rounds
 - Turn authority no longer requires a DB round trip. Every turn transition is published over the Supabase Realtime channel and applied directly, so both players see moves, attacks and the enemy phase at the same time (~0.1-0.2s, the websocket RTT) instead of waiting for write + read.
 - Turns cannot cross, by construction. A logical clock `seq` orders every transition and a transition is only ever authored by the player who was active at the previous seq. A `turn` message is applied only when BOTH hold: (1) `msg.seq === localSeq + 1` — no replays, no gaps, no reordering; (2) `msg.author === turnOrder[localActiveIndex]` — only the active player may pass the turn. Exactly one client can satisfy (2) for a given seq, so two clients can never both hold the turn. Duplicates are dropped and re-acked; gaps are never applied out of order, they trigger a resync.
