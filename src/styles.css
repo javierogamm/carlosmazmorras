@@ -193,3 +193,14 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .floorObjective{position:absolute;left:50%;transform:translateX(-50%);top:8px;z-index:6;background:rgba(12,15,22,.86);border:1px solid #3a4356;border-radius:6px;padding:5px 12px;font-size:11px;letter-spacing:.06em;color:#cfe0ff;text-transform:uppercase;pointer-events:none;max-width:92%;text-align:center}
 .floorObjective.urgent{border-color:#ff8b4f;color:#ffd0b0}
 .floorObjective b{color:#ffd45f}
+
+.tradePanel{display:grid;gap:10px;padding:4px 0}
+.tradePanel h4{margin:6px 0 2px;color:#ffd68b;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.tradeColumns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tradeCol{background:#17101f;border:1px solid #4d395a;padding:8px;display:grid;gap:6px;align-content:start;min-height:60px}
+.tradeCol b{color:#f4ead5;font-size:12px}
+.tradeItem{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:8px;background:#1a1220;border:1px solid #3a2a45;padding:6px;font-size:11px}
+.tradeItem button{white-space:nowrap}
+.tradeAvailable{display:grid;gap:6px;max-height:220px;overflow:auto}
+.tradeActions{display:flex;gap:8px;flex-wrap:wrap}
+#tradeCancelBtn{background:#3a2030;border-color:#7a3a4a;color:#ffb3c2}

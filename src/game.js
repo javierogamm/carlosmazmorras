@@ -17,9 +17,10 @@ let mpPendingAction=null;
 let mpLobbySessionId=null;
 let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
+let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.48.0';
+const APP_VERSION='0.49.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -952,6 +953,7 @@ function makePotion(quality=1){
 function nearestSafeRoom(){return [...(game.safeRooms||[])].sort((a,b)=>gridDistance(game.player,{x:a.cx,y:a.cy})-gridDistance(game.player,{x:b.cx,y:b.cy}))[0]}
 function usePotion(id){
  const item=typeof id==='string'?game.inventory.find(i=>i.id===id):id;if(!item)return;
+ if(typeof id==='string'&&isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de usarlo.','sys');return}
  const p=game.player,eff=item.effect||item.potionEffect||{};let message='';
  if(item.kind==='instant'){
   const bh=p.hp,bm=p.mana,bs=p.stamina,parts=[];
@@ -2844,7 +2846,7 @@ function useSkill(slot){
   }else if(id==='shadowVeil'){
    game.player.shadowVeil=1;log('Te fundes con las sombras durante un movimiento.','good');used=true
   }else if(id==='transmute'){
-   const candidates=game.inventory.filter(i=>i.type!=='potion').sort((a,b)=>(a.score||0)-(b.score||0));const item=candidates[0];
+   const candidates=game.inventory.filter(i=>i.type!=='potion'&&!isItemInMyTradeOffer(i.id)).sort((a,b)=>(a.score||0)-(b.score||0));const item=candidates[0];
    if(item){game.inventory=game.inventory.filter(i=>i.id!==item.id);const value=Math.max(8,Math.round((item.score||10)*1.4));game.player.gold+=value;log(`${item.name} se convierte en ${value} monedas.`,'loot');used=true}
   }else if(id==='recallRune'){
    const s=game.rooms?.[0];if(s){game.player.x=s.cx;game.player.y=s.cy;anim.heroX=anim.targetX=s.cx;anim.heroY=anim.targetY=s.cy;reveal(s.cx,s.cy);used=true}
@@ -2879,7 +2881,9 @@ function useSkill(slot){
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
 function equipItem(id){
- const item=game.inventory.find(i=>i.id===id);if(!item)return;learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
+ const item=game.inventory.find(i=>i.id===id);if(!item)return;
+ if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
+ learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
  const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
@@ -2910,7 +2914,7 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
@@ -3752,6 +3756,7 @@ async function finalizeCharacterDeath(){
  }catch(e){console.error('No se pudo marcar el personaje como muerto',e)}
  if(game.multiplayer){
   if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+  stopMpTradePolling();
   const deadId=String(game.pjId);
   mpClearLiveTimers();
   game.mpSeq=(game.mpSeq||0)+1; // death outranks any in-flight live turn
@@ -4016,6 +4021,7 @@ async function mpRealtimeConnect(sessionId){
   rtChannel.on('broadcast',{event:'ack'},({payload})=>mpOnAck(payload));
   rtChannel.on('broadcast',{event:'need'},({payload})=>mpOnNeed(payload));
   rtChannel.on('broadcast',{event:'full'},({payload})=>mpOnFull(payload));
+  rtChannel.on('broadcast',{event:'trade'},()=>mpOnRemoteTrade(sessionId));
   rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
  })();
  try{await rtConnectPromise}finally{rtConnectPromise=null}
@@ -4227,6 +4233,212 @@ function mpFlushCheckpointBeacon(){
 }
 addEventListener('pagehide',mpFlushCheckpointBeacon);
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')mpFlushCheckpointBeacon()});
+// ============================================================================
+// MULTIPLAYER ITEM TRADE
+// One active trade at a time per session, always between exactly two
+// players. State lives in dungeon_status.trade and every mutation goes
+// through the same rev-guarded CAS write already used for turns
+// (mpSaveSession), so:
+//  - a trade can only be proposed if none is currently open (mutate returns
+//    null -> aborted, if fresh.trade already exists)
+//  - the actual item swap can only ever be applied once per side, because
+//    the write that flips trade.applied[me]=true only succeeds if the trade
+//    is still the expected one, both sides are still accepted, and my side
+//    had not already applied — exactly the same pattern that keeps turns
+//    from crossing.
+// Items stay in each player's own inventory (and keep persisting normally
+// through the regular character save) until the swap is actually applied,
+// so a reload or crash mid-trade never loses an item. While offered, an
+// item is only soft-locked: isItemInMyTradeOffer() blocks equipping, using
+// or auto-selling it, but it is never removed from game.inventory until the
+// CAS-guarded apply step commits.
+// ============================================================================
+function mpTradeOtherId(t=game.mpTrade){if(!t)return null;return String(t.a)===String(game.pjId)?t.b:t.a}
+function isItemInMyTradeOffer(id){return (game.mpTrade?.offers?.[String(game.pjId)]||[]).some(i=>i.id===id)}
+function tradeableRoster(){
+ const aliveIds=new Set((game.turnOrder||[]).map(String));
+ return (game.roster||[]).filter(r=>String(r.pjId)!==String(game.pjId)&&aliveIds.has(String(r.pjId)));
+}
+function startMpTradePolling(){
+ stopMpTradePolling();
+ if(!game?.multiplayer)return;
+ mpRefreshTrade();
+ mpTradePollTimer=setInterval(mpRefreshTrade,rtReady?2500:1500);
+}
+function stopMpTradePolling(){
+ if(mpTradePollTimer){clearInterval(mpTradePollTimer);mpTradePollTimer=null}
+}
+async function mpRefreshTrade(){
+ if(!game?.multiplayer||!game.dungeonStatusId)return;
+ try{
+  const session=await dsGet(game.dungeonStatusId);
+  applyIncomingTradeState(session?.dungeon_status?.trade||null);
+ }catch(e){}
+}
+function mpOnRemoteTrade(sessionId){
+ if(!game?.multiplayer||String(game.dungeonStatusId)!==String(sessionId))return;
+ mpRefreshTrade();
+}
+function applyIncomingTradeState(t){
+ if(!game?.multiplayer)return;
+ const involvesMe=t&&(String(t.a)===String(game.pjId)||String(t.b)===String(game.pjId));
+ const next=involvesMe?t:null;
+ const isNewProposal=next&&next.id!==game.mpTradeSeenId&&String(next.a)!==String(game.pjId);
+ game.mpTrade=next;
+ if(isNewProposal){
+  game.mpTradeSeenId=next.id;
+  const meta=(game.roster||[]).find(r=>String(r.pjId)===String(next.a));
+  banner('PROPUESTA DE INTERCAMBIO');
+  log(`${meta?.pjName||'Otro jugador'} te propone un intercambio.`,'sys');
+ }
+ renderTradeTab();
+ checkAndApplyTrade();
+}
+async function proposeTrade(otherPjId){
+ if(!game?.multiplayer||!game.dungeonStatusId)return;
+ if(game.mpTrade){alert('Ya hay un intercambio en curso.');return}
+ const id=crypto.randomUUID(),a=String(game.pjId),b=String(otherPjId);
+ const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+  if(fresh.trade)return null; // someone else proposed one first
+  return {dungeon_status:{...fresh,trade:{id,a,b,offers:{[a]:[],[b]:[]},accepted:{[a]:false,[b]:false},applied:{},createdAt:Date.now()}}};
+ });
+ if(!saved){alert('No se pudo proponer el intercambio (puede que ya haya uno en curso).');return}
+ game.mpTradeSeenId=id;
+ applyIncomingTradeState(saved.status.trade);
+ mpSend('trade',{});
+}
+async function cancelTrade(){
+ const t=game.mpTrade;if(!t)return;
+ await mpSaveSession(game.dungeonStatusId,fresh=>{
+  if(!fresh.trade||fresh.trade.id!==t.id)return null; // already resolved/cancelled elsewhere
+  return {dungeon_status:{...fresh,trade:null}};
+ });
+ game.mpTrade=null;renderTradeTab();mpSend('trade',{});
+}
+async function addToTradeOffer(itemId){
+ const t=game.mpTrade;if(!t)return;
+ const item=game.inventory.find(i=>i.id===itemId);if(!item)return;
+ const me=String(game.pjId);
+ const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+  const ft=fresh.trade;if(!ft||ft.id!==t.id)return null;
+  const mine=ft.offers?.[me]||[];
+  if(mine.some(i=>i.id===itemId))return null;
+  const offers={...ft.offers,[me]:[...mine,{...item}]};
+  // any change to the deal invalidates both prior acceptances
+  return {dungeon_status:{...fresh,trade:{...ft,offers,accepted:{[ft.a]:false,[ft.b]:false}}}};
+ });
+ if(!saved)return;
+ applyIncomingTradeState(saved.status.trade);
+ updateUI();mpSend('trade',{});
+}
+async function removeFromTradeOffer(itemId){
+ const t=game.mpTrade;if(!t)return;
+ const me=String(game.pjId);
+ const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+  const ft=fresh.trade;if(!ft||ft.id!==t.id)return null;
+  const mine=(ft.offers?.[me]||[]).filter(i=>i.id!==itemId);
+  const offers={...ft.offers,[me]:mine};
+  return {dungeon_status:{...fresh,trade:{...ft,offers,accepted:{[ft.a]:false,[ft.b]:false}}}};
+ });
+ if(!saved)return;
+ applyIncomingTradeState(saved.status.trade);
+ updateUI();mpSend('trade',{});
+}
+async function setTradeAccept(accept){
+ const t=game.mpTrade;if(!t)return;
+ const me=String(game.pjId);
+ const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+  const ft=fresh.trade;if(!ft||ft.id!==t.id)return null;
+  return {dungeon_status:{...fresh,trade:{...ft,accepted:{...ft.accepted,[me]:accept}}}};
+ });
+ if(!saved)return;
+ applyIncomingTradeState(saved.status.trade);
+ mpSend('trade',{});
+}
+// Executes the swap exactly once. The write that records my half of the
+// completion only succeeds if the trade is still the one I think it is, both
+// sides are still accepted, and I had not already applied it — so my
+// inventory is only ever touched AFTER that write has committed. A peer who
+// never comes back to observe the acceptance simply delays completion on
+// their own side; it can never duplicate or destroy an item.
+let mpTradeApplying=false;
+async function checkAndApplyTrade(){
+ const t=game.mpTrade;if(!t||mpTradeApplying)return;
+ const me=String(game.pjId);
+ if(!t.accepted?.[t.a]||!t.accepted?.[t.b])return;
+ if(t.applied?.[me])return;
+ mpTradeApplying=true;
+ try{
+  let capturedOffers=null;
+  const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
+   const ft=fresh.trade;
+   if(!ft||ft.id!==t.id||!ft.accepted?.[ft.a]||!ft.accepted?.[ft.b]||ft.applied?.[me])return null;
+   capturedOffers=ft.offers;
+   const applied={...(ft.applied||{}),[me]:true};
+   const bothDone=applied[ft.a]&&applied[ft.b];
+   return {dungeon_status:{...fresh,trade:bothDone?null:{...ft,applied}}};
+  });
+  if(!saved||!capturedOffers)return;
+  const otherId=mpTradeOtherId(t);
+  const myOfferedIds=new Set((capturedOffers[me]||[]).map(i=>i.id));
+  game.inventory=(game.inventory||[]).filter(i=>!myOfferedIds.has(i.id));
+  for(const raw of capturedOffers[String(otherId)]||[]){
+   const item={...raw,id:crypto.randomUUID()};
+   addInventoryItem(item);lootToast(item);
+  }
+  game.mpTrade=saved.status.trade||null;
+  log('Intercambio completado.','loot');banner('INTERCAMBIO COMPLETADO');
+  recomputeDerived();updateUI();draw();renderTradeTab();
+  // persist immediately: the given/received items must survive a reload right away
+  const bundle=characterBundleFromGame();
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje tras el intercambio',e));
+  mpSend('trade',{});
+ }finally{mpTradeApplying=false}
+}
+function renderTradeTab(){
+ const btn=document.querySelector('[data-tab="trade"]'),root=document.getElementById('trade');
+ if(!btn||!root)return;
+ if(!game?.multiplayer){
+  btn.classList.add('hidden');
+  if(btn.classList.contains('active'))document.querySelector('[data-tab="inventory"]')?.click();
+  return;
+ }
+ btn.classList.remove('hidden');
+ const t=game.mpTrade;
+ if(!t){
+  const others=tradeableRoster();
+  root.innerHTML=others.length?
+   `<p class="small">Elige con quién comerciar.</p>${others.map(r=>`<div class="worldCard"><b>${r.pjName}</b><span class="small">${r.nombre||''} · Nivel ${r.level||1}</span><button type="button" data-trade-propose="${r.pjId}">Proponer intercambio</button></div>`).join('')}`:
+   '<p class="small">No hay otros jugadores vivos con quien comerciar.</p>';
+  root.querySelectorAll('[data-trade-propose]').forEach(b=>b.onclick=()=>proposeTrade(b.dataset.tradePropose));
+  return;
+ }
+ const me=String(game.pjId),otherId=mpTradeOtherId(t),otherMeta=(game.roster||[]).find(r=>String(r.pjId)===String(otherId));
+ const myOffer=t.offers?.[me]||[],otherOffer=t.offers?.[String(otherId)]||[];
+ const myAccepted=!!t.accepted?.[me],otherAccepted=!!t.accepted?.[otherId];
+ const available=(game.inventory||[]).filter(i=>!myOffer.some(o=>o.id===i.id));
+ const offeredRow=(i,removable)=>`<div class="item tradeItem"><canvas class="itemThumb" width="40" height="40" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':(slotNames[i.slot]||i.slot)} · Nivel ${i.itemLevel||1}</span></div>${removable?`<button type="button" data-trade-remove="${i.id}">Quitar</button>`:''}</div>`;
+ const availRow=i=>`<div class="item tradeItem"><canvas class="itemThumb" width="40" height="40" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':(slotNames[i.slot]||i.slot)}</span></div><button type="button" data-trade-add="${i.id}">Ofrecer</button></div>`;
+ root.innerHTML=`
+  <div class="tradePanel">
+   <h4>Intercambio con ${otherMeta?.pjName||'jugador'}</h4>
+   <div class="tradeColumns">
+    <div class="tradeCol"><b>Tu oferta ${myAccepted?'✓':''}</b>${myOffer.length?myOffer.map(i=>offeredRow(i,!myAccepted)).join(''):'<p class="small">Vacía.</p>'}</div>
+    <div class="tradeCol"><b>Oferta de ${otherMeta?.pjName||'jugador'} ${otherAccepted?'✓':''}</b>${otherOffer.length?otherOffer.map(i=>offeredRow(i,false)).join(''):'<p class="small">Vacía.</p>'}</div>
+   </div>
+   ${!myAccepted?`<h4>Añadir de tu mochila</h4><div class="tradeAvailable">${available.length?available.map(availRow).join(''):'<p class="small">Sin objetos disponibles.</p>'}</div>`:''}
+   <div class="tradeActions">
+    <button type="button" id="tradeAcceptBtn">${myAccepted?'Retirar aceptación':'Aceptar intercambio'}</button>
+    <button type="button" id="tradeCancelBtn">Cancelar intercambio</button>
+   </div>
+  </div>`;
+ root.querySelectorAll('[data-item]').forEach(c=>{const it=[...myOffer,...otherOffer,...available].find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});
+ root.querySelectorAll('[data-trade-add]').forEach(b=>b.onclick=()=>addToTradeOffer(b.dataset.tradeAdd));
+ root.querySelectorAll('[data-trade-remove]').forEach(b=>b.onclick=()=>removeFromTradeOffer(b.dataset.tradeRemove));
+ document.getElementById('tradeAcceptBtn').onclick=()=>setTradeAccept(!myAccepted);
+ document.getElementById('tradeCancelBtn').onclick=()=>cancelTrade();
+}
+
 function mpOnRemoteBroadcast(sessionId,payload){
  const st=payload?.status,rev=Number(payload?.rev)||0;
  if(!st||!rev)return;
@@ -4441,6 +4653,7 @@ async function mpEnterStartedSession(session,starter=false){
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
   mpGamePollTimer=setInterval(mpPollGameState,rtReady?6000:400);
   mpEnsureEnemyIds();
+  game.mpTrade=null;game.mpTradeSeenId=null;startMpTradePolling();
    banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');startMultiHeartbeat();alert('Error al entrar en la partida: '+e.message)}
 }
@@ -4573,6 +4786,7 @@ function mpApplyRemoteState(st){
 
 function mpHandleDefeatWhileWaiting(){
  if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+ stopMpTradePolling();
  mpClearLiveTimers();
  finalizeCharacterDeath();
  storyTitle.textContent='HAS CAÍDO';
