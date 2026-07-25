@@ -84,31 +84,33 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .gameStage{position:relative;width:100%;max-width:640px;margin:auto}
 
 /* Toolbar above the board: zoom + quick-access buttons. Nothing here overlaps the canvas. */
-.gameToolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;max-width:640px;margin:0 auto 8px}
+.gameToolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;max-width:640px;margin:0 auto 6px}
 .hudButtons{display:flex;gap:6px}
-.hudButton{width:38px;height:38px;border:2px solid #4e3a59;background:#17101fe8;color:#efe6f2;padding:0;font:700 18px monospace;cursor:pointer;display:grid;place-items:center;box-shadow:0 2px 8px #0008}
+.hudButton{width:34px;height:34px;border:2px solid #4e3a59;background:#17101fe8;color:#efe6f2;padding:0;font:700 16px monospace;cursor:pointer;display:grid;place-items:center;box-shadow:0 2px 8px #0008}
 .hudButton:hover,.hudButton:focus-visible{border-color:#d2a95a;outline:none}
 
-/* Vital resource bars: big, high-contrast, drain left-to-right. Single source of truth for HP/XP/STA/Mana. */
-.vitalBars{display:grid;gap:5px;max-width:640px;margin:0 auto 8px}
-.vitalBar{position:relative;height:22px;background:#0c0910;border:2px solid #000}
+/* Vital resource bars: compact overlay in the top-right quadrant of the board (not a full row). */
+.vitalBars{position:absolute;top:6px;right:6px;z-index:8;display:grid;gap:3px;width:42%;min-width:118px;max-width:190px;pointer-events:none}
+.vitalBar{position:relative;height:15px;background:#0c0910dd;border:1px solid #000}
 .vitalBar i{position:absolute;inset:0;width:0;display:block;transition:width .2s ease}
-.vbLabel,.vbValue{position:absolute;top:0;line-height:18px;font-size:11px;font-weight:700;text-shadow:1px 1px 2px #000;color:#fff;padding:1px 6px;letter-spacing:.03em;z-index:1}
-.vbLabel{left:0}.vbValue{right:0}
+.vbLabel{position:absolute;left:4px;top:0;line-height:13px;font-size:10px}
+.vbValue{position:absolute;right:4px;top:0;line-height:13px;font-size:8px;font-weight:700;text-shadow:1px 1px 1px #000;color:#fff}
 .vbHp i{background:linear-gradient(#ff8f8f,#c23c46)}
 .vbXp i{background:linear-gradient(#a9cbff,#4d79e0)}
 .vbStamina i{background:linear-gradient(#ffe27a,#d99b2b)}
 .vbMana i{background:linear-gradient(#cdbaff,#7857d6)}
 
 @media(max-width:600px){
- .mobileSkillbar{gap:4px;padding:5px}.mobileSkill{min-height:62px;padding:4px}.mobileSkill b{font-size:10px}.mobileSkill .icon{font-size:19px}.costTag{font-size:8px}
- .hudButton{width:40px;height:40px;font-size:17px}
- #minimap{width:96px;height:96px}
+ .mobileSkillbar{gap:3px;padding:4px}
+ .hudButton{width:32px;height:32px;font-size:15px}
+ #minimap{width:84px;height:84px}
  .minimapWrap{right:6px;bottom:6px;padding:3px}
- .controls{max-width:300px;margin:10px auto;gap:8px;grid-template-columns:repeat(3,1fr)}
- .controls button,.btn{padding:16px 10px;font-size:20px;box-shadow:0 3px #100b15}
- .vitalBar{height:26px}
- .vbLabel,.vbValue{font-size:12px;line-height:22px}
+ .controls{max-width:210px;margin:5px auto;gap:4px;grid-template-columns:repeat(3,1fr)}
+ .controls button,.btn{padding:8px 5px;font-size:14px;box-shadow:0 2px #100b15}
+ .vitalBars{width:46%;min-width:104px}
+ .vitalBar{height:14px}
+ .vbLabel{font-size:9px;line-height:12px}
+ .vbValue{font-size:8px;line-height:12px}
 }
 .minimapWrap{position:absolute;right:10px;bottom:10px;z-index:38;background:#09070ddd;border:2px solid #493653;padding:5px;pointer-events:none;opacity:1;transform:scale(1);transform-origin:bottom right;transition:.16s ease}.minimapWrap.minimapHidden{opacity:0;transform:scale(.85);visibility:hidden}
 #minimap{width:150px;height:150px;image-rendering:pixelated;display:block}
@@ -126,12 +128,17 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
 .statbox{background:#17101f;border:2px solid #4d395a;padding:7px}
 .statbox button{width:28px;height:28px;background:#49335a;color:#fff;border:1px solid #8d68a2}
-.mobileSkillbar{position:relative;left:auto;right:auto;bottom:auto;z-index:35;background:#100b16ee;border:3px solid #654778;padding:6px;margin-top:8px;display:flex;gap:6px;justify-content:center;backdrop-filter:blur(5px);box-shadow:0 4px 16px #000b;transition:opacity .14s ease,transform .14s ease,max-height .14s ease,margin .14s ease,padding .14s ease}.targeting .mobileSkillbar{opacity:0;transform:translateY(8px);pointer-events:none;max-height:0;overflow:hidden;margin:0;padding-top:0;padding-bottom:0;border-width:0}
-.mobileSkill{min-height:66px;flex:1;max-width:150px;background:linear-gradient(#4a3459,#291c34);color:#fff;border:2px solid #8a64a0;padding:5px;position:relative}
+/* Single compact row: hotkey + icon + one-line name/cost. Full detail (dice, range, defense) lives in the title tooltip. */
+.mobileSkillbar{position:relative;z-index:35;background:#100b16ee;border:3px solid #654778;padding:5px;margin-top:6px;display:flex;gap:5px;justify-content:center;backdrop-filter:blur(5px);box-shadow:0 4px 16px #000b;transition:opacity .14s ease,transform .14s ease,max-height .14s ease,margin .14s ease,padding .14s ease}.targeting .mobileSkillbar{opacity:0;transform:translateY(8px);pointer-events:none;max-height:0;overflow:hidden;margin:0;padding-top:0;padding-bottom:0;border-width:0}
+.mobileSkill{display:flex;align-items:center;gap:5px;height:38px;flex:1;min-width:0;max-width:118px;background:linear-gradient(#4a3459,#291c34);color:#fff;border:2px solid #8a64a0;padding:3px 6px;position:relative;text-align:left}
 .mobileSkill:disabled{opacity:.42}
-.mobileSkill .icon{display:block;font-size:22px;line-height:1}.mobileSkill .slotKey{position:absolute;left:4px;top:3px;color:#ffd365;font-size:11px}.attackSkill{border-color:#c65d5d;background:linear-gradient(#65313a,#321b22)}.costTag{display:block;font-size:9px;color:#e9d8a2;margin-top:2px}
-.mobileSkill b{display:block;font-size:11px;margin-top:4px}
-.cooldown{position:absolute;right:3px;top:2px;background:#000d;color:#ffd365;border-radius:50%;min-width:22px;height:22px;line-height:22px}
+.mobileSkill .slotKey{flex:none;color:#ffd365;font-size:9px}
+.mobileSkill .icon{flex:none;font-size:16px;line-height:1}
+.attackSkill{border-color:#c65d5d;background:linear-gradient(#65313a,#321b22)}
+.mobileSkill .skillText{display:flex;flex-direction:column;min-width:0;line-height:1.15}
+.mobileSkill b{display:block;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.costTag{display:block;font-size:8px;color:#e9d8a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cooldown{position:absolute;right:1px;top:1px;background:#000d;color:#ffd365;border-radius:50%;min-width:16px;height:16px;line-height:16px;font-size:9px}
 .targetHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
 .zoomControl{background:#17101f;border:2px solid #493653;padding:6px 10px;color:#f4ead5;font-size:11px;display:flex;align-items:center;gap:8px}
 .zoomControl label{display:flex;align-items:center;gap:8px;color:#ffd68b;white-space:nowrap}
@@ -154,7 +161,9 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .equippedTag{color:#7ee2a2}
 @media(max-width:960px){
  #app{padding:6px 6px 112px}
- header{position:sticky;top:0;z-index:20;background:#100b15e8}
+ header{position:sticky;top:0;z-index:20;background:#100b15e8;padding:3px 0 5px;flex-wrap:wrap;gap:4px}
+ h1{font-size:16px}
+ .badge{font-size:10px;padding:3px 6px}
  .layout{display:block}
  .panel{margin-bottom:8px}
  .heroPanel{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -173,7 +182,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .waitCancelWrap{position:relative;display:grid}
 .waitCancelWrap>button{grid-area:1/1;width:100%;height:100%}
 .cancelTargetBtn{z-index:5;background:#702f3a!important;border-color:#ef7777!important;color:#fff!important}
-.activeEffects{position:absolute;top:8px;right:8px;z-index:8;width:190px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px;pointer-events:none}
+.activeEffects{position:absolute;top:6px;left:6px;z-index:8;width:44%;max-width:150px;display:flex;flex-wrap:wrap;gap:3px;pointer-events:none}
 .effectBadge{background:#0b0810e8;border:1px solid #8d6b9d;padding:2px 5px;font-size:8px;color:#f3e7a8}
 .effectBadge.buff{border-color:#70dc9b;color:#9cf0b9}
 .effectBadge.potion{border-color:#73aaff;color:#a8c8ff}

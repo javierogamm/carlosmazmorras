@@ -1,3 +1,13 @@
+## v0.51.0 - Mobile layout fix: compact vitals back on the board, tighter dpad and skill bar, no passive regen
+Follow-up to v0.50.0 after seeing an actual mobile screenshot: the full-width vital bars, tall skill cards and padded dpad buttons together pushed the movement arrows off-screen and wasted most of the viewport on chrome instead of the map.
+- Vital bars moved back onto the canvas, but compact: a small stacked overlay in the top-right quadrant of the board (`.vitalBars`, ~15px tall bars) instead of a giant full-width row above it. Still color-coded, still draining, just sized like an actual HUD element instead of a banner.
+- Active buff badges moved to the top-left quadrant of the board so they no longer compete with the vitals for the same corner.
+- Movement dpad drastically tightened on mobile: smaller padding/font per button and a narrower max-width, cutting its total footprint roughly in half so the arrows are visible without scrolling.
+- Skill bar cards collapsed to a single compact row (hotkey + icon + short cost, e.g. `22⚡`) instead of stacking name, dice damage, range, defense stat and damage % as separate lines — that wall of text was the single biggest source of wasted vertical space. The full detail (exact dice, range, defense stat, damage%) is still available as a hover/long-press tooltip (`title` attribute), just not force-displayed.
+- Header (title + version badge) tightened on mobile so the title no longer wraps to two lines and eats a row of its own.
+- Removed passive stamina/mana regeneration entirely: it no longer refills automatically each turn in single player or multiplayer. Resources now only recover through safe-room rest, potions, or skills that explicitly restore them — makes stamina/mana a real resource to manage instead of a number that refills itself. (The regen-boosting item affixes, race trait and buff on the `resourceRegen` skill still exist in data but no longer have any effect now that nothing reads them per turn; flagging this as a known loose end rather than silently reworking item/race balance beyond what was asked.)
+- App and package version bumped to `0.51.0`.
+
 ## v0.50.0 - Mobile-first game board layout, clean overlays, accessible vital bars
 - Reworked the game board area, which used to stack a dense pile of absolutely-positioned overlays (zoom slider, floor-type banner, HP/XP/stamina/mana HUD, quick buttons) directly on top of the canvas — the main cause of it "looking terrible on mobile" since they fought for the same cramped space as the map itself.
 - Zoom control moved out of the canvas and into a toolbar row above the board, next to the equipment/skills/minimap quick buttons (`.gameToolbar`). Nothing overlaps the map anymore for a static, always-visible control.
