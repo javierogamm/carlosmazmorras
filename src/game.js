@@ -19,7 +19,7 @@ let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.44.0';
+const APP_VERSION='0.45.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -2058,6 +2058,7 @@ function playerFinished(){
 async function playerFinishedMultiplayer(){
  busy=true;
  if(game.over)return; // death flow persists its own state
+ mpBroadcastMyPos(); // instant visual ping before the authoritative write
  game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));
  game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
@@ -2082,7 +2083,7 @@ async function playerFinishedMultiplayer(){
    }finally{game.mpEnemyPhase=false}
    draw();
    if(!game.over)mpSetMyTurn(String(game.turnOrder[game.activePlayerIndex])===String(game.pjId));
-  },120);
+  },60);
  }else{
   mpSetMyTurn(false);
   await mpPersistTurnState({advance:true});
@@ -3385,15 +3386,27 @@ async function dsGetRev(id){
  return Number((await r.json())?.rev)||0;
 }
 // returns {ok,conflict,data}
-async function dsPatch(id,row,expectedRev){
+// minimal=true skips the row echo in the response (saves ~50KB of download per
+// write); the CAS conflict is then detected via the Content-Range count. If the
+// header is missing we conservatively report a conflict so the caller re-reads
+// (the retry uses the representation path, so this can never loop).
+async function dsPatch(id,row,expectedRev,minimal=false){
  if(rtConfig?.url){
   try{
    let f=`id=eq.${encodeURIComponent(id)}`;
-   if(expectedRev!==undefined&&expectedRev!==null)f+=`&dungeon_status->>rev=eq.${encodeURIComponent(String(expectedRev))}`;
-   const r=await fetch(`${rtConfig.url}/rest/v1/dungeon_status?${f}`,{method:'PATCH',headers:{...dsHeaders(),Prefer:'return=representation'},body:JSON.stringify(row)});
+   const hasRev=expectedRev!==undefined&&expectedRev!==null;
+   if(hasRev)f+=`&dungeon_status->>rev=eq.${encodeURIComponent(String(expectedRev))}`;
+   const prefer=minimal?'return=minimal,count=exact':'return=representation';
+   const r=await fetch(`${rtConfig.url}/rest/v1/dungeon_status?${f}`,{method:'PATCH',headers:{...dsHeaders(),Prefer:prefer},body:JSON.stringify(row)});
    if(r.ok){
+    if(minimal){
+     if(!hasRev)return {ok:true,data:null};
+     const cr=r.headers.get('content-range');
+     if(!cr||/\/0$/.test(cr))return {ok:false,conflict:true};
+     return {ok:true,data:null};
+    }
     const d=await r.json();
-    if(expectedRev!==undefined&&expectedRev!==null&&Array.isArray(d)&&!d.length)return {ok:false,conflict:true};
+    if(hasRev&&Array.isArray(d)&&!d.length)return {ok:false,conflict:true};
     return {ok:true,data:d};
    }
   }catch(e){}
@@ -3415,6 +3428,7 @@ async function mpRealtimeConnect(sessionId){
   rtChannelSessionId=String(sessionId);
   rtChannel=rtClient.channel(`ds-${sessionId}`,{config:{broadcast:{self:false}}});
   rtChannel.on('broadcast',{event:'state'},({payload})=>mpOnRemoteBroadcast(sessionId,payload));
+  rtChannel.on('broadcast',{event:'pos'},({payload})=>mpOnRemotePos(sessionId,payload));
   rtChannel.subscribe(status=>{rtReady=status==='SUBSCRIBED';mpAdjustPollInterval()});
  })();
  try{await rtConnectPromise}finally{rtConnectPromise=null}
@@ -3425,7 +3439,39 @@ function mpRealtimeDisconnect(){
 }
 function mpBroadcastState(id,status){
  if(!rtChannel||!rtReady||String(rtChannelSessionId)!==String(id))return;
- try{rtChannel.send({type:'broadcast',event:'state',payload:{rev:status.rev,status}})}catch(e){}
+ // strip the static floor layout from the wire copy (~15KB less per message);
+ // same-floor receivers never need it and floor-change receivers refetch full
+ let wire=status;
+ try{
+  const floors=status.floors||{};
+  const slim={};let changed=false;
+  for(const [k,v] of Object.entries(floors)){
+   if(v&&v.map){const {map,rooms,safeRooms,floorTileset,...rest}=v;slim[k]=rest;changed=true}
+   else slim[k]=v;
+  }
+  if(changed)wire={...status,floors:slim,slimFloors:true};
+ }catch(e){}
+ try{rtChannel.send({type:'broadcast',event:'state',payload:{rev:status.rev,status:wire}})}catch(e){}
+}
+// Instant, display-only position ping fired the moment a player ends an action,
+// before the authoritative write lands. Touches no turn state, so a late or
+// duplicated ping cannot cross turns.
+function mpBroadcastMyPos(){
+ if(!game?.multiplayer||!rtChannel||!rtReady||String(rtChannelSessionId)!==String(game.dungeonStatusId))return;
+ try{rtChannel.send({type:'broadcast',event:'pos',payload:{pjId:game.pjId,x:game.player.x,y:game.player.y,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp}})}catch(e){}
+}
+function mpOnRemotePos(sessionId,p){
+ if(!game?.multiplayer||String(game.dungeonStatusId)!==String(sessionId)||!p||String(p.pjId)===String(game.pjId))return;
+ const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(p.pjId));
+ if(!rp)return;
+ if(rp.x!==p.x||rp.y!==p.y){
+  if(Math.abs(rp.x-p.x)+Math.abs(rp.y-p.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
+  rp.x=p.x;rp.y=p.y;
+ }
+ rp.facing=p.facing||rp.facing;
+ if(typeof p.hp==='number')rp.hp=p.hp;
+ if(typeof p.maxHp==='number')rp.maxHp=p.maxHp;
+ draw();
 }
 function mpOnRemoteBroadcast(sessionId,payload){
  const st=payload?.status,rev=Number(payload?.rev)||0;
@@ -3433,16 +3479,33 @@ function mpOnRemoteBroadcast(sessionId,payload){
  if(game?.multiplayer&&String(game.dungeonStatusId)===String(sessionId)){
   if(game.over||game.mpEnemyPhase)return; // safety net poll catches up afterwards
   if(rev<=(game.mpLastRev||0))return;
+  // slim broadcasts drop the static floor layout; on a floor change we need it,
+  // so fetch the full row instead of applying the slim copy
+  const remoteFloor=st.currentFloor||1;
+  if(st.slimFloors&&remoteFloor!==game.floor&&!(st.floors?.[String(remoteFloor)]?.map)){mpForceFullSync();return}
   game.mpLastRev=rev;
   mpApplyRemoteState(st);
  }else if(String(mpLobbySessionId||'')===String(sessionId)&&!game){
   refreshMpLobby();
  }
 }
+async function mpForceFullSync(){
+ if(!game?.multiplayer||!game.dungeonStatusId||mpPollBusy)return;
+ mpPollBusy=true;
+ try{
+  const session=await dsGet(game.dungeonStatusId);
+  const st=session?.dungeon_status||{};
+  const rev=Number(st.rev)||0;
+  if(rev<=(game.mpLastRev||0))return;
+  game.mpLastRev=rev;
+  mpApplyRemoteState(st);
+ }catch(e){console.error('mp full sync error',e)}
+ finally{mpPollBusy=false}
+}
 function mpAdjustPollInterval(){
  if(!game?.multiplayer||!mpGamePollTimer)return;
  clearInterval(mpGamePollTimer);
- mpGamePollTimer=setInterval(mpPollGameState,rtReady?2000:400);
+ mpGamePollTimer=setInterval(mpPollGameState,rtReady?1200:400);
 }
 // -----------------------------------------------------------------------------
 
@@ -3476,7 +3539,7 @@ async function mpSaveSession(id,mutate,{retries=6}={}){
   const row={dungeon_status:nextStatus};
   if(result.players_ID!==undefined)row.players_ID=result.players_ID;
   try{
-   const pr=await dsPatch(id,row,rev);
+   const pr=await dsPatch(id,row,rev,attempt===0);
    if(pr.conflict){await new Promise(res=>setTimeout(res,60+Math.random()*120));continue}
    if(!pr.ok){console.error('No se pudo guardar la sesión multijugador',pr.data);return null}
    if(game&&String(id)===String(game.dungeonStatusId)){
@@ -3621,7 +3684,7 @@ async function mpEnterStartedSession(session,starter=false){
   recomputeDerived();updateUI();draw();
   mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId));
   if(mpGamePollTimer)clearInterval(mpGamePollTimer);
-  mpGamePollTimer=setInterval(mpPollGameState,rtReady?2000:400);
+  mpGamePollTimer=setInterval(mpPollGameState,rtReady?1200:400);
   banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
  }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');startMultiHeartbeat();alert('Error al entrar en la partida: '+e.message)}
 }
@@ -3689,6 +3752,7 @@ async function mpPollGameState(){
 }
 
 function mpApplyRemoteState(st){
+ if(st.slimFloors){st={...st};delete st.slimFloors}
  game.mpStatusMirror=st;
  game.turnOrder=st.turnOrder&&st.turnOrder.length?st.turnOrder:game.turnOrder;
  game.roster=st.roster||game.roster;
@@ -3758,7 +3822,13 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false}={}){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ // throttle the character save: every 3rd turn, on floor change or when hurt
+ // badly, instead of every action (it competed with turn sync on the uplink)
+ game.mpPjSaveCounter=(game.mpPjSaveCounter||0)+1;
+ if(!game.multiplayer||game.mpPjSaveCounter%3===1||game.floor!==game.mpPjLastSavedFloor||game.player.hp<=game.player.maxHp*.35){
+  game.mpPjLastSavedFloor=game.floor;
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ }
  if(!game.dungeonStatusId)return;
  const floorSnap=floorSnapshot(),dynSnap=floorSnapshotDynamic();
  const myPos={x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1,hp:game.player.hp,maxHp:game.player.maxHp,cls:game.player.cls,classIcon:game.player.classIcon,name:game.player.name,nombre:window.currentUser?.nombre};

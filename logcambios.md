@@ -1,3 +1,12 @@
+## v0.45.0 - Turn sync tuning: instant position pings, no write echo, slimmer broadcasts
+- Instant movement: the moment a player ends an action, a tiny display-only `pos` ping (position/facing/hp) is broadcast before the authoritative write, so the other player sees the move in ~0.2s. It touches no turn state, so a late or duplicated ping cannot cross turns.
+- Writes no longer download their own echo: `dsPatch` uses `Prefer: return=minimal,count=exact` on the first (fast-path) attempt, detecting the rev CAS conflict via the Content-Range count instead of a ~50KB row representation. A missing header is treated as a conflict and the retry falls back to the representation path, so correctness is preserved.
+- Slimmer `state` broadcasts: the static floor layout (map, rooms, safe rooms, tileset — ~15KB) is stripped from the wire copy; same-floor receivers never needed it and floor-change receivers now do one full fetch instead.
+- Enemy phase: pre-resolution pause 120ms -> 60ms on the resolving client. Combined with the lighter write+broadcast, the enemy turn should land well under 2s (typically ~0.5-0.8s after the last player acts).
+- Character saves (`user-pj` PUT) throttled in multiplayer to every 3rd turn, on floor change or when badly hurt — they fired on every single action and competed with turn sync on the uplink.
+- Safety-net poll while realtime is subscribed tightened 2s -> 1.2s, so even with broadcasts failing the worst-case enemy turn stays around ~1.5s.
+- App and package version bumped to `0.45.0`.
+
 ## v0.44.0 - Enemy classes with equipment + fix for the ~10s enemy-phase stall
 ### Multiplayer latency
 - Fixed the ~10s enemy-turn delay: the multiplayer-screen presence timer (every 8s: heartbeat + online users + FULL session list with every session's complete dungeon_status JSON) kept running during lobby and gameplay, periodically saturating the connection right when turn sync needed it. It now stops on entering the lobby/game and restarts when returning to the multiplayer screen.
