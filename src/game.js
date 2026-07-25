@@ -19,7 +19,7 @@ let mpLobbyPollTimer=null;
 let mpGamePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.47.0';
+const APP_VERSION='0.48.0';
 let configItems=[];
 let configClasses=[];
 let configFloors=[];
@@ -807,7 +807,7 @@ const legendaryEffects=[
 function activeLootLuck(){return (game?.player?.activePotions||[]).reduce((s,p)=>s+(Number(p.effect?.lootLuck)||0),0)}
 function weightedRarity(level){
  const luck=game?.player?.derived?.finalStats?.luck??game?.player?.stats?.luck??0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
- const bonus=(level-1)*.18+(luck+activeLootLuck())*.14+(game?.player?.derived?.rarityFind||0)*.18;
+ const bonus=(level-1)*.18+(luck+activeLootLuck())*.14+(game?.player?.derived?.rarityFind||0)*.18+(game?.rewardRarityBonus||0)*.55;
  const adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
  let total=adjusted.reduce((s,r)=>s+r.w,0),roll=Math.random()*total;
  for(const r of adjusted){roll-=r.w;if(roll<=0)return r}
@@ -1236,6 +1236,361 @@ function start(){
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
+// ============================================================================
+// FLOOR ARCHETYPES + ROOM TYPOLOGIES
+// A floor picks an archetype by weighted probability (gated by depth, expected
+// enemy tier and how recently each special archetype appeared). The archetype
+// then drives the layout, the room-typology weights, enemy budget, rewards,
+// special conditions and how the floor is completed. Room typologies do the
+// local work: size, shape, exits, encounter composition, cover, traps and loot.
+// ============================================================================
+
+// Expected enemy tier at a given depth (drives boss strength and elite mix).
+function expectedTierForFloor(floor,total=20){
+ const r=total<=1?1:(floor-1)/(total-1);
+ return r<.25?1:r<.55?2:r<.8?3:4;
+}
+
+const ROOM_TYPES={
+ filler:      {label:'Sala vacía',      size:[4,7],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ combat:      {label:'Sala de combate', size:[6,10], enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
+ ambush:      {label:'Emboscada',       size:[5,9],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[5,8], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[7,11], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[4,7],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ arena:       {label:'Arena',           size:[10,15],enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
+ hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[5,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ deadend:     {label:'Callejón',        size:[3,5],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
+ knot:        {label:'Nudo de pasillos',size:[3,5],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
+ bossarena:   {label:'Arena del jefe',  size:[11,15],enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ prep:        {label:'Sala de preparación',size:[6,9],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+};
+
+// weight(floor,total,tier) -> relative probability. 0 disables the archetype.
+const FLOOR_ARCHETYPES={
+ standard:{
+  label:'Piso estándar', minFloor:1, cooldown:0, objective:'stairs',
+  desc:'Mezcla equilibrada de salas. Referencia de dificultad.',
+  weight:()=>100,
+  layout:{rooms:[26,40], size:[4,11], corridors:'normal', loops:.15, pillars:1},
+  enemies:{density:1, elite:1, tierBias:0, bossOnEven:true},
+  rewards:{chests:1, rarity:0},
+  roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,deadend:4,knot:4}
+ },
+ superboss:{
+  label:'Piso de superjefe', minFloor:8, cooldown:7, objective:'bossKill', announce:true,
+  desc:'Algo muy superior habita este piso. Prepárate antes de entrar en su sala.',
+  weight:(f,t)=>f<8?0:6+Math.min(8,f/3),
+  layout:{rooms:[18,26], size:[5,12], corridors:'normal', loops:.1, pillars:1.2},
+  enemies:{density:.5, elite:.8, tierBias:0, bossOnEven:false, superBoss:true},
+  rewards:{chests:1.3, rarity:2},
+  roomWeights:{prep:16,shrine:10,filler:20,combat:16,guardpost:10,eliteden:8,vault:6,hub:6,deadend:4}
+ },
+ laberinto:{
+  label:'Piso laberinto', minFloor:3, cooldown:3, objective:'stairs',
+  desc:'Pasillos, bifurcaciones y caminos falsos. La salida no está a la vista.',
+  weight:(f)=>f<3?0:26,
+  layout:{rooms:[40,56], size:[3,6], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
+  enemies:{density:.55, elite:.8, tierBias:0, bossOnEven:false},
+  rewards:{chests:1.15, rarity:1},
+  roomWeights:{knot:24,deadend:20,filler:18,hub:12,traproom:10,combat:8,vault:5,shrine:3}
+ },
+ horda:{
+  label:'Piso horda', minFloor:4, cooldown:3, objective:'waves',
+  desc:'Oleadas continuas en salas amplias. Sobrevive a todas para abrir la salida.',
+  weight:(f)=>f<4?0:22,
+  layout:{rooms:[14,22], size:[8,15], corridors:'arena', loops:.3, pillars:1.4},
+  enemies:{density:1.35, elite:.7, tierBias:-1, bossOnEven:false, waves:true},
+  rewards:{chests:1.2, rarity:1},
+  roomWeights:{arena:34,combat:24,filler:14,hub:10,ambush:8,eliteden:5,vault:5}
+ },
+ elites:{
+  label:'Piso de élites', minFloor:5, cooldown:4, objective:'stairs',
+  desc:'Pocos enemigos, casi todos de gran poder. Combates tácticos.',
+  weight:(f)=>f<5?0:16,
+  layout:{rooms:[16,24], size:[6,12], corridors:'normal', loops:.2, pillars:1.3},
+  enemies:{density:.32, elite:6, tierBias:1, bossOnEven:false, miniboss:true},
+  rewards:{chests:1.35, rarity:2},
+  roomWeights:{eliteden:30,combat:20,guardpost:14,filler:12,vault:8,hub:6,shrine:5,arena:5}
+ },
+ bossrush:{
+  label:'Piso de asalto de jefes', minFloor:12, cooldown:9, objective:'bossKill', announce:true,
+  desc:'Arenas encadenadas. Cada una guarda un jefe; el último es el más fuerte.',
+  weight:(f,t)=>f<12?0:5+Math.min(7,f/4),
+  layout:{rooms:[12,18], size:[9,14], corridors:'arena', loops:.15, pillars:1.1},
+  enemies:{density:.3, elite:1.5, tierBias:1, bossOnEven:false, bossRush:true},
+  rewards:{chests:1.5, rarity:3},
+  roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,filler:12,vault:8,hub:6}
+ },
+ tesoro:{
+  label:'Piso del tesoro', minFloor:2, cooldown:5, objective:'stairs',
+  desc:'Riqueza a la vista y poca resistencia... al principio.',
+  weight:(f)=>f<2?0:12,
+  layout:{rooms:[20,30], size:[4,9], corridors:'normal', loops:.25, pillars:.8},
+  enemies:{density:.45, elite:1.2, tierBias:0, bossOnEven:false, greedAmbush:true},
+  rewards:{chests:2.8, rarity:3},
+  roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3}
+ },
+ supervivencia:{
+  label:'Piso de supervivencia', minFloor:6, cooldown:5, objective:'survive', announce:true,
+  desc:'No hay salida todavía. Aguanta: la escalera aparecerá al resistir lo suficiente.',
+  weight:(f)=>f<6?0:14,
+  layout:{rooms:[16,24], size:[7,13], corridors:'arena', loops:.35, pillars:1.5},
+  enemies:{density:.9, elite:1.2, tierBias:0, bossOnEven:false, escalate:true},
+  rewards:{chests:1.4, rarity:2},
+  roomWeights:{arena:26,combat:22,filler:16,hub:12,ambush:10,eliteden:8,shrine:6}
+ },
+ contrarreloj:{
+  label:'Piso contrarreloj', minFloor:7, cooldown:5, objective:'timed', announce:true,
+  desc:'El piso colapsa. Encuentra la salida antes de que se agote el tiempo.',
+  weight:(f)=>f<7?0:13,
+  layout:{rooms:[22,32], size:[5,10], corridors:'normal', loops:.4, pillars:.9},
+  enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
+  rewards:{chests:1.3, rarity:2},
+  roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4}
+ }
+};
+
+// Weighted pick honouring depth gates, recency cooldowns and a hard rule that
+// two heavy archetypes never chain back to back.
+const HEAVY_ARCHETYPES=new Set(['superboss','bossrush']);
+function pickFloorArchetype(floor,total,recent=[]){
+ const tier=expectedTierForFloor(floor,total);
+ const last=recent[recent.length-1];
+ const entries=[];
+ for(const [id,a] of Object.entries(FLOOR_ARCHETYPES)){
+  if(floor<(a.minFloor||1))continue;
+  if(HEAVY_ARCHETYPES.has(id)&&HEAVY_ARCHETYPES.has(last))continue;
+  const since=recent.length-1-recent.lastIndexOf(id);
+  if(recent.includes(id)&&since<=(a.cooldown||0))continue;
+  let w=a.weight(floor,total,tier)||0;
+  if(w<=0)continue;
+  entries.push({id,w});
+ }
+ if(!entries.length)return 'standard';
+ const totalW=entries.reduce((s,e)=>s+e.w,0);
+ let r=Math.random()*totalW;
+ for(const e of entries){r-=e.w;if(r<=0)return e.id}
+ return entries[entries.length-1].id;
+}
+
+function weightedRoomType(weights){
+ const entries=Object.entries(weights).filter(([id,w])=>w>0&&ROOM_TYPES[id]);
+ const total=entries.reduce((s,[,w])=>s+w,0);
+ let r=Math.random()*total;
+ for(const [id,w] of entries){r-=w;if(r<=0)return id}
+ return entries.length?entries[0][0]:'filler';
+}
+function randBetween(a,b){return a+rng(Math.max(1,b-a+1))}
+
+// Objective descriptor stored on the floor and shared through the snapshot.
+function buildFloorObjective(archId,floor,total){
+ const a=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
+ switch(a.objective){
+  case 'survive':return {type:'survive',turns:12+Math.min(14,Math.floor(floor*.7)),elapsed:0,done:false,label:'Sobrevive'};
+  case 'timed':return {type:'timed',limit:42+Math.min(40,floor*2),elapsed:0,expired:false,done:false,label:'Contrarreloj'};
+  case 'waves':return {type:'waves',total:3+Math.min(3,Math.floor(floor/6)),done:0,pending:false,label:'Oleadas'};
+  case 'bossKill':return {type:'bossKill',done:false,label:'Derrota al jefe'};
+  default:return {type:'stairs',label:'Encuentra la salida'};
+ }
+}
+
+// Shared floor builder used by both the pre-generated world JSON and the live
+// generator, so archetypes/rooms behave identically in single and multiplayer.
+// Assumes `game` is set with at least {floor,player,worldParams}.
+function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
+ const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
+ const archId=pickFloorArchetype(floor,total,recent);
+ const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
+ const tier=expectedTierForFloor(floor,total);
+ const L=arch.layout,E=arch.enemies,R=arch.rewards;
+ const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
+
+ // --- rooms: count/size come from the archetype, shape from the room type ---
+ const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
+ for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
+  const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
+  const lo=Math.max(3,Math.min(T.size[0],L.size[1])),hi=Math.max(lo,Math.min(T.size[1],L.size[1]));
+  let w=randBetween(lo,hi),h=randBetween(lo,hi);
+  // shape variety: some rooms are markedly rectangular
+  if(Math.random()<.35){if(Math.random()<.5)w=Math.max(3,Math.round(w*1.6));else h=Math.max(3,Math.round(h*1.6))}
+  w=Math.min(w,COLS-4);h=Math.min(h,ROWS-4);
+  const x=1+rng(Math.max(1,COLS-w-2)),y=1+rng(Math.max(1,ROWS-h-2));
+  if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;
+  rooms.push({x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId});
+  carve(map,rooms[rooms.length-1]);
+ }
+ if(!rooms.length)return null;
+
+ const carveCorridor=(a,b)=>{let x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}};
+ // spine: guarantees a valid route between every room (and thus entry->exit)
+ for(let i=1;i<rooms.length;i++)carveCorridor(rooms[i-1],rooms[i]);
+ // loops and shortcuts: extra connections make mazes navigable and add routes
+ const loopCount=Math.round(rooms.length*(L.loops||0));
+ for(let i=0;i<loopCount;i++){const a=pick(rooms),b=pick(rooms);if(a!==b)carveCorridor(a,b)}
+ // extra exits for hubs/knots so their typology is real, not cosmetic
+ for(const r of rooms){
+  const want=ROOM_TYPES[r.type]?.exits||2;
+  for(let i=2;i<want;i++){const other=pick(rooms);if(other!==r)carveCorridor(r,other)}
+ }
+ // false paths: dead-end stubs, only for maze-like layouts (never isolated areas)
+ if(L.deadEnds)for(let i=0;i<Math.round(rooms.length*L.deadEnds);i++){
+  const r=pick(rooms),dir=pick([[1,0],[-1,0],[0,1],[0,-1]]),len=3+rng(7);
+  let x=r.cx,y=r.cy;
+  for(let n=0;n<len;n++){const nx=x+dir[0],ny=y+dir[1];if(nx<1||ny<1||nx>=COLS-1||ny>=ROWS-1)break;x=nx;y=ny;map[y][x]=0}
+ }
+
+ // --- key positions ---
+ const spawn=rooms[0];
+ const distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy);
+ const distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
+ const stairRoom=distantRooms[0]||rooms.at(-1);
+ const bossRoom=rooms.find(r=>r.type==='bossarena'&&r!==spawn)||distantRooms[1]||distantRooms[0]||rooms.at(-1);
+ const stairs={x:stairRoom.cx,y:stairRoom.cy};
+ spawn.type='filler';
+
+ // --- cover / pillars inside rooms (real line-of-sight blockers) ---
+ const pillarMult=L.pillars??1;
+ for(const r of rooms){
+  if(r.w<5||r.h<5)continue;
+  const density=(ROOM_TYPES[r.type]?.cover||0)*pillarMult;
+  if(density<=0)continue;
+  const inner=(r.w-2)*(r.h-2),n=Math.floor(inner*density*.18);
+  for(let i=0;i<n;i++){
+   const px=r.x+1+rng(Math.max(1,r.w-2)),py=r.y+1+rng(Math.max(1,r.h-2));
+   if(px===r.cx&&py===r.cy)continue;          // never block the room centre
+   if(px===spawn.cx&&py===spawn.cy)continue;
+   if(px===stairs.x&&py===stairs.y)continue;
+   map[py][px]=1;                              // border ring stays open: no room can be sealed
+  }
+ }
+
+ const safeRoomCount=arch.objective==='survive'?1:2+rng(3);
+ const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
+ const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&r.type!=='bossarena'&&distanceFromSpawn(r)>8).sort(()=>Math.random()-.5).slice(0,safeRoomCount).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
+ const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
+ const occ=new Set([key(spawn.cx,spawn.cy),key(stairs.x,stairs.y)]);safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
+ const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
+ if(!cells.length)return null;
+ const free=()=>{let p,guard=0;do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);occ.add(key(p.x,p.y));return{...p}};
+ const freeIn=r=>{
+  for(let i=0;i<40;i++){
+   const x=r.x+rng(Math.max(1,r.w)),y=r.y+rng(Math.max(1,r.h));
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return free();
+ };
+ const edgeIn=r=>{
+  for(let i=0;i<40;i++){
+   const onX=Math.random()<.5;
+   const x=onX?(Math.random()<.5?r.x:r.x+r.w-1):r.x+rng(Math.max(1,r.w));
+   const y=onX?r.y+rng(Math.max(1,r.h)):(Math.random()<.5?r.y:r.y+r.h-1);
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return freeIn(r);
+ };
+
+ // --- doors (locked ones gate vaults), keys, traps, altars, chests ---
+ const doors=[];
+ for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){
+  const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1;
+  const v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;
+  if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}
+ }
+ const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
+
+ const traps=[],altars=[],chests=[];
+ for(const r of rooms){
+  const T=ROOM_TYPES[r.type]||ROOM_TYPES.filler;
+  if(safeRooms.some(s=>s.x===r.x&&s.y===r.y))continue;
+  if(T.traps&&Math.random()<T.traps){
+   const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
+   for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
+  }
+  if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
+  const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
+  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5});
+ }
+ // baseline chest floor so no archetype is completely dry
+ const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
+ while(chests.length<minChests)chests.push({...free(),opened:false});
+
+ // --- enemies: budget from the archetype, composition from the room type ---
+ const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
+ const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale);
+ const combatRooms=rooms.filter(r=>r!==spawn&&(ROOM_TYPES[r.type]?.enemies?.[1]||0)>0);
+ let placed=0;
+ for(const r of combatRooms){
+  if(placed>=baseCount)break;
+  const T=ROOM_TYPES[r.type];
+  let n=randBetween(T.enemies[0],T.enemies[1]);
+  if(arch.objective==='waves'&&T.wave)n=Math.round(n*.6); // the rest arrive as waves
+  for(let i=0;i<n&&placed<baseCount;i++){
+   const pos=T.place==='edges'?edgeIn(r):freeIn(r);
+   const wantElite=Math.random()<Math.min(.85,.05*(E.elite||1)*(T.elite?6:1));
+   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),pos,floor,false);
+   e.enemyFamily=family.name;e.roomType=r.type;
+   if(T.tier||E.tierBias){
+    const bump=(T.tier||0)+(E.tierBias||0);
+    if(bump>0){e.maxHp=e.hp=Math.round(e.hp*(1+.22*bump));e.atk=e.damage=Math.round((e.atk||e.damage||4)*(1+.15*bump));e.xp=Math.round((e.xp||8)*(1+.2*bump))}
+    else if(bump<0){e.maxHp=e.hp=Math.max(4,Math.round(e.hp*.75));e.atk=e.damage=Math.max(1,Math.round((e.atk||e.damage||4)*.8))}
+   }
+   if(wantElite&&!e.boss){e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.5);e.atk=e.damage=Math.round((e.atk||e.damage||4)*1.28);e.xp=Math.round((e.xp||8)*1.8);assignEnemySkills(e)}
+   enemies.push(e);placed++;
+  }
+ }
+ while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+
+ // --- bosses ---
+ let boss=null;const bosses=[];
+ const mkBoss=(pos,label,tierBonus)=>{
+  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),pos,floor,true);
+  b.enemyFamily=family.name;
+  if(tierBonus>0){
+   b.maxHp=b.hp=Math.round(b.hp*(1+.45*tierBonus));
+   b.atk=b.damage=Math.round((b.atk||b.damage||4)*(1+.22*tierBonus));
+   b.armor=Math.round((b.armor||0)+2*tierBonus);
+   b.xp=Math.round((b.xp||8)*(1+.6*tierBonus));
+   b.phases=1+tierBonus;b.superBoss=true;
+   assignEnemySkills(b);
+  }
+  if(label)b.name=`${b.name} · ${label}`;
+  enemies.push(b);bosses.push(b);if(!boss)boss=b;
+  return b;
+ };
+ if(E.superBoss){
+  const bonus=1+rng(3);                               // 1..3 tiers above the usual
+  mkBoss({x:bossRoom.cx,y:bossRoom.cy},`Superjefe (+${bonus})`,bonus);
+ }else if(E.bossRush){
+  const arenas=rooms.filter(r=>r.type==='bossarena');
+  const list=(arenas.length?arenas:distantRooms.slice(0,4)).slice(0,4);
+  list.forEach((r,i)=>mkBoss({x:r.cx,y:r.cy},i===list.length-1?'Jefe final':`Minijefe ${i+1}`,i===list.length-1?2:0));
+ }else if(E.miniboss){
+  mkBoss({x:bossRoom.cx,y:bossRoom.cy},'Minijefe',0);
+ }else if(E.bossOnEven){
+  const bossCount=floor%2===0?Math.min(4,1+Math.floor(floor/10)):(Math.random()<.08?1:0);
+  for(let bi=0;bi<bossCount;bi++){
+   const r=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom;
+   mkBoss({x:r.cx,y:r.cy},bi?`Campeón ${bi+1}`:'',0);
+  }
+ }
+
+ const objective=buildFloorObjective(archId,floor,total);
+ if(objective.type==='bossKill'&&!boss)objective.type='stairs';
+ const event=Math.random()<=(arch.objective==='stairs'?.12:.06)?{id:pick(eventDefs).id}:null;
+ const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
+
+ return {
+  floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,traps,altars,event,
+  enemies,boss,family,archetype:archId,archetypeLabel:arch.label,archetypeDesc:arch.desc,
+  objective,tierExpected:tier,rewardRarityBonus:R.rarity||0,
+  enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
+  themeName:floorTileset.name,floorTileset,announce:!!arch.announce
+ };
+}
+
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
  if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
@@ -1243,41 +1598,39 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  const floors=[],lootTable=createLootProgressionTable(params.floors);
  const oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
+ const recent=[];
  for(let floor=1;floor<=params.floors;floor++){
-  const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
-  const targetRooms=30+Math.min(18,Math.floor(floor/2))+rng(7);
-  for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
-  for(let i=1;i<rooms.length;i++){let a=rooms[i-1],b=rooms[i],x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}}
   game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
-  const spawn=rooms[0],distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy),distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
-  const stairRoom=distantRooms[0]||rooms.at(-1),bossRoom=distantRooms[1]||distantRooms[0]||rooms.at(-1),stairs={x:stairRoom.cx,y:stairRoom.cy};
-  const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
-  const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&distanceFromSpawn(r)>10).sort(()=>Math.random()-.5).slice(0,2+rng(3)).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
-  const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
-  const occ=new Set([key(spawn.cx,spawn.cy),key(stairs.x,stairs.y)]);safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
-  const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
-  const free=()=>{let p;do{p=pick(cells)}while(occ.has(key(p.x,p.y)));occ.add(key(p.x,p.y));return{...p}};
-  const doors=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1,v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}}
-  const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
-  const chests=[];for(let i=0;i<14+Math.floor(floor*.8);i++)chests.push({...free(),opened:false});
-  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[],isBossFloor=floor%2===0,count=32+floor*5+rng(13);
-  for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,floor,false);e.enemyFamily=family.name;enemies.push(e)}
-  const bossCount=isBossFloor?Math.min(4,1+Math.floor(floor/10)):(Math.random()<.08?1:0);let boss=null;
-  for(let bi=0;bi<bossCount;bi++){const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom,b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},floor,true);b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b}
-  const event=Math.random()<=.09?{id:pick(eventDefs).id}:null;
-  const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
-  floors.push({floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,event,enemies:enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,themeName:floorTileset.name,floorTileset:compactFloorTilesetForWorld(floorTileset),boss:boss?compactEnemyForWorld(boss):null});
+  let plan=null;
+  for(let attempt=0;attempt<3&&!plan;attempt++)plan=buildFloorPlan(floor,params,{recent});
+  if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
+  recent.push(plan.archetype);
+  floors.push({
+   floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
+   doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,event:plan.event,
+   archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
+   objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
+   enemies:plan.enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),
+   enemyFamily:plan.enemyFamily,enemyFamilyId:plan.enemyFamilyId,
+   themeName:plan.themeName,floorTileset:compactFloorTilesetForWorld(plan.floorTileset),
+   boss:plan.boss?compactEnemyForWorld(plan.boss):null
+  });
  }
  game=oldGame;
- return {schemaVersion:3,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
+ return {schemaVersion:4,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
 }
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
- Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null});
+ Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
+  floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
+  objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
- banner(`PISO ${game.floor} · ${floorTileset.name||data.themeName||'Mundo precomputado'}`);log(`Entras en ${floorTileset.name||data.themeName||'la dungeon'}. Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');updateUI();draw();rollFloorEvent();return true;
+ scaleFloorForParty();
+ announceFloorArchetype();
+ log(`Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');
+ updateUI();draw();rollFloorEvent();return true;
 }
 
 function floorTheme(){return themes[Math.min(themes.length-1,Math.floor((game.floor-1)/2))]}
@@ -1646,43 +1999,48 @@ function updateRestButton(){
 }
 
 function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
- busy=false;const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
- const targetRooms=30+Math.min(18,Math.floor(game.floor/2))+rng(7);
- for(let tries=0;tries<1400&&rooms.length<targetRooms;tries++){const w=4+rng(8),h=4+rng(8),x=1+rng(COLS-w-2),y=1+rng(ROWS-h-2);if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2)};rooms.push(room);carve(map,room)}
- for(let i=1;i<rooms.length;i++){let a=rooms[i-1],b=rooms[i],x=a.cx,y=a.cy;if(Math.random()<.5){while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}}else{while(y!==b.cy){map[y][x]=0;y+=Math.sign(b.cy-y)}while(x!==b.cx){map[y][x]=0;x+=Math.sign(b.cx-x)}}}
- const spawn=rooms[0];
- const distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy);
- const distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
- const stairRoom=distantRooms[0]||rooms.at(-1),bossRoom=distantRooms[1]||distantRooms[0]||rooms.at(-1);
- const stairs={x:stairRoom.cx,y:stairRoom.cy};
- const safeRoomCount=2+rng(3);
- const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
- const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&distanceFromSpawn(r)>10).sort(()=>Math.random()-.5).slice(0,safeRoomCount).map((r,i)=>({...r,id:`safe-${game.floor}-${i}`,rested:false}));
- const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
- const occ=new Set();occ.add(key(spawn.cx,spawn.cy));occ.add(key(stairs.x,stairs.y));safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
- const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
- const free=()=>{let p;do{p=pick(cells)}while(occ.has(key(p.x,p.y)));occ.add(key(p.x,p.y));return{...p}};
- const doors=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1,v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}}
- const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
- const chests=[];for(let i=0;i<14+Math.floor(game.floor*.8);i++)chests.push({...free(),opened:false});
- const family=pickConfiguredFamilyForFloorWithParams(game.floor,worldParams()),enemies=[],isBossFloor=game.floor%2===0;
- const populationScale=1+Math.min(1.2,(game.player.level-1)*.012);
- const count=Math.round((32+game.floor*5+rng(13))*populationScale);for(let i=0;i<count;i++){const p=free(),e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),p,game.floor,false);e.enemyFamily=family.name;enemies.push(e)}
- let boss=null;
- const bossCount=isBossFloor?Math.min(4,1+Math.floor(game.floor/10)):(Math.random()<.08?1:0);
- for(let bi=0;bi<bossCount;bi++){
-  const room=bi===0?bossRoom:distantRooms[Math.min(distantRooms.length-1,2+bi)]||bossRoom;
-  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),{x:room.cx,y:room.cy},game.floor,true);
-  b.enemyFamily=family.name;if(bi)b.name=`${b.name} · Campeón ${bi+1}`;enemies.push(b);if(!boss)boss=b
- }
- const floorTileset=floorTilesetForWorldPlan(game.floor,worldParams())||pickFloorTilesetForLevel(game.floor);
- Object.assign(game,{map,rooms,safeRooms,stairs,doors,keys,chests,enemies,enemyFamily:family.name,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss});
- game.player.x=spawn.cx;game.player.y=spawn.cy;anim.heroX=anim.targetX=spawn.cx;anim.heroY=anim.targetY=spawn.cy;anim.t=1;reveal(spawn.cx,spawn.cy);
- banner(bossCount?`PISO ${game.floor} · ${bossCount} JEFE${bossCount>1?'S':''}`:`PISO ${game.floor} · ${floorTileset.name}`);log(`Entras en ${floorTileset.name}. Familia dominante: ${family.name}. ${count} enemigos y ${bossCount} jefe${bossCount===1?'':'s'}.`,'story');
- if(false){game.level2StoryShown=true;const n=pick(levelTwoNarratives);setTimeout(()=>{storyTitle.textContent='NIVEL 2 — '+n.title;storyBody.innerHTML=`<div class="narrative"><p>${n.text}</p><p><b>Objetivo:</b> derrota al jefe y rompe el sello de salida.</p></div>`;storyOverlay.classList.remove('hidden')},250)}
+ busy=false;
+ const params=worldParams();
+ const populationScale=1+Math.min(1.2,((game.player?.level||1)-1)*.012);
+ game.recentArchetypes=(game.recentArchetypes||[]).slice(-8);
+ let plan=null;
+ for(let attempt=0;attempt<3&&!plan;attempt++)plan=buildFloorPlan(game.floor,params,{recent:game.recentArchetypes,populationScale});
+ if(!plan){log('No se pudo generar el piso; reintentando con el diseño estándar.','sys');plan=buildFloorPlan(game.floor,params,{recent:['superboss','bossrush'],populationScale})}
+ if(!plan)return;
+ game.recentArchetypes.push(plan.archetype);
+ Object.assign(game,{
+  map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
+  chests:plan.chests,traps:plan.traps,altars:plan.altars,enemies:plan.enemies,enemyFamily:plan.enemyFamily,
+  floorTileset:plan.floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:plan.boss,
+  floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,
+  objective:plan.objective,rewardRarityBonus:plan.rewardRarityBonus,precomputedEvent:plan.event||null,partyScaled:0
+ });
+ game.player.x=plan.spawn.x;game.player.y=plan.spawn.y;anim.heroX=anim.targetX=plan.spawn.x;anim.heroY=anim.targetY=plan.spawn.y;anim.t=1;reveal(plan.spawn.x,plan.spawn.y);
  const extra=difficultyScale().count;
- for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(family,false),exPos,game.floor,false);ex.enemyFamily=family.name;game.enemies.push(ex)}}}
+ for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
+ scaleFloorForParty();
+ announceFloorArchetype();
  updateUI();draw();rollFloorEvent();
+}
+
+// Banner + log describing the archetype and how this floor is completed.
+function announceFloorArchetype(){
+ const label=game.floorArchetypeLabel||'Piso estándar';
+ const obj=game.objective||{type:'stairs'};
+ banner(`PISO ${game.floor} · ${label.toUpperCase()}`);
+ log(`${label}: ${game.floorArchetypeDesc||''} Familia dominante: ${game.enemyFamily}. ${(game.enemies||[]).length} enemigos.`,'story');
+ log(`Objetivo: ${objectiveText(obj)}`,'story');
+ if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
+}
+function objectiveText(obj=game?.objective){
+ if(!obj)return 'Encuentra la salida.';
+ switch(obj.type){
+  case 'survive':return `Sobrevive ${Math.max(0,(obj.turns||0)-(obj.elapsed||0))} turnos; después aparecerá la escalera.`;
+  case 'timed':return `Encuentra la salida en ${Math.max(0,(obj.limit||0)-(obj.elapsed||0))} turnos.`;
+  case 'waves':return `Supera ${obj.total||0} oleadas (${obj.done||0}/${obj.total||0}) para abrir la salida.`;
+  case 'bossKill':return 'Derrota al jefe del piso para abrir la salida.';
+  default:return 'Encuentra la salida.';
+ }
 }
 
 
@@ -1853,8 +2211,31 @@ function showStatPointModal(){
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
  grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice,reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;if(reward.skillId)learnSkill(reward.skillId);recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(reward.skillId)log(`Recompensa aleatoria de nivel ${reward.level}: ${skillDefs[reward.skillId].name}.`,'loot');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
+// Living participants in the run (1 in single player).
+function partySize(){
+ if(!game?.multiplayer)return 1;
+ const ids=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:[game.pjId];
+ return Math.max(1,ids.length);
+}
+// Enemy hp scales +25% per additional player, applied once per floor build so
+// the shared snapshot carries the already-scaled values to every client.
+function partyHpMultiplier(n=partySize()){return 1+.25*Math.max(0,n-1)}
+function scaleFloorForParty(){
+ if(!game?.multiplayer)return;
+ const mult=partyHpMultiplier();
+ if(mult<=1||game.partyScaled===mult)return;
+ for(const e of game.enemies||[]){
+  if(e.partyScaled)continue;
+  e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*mult));
+  e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*mult));
+  e.partyScaled=true;
+ }
+ game.partyScaled=mult;
+}
 function gainXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
+ // multiplayer: experience is shared between the party members
+ v=v/partySize();
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
  while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
   p.xp-=p.nextXp;p.level++;
@@ -1883,8 +2264,100 @@ function move(dx,dy){
 }
 function checkTile(){
  const p=game.player,k=game.keys.find(k=>k.x===p.x&&k.y===p.y);if(k){game.keys=game.keys.filter(x=>x!==k);p.keys++;log('Recoges una llave.','loot')}
+ detectNearbyTraps();
+ const trap=(game.traps||[]).find(t=>!t.sprung&&t.x===p.x&&t.y===p.y);if(trap)springTrap(trap);
+ const altar=(game.altars||[]).find(a=>!a.used&&a.x===p.x&&a.y===p.y);if(altar)useAltar(altar);
  const c=game.chests.find(c=>!c.opened&&c.x===p.x&&c.y===p.y);if(c)openChest(c);
- if(p.x===game.stairs.x&&p.y===game.stairs.y){if(game.boss&&game.enemies.includes(game.boss)){log('La salida está sellada mientras el jefe siga vivo.','combat')}else{game.floor++;generateFloor()}}
+ if(p.x===game.stairs.x&&p.y===game.stairs.y){
+  const block=stairsBlockedReason();
+  if(block){log(block,'combat');return}
+  game.floor++;generateFloor();
+ }
+}
+// Why the exit is sealed, or null when the player may descend.
+function stairsBlockedReason(){
+ const obj=game.objective||{type:'stairs'};
+ if(game.boss&&game.enemies.includes(game.boss)&&(obj.type==='bossKill'||obj.type==='stairs'))return 'La salida está sellada mientras el jefe siga vivo.';
+ if(obj.type==='survive'&&!obj.done)return `Todavía no hay salida. Aguanta ${Math.max(0,(obj.turns||0)-(obj.elapsed||0))} turnos más.`;
+ if(obj.type==='waves'&&(obj.done||0)<(obj.total||0))return `La salida sigue sellada: quedan ${(obj.total||0)-(obj.done||0)} oleada(s).`;
+ return null;
+}
+// Runs once per completed round (single player and the multiplayer enemy phase).
+function tickFloorObjective(){
+ const obj=game?.objective;if(!obj||game.over)return;
+ if(obj.type==='survive'&&!obj.done){
+  obj.elapsed=(obj.elapsed||0)+1;
+  // escalating threat while the exit is sealed
+  if(obj.elapsed%3===0)spawnReinforcements(1+Math.floor(obj.elapsed/6));
+  const left=(obj.turns||0)-obj.elapsed;
+  if(left<=0){obj.done=true;banner('LA ESCALERA HA APARECIDO');log('Has resistido. La escalera de bajada se abre.','good')}
+  else if(left<=3||left%5===0)log(`Aguanta: ${left} turno(s) restantes.`,'sys');
+ }else if(obj.type==='timed'&&!obj.expired){
+  obj.elapsed=(obj.elapsed||0)+1;
+  const left=(obj.limit||0)-obj.elapsed;
+  if(left<=0){
+   obj.expired=true;
+   banner('¡EL PISO SE DERRUMBA!');log('Se acabó el tiempo: el piso se vuelve hostil.','combat');
+   spawnReinforcements(4,true);
+  }else if(left<=5||left%10===0)log(`Tiempo restante: ${left} turno(s).`,'sys');
+ }else if(obj.type==='timed'&&obj.expired){
+  // past the limit the floor keeps punishing, but never insta-kills
+  damagePlayer(Math.max(2,Math.round(game.floor*.8)),'vitality','El piso se derrumba');
+  if((game.turn||0)%4===0)spawnReinforcements(1,true);
+ }else if(obj.type==='waves'){
+  const alive=(game.enemies||[]).filter(e=>e.hp>0&&e.waveTag).length;
+  if(!obj.pending&&(obj.done||0)<(obj.total||0)&&alive===0){
+   obj.done=(obj.done||0)+1;
+   if(obj.done>=obj.total){banner('OLEADAS SUPERADAS');log('Has superado todas las oleadas. La salida se abre.','good')}
+   else{spawnWave(obj.done);log(`Oleada ${obj.done+1} de ${obj.total}.`,'combat');banner(`OLEADA ${obj.done+1}/${obj.total}`)}
+  }
+ }
+}
+// Spawns near the player but never on top of anyone; capped to protect perf.
+function spawnReinforcements(n,elite=false){
+ if(!game?.enemies||game.enemies.length>110)return;
+ const family=pickConfiguredFamilyForFloorWithParams(game.floor,worldParams());
+ let added=0;
+ for(let i=0;i<n*8&&added<n;i++){
+  const dist=4+rng(6),ang=Math.random()*Math.PI*2;
+  const x=Math.round(game.player.x+Math.cos(ang)*dist),y=Math.round(game.player.y+Math.sin(ang)*dist);
+  if(game.map[y]?.[x]!==0||isSafeCell(x,y))continue;
+  if((game.enemies||[]).some(e=>e.x===x&&e.y===y))continue;
+  if(x===game.player.x&&y===game.player.y)continue;
+  const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),{x,y},game.floor,false);
+  e.enemyFamily=family.name;e.waveTag=true;
+  if(elite){e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.5);e.atk=e.damage=Math.round((e.atk||e.damage||4)*1.28);assignEnemySkills(e)}
+  if(game.multiplayer){const m=partyHpMultiplier();if(m>1){e.maxHp=e.hp=Math.round(e.hp*m);e.partyScaled=true}}
+  game.enemies.push(e);added++;
+ }
+ if(added)floating('¡REFUERZOS!',game.player.x,game.player.y,'#ff8b4f');
+}
+function spawnWave(index){
+ const size=Math.min(14,5+index*2+Math.floor(game.floor/5));
+ spawnReinforcements(size,index>0&&index%2===0);
+}
+// Agility/luck let you spot adjacent traps before stepping on them.
+function detectNearbyTraps(){
+ const p=game.player,st=p.derived?.finalStats||p.stats||{};
+ const chance=Math.min(.85,.25+((st.agility||0)+(st.luck||0))*.03);
+ for(const t of game.traps||[]){
+  if(t.revealed||t.sprung)continue;
+  if(Math.abs(t.x-p.x)<=1&&Math.abs(t.y-p.y)<=1&&Math.random()<chance){t.revealed=true;log('Detectas una trampa junto a ti.','sys')}
+ }
+}
+function springTrap(t){
+ t.sprung=true;t.revealed=true;
+ floating('¡TRAMPA!',t.x,t.y,'#ff9d4f');
+ damagePlayer(t.dmg||6,'agility','Trampa oculta');
+ log('Pisas una trampa oculta.','combat');
+}
+function useAltar(a){
+ a.used=true;
+ const p=game.player;
+ if(a.kind==='heal'){healEntity(p,Math.round(p.maxHp*.45));log('El altar restaura buena parte de tu vida.','good')}
+ else if(a.kind==='shield'){p.shield=(p.shield||0)+Math.round(12+game.floor*1.5);log('El altar te envuelve en un escudo.','good')}
+ else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
+ floating('✦',a.x,a.y,'#9be8ff');
 }
 function openChest(c){c.opened=true;game.chestsOpened++;const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
 
@@ -2095,7 +2568,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();game.player.stamina=Math.min(game.player.maxStamina,game.player.stamina+(game.player.derived?.staminaRegen||6+Math.floor(game.player.stats.vitality/4)));game.player.mana=Math.min(game.player.maxMana,game.player.mana+(game.player.derived?.manaRegen||4+Math.floor(game.player.stats.wisdom/4)));for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();busy=false;updateUI();draw()},500);
 }
@@ -2123,6 +2596,7 @@ async function playerFinishedMultiplayer(){
     }
     game.mpCapture=false;
     game.turn=(game.turn||0)+1;
+    tickFloorObjective();
     await mpAdvanceTurn(0);
    }finally{game.mpEnemyPhase=false}
    draw();
@@ -2423,8 +2897,20 @@ function showEquippedItem(slot){
  setTimeout(()=>{const c=document.querySelector('[data-detail-slot]');if(c)drawItemIcon(c,item);document.getElementById('closeItemDetail')?.addEventListener('click',()=>storyOverlay.classList.add('hidden'))},0)
 }
 
+function updateObjectiveHud(){
+ const el=document.getElementById('floorObjective');if(!el||!game)return;
+ const obj=game.objective;
+ if(!obj||obj.type==='stairs'&&!game.floorArchetypeLabel){el.classList.add('hidden');return}
+ el.classList.remove('hidden');
+ const label=game.floorArchetypeLabel||'Piso estándar';
+ let urgent=false;
+ if(obj?.type==='timed'){const left=(obj.limit||0)-(obj.elapsed||0);urgent=obj.expired||left<=8}
+ else if(obj?.type==='survive'&&!obj.done)urgent=true;
+ el.classList.toggle('urgent',urgent);
+ el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
+}
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;hpText.textContent=`${Math.max(0,p.hp)} / ${p.maxHp}`;hpBar.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;xpText.textContent=p.level>=LEVEL_CAP?'MÁXIMO':`${p.xp} / ${p.nextXp}`;xpBar.style.width=p.level>=LEVEL_CAP?'100%':`${p.xp/p.nextXp*100}%`;staminaText.textContent=`${p.stamina} / ${p.maxStamina}`;staminaBar.style.width=`${p.stamina/p.maxStamina*100}%`;manaText.textContent=`${p.mana} / ${p.maxMana}`;manaBar.style.width=`${p.mana/p.maxMana*100}%`;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
@@ -2466,6 +2952,8 @@ function draw(){
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);doorSprite(p.x,p.y,d)}
+ for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
+ for(const a of game.altars||[])if(game.seen[a.y]?.[a.x]){let p=sc(a.x,a.y);altarSprite(p.x,p.y,a)}
  for(const k of game.keys)if(game.seen[k.y][k.x]){let p=sc(k.x,k.y);keySprite(p.x,p.y)}
  for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);chestSprite(p.x,p.y)}
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
@@ -2538,6 +3026,8 @@ function inspectedEntityAt(gx,gy){
  const item=game.floorItems?.find?.(i=>i.x===gx&&i.y===gy);if(item)return{type:'item',data:item};
  const chest=game.chests?.find?.(i=>i.x===gx&&i.y===gy);if(chest)return{type:'chest',data:chest};
  const door=game.doors?.find?.(i=>i.x===gx&&i.y===gy);if(door)return{type:'door',data:door};
+ const altar=(game.altars||[]).find(a=>a.x===gx&&a.y===gy);if(altar)return{type:'altar',data:altar};
+ const trapAt=(game.traps||[]).find(t=>t.revealed&&!t.sprung&&t.x===gx&&t.y===gy);if(trapAt)return{type:'trap',data:trapAt};
  const safe=safeRoomAt(gx,gy);if(safe)return{type:'safeRoom',data:safe};if(game.stairs?.x===gx&&game.stairs?.y===gy)return{type:'stairs',data:game.stairs};
  return game.map?.[gy]?.[gx]===0?{type:'floor',data:{x:gx,y:gy}}:{type:'wall',data:{x:gx,y:gy}};
 }
@@ -2549,6 +3039,8 @@ function showInspect(entity,clientX,clientY){
  else if(entity.type==='chest')h=`<h4>Cofre</h4><p>${entity.data.open?'Está vacío.':'Contiene botín aleatorio y puede ocultar habilidades.'}</p>`;
  else if(entity.type==='door')h=`<h4>Puerta ${entity.data.locked?'cerrada':'abierta'}</h4><p>${entity.data.locked?'Necesitas una llave o un efecto especial.':'Puedes atravesarla.'}</p>`;
  else if(entity.type==='safeRoom')h=`<h4>Sala segura</h4><p>Los enemigos no pueden entrar.</p><p>${entity.data.rested?'Ya has descansado aquí.':'Sitúate sobre el fuego central y pulsa DESCANSAR para recuperar toda la vida, stamina y maná.'}</p>`;
+ else if(entity.type==='altar')h=`<h4>Altar</h4><p>${entity.data.used?'Ya lo has usado.':entity.data.kind==='heal'?'Restaura una parte importante de tu vida.':entity.data.kind==='shield'?'Te concede un escudo.':'Potencia tu daño y armadura durante varios turnos.'}</p>`;
+ else if(entity.type==='trap')h=`<h4>Trampa</h4><p>Un mecanismo oculto. Evita pisarlo.</p>`;
  else if(entity.type==='stairs')h=`<h4>Escaleras</h4><p>Conducen al siguiente nivel de la mazmorra.</p>`;
  else if(entity.type==='wall')h=`<h4>Muro</h4><p>Piedra antigua. No parece impresionada por tus credenciales.</p>`;
  else h=`<h4>Suelo explorado</h4><p>Una zona ya revelada de la mazmorra.</p>`;
@@ -2765,6 +3257,18 @@ function drawPaperDoll(canvas,p){
  q.fillStyle='#e8d8a7';q.font='6px monospace';q.textAlign='center';q.fillText((p.className||'CLASE').toUpperCase().slice(0,20),64,181)
 }
 function chestSprite(x,y){px(x+8,y+27,48,27,'#553018');px(x+10,y+19,44,15,'#a65d2c');px(x+14,y+21,36,4,'#d38a43');px(x+28,y+24,8,22,'#f2c456');px(x+13,y+47,38,4,'#321b12')}
+function trapSprite(x,y){
+ ctx.strokeStyle='#ff9d4f';ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(x+16,y+16);ctx.lineTo(x+48,y+48);ctx.moveTo(x+48,y+16);ctx.lineTo(x+16,y+48);ctx.stroke();
+ ctx.strokeStyle='rgba(255,157,79,.45)';ctx.strokeRect(x+10,y+10,44,44);
+}
+function altarSprite(x,y,a){
+ const col=a.used?'#5b6472':a.kind==='heal'?'#8dffa8':a.kind==='shield'?'#9be8ff':'#ffd45f';
+ px(x+18,y+40,28,14,a.used?'#2a2f3a':'#3a4356');
+ px(x+22,y+22,20,20,col);
+ ctx.fillStyle=a.used?'#7d8595':'#0c0f16';ctx.font='12px monospace';ctx.textAlign='center';
+ ctx.fillText(a.kind==='heal'?'✚':a.kind==='shield'?'▣':'✦',x+32,y+37);
+}
 function stairsSprite(x,y){for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
 function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?'#342a23':'#8b4e2c');if(!d.open){for(let i=0;i<3;i++)px(x+15,y+13+i*15,34,3,'#5b301f');px(x+17,y+10,3,48,'#b16d3c');px(x+44,y+10,3,48,'#5e321f');px(x+39,y+34,7,7,d.locked?'#ffd24f':'#271713')}} 
 function keySprite(x,y){px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
@@ -3219,14 +3723,14 @@ function decodeSeen(seen){
  return seen;
 }
 function floorSnapshot(){
- return {map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen)};
+ return {map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
 }
 // dynamic-only parts (the static map/rooms/tileset never change within a floor)
 function floorSnapshotDynamic(){
- return {stairs:game.stairs,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen)};
+ return {stairs:game.stairs,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null};
 }
 function applyFloorSnapshot(overlay){
- Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen)});
+ Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
 }
 function persistTurnState(){
@@ -3581,6 +4085,9 @@ function mpTurnPayload(nextIdx){
   doorsOpen:(game.doors||[]).filter(d=>d.open).map(d=>[d.x,d.y]),
   chestsOpened:(game.chests||[]).filter(c=>c.opened).map(c=>[c.x,c.y]),
   keysLeft:(game.keys||[]).map(k=>[k.x,k.y]),
+  trapsHit:(game.traps||[]).filter(t=>t.sprung||t.revealed).map(t=>[t.x,t.y,t.sprung?1:0]),
+  altarsUsed:(game.altars||[]).filter(a=>a.used).map(a=>[a.x,a.y]),
+  objective:game.objective||null,
   events:(game.mpPendingEvents||[]).slice(-6)
  };
 }
@@ -3649,6 +4156,9 @@ function mpApplyLiveTurn(p){
  for(const [x,y] of p.doorsOpen||[]){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
  for(const [x,y] of p.chestsOpened||[]){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
  if(Array.isArray(p.keysLeft))game.keys=(game.keys||[]).filter(k=>p.keysLeft.some(([x,y])=>x===k.x&&y===k.y));
+ for(const [x,y,sprung] of p.trapsHit||[]){const t=(game.traps||[]).find(t=>t.x===x&&t.y===y);if(t){t.revealed=true;if(sprung)t.sprung=true}}
+ for(const [x,y] of p.altarsUsed||[]){const a=(game.altars||[]).find(a=>a.x===x&&a.y===y);if(a)a.used=true}
+ if(p.objective)game.objective=p.objective;
  for(const ev of p.events||[]){
   if(!ev?.m)continue;
   game.mpRecentEvents=game.mpRecentEvents||[];
@@ -4034,6 +4544,9 @@ function mpApplyRemoteState(st){
   game.keys=overlay.keys||game.keys;
   game.companions=overlay.companions||game.companions;
   game.skillObjects=overlay.skillObjects||game.skillObjects;
+  game.traps=overlay.traps||game.traps;
+  game.altars=overlay.altars||game.altars;
+  if(overlay.objective)game.objective=overlay.objective;
   game.boss=(game.enemies||[]).find(e=>e.boss)||null;
   if(overlay.seen&&overlay.seen.length){
    const remoteSeen=decodeSeen(overlay.seen);
