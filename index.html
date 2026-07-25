@@ -3,67 +3,60 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.49.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.49.0">
+<title>MAZMORRA // BOTÍN v0.50.0 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.50.0">
 
 </head>
 <body>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.49.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.50.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
-<div><div class="stat"><span>Nivel</span><b id="level">1</b></div><div class="stat"><span>Vida</span><b id="hpText"></b></div><div class="bar"><i class="hp" id="hpBar"></i></div></div>
-<div>
-<div class="stat"><span>XP</span><b id="xpText"></b></div><div class="bar"><i class="xp" id="xpBar"></i></div>
-<div class="stat"><span>Stamina</span><b id="staminaText"></b></div><div class="bar"><i class="stamina" id="staminaBar"></i></div>
-<div class="stat"><span>Maná</span><b id="manaText"></b></div><div class="bar"><i class="mana" id="manaBar"></i></div>
-<div class="stat"><span>Piso</span><b id="floor"></b></div>
-</div>
+<div><div class="stat"><span>Nivel</span><b id="level">1</b></div><div class="stat"><span>Piso</span><b id="floor"></b></div></div>
 <div><div class="stat"><span>Daño</span><b id="damage"></b></div><div class="stat"><span>Armadura</span><b id="armor"></b></div><div class="stat"><span>Oro</span><b id="gold"></b></div></div>
 <div><div class="stat"><span>FUE</span><b id="strength"></b></div><div class="stat"><span>VIT</span><b id="vitality"></b></div><div class="stat"><span>AGI</span><b id="agility"></b></div><div class="stat"><span>SUE</span><b id="luck"></b></div><div class="stat"><span>INT</span><b id="intelligence"></b></div><div class="stat"><span>SAB</span><b id="wisdom"></b></div></div>
 <hr><h3>Equipo rápido</h3><div id="equipmentMini"></div>
-<div class="saveTools">
-<button id="saveGameBtn">⬇ Guardar JSON</button>
-<label>⬆ Cargar JSON<input type="file" id="loadGameInput" accept=".json,application/json"></label>
-</div>
 </section>
 
-<section class="panel">
+<section class="panel gamePanel">
 <div class="enemyTheme" id="themeLabel"></div>
-<div class="gameStage" id="gameStage">
-<canvas id="game" width="512" height="512"></canvas>
-<div class="gameHud">
- <div class="hudBars">
-  <div class="hudBar"><span>♥</span><div class="hudTrack"><i class="hudFill hudHp" id="hudHpFill"></i></div><span id="hudHpText"></span></div>
-  <div class="hudBar"><span>★</span><div class="hudTrack"><i class="hudFill hudXp" id="hudXpFill"></i></div><span id="hudXpText"></span></div>
-  <div class="hudBar"><span>⚡</span><div class="hudTrack"><i class="hudFill hudStamina" id="hudStaminaFill"></i></div><span id="hudStaminaText"></span></div>
-  <div class="hudBar"><span>✦</span><div class="hudTrack"><i class="hudFill hudMana" id="hudManaFill"></i></div><span id="hudManaText"></span></div>
+<div class="gameToolbar">
+ <div class="zoomControl">
+  <label for="zoomVisibleTiles">ZOOM <b id="zoomVisibleTilesLabel">8x8</b></label>
+  <input id="zoomVisibleTiles" type="range" min="5" max="12" value="8" step="1" aria-label="Zoom de la zona visible">
  </div>
- <div class="activeEffects" id="activeEffects"></div>
- <div class="mpTurnIndicator hidden" id="mpTurnIndicator"></div>
- <div class="floorObjective hidden" id="floorObjective"></div>
  <div class="hudButtons">
-  <button class="hudButton" id="hudEquipment" title="Equipo">⚔</button>
-  <button class="hudButton" id="hudSkills" title="Habilidades">✷</button>
-  <button class="hudButton" id="hudMap" title="Mostrar u ocultar minimapa">🗺</button>
+  <button class="hudButton" id="hudEquipment" title="Equipo" aria-label="Ver equipo">⚔</button>
+  <button class="hudButton" id="hudSkills" title="Habilidades" aria-label="Ver habilidades">✷</button>
+  <button class="hudButton" id="hudMap" title="Mostrar u ocultar minimapa" aria-label="Mostrar u ocultar minimapa">🗺</button>
  </div>
 </div>
+<div class="vitalBars" id="vitalBars">
+ <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥ VIDA</span><span class="vbValue" id="hudHpText"></span></div>
+ <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★ XP</span><span class="vbValue" id="hudXpText"></span></div>
+ <div class="vitalBar vbStamina" role="progressbar" aria-label="Stamina" aria-valuemin="0" aria-valuemax="100" id="hudStaminaBar"><i id="hudStaminaFill"></i><span class="vbLabel">⚡ STA</span><span class="vbValue" id="hudStaminaText"></span></div>
+ <div class="vitalBar vbMana" role="progressbar" aria-label="Maná" aria-valuemin="0" aria-valuemax="100" id="hudManaBar"><i id="hudManaFill"></i><span class="vbLabel">✦ MANÁ</span><span class="vbValue" id="hudManaText"></span></div>
+</div>
+<div class="gameStage" id="gameStage">
+<canvas id="game" width="512" height="512"></canvas>
+<div class="activeEffects" id="activeEffects"></div>
+<div class="mpTurnIndicator hidden" id="mpTurnIndicator"></div>
 <div class="minimapWrap minimapHidden" id="minimapWrap"><canvas id="minimap" width="150" height="150"></canvas></div>
 <div class="inspectPopup" id="inspectPopup"><button class="closeInspect" id="closeInspect">×</button><div id="inspectContent"></div></div>
 <div class="targetHint hidden" id="targetHint"></div>
-<div class="zoomControl"><label for="zoomVisibleTiles">ZOOM ZONA <b id="zoomVisibleTilesLabel">8x8</b></label><input id="zoomVisibleTiles" type="range" min="5" max="12" value="8" step="1"><span>más cerca ⇄ más mapa</span></div>
-<div class="mobileSkillbar" id="mobileSkillbar"></div>
 </div>
+<div class="floorObjective hidden" id="floorObjective"></div>
+<div class="mobileSkillbar" id="mobileSkillbar"></div>
 <div class="controls">
-<button class="empty">.</button><button data-move="0,-1">▲</button><button class="empty">.</button>
-<button data-move="-1,0">◀</button>
+<button class="empty">.</button><button data-move="0,-1" aria-label="Mover arriba">▲</button><button class="empty">.</button>
+<button data-move="-1,0" aria-label="Mover izquierda">◀</button>
 <div class="waitCancelWrap">
   <button id="waitBtn">ESPERAR</button>
   <button id="cancelTargetBtn" class="cancelTargetBtn hidden">CANCELAR</button>
 </div>
-<button data-move="1,0">▶</button>
-<button class="empty">.</button><button data-move="0,1">▼</button><button class="empty">.</button>
+<button data-move="1,0" aria-label="Mover derecha">▶</button>
+<button class="empty">.</button><button data-move="0,1" aria-label="Mover abajo">▼</button><button class="empty">.</button>
 </div>
 <div class="small">Muévete exclusivamente con las flechas · habilidades abajo · enemigos actúan tras tu movimiento</div>
 <div class="log" id="log"></div>
@@ -163,7 +156,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.49.0 MULTIPLAYER</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.50.0 MULTIPLAYER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -381,7 +374,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.49.0"></script>
+<script src="./src/game.js?v=0.50.0"></script>
 
 </body>
 </html>
