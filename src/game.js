@@ -2391,14 +2391,19 @@ function chestLootItem(c){
  const tier=c.chestTier||chestTierForFloor(game.floor,game.player.level),type=c.chestType||rollChestType();
  const def=configuredChestFor(tier,type);
  if(type==='skill'){
-  const specific=(def?.itemIds||[]).filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
+  const ids=(def?.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID);
+  const specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
   const id=specific.length?pick(specific):randomLootableSkill();
   if(id)unlockSkillLoot(id);
   return null;
  }
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
- if(def?.itemIds?.length){
-  const row=configItems.find(r=>String(r.id)===String(pick(def.itemIds)));
+ // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
+ // sentinel ("Aleatorio" checkbox); an empty list also falls through to
+ // random for backwards compatibility with chests saved before that checkbox existed
+ const pickedId=def?.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
+ if(pickedId!==CHEST_RANDOM_PICK_ID){
+  const row=configItems.find(r=>String(r.id)===String(pickedId));
   if(row)return configuredItemFromRow(row,lootRow,game.player.level);
  }
  if(def){
@@ -3667,27 +3672,35 @@ function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageI
 let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
 function chestSearchPool(type){
- if(type==='skill')return Object.entries(skillDefs).map(([id,s])=>({id,label:s.name}));
- if(type==='weapon')return configItems.filter(i=>(i.item_json||i).slot==='weapon').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre'}));
- if(type==='potion')return configItems.filter(i=>(i.item_json||i).type==='potion').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre'}));
- return configItems.filter(i=>{const j=i.item_json||i;return j.type!=='potion'&&j.slot!=='weapon'}).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre'}));
+ if(type==='skill')return Object.entries(skillDefs).map(([id,s])=>({id,label:s.name,rarity:s.rarity||'common'}));
+ if(type==='weapon')return configItems.filter(i=>(i.item_json||i).slot==='weapon').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
+ if(type==='potion')return configItems.filter(i=>(i.item_json||i).type==='potion').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
+ return configItems.filter(i=>{const j=i.item_json||i;return j.type!=='potion'&&j.slot!=='weapon'}).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
 }
+function checkedChestItemTiers(){return [...document.querySelectorAll('#configChestItemTiers input[type=checkbox]:checked')].map(cb=>cb.value)}
+// A special "Aleatorio" pick sits alongside the concrete items: when it's
+// among the selected ids, the chest can also resolve to any item matching
+// the chest's own rarity+type instead of only the hand-picked ones.
+const CHEST_RANDOM_PICK_ID='__random__';
 function renderChestItemResults(){
  const root=document.getElementById('configChestItemResults'),summary=document.getElementById('configChestSpecificSummary');
  if(!root)return;
  const type=document.getElementById('configChestType')?.value||'equipment',q=(document.getElementById('configChestItemSearch')?.value||'').trim().toLowerCase();
  window.currentChestItemIds=window.currentChestItemIds||[];
- const pool=chestSearchPool(type).filter(x=>!q||x.label.toLowerCase().includes(q)).slice(0,60);
- root.innerHTML=pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-chest-item-pick="${x.id}" ${window.currentChestItemIds.includes(x.id)?'checked':''}><span>${x.label}</span></label>`).join(''):'<p class="small">Sin resultados.</p>';
+ const tiers=checkedChestItemTiers();
+ const pool=chestSearchPool(type).filter(x=>tiers.includes(x.rarity)).filter(x=>!q||x.label.toLowerCase().includes(q)).slice(0,60);
+ const randomRow=`<label class="configItem"><input type="checkbox" data-chest-item-pick="${CHEST_RANDOM_PICK_ID}" ${window.currentChestItemIds.includes(CHEST_RANDOM_PICK_ID)?'checked':''}><span>🎲 Aleatorio (cualquier item de la rareza y tipo definidos)</span></label>`;
+ root.innerHTML=randomRow+(pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-chest-item-pick="${x.id}" ${window.currentChestItemIds.includes(x.id)?'checked':''}><span>${x.label}</span></label>`).join(''):'<p class="small">Sin resultados para esos tiers.</p>');
+ const updateSummary=()=>{if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} opción(es) posibles al abrir (incluye aleatorio si está marcado).`:'Nada seleccionado: el cofre no soltará objeto.'};
  root.querySelectorAll('[data-chest-item-pick]').forEach(cb=>cb.onchange=()=>{
   const id=cb.dataset.chestItemPick;
   window.currentChestItemIds=cb.checked?[...window.currentChestItemIds,id]:window.currentChestItemIds.filter(x=>x!==id);
-  if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} objeto(s) concreto(s) seleccionados.`:'Aleatorio dentro de los tiers seleccionados.';
+  updateSummary();
  });
- if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} objeto(s) concreto(s) seleccionados.`:'Aleatorio dentro de los tiers seleccionados.';
+ updateSummary();
 }
 function currentConfigChestJson(){
- const itemTiers=[...(document.getElementById('configChestItemTiers')?.selectedOptions||[])].map(o=>o.value);
+ const itemTiers=checkedChestItemTiers();
  return {
   name:document.getElementById('configChestName')?.value.trim()||'Cofre sin nombre',
   tier:Number(document.getElementById('configChestTier')?.value)||1,
@@ -3698,12 +3711,12 @@ function currentConfigChestJson(){
  };
 }
 function resetConfigChestForm(){
- window.editingConfigChestId=null;window.currentChestItemIds=[];window.currentConfigChestIconHex='';
+ window.editingConfigChestId=null;window.currentChestItemIds=[CHEST_RANDOM_PICK_ID];window.currentConfigChestIconHex='';
  document.getElementById('configChestName').value='';
  document.getElementById('configChestTier').value='1';
  document.getElementById('configChestType').value='equipment';
  document.getElementById('configChestItemSearch').value='';
- [...(document.getElementById('configChestItemTiers')?.options||[])].forEach(o=>o.selected=o.value==='common');
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=cb.value==='common');
  renderConfigIconPreview('','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
  const st=document.getElementById('configChestStatus');if(st)st.textContent='Formulario listo para un cofre nuevo.';
@@ -3716,8 +3729,7 @@ function loadConfigChestForEdit(id){
  document.getElementById('configChestTier').value=String(c.tier||1);
  document.getElementById('configChestType').value=c.type||'equipment';
  document.getElementById('configChestItemSearch').value='';
- const tiersSel=document.getElementById('configChestItemTiers');
- if(tiersSel)[...tiersSel.options].forEach(o=>o.selected=(c.itemTiers||['common']).includes(o.value));
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=(c.itemTiers||['common']).includes(cb.value));
  renderConfigIconPreview(c.icon||'','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
  const st=document.getElementById('configChestStatus');if(st)st.textContent=`Editando ${c.name||'cofre'}.`;
@@ -3731,7 +3743,7 @@ function renderConfigChests(){
  if(!configChests.length){root.innerHTML='<p class="small">No hay cofres configurados.</p>';return}
  const typeLabels={equipment:'Equipo',weapon:'Arma',potion:'Poción',skill:'Habilidad'};
  const sorted=[...configChests].sort((a,b)=>(a.chest_json?.tier||1)-(b.chest_json?.tier||1)||String(a.chest_json?.type||'').localeCompare(String(b.chest_json?.type||'')));
- root.innerHTML=sorted.map(r=>{const c=r.chest_json||{};return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[(c.itemTiers||[])[0]]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${typeLabels[c.type]||c.type} · ${(c.itemIds||[]).length?`${c.itemIds.length} concreto(s)`:'Aleatorio'}</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
+ root.innerHTML=sorted.map(r=>{const c=r.chest_json||{},ids=c.itemIds||[],specificCount=ids.filter(id=>id!==CHEST_RANDOM_PICK_ID).length,hasRandom=!ids.length||ids.includes(CHEST_RANDOM_PICK_ID),parts=[specificCount?`${specificCount} concreto(s)`:null,hasRandom?'Aleatorio':null].filter(Boolean).join(' + ')||'Sin objetos';return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[(c.itemTiers||[])[0]]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${typeLabels[c.type]||c.type} · ${parts}</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
  root.querySelectorAll('[data-chest-edit]').forEach(b=>b.onclick=()=>loadConfigChestForEdit(b.dataset.chestEdit));
  root.querySelectorAll('[data-chest-delete]').forEach(b=>b.onclick=()=>removeConfigChest(b.dataset.chestDelete));
 }
@@ -3741,6 +3753,7 @@ function setupChestConfigMode(){
  renderConfigChests();renderChestItemResults();
  document.getElementById('configChestType').onchange=renderChestItemResults;
  document.getElementById('configChestItemSearch').oninput=renderChestItemResults;
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.onchange=renderChestItemResults);
  document.getElementById('saveConfigChestBtn').onclick=async()=>{
   const st=document.getElementById('configChestStatus');st.textContent='Guardando cofre...';
   try{
