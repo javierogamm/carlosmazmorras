@@ -27,6 +27,7 @@ let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtRe
 const APP_VERSION='0.53.2';
 let configItems=[];
 let configClasses=[];
+let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
@@ -4006,7 +4007,25 @@ function applyClassSkillOverrides(){
   }
  }
 }
-async function fetchConfigClasses(){try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses();renderClassChoices()}catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}}
+// Advanced-mode character creation depends on config_class being loaded,
+// but the class-choice screen can render before anything ever triggers
+// this fetch (it's normally only pulled in when the admin Configuración
+// screen opens). configClassesLoaded/configClassesFetchInFlight let
+// renderClassChoices() self-heal: fetch once, dedupe concurrent callers,
+// and tell "still loading" apart from "genuinely no rows yet".
+async function fetchConfigClasses(){
+ if(configClassesFetchInFlight)return configClassesFetchInFlight;
+ configClassesFetchInFlight=(async()=>{
+  try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses()}
+  catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}
+  // set the "loaded" flag before the self-healing render below, or a
+  // genuinely-empty result would re-trigger the loading state forever
+  // (renderClassChoices only re-fetches while configClassesLoaded is false)
+  configClassesLoaded=true;configClassesFetchInFlight=null;
+  renderClassChoices();
+ })();
+ return configClassesFetchInFlight;
+}
 function selectedGameClassId(){return configClassSelect?.value||selectedClass}
 // ---- Class/skill editor (config_class, skills_json) ----------------------
 // 'bleed'/'burn' are intentionally absent: any periodic-damage effect is
@@ -6541,6 +6560,12 @@ function classIdsForSkillMode(mode){
 function renderClassChoices(){
  const root=document.getElementById('classChoices'),ids=classIdsForSkillMode(selectedSkillMode);
  if(!ids.length){
+  if(selectedSkillMode==='advanced'&&!configClassesLoaded){
+   root.innerHTML='<p class="small">Cargando clases Advanced desde la base de datos...</p>';
+   document.getElementById('classDetail').innerHTML='';
+   fetchConfigClasses();
+   return;
+  }
   root.innerHTML='<p class="small">No hay clases Advanced configuradas todavía. Créalas en Configuración → Clases, o vuelve a Hardcode.</p>';
   document.getElementById('classDetail').innerHTML='';
   return;
