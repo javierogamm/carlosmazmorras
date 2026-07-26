@@ -271,6 +271,14 @@
      <label>Modo del stat <select id="configSkillDmgStatMode"><option value="add">Sumatorio (se suma al daño)</option><option value="mult">Multiplicador (escala la tirada)</option></select></label>
      <label>Coeficiente del stat <input id="configSkillDmgStatCoef" type="number" step="0.01" value="1"></label>
     </div>
+    <h3>Buff / Debuff</h3>
+    <p class="small">Solo aplica si el efecto de la skill es "buff" (te mejora un stat) o "debuff" (empeora el stat de un enemigo durante unos turnos).</p>
+    <div class="configForm">
+     <label>Stat de buff <select id="configSkillBuffStat"><option value="">— (usa Daño, como antes)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option><option value="armor">Armadura</option><option value="damage">Daño</option></select></label>
+     <label>Coeficiente de buff <input id="configSkillBuffStatCoef" type="number" step="0.01" value="0.15"></label>
+     <label>Stat de debuff <select id="configSkillDebuffStat"><option value="">— (usa aturdimiento genérico)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
+     <label>Coeficiente de debuff <input id="configSkillDebuffStatCoef" type="number" step="0.01" value="1"></label>
+    </div>
     <h3>Daño periódico (DOT)</h3>
     <p class="small">Solo aplica si el efecto de la skill inflige un estado periódico (sangrado, veneno, quemadura, etc). Deja "Nº de dados" en 0 para usar la fórmula automática.</p>
     <div class="configForm">
