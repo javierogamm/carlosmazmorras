@@ -4240,7 +4240,7 @@ function setupClassConfigMode(){
   renderClassSkillSelect();
   document.getElementById('configClassSkillSelect').value=newId;loadSkillIntoForm(newId);
  };
- document.getElementById('saveConfigSkillBtn').onclick=()=>{
+ const saveSkillAndClass=async()=>{
   const oldId=window.editingConfigSkillId,newId=document.getElementById('configSkillId').value.trim()||oldId;
   const skill=currentSkillFormJson();
   window.currentClassSkillsDraft=window.currentClassSkillsDraft||{};
@@ -4248,11 +4248,31 @@ function setupClassConfigMode(){
   window.currentClassSkillsDraft[newId]=skill;
   renderClassSkillSelect();
   document.getElementById('configClassSkillSelect').value=newId;
-  document.getElementById('configSkillStatus').textContent='Skill guardada en el borrador de la clase. Pulsa "Guardar clase" para persistir.';
+  const st=document.getElementById('configSkillStatus');
+  st.textContent='Guardando skill y clase...';
+  try{await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft);st.textContent='Skill y clase guardadas en BDD.'}catch(e){st.textContent=e.message}
  };
+ document.getElementById('saveConfigSkillBtn').onclick=saveSkillAndClass;
+ document.getElementById('saveConfigSkillBtnTop').onclick=saveSkillAndClass;
  document.getElementById('rollbackConfigSkillIconBtn').onclick=()=>{
   window.currentConfigSkillIconHex='';renderConfigIconPreview('','configSkillIconPreview','configSkillIconStatus');
   document.getElementById('configSkillIconStatus').textContent='Sin imagen: se usa el icono de texto/emoji.';
+ };
+ document.getElementById('exportConfigSkillsBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify(window.currentClassSkillsDraft||{},null,2)],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=`skills-${selectedGameClassId()}.json`;a.click();URL.revokeObjectURL(a.href);
+ };
+ document.getElementById('importConfigSkillsInput').onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  const st=document.getElementById('configSkillStatus');
+  try{
+   const bag=JSON.parse(await file.text());
+   if(!bag||typeof bag!=='object')throw new Error('El JSON debe ser un objeto {skillId:{...}}');
+   window.currentClassSkillsDraft={...(window.currentClassSkillsDraft||{}),...bag};
+   renderClassSkillSelect();
+   st.textContent=`Importadas ${Object.keys(bag).length} skill(s) al borrador. Pulsa "Guardar skill" o "Guardar clase" para persistir.`;
+  }catch(err){st.textContent=`Error importando JSON: ${err.message}`}
+  finally{e.target.value=''}
  };
  saveConfigClassBtn.onclick=async()=>{
   configClassStatus.textContent='Guardando clase...';
