@@ -2138,8 +2138,10 @@ function baseAttackDice(){
  if(/(daga|dagger)/.test(text))return'1d6+1';
  return'1d6'
 }
+function statValueFor(actor,statKey){const st=actor?.derived?.finalStats||actor?.stats||{};return st[statKey]||0}
 function skillDiceExpr(id){
  const d=skillDefs[id]||{},tier=d.tier||({common:1,uncommon:1,rare:2,epic:3,legendary:3}[d.rarity]||1);
+ if(d.dmgDice>0)return `${d.dmgDice}d${d.dmgDie||6}`;
  if(d.type==='utility'||['buff','shield','heal','utility'].includes(d.classEffect))return null;
  if(d.classEffect==='massive'||id==='blackSun'||id==='worldBreaker')return tier>=3?'5d8+6':tier===2?'4d8+4':'3d8+4';
  if(d.classEffect==='ultimate')return tier>=3?'5d6+3':tier===2?'4d6':'3d6+3';
@@ -2151,14 +2153,36 @@ function skillDiceExpr(id){
 function damageStatForType(type,resource){if(type==='magic'||resource==='mana')return'intelligence';if(type==='physical'||resource==='stamina')return'strength';return'luck'}
 function actorStatDamageBonus(actor,type='physical',resource='stamina'){const st=actor?.derived?.finalStats||actor?.stats||{};const primary=damageStatForType(type,resource),secondary=primary==='intelligence'?'wisdom':primary==='strength'?'agility':'wisdom';return Math.floor(((st[primary]||0)*2+(st[secondary]||0))/3)}
 function skillStatModifier(id,actor=game.player){
- const d=skillDefs[id]||{},s=actor?.derived?.finalStats||actor?.stats||{};
+ const d=skillDefs[id]||{};
+ if(d.dmgStat&&d.dmgStatMode!=='mult')return Math.round(statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??1));
  return actorStatDamageBonus(actor,d.type,d.resource)
+}
+function skillStatMultiplier(id,actor=game.player){
+ const d=skillDefs[id]||{};
+ if(d.dmgStat&&d.dmgStatMode==='mult')return 1+statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??.02);
+ return 1
+}
+// Per-tick DOT power: when a skill defines dotDice/dotDie it rolls its own
+// dice (once, at application time - the roll then holds for the status'
+// whole duration, same as its power currently works) plus an optional stat
+// contribution; skills without dot fields keep their existing hand-tuned
+// level-scaled formula via `fallback`.
+function skillDotPower(id,fallback,actor=game.player){
+ const d=skillDefs[id]||{};
+ if(!(d.dotDice>0))return fallback;
+ const roll=rollDice(`${d.dotDice}d${d.dotDie||6}`).total;
+ const statVal=d.dotStat?statValueFor(actor,d.dotStat):0;
+ const contribution=d.dotStatMode==='mult'?roll*(statVal*(d.dotStatCoef??.02)):statVal*(d.dotStatCoef??1);
+ return Math.max(1,Math.round(roll+contribution))
 }
 function activeBuffDamageMultiplier(){
  return (game.player.activeBuffs||[]).reduce((m,b)=>m*(1+(b.effects?.damage||0)),1)*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
 }
 function diceDamageLabel(id){
- const expr=skillDiceExpr(id);return expr?`${expr} + atributo`:'Sin daño'
+ const expr=skillDiceExpr(id),d=skillDefs[id]||{};
+ if(!expr)return'Sin daño';
+ if(d.dmgStat)return`${expr} ${d.dmgStatMode==='mult'?'× (stat) ':'+ '}${{strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'}[d.dmgStat]||d.dmgStat}`;
+ return `${expr} + atributo`
 }
 
 function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;return v}
@@ -2167,8 +2191,9 @@ function attack(e,bonus=0,options={}){
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
  const roll=rollDice(expr);
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
+ const statMultFactor=skillId?skillStatMultiplier(skillId):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -2643,8 +2668,8 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=5+lvl;healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
  if(effect==='freeze'){hit(target,.8);status(target,'freeze',2,0,'Congelado');return true}
  if(effect==='stun'||effect==='silence'){hit(target,.75);status(target,effect,effect==='stun'?1:3,0,d.name);return true}
- if(effect==='poison'||effect==='burn'||effect==='bleed'||effect==='dot'||effect==='decayDot'){hit(target,.7);status(target,effect,4,2+lvl*.7,d.name);return true}
- if(effect==='root'||effect==='rootBleed'||effect==='bountyRoot'){hit(target,.7);status(target,'root',2,0,'Inmovilizado');if(effect==='rootBleed')status(target,'bleed',4,2+lvl*.6,'Sangrado');return true}
+ if(effect==='poison'||effect==='burn'||effect==='bleed'||effect==='dot'||effect==='decayDot'){hit(target,.7);status(target,effect,4,skillDotPower(id,2+lvl*.7),d.name);return true}
+ if(effect==='root'||effect==='rootBleed'||effect==='bountyRoot'){hit(target,.7);status(target,'root',2,0,'Inmovilizado');if(effect==='rootBleed')status(target,'bleed',4,skillDotPower(id,2+lvl*.6),'Sangrado');return true}
  return false
 }
 
@@ -2664,11 +2689,11 @@ function applyCreativeClassEffect(id,target,x,y){
  const hit=(e,m=.9)=>attack(e,0,{skillId:id,multiplier:m});
  if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',2+Math.floor(lvl/4),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'bleed',4,2+lvl*.5,'Sangrado');return true}
  if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',2,0,'Congelado');return true}
- if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect.includes('burn')?'burn':effect.includes('poison')?'poison':effect.includes('bleed')?'bleed':'dot',4+Math.floor(lvl/4),2+lvl*.8,d.name);return true}
+ if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect.includes('burn')?'burn':effect.includes('poison')?'poison':effect.includes('bleed')?'bleed':'dot',4+Math.floor(lvl/4),skillDotPower(id,2+lvl*.8),d.name);return true}
  if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);healEntity(p,5+lvl*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+4+lvl);return true}
  if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,2+Math.floor(lvl/5),1,d.name);return true}
- if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'bleed',4,2+lvl*.5,'Sangrado');return true}
- if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'bleed',4,2+lvl*.5,'Sangrado');return true}
+ if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'bleed',4,skillDotPower(id,2+lvl*.5),'Sangrado');return true}
+ if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'bleed',4,skillDotPower(id,2+lvl*.5),'Sangrado');return true}
  if(['combo','comboMark','markedExecute','bountyExecute','packExecute','pierce','lineShot','ricochet','chain','blinkChain'].includes(effect)){hit(target,effect.includes('Execute')||effect==='markedExecute'?1.7:1.15);return true}
  if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',2,0,'Confuso');return true}
  if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyBuff(id,d.name,3+Math.floor(lvl/3),{armor:.12,damage:.08});if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
@@ -2689,7 +2714,7 @@ function applyCreativeClassEffect(id,target,x,y){
  for(const e of targets){hit(e,d.tier===3?1.25:.85);
   if(/root|cage|forest|blackHole/.test(effect))addEnemyStatus(e,'root',2,0,'Inmovilizado');
   if(/freeze|thermal/.test(effect))addEnemyStatus(e,'freeze',2,0,'Congelado');
-  if(/burn|plague|dot|storm|rain|decay|nova/.test(effect))addEnemyStatus(e,/burn/.test(effect)?'burn':'dot',3,2+lvl*.6,d.name);
+  if(/burn|plague|dot|storm|rain|decay|nova/.test(effect))addEnemyStatus(e,/burn/.test(effect)?'burn':'dot',3,skillDotPower(id,2+lvl*.6),d.name);
   if(/stun|knockdown|massStun/.test(effect))addEnemyStatus(e,'stun',1+Math.floor(lvl/5),0,'Aturdido');
  }
  return true
@@ -3784,6 +3809,16 @@ function loadSkillIntoForm(skillId){
  document.getElementById('configSkillTargetMode').value=s.targetMode||'';
  document.getElementById('configSkillEffect').value=s.classEffect||'ranged';
  document.getElementById('configSkillEnemyUsable').checked=s.enemyUsable!==false;
+ document.getElementById('configSkillDmgDice').value=s.dmgDice||0;
+ document.getElementById('configSkillDmgDie').value=String(s.dmgDie||6);
+ document.getElementById('configSkillDmgStat').value=s.dmgStat||'';
+ document.getElementById('configSkillDmgStatMode').value=s.dmgStatMode||'add';
+ document.getElementById('configSkillDmgStatCoef').value=s.dmgStatCoef??1;
+ document.getElementById('configSkillDotDice').value=s.dotDice||0;
+ document.getElementById('configSkillDotDie').value=String(s.dotDie||6);
+ document.getElementById('configSkillDotStat').value=s.dotStat||'';
+ document.getElementById('configSkillDotStatMode').value=s.dotStatMode||'add';
+ document.getElementById('configSkillDotStatCoef').value=s.dotStatCoef??1;
  document.getElementById('configSkillDesc').value=s.desc||'';
  window.currentConfigSkillIconHex=s.iconImage||'';
  renderConfigIconPreview(window.currentConfigSkillIconHex,'configSkillIconPreview','configSkillIconStatus');
@@ -3807,6 +3842,16 @@ function currentSkillFormJson(){
   tier:Number(document.getElementById('configSkillTier').value)||1,
   classId:window.pendingNewClassId||selectedGameClassId(),
   enemyUsable:document.getElementById('configSkillEnemyUsable').checked,
+  dmgDice:Number(document.getElementById('configSkillDmgDice').value)||0,
+  dmgDie:Number(document.getElementById('configSkillDmgDie').value)||6,
+  dmgStat:document.getElementById('configSkillDmgStat').value||undefined,
+  dmgStatMode:document.getElementById('configSkillDmgStatMode').value,
+  dmgStatCoef:Number(document.getElementById('configSkillDmgStatCoef').value)||0,
+  dotDice:Number(document.getElementById('configSkillDotDice').value)||0,
+  dotDie:Number(document.getElementById('configSkillDotDie').value)||6,
+  dotStat:document.getElementById('configSkillDotStat').value||undefined,
+  dotStatMode:document.getElementById('configSkillDotStatMode').value,
+  dotStatCoef:Number(document.getElementById('configSkillDotStatCoef').value)||0,
   unlock:'Clase'
  };
 }
@@ -3849,7 +3894,11 @@ function loadSelectedConfigClass(){
  window.currentConfigClassIconHex=row?.class_json?.icon||row?.icon||'';
  renderConfigIconPreview(window.currentConfigClassIconHex,'configClassIconPreview','configClassIconStatus');
  configClassIconStatus.textContent=window.currentConfigClassIconHex?'Icono cargado para esta clase.':'Sin icono: usará los pixels por defecto.';
- drawClassPreview(configClassIconPreview,id);
+ // only fall back to the generic sprite preview when there's genuinely no
+ // uploaded icon - drawClassPreview's own image-loading path raced with
+ // renderConfigIconPreview's above and could clobber a real DB icon with
+ // the default sprite while the (already-cached) image was still resolving
+ if(!window.currentConfigClassIconHex)drawClassPreview(configClassIconPreview,id);
  window.currentClassSkillsDraft=classSkillBagFor(id);
  renderClassSkillSelect();
 }
