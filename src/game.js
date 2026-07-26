@@ -3523,6 +3523,11 @@ function companionSprite(x,y,c){
 }
 
 function enemySprite(x,y,e){
+ // some configured enemies (elites especially, since they're built by boosting
+ // an already-built enemy rather than a separate template) can end up with no
+ // icon of their own - fall back to their base template's icon instead of
+ // rendering fully transparent
+ if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}
  if(e.customEnemy&&drawEnemyIconHex(e.icon,x,y,e.boss))return;
  const d=enemyDefs[e.type]||{},shape=d.shape||d.sprite||e.type,c=d.color||({
   cultist:'#8c3b31',slagBeast:'#754032',fireImp:'#d84a2e',chainKnight:'#59606a',magmaPriest:'#8d392a',ashGolem:'#6c625c',
@@ -3544,8 +3549,12 @@ function enemySprite(x,y,e){
  else if(shape==='mummy'){R(17,10,30,46,c);for(let i=0;i<6;i++)R(13,13+i*8,38,4,a);R(22,19,5,5,'#151015');R(38,19,5,5,'#151015')}
  else if(['lich','madlich','bossLich','NullArchivist'].includes(shape)){R(18,12,28,40,c);R(12,34,40,24,shade(c,-28));R(23,20,6,6,a);R(36,20,6,6,a);R(5,8,7,48,a);R(2,5,13,12,shade(a,15));if(d.boss||e.boss){R(9,5,46,8,a);R(14,1,7,7,a);R(43,1,7,7,a)}if(shape==='NullArchivist'){R(18,39,28,4,'#60e6e0');R(26,10,12,4,'#ff5bd6')}}
  else if(['abomination','FurnaceTyrant'].includes(shape)){R(7,11,50,45,c);R(1,22,15,31,a);R(48,18,15,37,a);for(let i=0;i<3;i++)R(17+i*13,24,7,7,'#ffe57a');if(shape==='FurnaceTyrant'){R(12,7,40,9,'#5a2116');R(18,43,28,8,'#ff6537')}}
- if(e.elite){ctx.strokeStyle='#d77cff';ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54);R(27,6,10,4,'#d77cff')}
- if(e.boss){ctx.strokeStyle='#ffcb57';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
+ // colored border by enemy tier (boss overrides tier coloring with red);
+ // elites additionally get a black border outside the tier border instead of
+ // the old fixed purple box
+ if(e.boss){ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
+ else{ctx.strokeStyle=ENEMY_TIER_BORDER_COLORS[e.tier]||ENEMY_TIER_BORDER_COLORS.i;ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54)}
+ if(e.elite){ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,60,60);R(27,6,10,4,'#000')}
  if(e.hp<e.maxHp){R(8,58,48,5,'#330d14');R(8,58,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
 }
 
@@ -3669,6 +3678,7 @@ function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImage
 
 
 const enemyTypeStats={rogue:{hp:.9,atk:1.15,armor:0},warrior:{hp:1.1,atk:1.05,armor:1},caster:{hp:.85,atk:1.25,armor:0},invocador:{hp:1,atk:1.05,armor:0},clerigo:{hp:1.05,atk:.95,armor:1},chaman:{hp:1,atk:1.1,armor:0},arquero:{hp:.9,atk:1.15,armor:0},francotirador:{hp:.8,atk:1.35,armor:0},tanque:{hp:1.45,atk:.85,armor:3}};
+const ENEMY_TIER_BORDER_COLORS={i:'#5fd97a',ii:'#5b9bff',iii:'#b26bff',iv:'#ffd24f'};
 const enemyTierWeights={i:44,ii:30,iii:18,iv:8};
 function parseEnemyStatsBase(v){if(!v)return{hp:12,atk:4,armor:0,xp:8};if(typeof v==='object')return{...v,hp:+v.hp||12,atk:+(v.atk??v.damage)||4,armor:+v.armor||0,xp:+v.xp||8};try{return parseEnemyStatsBase(JSON.parse(v))}catch(e){return Object.fromEntries(String(v).split(',').map(x=>x.trim().split(':')).filter(x=>x[0]).map(([k,v])=>[k,Number(v)||0]))}}
 function normalizeEnemyCoreStats(v,type='warrior'){const defaults={strength:2,vitality:2,agility:2,luck:1,intelligence:1,wisdom:1},bias={rogue:{agility:3,luck:2},warrior:{strength:3,vitality:3},caster:{intelligence:4,wisdom:2},invocador:{intelligence:3,wisdom:3},clerigo:{wisdom:4,vitality:2},chaman:{wisdom:3,intelligence:2},arquero:{agility:3,strength:2},francotirador:{agility:4,luck:2},tanque:{vitality:4,strength:2}}[type]||{};let raw={...defaults,...bias};if(v){try{raw=typeof v==='object'?{...raw,...v}:{...raw,...JSON.parse(v)}}catch(e){String(v).split(',').map(x=>x.trim().split(':')).filter(x=>x[0]).forEach(([k,val])=>raw[k]=Number(val)||0)}}return Object.fromEntries(Object.entries(defaults).map(([k])=>[k,Math.max(0,Math.round(Number(raw[k])||0))]))}
