@@ -1515,14 +1515,14 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
-   const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+   const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
    if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
   }
  }
  // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
  const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
  while(chests.length<minChests){
-  const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+  const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
   if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
   chests.push({...free(),opened:false,chestDef});
  }
@@ -2414,18 +2414,24 @@ function useAltar(a){
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
 }
-// Chest tier (1-5) scales with dungeon depth and character power, so the
-// same physical chest yields better loot deeper in and on stronger runs.
-function chestTierForFloor(floor,level){return Math.max(1,Math.min(5,1+Math.floor((floor||1)/8)+Math.floor((level||1)/20)))}
+// Chest tier (1-5) climbs from 1 at floor 1 to 5 at the dungeon's last floor
+// - the same progression shape as enemy tiers (enemyTierWeightsForDepth) -
+// scaling proportionally regardless of how many floors the world has, with
+// character level as a secondary nudge on top so a stronger character finds
+// slightly better chests early rather than the floor being the only factor.
+function chestTierForFloor(floor,level,totalFloors=20){
+ const depth=((floor||1)-1)/Math.max(1,(totalFloors||20)-1);
+ return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
+}
 // Dungeons only ever place chests backed by a real config_chest row - never a
 // generic/procedural one. Picks the nearest configured tier to the ideal one
 // for this floor+level (closest at-or-below first, then closest above) so a
 // world with only some tiers configured still uses what exists instead of
 // falling back to anything synthetic. Returns null only when config_chest is
 // completely empty, in which case no chest gets placed at all.
-function pickChestDefForFloor(floor,level){
+function pickChestDefForFloor(floor,level,totalFloors=20){
  if(!configChests.length)return null;
- const desired=chestTierForFloor(floor,level);
+ const desired=chestTierForFloor(floor,level,totalFloors);
  for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  return null;
