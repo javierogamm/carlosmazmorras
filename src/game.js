@@ -1165,7 +1165,16 @@ function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.pla
 }
 
 function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas.classList.add(cls)}
-function reveal(cx,cy,r=game.player.vision){for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true}
+// A NaN/undefined/zero vision radius (e.g. a custom Advanced-mode class
+// whose stats object was missing agility, or any other corrupt player.vision
+// value) must never silently turn this into a no-op: NaN bounds make every
+// loop comparison false, so nothing gets revealed and the whole floor stays
+// pitch black regardless of how far the player walks. Falls back to the
+// base radius (4, matching the default character's own formula) instead.
+function reveal(cx,cy,r=game.player.vision){
+ if(!Number.isFinite(r)||r<=0)r=4;
+ for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
+}
 
 
 let pendingClassSkillRequests=[];
@@ -1274,7 +1283,7 @@ function start(){
  const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -3883,7 +3892,11 @@ function resolveClassDef(id){
  return {
   name:j?.name||base?.name||id,
   desc:j?.desc||base?.desc||'Clase personalizada.',
-  stats:j?.stats||base?.stats||{strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2},
+  // merge over full defaults (not just fall back when the whole stats
+  // object is missing) - a custom Advanced-mode class saved with a partial
+  // stats blob (e.g. missing agility) must not leave that stat undefined,
+  // which cascades into NaN vision/maxHp/maxStamina/etc at character creation
+  stats:{strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2,...(j?.stats||base?.stats||{})},
   skills:j?.starterSkills||base?.skills||[],
   resourceBias:j?.resourceBias||base?.resourceBias||'stamina',
   custom:!base
