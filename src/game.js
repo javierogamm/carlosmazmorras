@@ -2410,9 +2410,7 @@ function chestLootItem(c){
   const pool=configItems.filter(r=>{
    const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
    if(!(def.itemTiers||['common']).includes(rarity))return false;
-   if(type==='weapon')return j.slot==='weapon';
-   if(type==='potion')return j.type==='potion';
-   return j.type!=='potion'&&j.slot!=='weapon';
+   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
   });
   if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
  }
@@ -3671,11 +3669,21 @@ function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageI
 // (see chestTierForFloor()).
 let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
-function chestSearchPool(type){
+// offhand ("mano secundaria"/mano izquierda) counts as weapon type, not equipment
+function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
+ if(type==='potion')return j.type==='potion';
+ if(type==='weapon'){
+  if(j.slot!=='weapon'&&j.slot!=='offhand')return false;
+  if(weaponTypeFilter&&weaponTypeFilter!=='all'&&j.weaponType!==weaponTypeFilter)return false;
+  return true;
+ }
+ if(j.type==='potion'||j.slot==='weapon'||j.slot==='offhand')return false;
+ if(slotFilter&&slotFilter!=='all'&&j.slot!==slotFilter)return false;
+ return true;
+}
+function chestSearchPool(type,slotFilter='all',weaponTypeFilter='all'){
  if(type==='skill')return Object.entries(skillDefs).map(([id,s])=>({id,label:s.name,rarity:s.rarity||'common'}));
- if(type==='weapon')return configItems.filter(i=>(i.item_json||i).slot==='weapon').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
- if(type==='potion')return configItems.filter(i=>(i.item_json||i).type==='potion').map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
- return configItems.filter(i=>{const j=i.item_json||i;return j.type!=='potion'&&j.slot!=='weapon'}).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
+ return configItems.filter(i=>chestItemMatchesType(i.item_json||i,type,slotFilter,weaponTypeFilter)).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
 }
 function checkedChestItemTiers(){return [...document.querySelectorAll('#configChestItemTiers input[type=checkbox]:checked')].map(cb=>cb.value)}
 // A special "Aleatorio" pick sits alongside the concrete items: when it's
@@ -3686,9 +3694,10 @@ function renderChestItemResults(){
  const root=document.getElementById('configChestItemResults'),summary=document.getElementById('configChestSpecificSummary');
  if(!root)return;
  const type=document.getElementById('configChestType')?.value||'equipment',q=(document.getElementById('configChestItemSearch')?.value||'').trim().toLowerCase();
+ const slotFilter=document.getElementById('configChestSlotFilter')?.value||'all',weaponTypeFilter=document.getElementById('configChestWeaponTypeFilter')?.value||'all';
  window.currentChestItemIds=window.currentChestItemIds||[];
  const tiers=checkedChestItemTiers();
- const pool=chestSearchPool(type).filter(x=>tiers.includes(x.rarity)).filter(x=>!q||x.label.toLowerCase().includes(q)).slice(0,60);
+ const pool=chestSearchPool(type,slotFilter,weaponTypeFilter).filter(x=>tiers.includes(x.rarity)).filter(x=>!q||x.label.toLowerCase().includes(q)).slice(0,60);
  const randomRow=`<label class="configItem"><input type="checkbox" data-chest-item-pick="${CHEST_RANDOM_PICK_ID}" ${window.currentChestItemIds.includes(CHEST_RANDOM_PICK_ID)?'checked':''}><span>🎲 Aleatorio (cualquier item de la rareza y tipo definidos)</span></label>`;
  root.innerHTML=randomRow+(pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-chest-item-pick="${x.id}" ${window.currentChestItemIds.includes(x.id)?'checked':''}><span>${x.label}</span></label>`).join(''):'<p class="small">Sin resultados para esos tiers.</p>');
  const updateSummary=()=>{if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} opción(es) posibles al abrir (incluye aleatorio si está marcado).`:'Nada seleccionado: el cofre no soltará objeto.'};
@@ -3699,12 +3708,19 @@ function renderChestItemResults(){
  });
  updateSummary();
 }
+function toggleChestTypeFields(){
+ const type=document.getElementById('configChestType')?.value||'equipment';
+ document.getElementById('configChestSlotFilterWrap')?.classList.toggle('hidden',type!=='equipment');
+ document.getElementById('configChestWeaponTypeFilterWrap')?.classList.toggle('hidden',type!=='weapon');
+}
 function currentConfigChestJson(){
  const itemTiers=checkedChestItemTiers();
  return {
   name:document.getElementById('configChestName')?.value.trim()||'Cofre sin nombre',
   tier:Number(document.getElementById('configChestTier')?.value)||1,
   type:document.getElementById('configChestType')?.value||'equipment',
+  slotFilter:document.getElementById('configChestSlotFilter')?.value||'all',
+  weaponTypeFilter:document.getElementById('configChestWeaponTypeFilter')?.value||'all',
   icon:window.currentConfigChestIconHex||'',
   itemTiers:itemTiers.length?itemTiers:['common'],
   itemIds:[...(window.currentChestItemIds||[])]
@@ -3715,8 +3731,11 @@ function resetConfigChestForm(){
  document.getElementById('configChestName').value='';
  document.getElementById('configChestTier').value='1';
  document.getElementById('configChestType').value='equipment';
+ document.getElementById('configChestSlotFilter').value='all';
+ document.getElementById('configChestWeaponTypeFilter').value='all';
  document.getElementById('configChestItemSearch').value='';
  document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=cb.value==='common');
+ toggleChestTypeFields();
  renderConfigIconPreview('','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
  const st=document.getElementById('configChestStatus');if(st)st.textContent='Formulario listo para un cofre nuevo.';
@@ -3728,7 +3747,10 @@ function loadConfigChestForEdit(id){
  document.getElementById('configChestName').value=c.name||'';
  document.getElementById('configChestTier').value=String(c.tier||1);
  document.getElementById('configChestType').value=c.type||'equipment';
+ document.getElementById('configChestSlotFilter').value=c.slotFilter||'all';
+ document.getElementById('configChestWeaponTypeFilter').value=c.weaponTypeFilter||'all';
  document.getElementById('configChestItemSearch').value='';
+ toggleChestTypeFields();
  document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=(c.itemTiers||['common']).includes(cb.value));
  renderConfigIconPreview(c.icon||'','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
@@ -3750,8 +3772,13 @@ function renderConfigChests(){
 function setupChestConfigMode(){
  setupImageIconEditor({inputId:'configChestImageInput',canvasId:'configChestCropCanvas',previewId:'configChestIconPreview',statusId:'configChestIconStatus',zoomId:'configChestCropZoom',eraserId:'configChestMagicEraserBtn',toleranceId:'configChestMagicTolerance',hexKey:'currentConfigChestIconHex',statusPrefix:'Icono cofre'});
  window.currentChestItemIds=window.currentChestItemIds||[];
+ const weaponTypeSel=document.getElementById('configChestWeaponTypeFilter');
+ if(weaponTypeSel&&weaponTypeSel.options.length<=1)weaponTypeSel.insertAdjacentHTML('beforeend',configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join(''));
+ toggleChestTypeFields();
  renderConfigChests();renderChestItemResults();
- document.getElementById('configChestType').onchange=renderChestItemResults;
+ document.getElementById('configChestType').onchange=()=>{toggleChestTypeFields();renderChestItemResults()};
+ document.getElementById('configChestSlotFilter').onchange=renderChestItemResults;
+ document.getElementById('configChestWeaponTypeFilter').onchange=renderChestItemResults;
  document.getElementById('configChestItemSearch').oninput=renderChestItemResults;
  document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.onchange=renderChestItemResults);
  document.getElementById('saveConfigChestBtn').onclick=async()=>{
