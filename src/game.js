@@ -1514,11 +1514,18 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
   if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
-  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5});
+  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
+   const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+   if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
+  }
  }
- // baseline chest floor so no archetype is completely dry
+ // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
  const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
- while(chests.length<minChests)chests.push({...free(),opened:false});
+ while(chests.length<minChests){
+  const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+  if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
+  chests.push({...free(),opened:false,chestDef});
+ }
 
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
@@ -2376,7 +2383,60 @@ function useAltar(a){
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
 }
-function openChest(c){c.opened=true;game.chestsOpened++;if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});const n=1+(Math.random()<.24?1:0);for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')}
+// Chest tier (1-5) scales with dungeon depth and character power, so the
+// same physical chest yields better loot deeper in and on stronger runs.
+function chestTierForFloor(floor,level){return Math.max(1,Math.min(5,1+Math.floor((floor||1)/8)+Math.floor((level||1)/20)))}
+// Dungeons only ever place chests backed by a real config_chest row - never a
+// generic/procedural one. Picks the nearest configured tier to the ideal one
+// for this floor+level (closest at-or-below first, then closest above) so a
+// world with only some tiers configured still uses what exists instead of
+// falling back to anything synthetic. Returns null only when config_chest is
+// completely empty, in which case no chest gets placed at all.
+function pickChestDefForFloor(floor,level){
+ if(!configChests.length)return null;
+ const desired=chestTierForFloor(floor,level);
+ for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ return null;
+}
+// Resolves one loot slot against the chest's own resolved config_chest
+// definition (specific items/skills if picked, else random within its
+// configured item tiers/slot/weapon-type); returns null when the slot only
+// unlocked a skill, or when nothing in config_items matches - never a
+// generic/procedural item.
+function chestLootItem(c){
+ const def=c.chestDef;if(!def)return null;
+ const type=def.type;
+ if(type==='skill'){
+  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID);
+  const specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
+  const id=specific.length?pick(specific):randomLootableSkill();
+  if(id)unlockSkillLoot(id);
+  return null;
+ }
+ const lootRow=currentLootProgressionRow(game.floor,game.player.level);
+ // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
+ // sentinel ("Aleatorio" checkbox); an empty list also means random
+ const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
+ if(pickedId!==CHEST_RANDOM_PICK_ID){
+  const row=configItems.find(r=>String(r.id)===String(pickedId));
+  if(row)return configuredItemFromRow(row,lootRow,game.player.level);
+ }
+ const pool=configItems.filter(r=>{
+  const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
+  if(!(def.itemTiers||['common']).includes(rarity))return false;
+  return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
+ });
+ if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
+ return null;
+}
+function openChest(c){
+ c.opened=true;game.chestsOpened++;
+ if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});
+ const n=1+(Math.random()<.24?1:0);
+ for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
+ game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')
+}
 
 function applyBuff(id,name,turns,effects={}){
  const p=game.player;p.activeBuffs=p.activeBuffs||[];
@@ -3026,11 +3086,11 @@ function draw(){
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
- for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);doorSprite(p.x,p.y,d)}
+ for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
  for(const a of game.altars||[])if(game.seen[a.y]?.[a.x]){let p=sc(a.x,a.y);altarSprite(p.x,p.y,a)}
  for(const k of game.keys)if(game.seen[k.y][k.x]){let p=sc(k.x,k.y);keySprite(p.x,p.y)}
- for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);chestSprite(p.x,p.y)}
+ for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);drawChestSprite(p.x,p.y,chest)}
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){const t=e.animT??1,ix=(e.prevX??e.x)+(e.x-(e.prevX??e.x))*t,iy=(e.prevY??e.y)+(e.y-(e.prevY??e.y))*t;let p=sc(ix,iy);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
@@ -3332,6 +3392,19 @@ function drawPaperDoll(canvas,p){
  q.fillStyle='#e8d8a7';q.font='6px monospace';q.textAlign='center';q.fillText((p.className||'CLASE').toUpperCase().slice(0,20),64,181)
 }
 function chestSprite(x,y){px(x+8,y+27,48,27,'#553018');px(x+10,y+19,44,15,'#a65d2c');px(x+14,y+21,36,4,'#d38a43');px(x+28,y+24,8,22,'#f2c456');px(x+13,y+47,38,4,'#321b12')}
+// Renders the chest's own config_chest icon when it has one (same hex-icon
+// pipeline used for tiles/doors); falls back to the procedural sprite only
+// while that image is still loading.
+function drawChestSprite(x,y,c){
+ const icon=c.chestDef?.icon;
+ if(icon){
+  let img=tileImageCache.get(icon);
+  if(!img){img=tileImageFromHex(icon);tileImageCache.set(icon,img)}
+  if(img.complete){ctx.drawImage(img,x+7,y+7,TILE-14,TILE-14);return}
+  img.onload=()=>game&&draw();
+ }
+ chestSprite(x,y);
+}
 function trapSprite(x,y){
  ctx.strokeStyle='#ff9d4f';ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(x+16,y+16);ctx.lineTo(x+48,y+48);ctx.moveTo(x+48,y+16);ctx.lineTo(x+16,y+48);ctx.stroke();
@@ -3345,7 +3418,22 @@ function altarSprite(x,y,a){
  ctx.fillText(a.kind==='heal'?'✚':a.kind==='shield'?'▣':'✦',x+32,y+37);
 }
 function stairsSprite(x,y){for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
-function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?'#342a23':'#8b4e2c');if(!d.open){for(let i=0;i<3;i++)px(x+15,y+13+i*15,34,3,'#5b301f');px(x+17,y+10,3,48,'#b16d3c');px(x+44,y+10,3,48,'#5e321f');px(x+39,y+34,7,7,d.locked?'#ffd24f':'#271713')}} 
+function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?'#342a23':'#8b4e2c');if(!d.open){for(let i=0;i<3;i++)px(x+15,y+13+i*15,34,3,'#5b301f');px(x+17,y+10,3,48,'#b16d3c');px(x+44,y+10,3,48,'#5e321f');px(x+39,y+34,7,7,d.locked?'#ffd24f':'#271713')}}
+// Each floor's tileset can define its own door look (config_floor.doorTiles,
+// same icon editor as walls/floors); replaces the generic doorSprite whenever
+// one is configured, falling back to it otherwise. Locked doors get a gold
+// glow hugging whatever silhouette actually gets drawn (icon or procedural).
+function drawDoorTile(x,y,d){
+ const doorTiles=activeFloorTileset().doorTiles;
+ if(d.locked){ctx.save();ctx.shadowColor='#ffd24f';ctx.shadowBlur=3;}
+ let painted=false;
+ if(doorTiles?.length){
+  const seed=(d.x*73856093^d.y*19349663)>>>0;
+  painted=drawConfiguredTile(doorTiles[seed%doorTiles.length],x,y,0);
+ }
+ if(!painted)doorSprite(x,y,d);
+ if(d.locked)ctx.restore();
+} 
 function keySprite(x,y){px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
 
 function companionSprite(x,y,c){
@@ -3420,7 +3508,7 @@ function normalizeClassName(name){return String(name||'').trim().toLowerCase()}
 function configClassRowForId(id){const def=classDefs[id];const wanted=normalizeClassName(def?.name||id);return configClasses.find(c=>String(c.class_json?.classId||'')===id)||configClasses.find(c=>normalizeClassName(c.nombre)===wanted)}
 function classIconForId(id){const row=configClassRowForId(id);return row?.class_json?.icon||row?.icon||''}
 
-async function fetchConfigItems(){try{const r=await fetch('/api/config-items');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+async function fetchConfigItems(){try{const r=await fetch('/api/config-items');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
 function potionEffectFromConfig(){
@@ -3593,7 +3681,139 @@ function loadEnemyForEdit(id){const row=configEnemyDetails.find(e=>String(e.id)=
 function renderEnemyConfig(){renderEnemySkillSelect();renderEnemySkillPool();if(configEnemyWeaponType&&!configEnemyWeaponType.options.length)configEnemyWeaponType.innerHTML=configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join('');if(configEnemyFamiliesList)configEnemyFamiliesList.innerHTML=(configEnemyFamilies.length?configEnemyFamilies.map(r=>`<div class="configItem"><span class="tierDot" style="background:#9b65d8"></span><div><b>${r.family_name}</b><span class="small">${(r.family_json?.enemies||[]).length} enemigos en JSON</span><div class="configItemActions"><button type="button" data-load-family="${r.id}">Editar familia</button></div></div></div>`).join(''):'<p class="small">No hay familias consolidadas.</p>');if(configEnemiesList){if(configEnemyDetails.length){const groups={};configEnemyDetails.map(normalizeEnemyDetail).forEach(e=>{(groups[e.family]||(groups[e.family]=[])).push(e)});configEnemiesList.innerHTML=Object.entries(groups).sort(([a],[b])=>a.localeCompare(b)).map(([family,enemies])=>`<details class="configSlotGroup" open><summary>${family}<b>${enemies.length}</b></summary><div class="configSlotItems">${enemies.map(e=>`<div class="configItem"><span class="tierDot" style="background:${e.boss?'#ffb746':'#75e39d'}"></span><div><b>${e.class||e.type}</b><span class="small">${e.type} · tier ${e.tier.toUpperCase()} · boss ${e.boss?'sí':'no'} · ${e.skillIds.length} skill(s)</span><div class="configItemActions"><button type="button" data-edit-enemy="${e.id}">Editar</button></div></div></div>`).join('')}</div></details>`).join('')}else configEnemiesList.innerHTML='<p class="small">No hay enemigos individuales.</p>'}document.querySelectorAll('[data-edit-enemy]').forEach(b=>b.onclick=()=>loadEnemyForEdit(b.dataset.editEnemy));document.querySelectorAll('[data-load-family]').forEach(b=>b.onclick=()=>{const r=configEnemyFamilies.find(x=>String(x.id)===b.dataset.loadFamily);if(r){configEnemyFamilyName.value=r.family_name;configEnemyStatus.textContent=`Familia ${r.family_name} cargada para editar enemigos.`}})}
 function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageInput',canvasId:'configEnemyCropCanvas',previewId:'configEnemyIconPreview',statusId:'configEnemyIconStatus',zoomId:'configEnemyCropZoom',eraserId:'configEnemyMagicEraserBtn',toleranceId:'configEnemyMagicTolerance',hexKey:'currentConfigEnemyIconHex',statusPrefix:'Icono enemigo'});window.currentEnemySkillPool=window.currentEnemySkillPool||[];renderEnemyConfig();configEnemySkills.onchange=()=>addEnemySkillToPool(configEnemySkills.value);saveConfigEnemyBtn.onclick=async()=>{configEnemyStatus.textContent='Guardando enemigo...';try{const row=currentEnemyRow(),id=window.editingConfigEnemyId,r=await fetch(id?`/api/enemy-detail?id=${encodeURIComponent(id)}`:'/api/enemy-detail',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar enemigo');await fetchEnemyConfig();configEnemyStatus.textContent='Enemigo guardado.'}catch(e){configEnemyStatus.textContent=e.message}};newConfigEnemyBtn.onclick=resetEnemyForm;saveEnemyFamilyBtn.onclick=async()=>{try{const name=configEnemyFamilyName.value.trim()||'Sin familia',json=familyJsonFromDetails(name),existing=configEnemyFamilies.find(r=>r.family_name===name),r=await fetch(existing?`/api/enemy-family?id=${existing.id}`:'/api/enemy-family',{method:existing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:json})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo consolidar');await fetchEnemyConfig();configEnemyStatus.textContent='Familia consolidada en enemy_family.'}catch(e){configEnemyStatus.textContent=e.message}};exportEnemyFamilyBtn.onclick=()=>{const blob=new Blob([JSON.stringify(familyJsonFromDetails(configEnemyFamilyName.value.trim()||'Sin familia'),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='enemy-family.json';a.click();URL.revokeObjectURL(a.href)};importEnemyFamilyInput.onchange=async()=>{try{let familyCount=0,enemyCount=0;const familiesRaw=await parseImportedJsonFiles([...importEnemyFamilyInput.files]);for(const raw of familiesRaw){const j=raw.family_json||raw,name=j.name||raw.family_name||'Familia importada',r=await fetch('/api/enemy-family',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:{...j,name}})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo importar familia');familyCount++;const enemies=Array.isArray(j.enemies)?j.enemies:[];if(enemies.length){const detailRows=enemies.map(e=>enemyDetailRowFromImportedEnemy(e,name));await postJsonRows('/api/enemy-detail',detailRows);enemyCount+=detailRows.length}}await fetchEnemyConfig();configEnemyStatus.textContent=`Importadas ${familyCount} familia(s) y ${enemyCount} enemigo(s) individuales en enemy_detail.`}catch(e){configEnemyStatus.textContent=e.message}finally{importEnemyFamilyInput.value=''}}}
 
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies')})}
+// ---- Treasure chest config (config_chest) --------------------------------
+// A chest definition = tier (1-5, chest rarity/quality) + type (equipment/
+// weapon/potion/skill) + icon + which item rarities it can drop + optionally
+// a hand-picked pool of specific items/skills (empty pool = fully random
+// within the selected item tiers). These replace the generic chests during
+// dungeon generation; the chest TIER actually rolled depends on floor+level
+// (see chestTierForFloor()).
+let configChests=[];
+async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
+// offhand ("mano secundaria"/mano izquierda) counts as weapon type, not equipment
+function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
+ if(type==='potion')return j.type==='potion';
+ if(type==='weapon'){
+  if(j.slot!=='weapon'&&j.slot!=='offhand')return false;
+  if(weaponTypeFilter&&weaponTypeFilter!=='all'&&j.weaponType!==weaponTypeFilter)return false;
+  return true;
+ }
+ if(j.type==='potion'||j.slot==='weapon'||j.slot==='offhand')return false;
+ if(slotFilter&&slotFilter!=='all'&&j.slot!==slotFilter)return false;
+ return true;
+}
+function chestSearchPool(type,slotFilter='all',weaponTypeFilter='all'){
+ if(type==='skill')return Object.entries(skillDefs).map(([id,s])=>({id,label:s.name,rarity:s.rarity||'common'}));
+ return configItems.filter(i=>chestItemMatchesType(i.item_json||i,type,slotFilter,weaponTypeFilter)).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common'}));
+}
+function checkedChestItemTiers(){return [...document.querySelectorAll('#configChestItemTiers input[type=checkbox]:checked')].map(cb=>cb.value)}
+// A special "Aleatorio" pick sits alongside the concrete items: when it's
+// among the selected ids, the chest can also resolve to any item matching
+// the chest's own rarity+type instead of only the hand-picked ones.
+const CHEST_RANDOM_PICK_ID='__random__';
+function renderChestItemResults(){
+ const root=document.getElementById('configChestItemResults'),summary=document.getElementById('configChestSpecificSummary');
+ if(!root)return;
+ const type=document.getElementById('configChestType')?.value||'equipment',q=(document.getElementById('configChestItemSearch')?.value||'').trim().toLowerCase();
+ const slotFilter=document.getElementById('configChestSlotFilter')?.value||'all',weaponTypeFilter=document.getElementById('configChestWeaponTypeFilter')?.value||'all';
+ window.currentChestItemIds=window.currentChestItemIds||[];
+ const tiers=checkedChestItemTiers();
+ const pool=chestSearchPool(type,slotFilter,weaponTypeFilter).filter(x=>tiers.includes(x.rarity)).filter(x=>!q||x.label.toLowerCase().includes(q)).slice(0,60);
+ const randomRow=`<label class="configItem"><input type="checkbox" data-chest-item-pick="${CHEST_RANDOM_PICK_ID}" ${window.currentChestItemIds.includes(CHEST_RANDOM_PICK_ID)?'checked':''}><span>🎲 Aleatorio (cualquier item de la rareza y tipo definidos)</span></label>`;
+ root.innerHTML=randomRow+(pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-chest-item-pick="${x.id}" ${window.currentChestItemIds.includes(x.id)?'checked':''}><span>${x.label}</span></label>`).join(''):'<p class="small">Sin resultados para esos tiers.</p>');
+ const updateSummary=()=>{if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} opción(es) posibles al abrir (incluye aleatorio si está marcado).`:'Nada seleccionado: el cofre no soltará objeto.'};
+ root.querySelectorAll('[data-chest-item-pick]').forEach(cb=>cb.onchange=()=>{
+  const id=cb.dataset.chestItemPick;
+  window.currentChestItemIds=cb.checked?[...window.currentChestItemIds,id]:window.currentChestItemIds.filter(x=>x!==id);
+  updateSummary();
+ });
+ updateSummary();
+}
+function toggleChestTypeFields(){
+ const type=document.getElementById('configChestType')?.value||'equipment';
+ document.getElementById('configChestSlotFilterWrap')?.classList.toggle('hidden',type!=='equipment');
+ document.getElementById('configChestWeaponTypeFilterWrap')?.classList.toggle('hidden',type!=='weapon');
+}
+function currentConfigChestJson(){
+ const itemTiers=checkedChestItemTiers();
+ return {
+  name:document.getElementById('configChestName')?.value.trim()||'Cofre sin nombre',
+  tier:Number(document.getElementById('configChestTier')?.value)||1,
+  type:document.getElementById('configChestType')?.value||'equipment',
+  slotFilter:document.getElementById('configChestSlotFilter')?.value||'all',
+  weaponTypeFilter:document.getElementById('configChestWeaponTypeFilter')?.value||'all',
+  icon:window.currentConfigChestIconHex||'',
+  itemTiers:itemTiers.length?itemTiers:['common'],
+  itemIds:[...(window.currentChestItemIds||[])]
+ };
+}
+function resetConfigChestForm(){
+ window.editingConfigChestId=null;window.currentChestItemIds=[CHEST_RANDOM_PICK_ID];window.currentConfigChestIconHex='';
+ document.getElementById('configChestName').value='';
+ document.getElementById('configChestTier').value='1';
+ document.getElementById('configChestType').value='equipment';
+ document.getElementById('configChestSlotFilter').value='all';
+ document.getElementById('configChestWeaponTypeFilter').value='all';
+ document.getElementById('configChestItemSearch').value='';
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=cb.value==='common');
+ toggleChestTypeFields();
+ renderConfigIconPreview('','configChestIconPreview','configChestIconStatus');
+ renderChestItemResults();
+ const st=document.getElementById('configChestStatus');if(st)st.textContent='Formulario listo para un cofre nuevo.';
+}
+function loadConfigChestForEdit(id){
+ const row=configChests.find(r=>String(r.id)===String(id));if(!row)return;
+ const c=row.chest_json||{};
+ window.editingConfigChestId=row.id;window.currentChestItemIds=[...(c.itemIds||[])];window.currentConfigChestIconHex=c.icon||'';
+ document.getElementById('configChestName').value=c.name||'';
+ document.getElementById('configChestTier').value=String(c.tier||1);
+ document.getElementById('configChestType').value=c.type||'equipment';
+ document.getElementById('configChestSlotFilter').value=c.slotFilter||'all';
+ document.getElementById('configChestWeaponTypeFilter').value=c.weaponTypeFilter||'all';
+ document.getElementById('configChestItemSearch').value='';
+ toggleChestTypeFields();
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=(c.itemTiers||['common']).includes(cb.value));
+ renderConfigIconPreview(c.icon||'','configChestIconPreview','configChestIconStatus');
+ renderChestItemResults();
+ const st=document.getElementById('configChestStatus');if(st)st.textContent=`Editando ${c.name||'cofre'}.`;
+}
+async function removeConfigChest(id){
+ if(!confirm('¿Borrar este cofre?'))return;
+ try{const r=await fetch(`/api/config-chest?id=${encodeURIComponent(id)}`,{method:'DELETE'});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo borrar');await fetchConfigChests();if(String(window.editingConfigChestId)===String(id))resetConfigChestForm()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=e.message}
+}
+function renderConfigChests(){
+ const root=document.getElementById('configChestsList');if(!root)return;
+ if(!configChests.length){root.innerHTML='<p class="small">No hay cofres configurados.</p>';return}
+ const typeLabels={equipment:'Equipo',weapon:'Arma',potion:'Poción',skill:'Habilidad'};
+ const sorted=[...configChests].sort((a,b)=>(a.chest_json?.tier||1)-(b.chest_json?.tier||1)||String(a.chest_json?.type||'').localeCompare(String(b.chest_json?.type||'')));
+ root.innerHTML=sorted.map(r=>{const c=r.chest_json||{},ids=c.itemIds||[],specificCount=ids.filter(id=>id!==CHEST_RANDOM_PICK_ID).length,hasRandom=!ids.length||ids.includes(CHEST_RANDOM_PICK_ID),parts=[specificCount?`${specificCount} concreto(s)`:null,hasRandom?'Aleatorio':null].filter(Boolean).join(' + ')||'Sin objetos';return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[(c.itemTiers||[])[0]]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${typeLabels[c.type]||c.type} · ${parts}</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
+ root.querySelectorAll('[data-chest-edit]').forEach(b=>b.onclick=()=>loadConfigChestForEdit(b.dataset.chestEdit));
+ root.querySelectorAll('[data-chest-delete]').forEach(b=>b.onclick=()=>removeConfigChest(b.dataset.chestDelete));
+}
+function setupChestConfigMode(){
+ setupImageIconEditor({inputId:'configChestImageInput',canvasId:'configChestCropCanvas',previewId:'configChestIconPreview',statusId:'configChestIconStatus',zoomId:'configChestCropZoom',eraserId:'configChestMagicEraserBtn',toleranceId:'configChestMagicTolerance',hexKey:'currentConfigChestIconHex',statusPrefix:'Icono cofre'});
+ window.currentChestItemIds=window.currentChestItemIds||[];
+ const weaponTypeSel=document.getElementById('configChestWeaponTypeFilter');
+ if(weaponTypeSel&&weaponTypeSel.options.length<=1)weaponTypeSel.insertAdjacentHTML('beforeend',configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join(''));
+ toggleChestTypeFields();
+ renderConfigChests();renderChestItemResults();
+ document.getElementById('configChestType').onchange=()=>{toggleChestTypeFields();renderChestItemResults()};
+ document.getElementById('configChestSlotFilter').onchange=renderChestItemResults;
+ document.getElementById('configChestWeaponTypeFilter').onchange=renderChestItemResults;
+ document.getElementById('configChestItemSearch').oninput=renderChestItemResults;
+ document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.onchange=renderChestItemResults);
+ document.getElementById('saveConfigChestBtn').onclick=async()=>{
+  const st=document.getElementById('configChestStatus');st.textContent='Guardando cofre...';
+  try{
+   const chest=currentConfigChestJson(),id=window.editingConfigChestId;
+   const r=await fetch(id?`/api/config-chest?id=${encodeURIComponent(id)}`:'/api/config-chest',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chest_name:chest.name,chest_json:chest})});
+   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el cofre');
+   await fetchConfigChests();st.textContent='Cofre guardado.';
+  }catch(e){st.textContent=e.message}
+ };
+ document.getElementById('newConfigChestBtn').onclick=resetConfigChestForm;
+}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests')})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
 function setupClassConfigMode(){const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});if(!editor)return;configClassSelect.onchange=loadSelectedConfigClass;saveConfigClassBtn.onclick=async()=>{configClassStatus.textContent='Guardando clase...';try{await saveConfigClass(currentConfigClassJson());configClassStatus.textContent='Clase guardada en BDD.'}catch(e){configClassStatus.textContent=e.message}};rollbackConfigClassBtn.onclick=async()=>{configClassStatus.textContent='Restaurando pixels por defecto...';try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson());configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}}}
@@ -3623,7 +3843,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!configItems.length)await fetchConfigItems();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -3660,7 +3880,7 @@ async function finishCharacterCreation(){
 }
 
 function openSinglePlayerScreen(){
- if(!configItems.length)fetchConfigItems();
+ if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
  landingOverlay.classList.add('hidden');
  singlePlayerOverlay.classList.remove('hidden');
  document.getElementById('spListStatus')?.classList.add('hidden');
@@ -3702,7 +3922,7 @@ async function openCharacterSelection(){
    dungeonOverlay.classList.remove('hidden');
    const p=currentCharacter.pj_json?.player;
    document.getElementById('dungeonCharacterLabel').textContent=`Personaje: ${currentCharacter.pj_name} · ${p?.className||''} nivel ${p?.level||1}`;
-   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings();
+   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings();
   });
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
@@ -3734,7 +3954,7 @@ async function openSessionContinue(){
 
 async function resumeSession(sessionId){
  try{
-  if(!configItems.length)fetchConfigItems();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
   const [statusRes,worldsRes]=await Promise.all([fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`),fetch('/api/dungeon-worlds')]);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||'No se pudo cargar la sesión');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -3904,6 +4124,20 @@ function logoutMultiSession(){
  const id=multiSessionId;multiSessionId=null;
  fetch(`/api/multi-session?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({logout:true})}).catch(e=>console.error(e));
 }
+const MAIN_MENU_SCREEN_IDS=['app','singlePlayerOverlay','multiplayerOverlay','mpLobbyOverlay','configScreen','scoresScreen','dungeonOverlay','dungeonPreviewOverlay','startOverlay','storyOverlay'];
+function goToMainMenu(){
+ if(game&&!confirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
+ if(game?.multiplayer){logoutMultiSession();mpFlushCheckpointBeacon();cleanupMultiplayerRuntime()}
+ if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
+ if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
+ if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
+ game=null;
+ for(const id of MAIN_MENU_SCREEN_IDS)document.getElementById(id)?.classList.add('hidden');
+ landingOverlay.classList.remove('hidden');
+ mainMenuActions?.classList.remove('hidden');
+ loginForm?.classList.add('hidden');
+}
+document.getElementById('globalMenuBtn').onclick=goToMainMenu;
 function leaveMultiplayerScreen(){
  logoutMultiSession();
  mpFlushCheckpointBeacon();
@@ -3959,14 +4193,44 @@ async function mpStartCreateFlow(){
    app.classList.remove('hidden');
    dungeonOverlay.classList.remove('hidden');
    document.getElementById('dungeonCharacterLabel').textContent=`Personaje: ${currentCharacter.pj_name} (anfitrión multijugador)`;
-   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings();
+   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings();
   });
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
 
+const ENEMY_TIER_LABELS={i:'I',ii:'II',iii:'III',iv:'IV'};
+// Reads the world's already-precomputed floors (world_json.floors, baked in
+// createDungeonWorldJson) - no need to regenerate anything, this is exactly
+// what will actually be used when the player enters each floor.
+function buildDungeonPreviewText(worldJson){
+ const floors=worldJson?.floors||[];
+ if(!floors.length)return 'Esta dungeon no tiene pisos precalculados.';
+ return floors.map(f=>{
+  const enemyTiers={};for(const e of f.enemies||[]){const t=e.tier||'i';enemyTiers[t]=(enemyTiers[t]||0)+1}
+  const enemyLine=Object.keys(ENEMY_TIER_LABELS).map(t=>`Tier ${ENEMY_TIER_LABELS[t]}: ${enemyTiers[t]||0}`).join(' · ');
+  const bossLine=f.boss?` · Jefe: ${f.boss.name||'Jefe'}`:'';
+  const chestTiers={},chestNames=[];
+  for(const c of f.chests||[]){const t=c.chestDef?.tier||'?';chestTiers[t]=(chestTiers[t]||0)+1;if(c.chestDef?.name)chestNames.push(c.chestDef.name)}
+  const chestTierLine=[1,2,3,4,5].map(t=>`Tier ${t}: ${chestTiers[t]||0}`).join(' · ');
+  const nameCounts=chestNames.reduce((acc,n)=>{acc[n]=(acc[n]||0)+1;return acc},{});
+  const namesLine=Object.keys(nameCounts).length?Object.entries(nameCounts).map(([n,c])=>c>1?`${n} x${c}`:n).join(', '):'Ninguno';
+  return `PISO ${f.floor} (${f.themeName||''})\n Enemigos -> ${enemyLine}${bossLine}\n Cofres por tier -> ${chestTierLine}\n Cofres asignados -> ${namesLine}`;
+ }).join('\n\n');
+}
 function proceedAfterWorldChosen(){
- if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
- enterWorldWithCharacter();
+ const text=document.getElementById('dungeonPreviewText');
+ if(text)text.textContent=buildDungeonPreviewText(selectedDungeonWorld?.world_json);
+ dungeonOverlay.classList.add('hidden');
+ document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');
+ document.getElementById('dungeonPreviewContinueBtn').onclick=()=>{
+  document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
+  if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
+  enterWorldWithCharacter();
+ };
+ document.getElementById('dungeonPreviewBackBtn').onclick=()=>{
+  document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
+  dungeonOverlay.classList.remove('hidden');
+ };
 }
 
 async function mpCreateHostSession(){
@@ -5106,7 +5370,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  if(!configItems.length)fetchConfigItems();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
   await mpRealtimeConnect(session.id);
   const worldsRes=await fetch('/api/dungeon-worlds');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -5480,7 +5744,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
 };
 
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
