@@ -1514,11 +1514,18 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
   if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
-  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestTier:chestTierForFloor(floor,game?.player?.level),chestType:rollChestType()});
+  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
+   const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+   if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
+  }
  }
- // baseline chest floor so no archetype is completely dry
+ // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
  const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
- while(chests.length<minChests)chests.push({...free(),opened:false,chestTier:chestTierForFloor(floor,game?.player?.level),chestType:rollChestType()});
+ while(chests.length<minChests){
+  const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+  if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
+  chests.push({...free(),opened:false,chestDef});
+ }
 
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
@@ -2379,19 +2386,29 @@ function useAltar(a){
 // Chest tier (1-5) scales with dungeon depth and character power, so the
 // same physical chest yields better loot deeper in and on stronger runs.
 function chestTierForFloor(floor,level){return Math.max(1,Math.min(5,1+Math.floor((floor||1)/8)+Math.floor((level||1)/20)))}
-const CHEST_TYPE_WEIGHTS=[['equipment',.45],['weapon',.2],['potion',.2],['skill',.15]];
-function rollChestType(){const r=Math.random();let acc=0;for(const [type,w] of CHEST_TYPE_WEIGHTS){acc+=w;if(r<=acc)return type}return 'equipment'}
-function configuredChestFor(tier,type){const matches=configChests.filter(r=>{const c=r.chest_json||{};return Number(c.tier)===tier&&c.type===type});return matches.length?pick(matches).chest_json:null}
-// Resolves one loot slot for a chest against its config_chest definition
-// (specific items/skills if picked, else random within the configured item
-// tiers); returns null when the slot only unlocked a skill (nothing to add
-// to the inventory) or falls back to the generic generator if nothing is
-// configured for this chest's tier+type.
+// Dungeons only ever place chests backed by a real config_chest row - never a
+// generic/procedural one. Picks the nearest configured tier to the ideal one
+// for this floor+level (closest at-or-below first, then closest above) so a
+// world with only some tiers configured still uses what exists instead of
+// falling back to anything synthetic. Returns null only when config_chest is
+// completely empty, in which case no chest gets placed at all.
+function pickChestDefForFloor(floor,level){
+ if(!configChests.length)return null;
+ const desired=chestTierForFloor(floor,level);
+ for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ return null;
+}
+// Resolves one loot slot against the chest's own resolved config_chest
+// definition (specific items/skills if picked, else random within its
+// configured item tiers/slot/weapon-type); returns null when the slot only
+// unlocked a skill, or when nothing in config_items matches - never a
+// generic/procedural item.
 function chestLootItem(c){
- const tier=c.chestTier||chestTierForFloor(game.floor,game.player.level),type=c.chestType||rollChestType();
- const def=configuredChestFor(tier,type);
+ const def=c.chestDef;if(!def)return null;
+ const type=def.type;
  if(type==='skill'){
-  const ids=(def?.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID);
+  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID);
   const specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
   const id=specific.length?pick(specific):randomLootableSkill();
   if(id)unlockSkillLoot(id);
@@ -2399,34 +2416,25 @@ function chestLootItem(c){
  }
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
  // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
- // sentinel ("Aleatorio" checkbox); an empty list also falls through to
- // random for backwards compatibility with chests saved before that checkbox existed
- const pickedId=def?.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
+ // sentinel ("Aleatorio" checkbox); an empty list also means random
+ const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
  if(pickedId!==CHEST_RANDOM_PICK_ID){
   const row=configItems.find(r=>String(r.id)===String(pickedId));
   if(row)return configuredItemFromRow(row,lootRow,game.player.level);
  }
- if(def){
-  const pool=configItems.filter(r=>{
-   const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
-   if(!(def.itemTiers||['common']).includes(rarity))return false;
-   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
-  });
-  if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
- }
- return makeLoot(game.player.level+game.floor-1,'normal');
+ const pool=configItems.filter(r=>{
+  const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
+  if(!(def.itemTiers||['common']).includes(rarity))return false;
+  return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
+ });
+ if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
+ return null;
 }
 function openChest(c){
  c.opened=true;game.chestsOpened++;
  if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});
  const n=1+(Math.random()<.24?1:0);
- if(!configChests.length){
-  // nothing configured in config_chest yet: keep the original generic chest behaviour untouched
-  for(let i=0;i<n;i++){const item=makeLoot(game.player.level+game.floor-1,'normal');addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}
-  if(Math.random()<Math.min(.65,.16+game.floor*.025))unlockSkillLoot(randomLootableSkill());
- }else{
-  for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
- }
+ for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
  game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')
 }
 
