@@ -27,7 +27,7 @@ let configClasses=[];
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,floors:20,floorPlan:[],apMode:false};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,floors:10,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff5bd6'}};
@@ -1515,14 +1515,14 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
-   const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+   const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
    if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
   }
  }
  // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
  const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
  while(chests.length<minChests){
-  const chestDef=pickChestDefForFloor(floor,game?.player?.level);
+  const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
   if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
   chests.push({...free(),opened:false,chestDef});
  }
@@ -1540,7 +1540,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   for(let i=0;i<n&&placed<baseCount;i++){
    const pos=T.place==='edges'?edgeIn(r):freeIn(r);
    const wantElite=Math.random()<Math.min(.85,.05*(E.elite||1)*(T.elite?6:1));
-   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),pos,floor,false);
+   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors),pos,floor,false);
    e.enemyFamily=family.name;e.roomType=r.type;
    if(T.tier||E.tierBias){
     const bump=(T.tier||0)+(E.tierBias||0);
@@ -1551,12 +1551,12 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    enemies.push(e);placed++;
   }
  }
- while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+ while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
 
  // --- bosses ---
  let boss=null;const bosses=[];
  const mkBoss=(pos,label,tierBonus)=>{
-  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true),pos,floor,true);
+  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors),pos,floor,true);
   b.enemyFamily=family.name;
   if(tierBonus>0){
    b.maxHp=b.hp=Math.round(b.hp*(1+.45*tierBonus));
@@ -1637,6 +1637,7 @@ function loadPrecomputedFloor(){
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
+ scaleFloorForPlayerLevel();
  scaleFloorForParty();
  announceFloorArchetype();
  log(`Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');
@@ -2029,7 +2030,7 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  });
  game.player.x=plan.spawn.x;game.player.y=plan.spawn.y;anim.heroX=anim.targetX=plan.spawn.x;anim.heroY=anim.targetY=plan.spawn.y;anim.t=1;reveal(plan.spawn.x,plan.spawn.y);
  const extra=difficultyScale().count;
- for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
+ for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
  scaleFloorForParty();
  announceFloorArchetype();
  updateUI();draw();rollFloorEvent();
@@ -2246,6 +2247,36 @@ function scaleFloorForParty(){
  }
  game.partyScaled=mult;
 }
+// Enemy level/stats baked into a precomputed floor come from a synthetic
+// level-1 preview character (see createDungeonWorldJson) and may also just
+// be stale if the player's level has changed since this floor was last
+// generated. Rescale every enemy (including superboss tier-bonus variants,
+// whose extra bump is preserved since this scales whatever they already
+// have rather than rebuilding from scratch) proportionally to a fresh
+// target level anchored on the player's CURRENT level, every time the
+// floor is (re)loaded - for brand new runs and existing/continued sessions alike.
+function scaleFloorForPlayerLevel(){
+ // multiplayer keeps enemies as a single shared/authoritative snapshot across
+ // party members (see partyHpMultiplier) - rescaling per-viewer here would
+ // desync combat between players at different levels, so this only applies
+ // to single player, where "the player" is unambiguous.
+ if(game?.multiplayer||!game?.player||!(game.enemies?.length||game.boss))return;
+ const rescale=e=>{
+  if(!e||e.level==null)return;
+  const targetLevel=enemyLevelForFloor(game.floor),oldLevel=e.level;
+  if(targetLevel===oldLevel)return;
+  const hpRatio=(1+targetLevel*.13)/(1+oldLevel*.13),atkRatio=(1+targetLevel*.08)/(1+oldLevel*.08);
+  e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*hpRatio));
+  e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*hpRatio));
+  e.atk=Math.max(1,Math.round((e.atk||e.damage||4)*atkRatio));
+  e.damage=e.atk;
+  e.armor=Math.max(0,Math.round((e.armor||0)*hpRatio));
+  e.xp=Math.max(1,Math.round((e.xp||8)*hpRatio));
+  e.level=targetLevel;
+ };
+ for(const e of game.enemies||[])rescale(e);
+ rescale(game.boss);
+}
 function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
@@ -2346,7 +2377,7 @@ function spawnReinforcements(n,elite=false){
   if(game.map[y]?.[x]!==0||isSafeCell(x,y))continue;
   if((game.enemies||[]).some(e=>e.x===x&&e.y===y))continue;
   if(x===game.player.x&&y===game.player.y)continue;
-  const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false),{x,y},game.floor,false);
+  const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,game.floor,worldParams().floors||10),{x,y},game.floor,false);
   e.enemyFamily=family.name;e.waveTag=true;
   if(elite){e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.5);e.atk=e.damage=Math.round((e.atk||e.damage||4)*1.28);assignEnemySkills(e)}
   if(game.multiplayer){const m=partyHpMultiplier();if(m>1){e.maxHp=e.hp=Math.round(e.hp*m);e.partyScaled=true}}
@@ -2383,18 +2414,34 @@ function useAltar(a){
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
 }
-// Chest tier (1-5) scales with dungeon depth and character power, so the
-// same physical chest yields better loot deeper in and on stronger runs.
-function chestTierForFloor(floor,level){return Math.max(1,Math.min(5,1+Math.floor((floor||1)/8)+Math.floor((level||1)/20)))}
+// Chest tier (1-5) climbs from 1 at floor 1 to 5 at the dungeon's last floor
+// - the same progression shape as enemy tiers (enemyTierWeightsForDepth) -
+// scaling proportionally regardless of how many floors the world has, with
+// character level as a secondary nudge on top so a stronger character finds
+// slightly better chests early rather than the floor being the only factor.
+function chestTierForFloor(floor,level,totalFloors=20){
+ const depth=((floor||1)-1)/Math.max(1,(totalFloors||20)-1);
+ return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
+}
+// A whole floor giving out the exact same chest tier every time reads as
+// flat, so each chest jitters a little around the floor's ideal tier
+// instead of all matching it exactly - mostly the ideal tier, sometimes one
+// off, rarely two off.
+const CHEST_TIER_JITTER=[[-2,.05],[-1,.2],[0,.5],[1,.2],[2,.05]];
+function jitterChestTier(desired){
+ const r=Math.random();let acc=0;
+ for(const [off,w] of CHEST_TIER_JITTER){acc+=w;if(r<=acc)return Math.max(1,Math.min(5,desired+off))}
+ return desired;
+}
 // Dungeons only ever place chests backed by a real config_chest row - never a
-// generic/procedural one. Picks the nearest configured tier to the ideal one
-// for this floor+level (closest at-or-below first, then closest above) so a
-// world with only some tiers configured still uses what exists instead of
-// falling back to anything synthetic. Returns null only when config_chest is
-// completely empty, in which case no chest gets placed at all.
-function pickChestDefForFloor(floor,level){
+// generic/procedural one. Picks the nearest configured tier to the (jittered)
+// ideal one for this floor+level (closest at-or-below first, then closest
+// above) so a world with only some tiers configured still uses what exists
+// instead of falling back to anything synthetic. Returns null only when
+// config_chest is completely empty, in which case no chest gets placed at all.
+function pickChestDefForFloor(floor,level,totalFloors=20){
  if(!configChests.length)return null;
- const desired=chestTierForFloor(floor,level);
+ const desired=jitterChestTier(chestTierForFloor(floor,level,totalFloors));
  for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  return null;
@@ -3629,8 +3676,32 @@ function normalizeEnemyDetail(row){const stats=parseEnemyStatsBase(row.stats_bas
 function familyJsonFromDetails(name){return{schemaVersion:1,name,enemies:configEnemyDetails.map(normalizeEnemyDetail).filter(e=>e.family===name),weights:{tiers:enemyTierWeights,bossChance:.06},generatedAt:new Date().toISOString()}}
 function enemyDetailRowFromImportedEnemy(enemy,familyName){const e=normalizeEnemyDetail({...enemy,family:enemy.family||familyName,stats_base:enemy.stats_base||enemy.statsBase||enemy.stats||null,class:enemy.class||enemy.name||'',weapon_type:enemy.weapon_type||enemy.weaponType||'',skill:enemy.skill||enemy.skillIds||''});return{family:familyName,icon:e.icon||'',class:e.class||e.name||e.type,type:e.type,boss:e.boss?'si':'no',stats_base:JSON.stringify({...e.statsBase,coreStats:e.stats}),weapon_type:e.weaponType,tier:e.tier,skill:e.skillIds.join(',')}}
 function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.family_json||{}),dbId:r.id,name:r.family_json?.name||r.family_name,source:'enemy_family'})).filter(f=>f.name&&Array.isArray(f.enemies)&&f.enemies.length)}
-function enemyLevelForFloor(floor){return Math.max(1,Math.round(1+(floor-1)*3.2+rng(5)-2))}
-function weightedFamilyEnemy(family,wantBoss=false){let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(enemyTierWeights[e.tier]||12);for(let i=0;i<w;i++)bag.push(e)});return pick(bag)||pool[0]}
+// Enemy level is always anchored to the player's CURRENT level (read live
+// from `game`), with a modest per-floor bonus so deeper floors within the
+// same dungeon still feel harder at any given character level. This makes
+// fresh floor generation correct automatically; precomputed floors (baked
+// once at world creation against a synthetic level-1 preview character) are
+// re-anchored on load, see scaleFloorForPlayerLevel().
+function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;return Math.max(1,Math.round(playerLevel+(floor-1)*1.4+rng(3)-1))}
+// Enemy TIER mix shifts from mostly-weak to mostly-strong across the
+// dungeon's depth (d=0 at floor 1, d=1 at the last floor), so every run
+// reads as a progression on top of any room-specific tier rules, regardless
+// of how many floors the world has.
+function enemyTierWeightsForDepth(d){
+ d=Math.max(0,Math.min(1,d));
+ return {
+  i:Math.max(6,72-66*d),
+  ii:16+14*Math.min(1,d/.5),
+  iii:46*Math.max(0,Math.min(1,(d-.08)/.6)),
+  iv:56*Math.max(0,Math.min(1,(d-.45)/.55))
+ };
+}
+function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20){
+ let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];
+ const depth=(floor-1)/Math.max(1,totalFloors-1),tierWeights=enemyTierWeightsForDepth(depth);
+ const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
+ return pick(bag)||pool[0];
+}
 function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
