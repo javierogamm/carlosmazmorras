@@ -878,6 +878,35 @@ function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=world
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies();const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value=''});}
 function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+// Applies one buff/debuff effect entry to a numeric stat. The modern shape
+// is {mode:'add'|'mult',value} - a flat number added, or a straight
+// multiplier. A bare number is legacy shorthand for a percentage bonus
+// (current*(1+eff)), kept for the many hardcoded buffs elsewhere in the
+// file that still use it and for skills_json rows saved before this shape
+// existed - falling back gracefully instead of producing NaN.
+function applyStatDelta(current,eff){
+ if(eff==null)return current;
+ if(typeof eff==='object')return eff.mode==='mult'?current*eff.value:current+eff.value;
+ return current*(1+eff);
+}
+// 'armor'/'damage' buffs target an aggregate (total('armor')/total('damage'),
+// and the per-attack damage roll) rather than a raw player stat, so they're
+// read live from activeBuffs at the point of use instead of being folded
+// into recomputeDerived - these two split an effects[key] entry into its
+// multiplicative and additive contributions across every active buff.
+function activeBuffMultFactor(key){
+ return (game.player?.activeBuffs||[]).reduce((m,b)=>{
+  const eff=b.effects?.[key];if(eff==null)return m;
+  if(typeof eff==='object')return eff.mode==='mult'?m*eff.value:m;
+  return m*(1+eff); // legacy percentage buffs (bloodBuff, teleportBuff, etc)
+ },1)
+}
+function activeBuffFlatBonus(key){
+ return (game.player?.activeBuffs||[]).reduce((s,b)=>{
+  const eff=b.effects?.[key];
+  return (eff&&typeof eff==='object'&&eff.mode!=='mult')?s+eff.value:s;
+ },0)
+}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
@@ -897,11 +926,15 @@ function recomputeDerived(){
  // Buff-type skills can target any of the 6 core stats directly (buffStat)
  // instead of always touching damage/armor - applied here, before the
  // damage/armor/hp/stamina/mana deltas below are derived from allStats.
- // effects[k] is {mode:'add'|'mult',value} - a flat number added, or a
- // straight multiplier, never a "+X%" coefficient.
+ // effects[k] is normally {mode:'add'|'mult',value}: a flat number added, or
+ // a straight multiplier, never a "+X%" coefficient. A bare number is also
+ // accepted and treated as a legacy percentage bonus (current*(1+eff)) -
+ // both the many hardcoded creative-effect buffs elsewhere in this file
+ // (bloodBuff, teleportBuff, fortify, etc) and any skills_json rows saved
+ // by the admin editor before this add/mult rework still use that shape.
  for(const b of p.activeBuffs||[])for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){
   const eff=b.effects?.[k];if(eff==null)continue;
-  allStats[k]=Math.round(eff.mode==='mult'?allStats[k]*eff.value:allStats[k]+eff.value);
+  allStats[k]=Math.round(applyStatDelta(allStats[k],eff));
  }
  d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*5);
  d.maxStamina+=Math.max(0,(allStats.vitality-base.vitality)*4+(allStats.agility-base.agility)*2);
@@ -909,7 +942,6 @@ function recomputeDerived(){
  d.damage+=Math.floor((allStats.strength-base.strength)*1.2);
  d.armor+=Math.floor((allStats.vitality-base.vitality)*.6);
  for(const b of p.activeBuffs||[]){
-  if(b.effects?.armor)d.armor=Math.round(d.armor*(1+b.effects.armor));
   if(b.effects?.maxHp)d.maxHp+=b.effects.maxHp;
  }
  for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
@@ -2199,7 +2231,7 @@ function resolveSkillPower(id,actor=game.player){
  return Math.round((8+lvl*3+(d.resource==='mana'?statValueFor(actor,'intelligence')+statValueFor(actor,'wisdom')/2:statValueFor(actor,'strength')+statValueFor(actor,'agility')/3))*power)
 }
 function activeBuffDamageMultiplier(){
- return (game.player.activeBuffs||[]).reduce((m,b)=>m*(1+(b.effects?.damage||0)),1)*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
+ return activeBuffMultFactor('damage')*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
 }
 function diceDamageLabel(id){
  const expr=skillDiceExpr(id),d=skillDefs[id]||{};
@@ -2208,7 +2240,7 @@ function diceDamageLabel(id){
  return `${expr} + atributo`
 }
 
-function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;return v}
+function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
 function critChance(){return Math.min(.38,.04+game.player.stats.agility*.012+game.player.stats.luck*.005)}
 function attack(e,bonus=0,options={}){
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
@@ -2216,7 +2248,7 @@ function attack(e,bonus=0,options={}){
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
  const statMultFactor=skillId?skillStatMultiplier(skillId):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -2780,7 +2812,7 @@ const AP_COST_BY_EFFECT={
 };
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode))}
-function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};return 30+Math.ceil((st.agility||0)/2)}
+function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const base=30+Math.ceil((st.agility||0)/2);return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
 function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
 function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
@@ -3792,11 +3824,24 @@ function skillNames(ids=[]){return ids.map(id=>skillDefs[id]?.name||id).join(', 
 // make every other call site "read the DB first, fall back to the hardcoded
 // system" for free.
 const HARDCODED_CLASS_SKILL_TREE_IDS=new Set(Object.keys(classSkillTrees));
+// A skills_json row saved before the buff/debuff add-or-multiply rework
+// carries a buffStatCoef/debuffStatCoef written under the OLD percentage
+// semantics (e.g. 0.15 meaning "+15%") but has no buffStatMode/debuffStatMode
+// key at all, since that field didn't exist yet. Blindly merging it in would
+// silently reintroduce the "buffs round down to +0" bug that motivated this
+// fix - the stale coefficient wins over the already-corrected hardcoded
+// default. Strip it so the merge falls back to the current hardcoded value.
+function stripStaleCoefficients(override){
+ const o={...override};
+ if(o.buffStatCoef!=null&&!('buffStatMode' in override))delete o.buffStatCoef;
+ if(o.debuffStatCoef!=null&&!('debuffStatMode' in override))delete o.debuffStatCoef;
+ return o;
+}
 function applyClassSkillOverrides(){
  for(const row of configClasses){
   const bag=row.skills_json;if(!bag||typeof bag!=='object')continue;
   const classId=row.class_json?.classId||normalizeClassName(row.nombre);
-  for(const [skillId,override] of Object.entries(bag))skillDefs[skillId]={...(skillDefs[skillId]||{}),...override};
+  for(const [skillId,override] of Object.entries(bag))skillDefs[skillId]={...(skillDefs[skillId]||{}),...stripStaleCoefficients(override)};
   // classes without a hardcoded tree get theirs (re)synthesized every time,
   // so editing a custom class's skill tiers takes effect on the next load
   if(!HARDCODED_CLASS_SKILL_TREE_IDS.has(classId)){
