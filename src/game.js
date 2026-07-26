@@ -2423,15 +2423,25 @@ function chestTierForFloor(floor,level,totalFloors=20){
  const depth=((floor||1)-1)/Math.max(1,(totalFloors||20)-1);
  return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
 }
+// A whole floor giving out the exact same chest tier every time reads as
+// flat, so each chest jitters a little around the floor's ideal tier
+// instead of all matching it exactly - mostly the ideal tier, sometimes one
+// off, rarely two off.
+const CHEST_TIER_JITTER=[[-2,.05],[-1,.2],[0,.5],[1,.2],[2,.05]];
+function jitterChestTier(desired){
+ const r=Math.random();let acc=0;
+ for(const [off,w] of CHEST_TIER_JITTER){acc+=w;if(r<=acc)return Math.max(1,Math.min(5,desired+off))}
+ return desired;
+}
 // Dungeons only ever place chests backed by a real config_chest row - never a
-// generic/procedural one. Picks the nearest configured tier to the ideal one
-// for this floor+level (closest at-or-below first, then closest above) so a
-// world with only some tiers configured still uses what exists instead of
-// falling back to anything synthetic. Returns null only when config_chest is
-// completely empty, in which case no chest gets placed at all.
+// generic/procedural one. Picks the nearest configured tier to the (jittered)
+// ideal one for this floor+level (closest at-or-below first, then closest
+// above) so a world with only some tiers configured still uses what exists
+// instead of falling back to anything synthetic. Returns null only when
+// config_chest is completely empty, in which case no chest gets placed at all.
 function pickChestDefForFloor(floor,level,totalFloors=20){
  if(!configChests.length)return null;
- const desired=chestTierForFloor(floor,level,totalFloors);
+ const desired=jitterChestTier(chestTierForFloor(floor,level,totalFloors));
  for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  return null;
