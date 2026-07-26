@@ -4210,7 +4210,11 @@ function currentConfigClassJson(){
 async function saveConfigClass(item,skillsBag){
  const row=window.pendingNewClassId?null:configClassRowForId(item.classId);
  const method=row?'PUT':'POST',url=row?`/api/config-class?id=${encodeURIComponent(row.id)}`:'/api/config-class';
- const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag})});
+ // saving a class from this editor is the explicit signal that it's ready
+ // for Advanced skill mode - flips config_class.advanced to true so
+ // classIdsForSkillMode('advanced') picks it up regardless of whether its
+ // classId happens to reuse a hardcoded one (a reskinned/renamed class).
+ const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag,advanced:true})});
  const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');
  window.pendingNewClassId=null;
  await fetchConfigClasses();
@@ -4221,7 +4225,7 @@ function renderConfigClasses(){
  const previous=sel.value||selectedClass,ids=allClassIds();
  sel.innerHTML=ids.map(id=>`<option value="${id}">${resolveClassDef(id)?.name||id}</option>`).join('');
  sel.value=ids.includes(previous)?previous:selectedClass;
- if(list)list.innerHTML=ids.map(id=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'',c=resolveClassDef(id);return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${c.custom?'Clase personalizada':'Clase base'} · ${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}${row?.skills_json?' · Skills personalizadas':''}</span></div></div>`}).join('');
+ if(list)list.innerHTML=ids.map(id=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'',c=resolveClassDef(id);return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${c.custom?'Clase personalizada':'Clase base'} · ${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}${row?.skills_json?' · Skills personalizadas':''}${row?.advanced?' · <b style="color:#ffc35a">Advanced</b>':''}</span></div></div>`}).join('');
  loadSelectedConfigClass();
 }
 function loadSelectedConfigClass(){
@@ -6549,12 +6553,17 @@ function renderRaceChoices(){
 }
 renderRaceChoices();
 
-// Advanced mode only offers classes that exist purely in config_class (no
-// hardcoded classDefs counterpart at all) - a hardcoded class with a DB
-// stat/skill override is still a Hardcode-mode class, since its baseline
-// still comes from the hardcoded catalog.
+// Advanced eligibility is the explicit config_class.advanced flag (set by
+// saveConfigClass whenever a class is saved from the editor) - not whether
+// the classId happens to collide with a hardcoded one, since a class can be
+// a deliberate reskin/rename of a hardcoded class (same classId, different
+// name/stats/skills) and still be meant purely for Advanced mode.
 function classIdsForSkillMode(mode){
- if(mode==='advanced')return allClassIds().filter(id=>!classDefs[id]);
+ if(mode==='advanced'){
+  const ids=new Set();
+  for(const row of configClasses){const cid=row.class_json?.classId;if(cid&&row.advanced===true)ids.add(cid)}
+  return [...ids];
+ }
  return Object.keys(classDefs);
 }
 function renderClassChoices(){
