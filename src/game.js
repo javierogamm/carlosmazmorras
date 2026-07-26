@@ -168,7 +168,7 @@ const skillDefs={
  yunque_t2_1:{"name": "Carga del Coloso", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "yunque", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  yunque_t2_2:{"name": "Piel de Fortaleza", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "yunque", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  yunque_t2_3:{"name": "Cadena Demoledora", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "yunque", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- yunque_t2_4:{"name": "Rugido del Yunque", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "yunque", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ yunque_t2_4:{"name": "Golpe de Contención", "icon": "⊙", "desc": "Golpea y aturde brevemente al objetivo.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 1, "classId": "yunque", "tier": 2, "classEffect": "stun", "targetMode": "enemy", "enemyUsable": true},
  yunque_t3_1:{"name": "Ciudadela Ambulante", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "yunque", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  yunque_t3_2:{"name": "Juicio de Hierro", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "yunque", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  yunque_t3_3:{"name": "Corazón Inquebrantable", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "yunque", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -180,7 +180,7 @@ const skillDefs={
  berserker_t2_1:{"name": "Torbellino Magenta", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "berserker", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  berserker_t2_2:{"name": "Implante Sobrecargado", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "berserker", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  berserker_t2_3:{"name": "Aullido de Guerra", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "berserker", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- berserker_t2_4:{"name": "Desgarro de Cromo", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "berserker", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ berserker_t2_4:{"name": "Tajo Frenético", "icon": "❣", "desc": "Golpe salvaje que abre una herida sangrante.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 1, "classId": "berserker", "tier": 2, "classEffect": "bleed", "targetMode": "enemy", "enemyUsable": true},
  berserker_t3_1:{"name": "Apocalipsis Rosa", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "berserker", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  berserker_t3_2:{"name": "Última Sobrecarga", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "berserker", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  berserker_t3_3:{"name": "Rabia Inmortal", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "berserker", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -192,7 +192,7 @@ const skillDefs={
  necromancer_t2_1:{"name": "Explosión de Restos", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "necromancer", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  necromancer_t2_2:{"name": "Muro de Huesos", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "necromancer", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  necromancer_t2_3:{"name": "Legión Corrupta", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "necromancer", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- necromancer_t2_4:{"name": "Peste Binaria", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "necromancer", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ necromancer_t2_4:{"name": "Robo de Esencia", "icon": "⟳", "desc": "Drena vida y energía directamente del objetivo.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "necromancer", "tier": 2, "classEffect": "drain", "targetMode": "enemy", "enemyUsable": true},
  necromancer_t3_1:{"name": "Reinicio de Cadáver", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "necromancer", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  necromancer_t3_2:{"name": "Trono del Archiliche", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "necromancer", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  necromancer_t3_3:{"name": "Cosecha de Almas", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "necromancer", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -204,7 +204,7 @@ const skillDefs={
  paladin_t2_1:{"name": "Lanza Solar", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "paladin", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  paladin_t2_2:{"name": "Aura de Valor", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "paladin", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  paladin_t2_3:{"name": "Juicio Compilado", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "paladin", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- paladin_t2_4:{"name": "Milagro de Emergencia", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "paladin", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ paladin_t2_4:{"name": "Golpe de Absolución", "icon": "✝", "desc": "Castiga al enemigo y convierte el daño en curación.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "paladin", "tier": 2, "classEffect": "holyLeech", "targetMode": "enemy", "enemyUsable": true},
  paladin_t3_1:{"name": "Cruzada de Circuitos", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "paladin", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  paladin_t3_2:{"name": "Resurrección Parcial", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "paladin", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  paladin_t3_3:{"name": "Bastión Sagrado", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "paladin", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -216,7 +216,7 @@ const skillDefs={
  jester_t2_1:{"name": "Confeti Explosivo", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "jester", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  jester_t2_2:{"name": "Risa Contagiosa", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "jester", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  jester_t2_3:{"name": "Sombrero Infinito", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "jester", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- jester_t2_4:{"name": "Cambio de Papeles", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "jester", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ jester_t2_4:{"name": "Truco de Manos", "icon": "⇄", "desc": "Intercambias posición con el objetivo y lo dejas confundido.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "jester", "tier": 2, "classEffect": "swapConfuse", "targetMode": "enemy", "enemyUsable": true},
  jester_t3_1:{"name": "Gran Chiste Final", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "jester", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  jester_t3_2:{"name": "Ruleta del Vacío", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "jester", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  jester_t3_3:{"name": "Ovación Mortal", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "jester", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -228,7 +228,7 @@ const skillDefs={
  sniper_t2_1:{"name": "Flecha Perforante", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "sniper", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  sniper_t2_2:{"name": "Trampa de Cazador", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "sniper", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  sniper_t2_3:{"name": "Descarga Gemela", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "sniper", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- sniper_t2_4:{"name": "Camuflaje Rúnico", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "sniper", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ sniper_t2_4:{"name": "Disparo Perforante", "icon": "➳", "desc": "Bala que atraviesa al objetivo con precisión letal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 8, "classId": "sniper", "tier": 2, "classEffect": "lineShot", "targetMode": "enemy", "enemyUsable": true},
  sniper_t3_1:{"name": "Tiro a Través del Mundo", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "sniper", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  sniper_t3_2:{"name": "Lluvia de Flechas", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "sniper", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  sniper_t3_3:{"name": "Ejecución Perfecta", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "sniper", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -240,7 +240,7 @@ const skillDefs={
  shaman_t2_1:{"name": "Cadena de Relámpagos", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "shaman", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  shaman_t2_2:{"name": "Tótem Sanador", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "shaman", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  shaman_t2_3:{"name": "Paso del Viento", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "shaman", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- shaman_t2_4:{"name": "Maldición Estática", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "shaman", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ shaman_t2_4:{"name": "Tótem de Tormenta", "icon": "⚡", "desc": "Invoca un tótem que castiga a los enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "shaman", "tier": 2, "classEffect": "stormTotem", "targetMode": "area", "enemyUsable": true},
  shaman_t3_1:{"name": "Tempestad Ancestral", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "shaman", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  shaman_t3_2:{"name": "Avatar del Rayo", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "shaman", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  shaman_t3_3:{"name": "Consejo de Espíritus", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "shaman", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -252,7 +252,7 @@ const skillDefs={
  thief_t2_1:{"name": "Corte Imposible", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "thief", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  thief_t2_2:{"name": "Bomba de Sombra", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "thief", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  thief_t2_3:{"name": "Robo de Energía", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "thief", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- thief_t2_4:{"name": "Duplicado Fantasma", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "thief", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ thief_t2_4:{"name": "Golpe desde las Sombras", "icon": "☾", "desc": "Te desvaneces y golpeas al objetivo dejándolo herido.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "thief", "tier": 2, "classEffect": "shadowStrike", "targetMode": "enemy", "enemyUsable": true},
  thief_t3_1:{"name": "Atraco Temporal", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "thief", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  thief_t3_2:{"name": "Evasión Absoluta", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "thief", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  thief_t3_3:{"name": "Mil Cortes", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "thief", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -264,7 +264,7 @@ const skillDefs={
  cleric_t2_1:{"name": "Rayo de Silicio", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "cleric", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  cleric_t2_2:{"name": "Purga de Corrupción", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "cleric", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  cleric_t2_3:{"name": "Santuario Portátil", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "cleric", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- cleric_t2_4:{"name": "Manos del Servidor", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "cleric", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ cleric_t2_4:{"name": "Silencio Sagrado", "icon": "⊘", "desc": "Golpea y silencia al objetivo, impidiendo su magia.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "cleric", "tier": 2, "classEffect": "silence", "targetMode": "enemy", "enemyUsable": true},
  cleric_t3_1:{"name": "Resurrección de Emergencia", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "cleric", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  cleric_t3_2:{"name": "Diluvio Sagrado", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "cleric", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  cleric_t3_3:{"name": "Avatar del Templo", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "cleric", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -276,7 +276,7 @@ const skillDefs={
  entropyMage_t2_1:{"name": "Onda de Ruina", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "entropyMage", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  entropyMage_t2_2:{"name": "Colapso Local", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "entropyMage", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  entropyMage_t2_3:{"name": "Robo de Tiempo", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "entropyMage", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- entropyMage_t2_4:{"name": "Campo de Decadencia", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "entropyMage", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ entropyMage_t2_4:{"name": "Eco de Entropía", "icon": "∿", "desc": "Inflige un daño que se repite en el tiempo.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "entropyMage", "tier": 2, "classEffect": "echoDot", "targetMode": "enemy", "enemyUsable": true},
  entropyMage_t3_1:{"name": "Fin Estadístico", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "entropyMage", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  entropyMage_t3_2:{"name": "Agujero de Entropía", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "entropyMage", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  entropyMage_t3_3:{"name": "Deshacer Realidad", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "entropyMage", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -288,7 +288,7 @@ const skillDefs={
  bountyHunter_t2_1:{"name": "Granada Rastreadora", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "bountyHunter", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  bountyHunter_t2_2:{"name": "Doble Disparo", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "bountyHunter", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  bountyHunter_t2_3:{"name": "Blindaje Mercenario", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "bountyHunter", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- bountyHunter_t2_4:{"name": "Cobro Anticipado", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "bountyHunter", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ bountyHunter_t2_4:{"name": "Red de Captura", "icon": "⊠", "desc": "Inmoviliza al objetivo con una red de cazarrecompensas.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 6, "classId": "bountyHunter", "tier": 2, "classEffect": "bountyRoot", "targetMode": "enemy", "enemyUsable": true},
  bountyHunter_t3_1:{"name": "Caza Total", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "bountyHunter", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  bountyHunter_t3_2:{"name": "Misil de Bolsillo", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "bountyHunter", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  bountyHunter_t3_3:{"name": "Sentencia del Contrato", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "bountyHunter", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -300,7 +300,7 @@ const skillDefs={
  druid_t2_1:{"name": "Enjambre Metálico", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "druid", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  druid_t2_2:{"name": "Forma de Bestia", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "druid", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  druid_t2_3:{"name": "Bosque Improvisado", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "druid", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- druid_t2_4:{"name": "Polen Tóxico", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "druid", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ druid_t2_4:{"name": "Enredadera Devoradora", "icon": "✤", "desc": "Raíces que inmovilizan y desangran al objetivo.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "druid", "tier": 2, "classEffect": "rootBleed", "targetMode": "enemy", "enemyUsable": true},
  druid_t3_1:{"name": "Avatar del Chatarral", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "druid", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  druid_t3_2:{"name": "Raíces del Mundo", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "druid", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  druid_t3_3:{"name": "Manada Aumentada", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "druid", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -312,7 +312,7 @@ const skillDefs={
  monk_t2_1:{"name": "Eco del Golpe", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "monk", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  monk_t2_2:{"name": "Bucle Defensivo", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "monk", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  monk_t2_3:{"name": "Palma del Segundo Perdido", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "monk", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- monk_t2_4:{"name": "Meditación Acelerada", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "monk", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ monk_t2_4:{"name": "Golpe Sellado", "icon": "☯", "desc": "Marca al objetivo para amplificar el siguiente golpe.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 1, "classId": "monk", "tier": 2, "classEffect": "comboMark", "targetMode": "enemy", "enemyUsable": true},
  monk_t3_1:{"name": "Mil Puños Simultáneos", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "monk", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  monk_t3_2:{"name": "Detener el Turno", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "monk", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  monk_t3_3:{"name": "Regreso al Instante", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "monk", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -324,7 +324,7 @@ const skillDefs={
  engineer_t2_1:{"name": "Lanzallamas Casero", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "engineer", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  engineer_t2_2:{"name": "Campo Magnético", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "engineer", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  engineer_t2_3:{"name": "Autómata de Guerra", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "engineer", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- engineer_t2_4:{"name": "Cóctel Transmutador", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "engineer", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ engineer_t2_4:{"name": "Mina de Precisión", "icon": "☒", "desc": "Coloca una mina que detona con los enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 5, "classId": "engineer", "tier": 2, "classEffect": "trap", "targetMode": "area", "enemyUsable": true},
  engineer_t3_1:{"name": "Fábrica Instantánea", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "engineer", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  engineer_t3_2:{"name": "Cañón de Singularidad", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "engineer", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  engineer_t3_3:{"name": "Ejército Mecánico", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "engineer", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -336,7 +336,7 @@ const skillDefs={
  seer_t2_1:{"name": "Rayo del Futuro", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 22, "type": "magic", "rarity": "rare", "range": 0, "classId": "seer", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  seer_t2_2:{"name": "Espejo de Posibilidades", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "seer", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  seer_t2_3:{"name": "Destino Torcido", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 26, "type": "magic", "rarity": "rare", "range": 8, "classId": "seer", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- seer_t2_4:{"name": "Ojo del Abismo", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "seer", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ seer_t2_4:{"name": "Marca del Destino", "icon": "☥", "desc": "Marca a un enemigo con un augurio fatal.", "cd": 7, "unlock": "Clase", "resource": "mana", "cost": 28, "type": "magic", "rarity": "rare", "range": 6, "classId": "seer", "tier": 2, "classEffect": "doomMark", "targetMode": "enemy", "enemyUsable": true},
  seer_t3_1:{"name": "Profecía Cumplida", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 29, "type": "magic", "rarity": "epic", "range": 8, "classId": "seer", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  seer_t3_2:{"name": "Detener la Catástrofe", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 31, "type": "magic", "rarity": "epic", "range": 8, "classId": "seer", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  seer_t3_3:{"name": "Mil Futuros", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "mana", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "seer", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -348,7 +348,7 @@ const skillDefs={
  beastGuardian_t2_1:{"name": "Embate Bestial", "icon": "✹", "desc": "Golpea a varios enemigos cercanos.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 22, "type": "physical", "rarity": "rare", "range": 0, "classId": "beastGuardian", "tier": 2, "classEffect": "aoe", "enemyUsable": true},
  beastGuardian_t2_2:{"name": "Piel de Quimera", "icon": "✚", "desc": "Recupera vida y parte del recurso principal.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 24, "type": "utility", "rarity": "rare", "range": 0, "classId": "beastGuardian", "tier": 2, "classEffect": "heal", "enemyUsable": true},
  beastGuardian_t2_3:{"name": "Manada Cibernética", "icon": "ϟ", "desc": "Realiza varios impactos contra enemigos visibles.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 26, "type": "physical", "rarity": "rare", "range": 8, "classId": "beastGuardian", "tier": 2, "classEffect": "multihit", "enemyUsable": true},
- beastGuardian_t2_4:{"name": "Mordida Paralizante", "icon": "◐", "desc": "Revela terreno y mejora temporalmente tu posición.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "utility", "rarity": "rare", "range": 0, "classId": "beastGuardian", "tier": 2, "classEffect": "utility", "enemyUsable": true},
+ beastGuardian_t2_4:{"name": "Zarpazo Desgarrador", "icon": "⚔", "desc": "Zarpazo brutal que abre heridas profundas.", "cd": 7, "unlock": "Clase", "resource": "stamina", "cost": 28, "type": "physical", "rarity": "rare", "range": 1, "classId": "beastGuardian", "tier": 2, "classEffect": "hookBleed", "targetMode": "enemy", "enemyUsable": true},
  beastGuardian_t3_1:{"name": "Avatar de la Bestia", "icon": "★", "desc": "Ataque potente en un área amplia.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 29, "type": "physical", "rarity": "epic", "range": 8, "classId": "beastGuardian", "tier": 3, "classEffect": "ultimate", "enemyUsable": true},
  beastGuardian_t3_2:{"name": "Caza Salvaje", "icon": "✂", "desc": "Inflige daño enorme a enemigos heridos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 31, "type": "physical", "rarity": "epic", "range": 8, "classId": "beastGuardian", "tier": 3, "classEffect": "execute", "enemyUsable": true},
  beastGuardian_t3_3:{"name": "Corazón de Alfa", "icon": "Ψ", "desc": "Mejora daño, armadura y regeneración durante varios turnos.", "cd": 10, "unlock": "Clase", "resource": "stamina", "cost": 33, "type": "utility", "rarity": "epic", "range": 0, "classId": "beastGuardian", "tier": 3, "classEffect": "buff", "enemyUsable": true},
@@ -2648,6 +2648,15 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  return false
 }
 
+// The 12 shared classEffect tags (one per class per tier-slot: ranged, shield,
+// dash, debuff, aoe, heal, multihit, utility, ultimate, execute, buff, massive)
+// already have their own dedicated handling elsewhere (useSkill's self-cast
+// chain, or the differentiated logic right after this function's call sites in
+// resolveTargetedSkill). applyCreativeClassEffect is for the distinctive
+// per-class "signature" effects (root, freeze, drain, summon, teleport...);
+// it must never intercept the shared tags, or the differentiated logic below
+// each call site (execute multiplier, debuff status, etc.) never runs.
+const GENERIC_CLASS_EFFECTS=new Set(['ranged','shield','dash','debuff','aoe','heal','multihit','utility','ultimate','execute','buff','massive']);
 function applyCreativeClassEffect(id,target,x,y){
  const d=skillDefs[id],lvl=skillLevel(id),effect=d.classEffect,turns=2+Math.floor(lvl/3),p=game.player;
  if(applyClassEffectState(effect,id,target,x,y,lvl))return true;
@@ -2691,21 +2700,38 @@ function applyCreativeClassEffect(id,target,x,y){
 // apMode). A turn is a pool of points: attack/skill 10, move 5. The turn only
 // passes via the PASAR TURNO button; enemies get their own pool (20 + AGI).
 const AP_COSTS={move:5,attack:10,skill:10};
+// Per-skill AP variance on top of the flat 10 baseline: quick utility/mobility
+// costs a bit less, wide-hitting or execute/ultimate payoffs cost a bit more.
+// Keyed by classEffect so it covers both the 12 shared class-skill tags and
+// the newer per-class signature effects without needing a field on every one
+// of the ~240 skill entries; anything not listed (the original generic-item
+// skills, the Botín pool) stays at the AP_COSTS.skill baseline.
+const AP_COST_BY_EFFECT={
+ dash:8,utility:8,shield:9,heal:9,buff:9,
+ debuff:10,ranged:10,
+ aoe:12,multihit:12,execute:12,
+ ultimate:14,massive:14,
+ stun:11,silence:11,doomMark:11,swapConfuse:11,
+ bleed:11,drain:11,holyLeech:11,echoDot:11,hookBleed:11,
+ bountyRoot:11,rootBleed:11,comboMark:11,lineShot:11,
+ stormTotem:12,trap:12,shadowStrike:11
+};
+function skillApCost(id){return AP_COST_BY_EFFECT[skillDefs[id]?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode))}
 function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};return 30+Math.ceil((st.agility||0)/2)}
 function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
-function apCan(kind){
+function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
  if(game.player.ap==null)startPlayerAP();
- if(game.player.ap>=AP_COSTS[kind])return true;
+ if(game.player.ap>=cost)return true;
  log(`Sin puntos de acción para ${kind==='move'?'moverte':'esa acción'} (${game.player.ap} PA). Pasa turno.`,'sys');
  return false;
 }
 // Replaces the old per-action playerFinished(): spends points and keeps the turn.
-function actionDone(kind){
+function actionDone(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return playerFinished();
  if(game.player.ap==null)startPlayerAP();
- game.player.ap=Math.max(0,game.player.ap-AP_COSTS[kind]);
+ game.player.ap=Math.max(0,game.player.ap-cost);
  busy=false;updateUI();requestAnimationFrame(animate);
 }
 function playerFinished(){
@@ -2896,11 +2922,19 @@ function skillRangeLabel(id){
  return `Alcance ${r} · ${area?'Área · ':''}defensa: ${attackDefenseLabel(inferSkillDefenseStat(id))} · ${pct}% daño base`
 }
 
+// Heal-flavored class skills self-target by default (unchanged for single
+// player); in multiplayer, with a living ally around, they open ally-or-self
+// targeting instead, since there was previously no way to ever heal a party
+// member. Scoped to the classEffect:'heal' skills specifically (not the
+// handful of bespoke self-only utility skills like campfire/cleanse, which
+// keep their own distinct behavior untouched).
+function isSelfHealSkill(id){return skillDefs[id]?.classEffect==='heal'}
 function skillTargetMode(id){
  const d=skillDefs[id];if(!d)return null;
  if(d.targetMode==='self')return null;
  if(d.targetMode==='area')return 'area';
  if(d.targetMode==='enemy')return 'enemy';
+ if(isSelfHealSkill(id)&&game?.multiplayer&&(game.otherPlayers||[]).some(p=>p.hp>0))return 'ally';
  if(d.type==='utility')return null;
  if(AREA_SKILLS.has(id)||['aoe','ultimate','massive','multihit'].includes(d.classEffect))return 'area';
  if(ENEMY_TARGET_SKILLS.has(id)||d.classEffect==='ranged'||d.classEffect==='debuff'||d.classEffect==='execute'||isRangedSkill(id))return 'enemy';
@@ -2910,7 +2944,7 @@ function beginTargeting(action){
  pendingTargetAction=action;updateUI();document.getElementById('waitBtn')?.classList.add('hidden');document.getElementById('cancelTargetBtn')?.classList.remove('hidden');
  document.getElementById('gameStage')?.classList.add('targeting');
  const hint=document.getElementById('targetHint');
- if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=action.mode==='area'?`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`:`Selecciona un enemigo · alcance ${rangeText} · ESC para cancelar`;hint.classList.remove('hidden')}
+ if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=action.mode==='area'?`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`:action.mode==='ally'?`Selecciona un aliado o a ti mismo · alcance ${rangeText} · ESC para cancelar`:`Selecciona un enemigo · alcance ${rangeText} · ESC para cancelar`;hint.classList.remove('hidden')}
  closeInspect()
 }
 function cancelTargeting(message='Apuntado cancelado.'){
@@ -2921,15 +2955,16 @@ function validateTargetCell(x,y,range,minRange=1){const dist=gridDistance(game.p
 function targetedSkillDamage(id){const d=skillDefs[id],lvl=skillLevel(id),stat=d.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3;return Math.round((5+lvl*2+stat)*skillPowerMultiplier(id))}
 function resolveTargetedSkill(slot,x,y){
  const id=game.player.equippedSkills[slot],d=skillDefs[id];if(!id||!d)return false;
- const range=skillRange(id)||1;if(!validateTargetCell(x,y,range)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
+ const range=skillRange(id)||1,mode0=skillTargetMode(id);
+ if(!validateTargetCell(x,y,range,mode0==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
  if(game.player[d.resource]<d.cost){log(`Necesitas ${d.cost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
- const mode=skillTargetMode(id),rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
+ const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(mode==='enemy'){
   const enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
-  if(d.classId&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
+  if(d.classId&&!GENERIC_CLASS_EFFECTS.has(d.classEffect)&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
   if(used){}else{
   let mult=d.rarity==='legendary'?2.2:d.rarity==='epic'?1.75:d.rarity==='rare'?1.4:1.1;
   if(d.classEffect==='execute'||id==='execute')mult*=enemy.hp/enemy.maxHp<.4?2.35:1;
@@ -2940,14 +2975,28 @@ function resolveTargetedSkill(slot,x,y){
  }else if(mode==='area'){
   const radius=Math.min(4,1+Math.floor(skillLevel(id)/4)+(d.tier===3?1:0));
   const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=radius&&game.seen?.[e.y]?.[e.x]&&hasLineOfSight(game.player,e));
-  if(d.classId&&applyCreativeClassEffect(id,targets[0]||null,x,y)){used=true}
+  if(d.classId&&!GENERIC_CLASS_EFFECTS.has(d.classEffect)&&applyCreativeClassEffect(id,targets[0]||null,x,y)){used=true}
   if(!used&&!targets.length){log('No hay enemigos dentro del área seleccionada.','sys');return false}
   const mult=['blackSun','worldBreaker'].includes(id)||d.classEffect==='massive'?1.65:d.classEffect==='ultimate'?1.35:1;
   if(!used){targets.forEach(e=>attack(e,0,{skillId:id,multiplier:mult*rangeMult*.85}));floating('ÁREA',x,y,'#d989ff');used=true}
+ }else if(mode==='ally'){
+  const isSelf=x===game.player.x&&y===game.player.y;
+  const ally=!isSelf?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
+  if(!isSelf&&!ally){log('Selecciona un aliado o a ti mismo.','sys');return false}
+  const hpAmount=base*2,resAmount=base;
+  if(isSelf){
+   healEntity(game.player,hpAmount);
+   game.player[d.resource]=Math.min(game.player[d.resource==='mana'?'maxMana':'maxStamina'],game.player[d.resource]+resAmount);
+  }else{
+   healEntity(ally,hpAmount,ally.x,ally.y); // visual only here - the real hp change happens on the ally's own client
+   sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount,resAmount,resType:d.resource,id:crypto.randomUUID()});
+   log('Curas a tu aliado.','good');
+  }
+  used=true;
  }
  if(!used)return false;
- if(!apCan('skill'))return false;
- game.player[d.resource]-=d.cost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill');return true
+ if(!apCan('skill',skillApCost(id)))return false;
+ game.player[d.resource]-=d.cost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
 }
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
@@ -2966,7 +3015,7 @@ function resolveBasicAttack(x,y){
 
 function useSkill(slot){
  if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}if(game.player[def.resource]<def.cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
- const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id)});return}
+ const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
  let used=!def.classEffect&&skillDefs[id]?.unlock!=='Botín';
@@ -2980,7 +3029,7 @@ function useSkill(slot){
  
 
 
- if(!used&&def.classId&&def.targetMode==='self')used=applyCreativeClassEffect(id,null,game.player.x,game.player.y);
+ if(!used&&def.classId&&def.targetMode==='self'&&!GENERIC_CLASS_EFFECTS.has(def.classEffect))used=applyCreativeClassEffect(id,null,game.player.x,game.player.y);
  if(!used&&def.classEffect){
   const lvl=skillLevel(id),power=skillPowerMultiplier(id),visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
   const base=Math.round((8+lvl*3+(def.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3))*power);
@@ -3052,8 +3101,8 @@ function useSkill(slot){
  }
 
  if(!used){log('No hay un objetivo válido.','sys');return}
- if(!apCan('skill'))return;
- game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill');
+ if(!apCan('skill',skillApCost(id)))return;
+ game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
 function equipItem(id){
@@ -3095,12 +3144,12 @@ function updateUI(){
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
- skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
+ skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
  // detail moves into the title tooltip instead of stacking extra lines.
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
 function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnimationFrame(animate)}else draw()}
@@ -3108,7 +3157,7 @@ function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnima
 function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;
  ctx.save();ctx.globalAlpha=.28;
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})>=(pendingTargetAction.minRange||1)&&gridDistance(game.player,{x:gx,y:gy})<=range&&hasLineOfSight(game.player,{x:gx,y:gy})){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})>=(pendingTargetAction.minRange??1)&&gridDistance(game.player,{x:gx,y:gy})<=range&&hasLineOfSight(game.player,{x:gx,y:gy})){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
  ctx.restore()
 }
 
@@ -4808,6 +4857,20 @@ function renderRemoteXpShare(action){
  if(typeof action.amount==='number')grantXp(action.amount);
  updateUI();
 }
+// Unlike every other action renderer (pure visual sugar), this one deliberately
+// mutates real state - the caster's client never has authority over the
+// ally's hp/resource, so casting a heal ON an ally has no other channel to
+// actually reach them. Applies only on the intended recipient's own client,
+// and only once per cast (dedup, same pattern as xp_share).
+function renderRemoteAllyHeal(action){
+ if(String(action.targetId)!==String(game.pjId))return;
+ game.mpHealGrantsApplied=game.mpHealGrantsApplied||new Set();
+ if(!action.id||game.mpHealGrantsApplied.has(action.id))return;
+ game.mpHealGrantsApplied.add(action.id);
+ if(typeof action.hpAmount==='number')healEntity(game.player,action.hpAmount);
+ if(typeof action.resAmount==='number'&&action.resType){const maxKey=action.resType==='mana'?'maxMana':'maxStamina';game.player[action.resType]=Math.min(game.player[maxKey],game.player[action.resType]+action.resAmount)}
+ log('Un aliado te ha curado.','good');updateUI();
+}
 function renderFloorTransitionStart(){
  if(!game)return;
  game.mpFloorTransitioning=true;
@@ -4836,6 +4899,7 @@ const MP_ACTION_RENDERERS={
  enemy_heal:renderRemoteHeal,
  enemy_death:renderRemoteEnemyDeath,
  xp_share:renderRemoteXpShare,
+ ally_heal:renderRemoteAllyHeal,
  enemy_phase_start:renderEnemyPhaseStart,
  enemy_phase_end:renderEnemyPhaseEnd,
  floor_transition_start:renderFloorTransitionStart
