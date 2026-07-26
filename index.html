@@ -216,21 +216,66 @@
   <div class="configLayout">
    <section class="panel">
     <h2>Editor de clases</h2>
-    <p class="small">Selecciona una clase de las existentes en el juego y sube el icono del personaje. Al guardar se consolida en <code>config_class</code> y desde ese momento esa clase usa ese icono; puedes volver al sprite pixel original con rollback.</p>
+    <p class="small">Selecciona una clase, crea una nueva o duplica una existente. Stats, skills e icono se consolidan en <code>config_class</code> (skills en la columna <code>skills_json</code>); el motor las lee de ahí primero y usa el sistema por defecto si no existen.</p>
     <label>Clase del juego <select id="configClassSelect"></select></label>
+    <div class="configItemActions">
+     <button type="button" id="newConfigClassBtn">NUEVA CLASE</button>
+     <button type="button" id="duplicateConfigClassBtn">DUPLICAR CLASE</button>
+    </div>
+    <label>Nombre <input id="configClassName" maxlength="80" placeholder="Nombre de la clase"></label>
+    <label>Descripción <input id="configClassDesc" maxlength="160" placeholder="Descripción de la clase"></label>
     <label>Icono de personaje <input type="file" id="configClassImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
     <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
-    <label>Nombre <input id="configClassName" maxlength="80" readonly placeholder="Nombre de la clase"></label>
-    <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
     <button id="rollbackConfigClassBtn" type="button">ROLLBACK AL ORIGINAL</button>
+    <h3>Stats iniciales</h3>
+    <div class="configForm">
+     <label>Fuerza <input id="configClassStr" type="number" min="0" value="2"></label>
+     <label>Vitalidad <input id="configClassVit" type="number" min="0" value="2"></label>
+     <label>Agilidad <input id="configClassAgi" type="number" min="0" value="2"></label>
+     <label>Suerte <input id="configClassLuck" type="number" min="0" value="2"></label>
+     <label>Inteligencia <input id="configClassInt" type="number" min="0" value="2"></label>
+     <label>Sabiduría <input id="configClassWis" type="number" min="0" value="2"></label>
+    </div>
+    <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
     <div id="configClassStatus" class="small"></div>
    </section>
    <section class="panel">
-    <h2>Clases guardadas</h2>
-    <div id="configClassesList" class="configItemsList"></div>
+    <h2>Skills de la clase</h2>
+    <label>Skill <select id="configClassSkillSelect"></select></label>
+    <div class="configItemActions">
+     <button type="button" id="newConfigSkillBtn">NUEVA SKILL</button>
+     <button type="button" id="duplicateConfigSkillBtn">DUPLICAR SKILL</button>
+    </div>
+    <div class="configForm">
+     <label>Id interno <input id="configSkillId" maxlength="60"></label>
+     <label>Nombre <input id="configSkillName" maxlength="80"></label>
+     <label>Icono (emoji/texto) <input id="configSkillIconText" maxlength="4"></label>
+     <label>Tier <select id="configSkillTier"><option value="1">I</option><option value="2">II</option><option value="3">III</option></select></label>
+     <label>Recurso <select id="configSkillResource"><option value="stamina">Stamina</option><option value="mana">Maná</option></select></label>
+     <label>Coste de recurso <input id="configSkillCost" type="number" min="0" value="10"></label>
+     <label>Enfriamiento (turnos) <input id="configSkillCd" type="number" min="0" value="5"></label>
+     <label>Tipo <select id="configSkillType"><option value="physical">Físico</option><option value="magic">Mágico</option><option value="utility">Utilidad</option></select></label>
+     <label>Rareza <select id="configSkillRarity"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option></select></label>
+     <label>Alcance (0 = cuerpo a cuerpo) <input id="configSkillRange" type="number" min="0" value="1"></label>
+     <label>Modo de objetivo <select id="configSkillTargetMode"><option value="">Automático</option><option value="self">Uno mismo</option><option value="enemy">Enemigo</option><option value="area">Área</option></select></label>
+     <label>Efecto (classEffect) <select id="configSkillEffect"></select><span class="small">Si eliges un efecto que no sea uno de los 12 básicos (ranged/shield/dash/debuff/aoe/heal/multihit/utility/ultimate/execute/buff/massive), fija el modo de objetivo en Enemigo, Área o Uno mismo para que sea invocable.</span></label>
+     <label class="tileRotateLabel"><input id="configSkillEnemyUsable" type="checkbox" checked> Los enemigos también pueden usarla</label>
+    </div>
+    <label>Descripción <input id="configSkillDesc" maxlength="200" placeholder="Descripción de la skill"></label>
+    <label>Icono de imagen (opcional, sustituye al emoji en juego) <input type="file" id="configSkillImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configSkillCropZoom" min="25" max="400" value="100"></label><button type="button" id="configSkillMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configSkillMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configSkillCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final de la skill a 50x50 px.</div></div>
+    <div class="configPreview"><canvas id="configSkillIconPreview" width="50" height="50"></canvas><span id="configSkillIconStatus" class="small">Sin imagen: se usa el icono de texto/emoji.</span></div>
+    <button id="rollbackConfigSkillIconBtn" type="button">QUITAR ICONO DE IMAGEN</button>
+    <button class="start" id="saveConfigSkillBtn" type="button">GUARDAR SKILL EN LA CLASE</button>
+    <div id="configSkillStatus" class="small"></div>
    </section>
   </div>
+  <section class="panel">
+   <h2>Clases guardadas</h2>
+   <div id="configClassesList" class="configItemsList"></div>
+  </section>
  </div>
 
  <div class="configTabPanel hidden" id="configTabTilesets">

@@ -1226,7 +1226,7 @@ function processClassSkillChoices(){
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
 
 function start(){
- const race=selectedRace,cls=classDefs[selectedClass],stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
+ const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
@@ -3139,17 +3139,18 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||classDefs[p.cls]?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
- skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id);return`<div class="skillCard"><b>${d.icon} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
+ skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
  // detail moves into the title tooltip instead of stacking extra lines.
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${d.icon}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
 function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnimationFrame(animate)}else draw()}
@@ -3303,6 +3304,15 @@ function wallRotationForDirection(direction){return {top:0,right:90,bottom:180,l
 function directionalWallTile(tiles,direction,seed){const exact=tiles.filter(t=>!t.direction||t.direction===direction||(direction==='horizontal'&&t.direction==='right')||(direction==='vertical'&&t.direction==='top'));return (exact.length?exact:tiles)[seed%(exact.length?exact.length:tiles.length)]}
 function tileImageFromHex(hex){if(!hex)return null;const img=new Image();img.src='data:image/png;base64,'+btoa(String(hex).match(/.{1,2}/g).map(h=>String.fromCharCode(parseInt(h,16))).join(''));return img}
 const tileImageCache=new Map();
+// Skill icon override (skillDefs[id].iconImage, a hex PNG from the class
+// editor's image icon tool): renders in place of the plain text/emoji glyph
+// wherever a skill is shown. Existing skills keep their emoji by default -
+// this only draws when an override has actually been set.
+function drawSkillIconImg(canvas,hex){
+ let img=tileImageCache.get('skill:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('skill:'+hex,img)}
+ const paint=()=>{const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(img,0,0,canvas.width,canvas.height)};
+ if(img.complete)paint();else img.onload=paint;
+}
 function drawConfiguredTile(tile,x,y,rotate=0){if(!tile?.icon)return false;let img=tileImageCache.get(tile.icon);if(!img){img=tileImageFromHex(tile.icon);tileImageCache.set(tile.icon,img)}if(!img)return false;const paint=()=>{ctx.save();ctx.translate(x+TILE/2,y+TILE/2);if(rotate)ctx.rotate(rotate*Math.PI/180);ctx.drawImage(img,-TILE/2,-TILE/2,TILE,TILE);ctx.restore()};if(img.complete){paint();return true}img.onload=()=>game&&draw();return false}
 
 const floorVisualThemes={
@@ -3521,14 +3531,15 @@ function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?
 // glow hugging whatever silhouette actually gets drawn (icon or procedural).
 function drawDoorTile(x,y,d){
  const doorTiles=activeFloorTileset().doorTiles;
- if(d.locked){ctx.save();ctx.shadowColor='#ffd24f';ctx.shadowBlur=3;}
  let painted=false;
  if(doorTiles?.length){
   const seed=(d.x*73856093^d.y*19349663)>>>0;
   painted=drawConfiguredTile(doorTiles[seed%doorTiles.length],x,y,0);
  }
  if(!painted)doorSprite(x,y,d);
- if(d.locked)ctx.restore();
+ // locked doors get an unmistakable 5px gold stripe down the middle of the
+ // tile, on top of whatever art was drawn (icon or procedural)
+ if(d.locked)px(x+Math.floor((TILE-5)/2),y+6,5,TILE-12,'#ffd24f');
 } 
 function keySprite(x,y){px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
 
@@ -3612,6 +3623,27 @@ function enemySprite(x,y,e){
 function normalizeClassName(name){return String(name||'').trim().toLowerCase()}
 function configClassRowForId(id){const def=classDefs[id];const wanted=normalizeClassName(def?.name||id);return configClasses.find(c=>String(c.class_json?.classId||'')===id)||configClasses.find(c=>normalizeClassName(c.nombre)===wanted)}
 function classIconForId(id){const row=configClassRowForId(id);return row?.class_json?.icon||row?.icon||''}
+// A class def, whether hardcoded (classDefs) or a fully custom one that only
+// exists as a config_class row (no matching classDefs entry at all).
+function resolveClassDef(id){
+ const base=classDefs[id],row=configClassRowForId(id),j=row?.class_json;
+ if(!base&&!j)return null;
+ // a DB override (stats edited in the class editor) always wins over the
+ // hardcoded baseline, for both built-in and fully custom classes
+ return {
+  name:j?.name||base?.name||id,
+  desc:j?.desc||base?.desc||'Clase personalizada.',
+  stats:j?.stats||base?.stats||{strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2},
+  skills:j?.starterSkills||base?.skills||[],
+  resourceBias:j?.resourceBias||base?.resourceBias||'stamina',
+  custom:!base
+ };
+}
+function allClassIds(){
+ const ids=new Set(Object.keys(classDefs));
+ for(const row of configClasses){const cid=row.class_json?.classId;if(cid&&!classDefs[cid])ids.add(cid)}
+ return [...ids];
+}
 
 async function fetchConfigItems(){try{const r=await fetch('/api/config-items');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
 
@@ -3690,12 +3722,137 @@ async function saveConfigItems(items){const data=await postJsonRows('/api/config
 async function updateConfigItem(id,item){const r=await fetch(`/api/config-items?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...item,id,item_json:item})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo actualizar');await fetchConfigItems();return data}
 async function deleteConfigItem(id){const r=await fetch(`/api/config-items?id=${encodeURIComponent(id)}`,{method:'DELETE'});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo borrar');await fetchConfigItems();return data}
 function skillNames(ids=[]){return ids.map(id=>skillDefs[id]?.name||id).join(', ')}
-async function fetchConfigClasses(){try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];renderConfigClasses();renderClassChoices()}catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}}
+// skills_json on a config_class row overrides/extends skillDefs by id (adds
+// new ones, replaces fields on existing ones); classSkillTrees is synthesized
+// from the bag's `tier` field for any class without a hardcoded tree already
+// (custom classes created purely in the editor). The engine always reads
+// skillDefs/classSkillTrees directly elsewhere, so merging here is enough to
+// make every other call site "read the DB first, fall back to the hardcoded
+// system" for free.
+const HARDCODED_CLASS_SKILL_TREE_IDS=new Set(Object.keys(classSkillTrees));
+function applyClassSkillOverrides(){
+ for(const row of configClasses){
+  const bag=row.skills_json;if(!bag||typeof bag!=='object')continue;
+  const classId=row.class_json?.classId||normalizeClassName(row.nombre);
+  for(const [skillId,override] of Object.entries(bag))skillDefs[skillId]={...(skillDefs[skillId]||{}),...override};
+  // classes without a hardcoded tree get theirs (re)synthesized every time,
+  // so editing a custom class's skill tiers takes effect on the next load
+  if(!HARDCODED_CLASS_SKILL_TREE_IDS.has(classId)){
+   const tiers={I:[],II:[],III:[]};
+   for(const [skillId,s] of Object.entries(bag))tiers[s.tier===3?'III':s.tier===2?'II':'I'].push(skillId);
+   classSkillTrees[classId]=tiers;
+  }
+ }
+}
+async function fetchConfigClasses(){try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses();renderClassChoices()}catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}}
 function selectedGameClassId(){return configClassSelect?.value||selectedClass}
-function currentConfigClassJson(){const id=selectedGameClassId(),def=classDefs[id];return {classId:id,name:def?.name||id,icon:window.currentConfigClassIconHex||'',stats:JSON.stringify(def?.stats||{}),skills:JSON.stringify(def?.skills||[])}}
-async function saveConfigClass(item){const row=configClassRowForId(item.classId),method=row?'PUT':'POST',url=row?`/api/config-class?id=${encodeURIComponent(row.id)}`:'/api/config-class';const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({...item,id:row?.id,nombre:item.name,icon:item.icon,stats:item.stats,skills:item.skills,class_json:item})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');await fetchConfigClasses();return data}
-function renderConfigClasses(){const sel=document.getElementById('configClassSelect'),list=document.getElementById('configClassesList');if(!sel)return;const previous=sel.value||selectedClass;sel.innerHTML=Object.entries(classDefs).map(([id,c])=>`<option value="${id}">${c.name}</option>`).join('');sel.value=classDefs[previous]?previous:selectedClass;if(list)list.innerHTML=Object.entries(classDefs).map(([id,c])=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'';return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}</span></div></div>`}).join('');loadSelectedConfigClass()}
-function loadSelectedConfigClass(){const id=selectedGameClassId(),def=classDefs[id],row=configClassRowForId(id);configClassName.value=def?.name||id;window.currentConfigClassIconHex=row?.class_json?.icon||row?.icon||'';renderConfigIconPreview(window.currentConfigClassIconHex,'configClassIconPreview','configClassIconStatus');configClassIconStatus.textContent=window.currentConfigClassIconHex?'Icono cargado para esta clase.':'Sin icono: usará los pixels por defecto.';drawClassPreview(configClassIconPreview,id)}
+// ---- Class/skill editor (config_class, skills_json) ----------------------
+const ALL_CLASS_EFFECTS=['ranged','shield','dash','debuff','aoe','heal','multihit','utility','ultimate','execute','buff','massive','root','pullRoot','rootBleed','bountyRoot','freeze','delayedFreeze','bleed','burn','poison','dot','decayDot','echoDot','delayedPoison','drain','holyLeech','steal','stun','silence','age','wither','doomMark','mark','bountyMark','holyMark','shadowStrike','holyDash','leapBuff','hookBleed','combo','comboMark','markedExecute','bountyExecute','packExecute','pierce','lineShot','ricochet','chain','blinkChain','swapConfuse','teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones','trap','rootZone','consecrate','stormTotem','areaDot','summon','summonTurret','summonHealer','summonTank','summonScanner','summonElite','multiSummon','clones','clone','cleanseHeal','bigHeal','regenHeal','survivalHeal','healShield','buffArmor','counter','bloodBuff','lifestealBuff','rampage','overcharge','fortress','holyShield','holyAvatar','randomBuff','luckBuff','sniperBuff','stealthShot','shapeShift','lichBuff','implantBuff','mechBuff','wisdomBuff','martyrBuff','oakBuff','resourceRegen','reflect','monkAvatar','tauntBuff','beastAvatar','cheatDeath','cheatDeathHeal','rewind'];
+function slugifyClassName(name){return 'custom_'+String(name||'clase').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'')+'_'+Math.random().toString(36).slice(2,6)}
+// The editable skill bag for a class: its own skills_json if it has one,
+// else synthesized from the hardcoded classSkillTrees+skillDefs so editing
+// an unmodified class starts from its real current data.
+function classSkillBagFor(id){
+ const row=configClassRowForId(id);
+ if(row?.skills_json&&Object.keys(row.skills_json).length)return JSON.parse(JSON.stringify(row.skills_json));
+ const tree=classSkillTrees[id];if(!tree)return {};
+ const bag={};
+ for(const [roman,ids] of Object.entries(tree)){const tierNum=roman==='III'?3:roman==='II'?2:1;for(const sid of ids)if(skillDefs[sid])bag[sid]={...skillDefs[sid],tier:tierNum}}
+ return bag;
+}
+function renderClassSkillSelect(){
+ const sel=document.getElementById('configClassSkillSelect');if(!sel)return;
+ const bag=window.currentClassSkillsDraft||{};
+ const ids=Object.keys(bag).sort((a,b)=>(bag[a].tier||1)-(bag[b].tier||1)||a.localeCompare(b));
+ sel.innerHTML=ids.map(id=>`<option value="${id}">T${bag[id].tier||1} · ${bag[id].name||id}</option>`).join('')||'<option value="">Sin skills</option>';
+ if(ids.length)loadSkillIntoForm(ids.includes(sel.value)?sel.value:ids[0]);
+}
+function loadSkillIntoForm(skillId){
+ const s=(window.currentClassSkillsDraft||{})[skillId];if(!s)return;
+ window.editingConfigSkillId=skillId;
+ document.getElementById('configClassSkillSelect').value=skillId;
+ document.getElementById('configSkillId').value=skillId;
+ document.getElementById('configSkillName').value=s.name||'';
+ document.getElementById('configSkillIconText').value=s.icon||'';
+ document.getElementById('configSkillTier').value=String(s.tier||1);
+ document.getElementById('configSkillResource').value=s.resource||'stamina';
+ document.getElementById('configSkillCost').value=s.cost??10;
+ document.getElementById('configSkillCd').value=s.cd??5;
+ document.getElementById('configSkillType').value=s.type||'physical';
+ document.getElementById('configSkillRarity').value=s.rarity||'common';
+ document.getElementById('configSkillRange').value=s.range??1;
+ document.getElementById('configSkillTargetMode').value=s.targetMode||'';
+ document.getElementById('configSkillEffect').value=s.classEffect||'ranged';
+ document.getElementById('configSkillEnemyUsable').checked=s.enemyUsable!==false;
+ document.getElementById('configSkillDesc').value=s.desc||'';
+ window.currentConfigSkillIconHex=s.iconImage||'';
+ renderConfigIconPreview(window.currentConfigSkillIconHex,'configSkillIconPreview','configSkillIconStatus');
+ document.getElementById('configSkillIconStatus').textContent=window.currentConfigSkillIconHex?'Imagen personalizada activa.':'Sin imagen: se usa el icono de texto/emoji.';
+ const st=document.getElementById('configSkillStatus');if(st)st.textContent=`Editando ${s.name||skillId}.`;
+}
+function currentSkillFormJson(){
+ return {
+  name:document.getElementById('configSkillName').value.trim()||'Skill sin nombre',
+  icon:document.getElementById('configSkillIconText').value.trim()||'✦',
+  iconImage:window.currentConfigSkillIconHex||'',
+  desc:document.getElementById('configSkillDesc').value.trim(),
+  cd:Number(document.getElementById('configSkillCd').value)||1,
+  resource:document.getElementById('configSkillResource').value,
+  cost:Number(document.getElementById('configSkillCost').value)||0,
+  type:document.getElementById('configSkillType').value,
+  rarity:document.getElementById('configSkillRarity').value,
+  range:Number(document.getElementById('configSkillRange').value)||0,
+  targetMode:document.getElementById('configSkillTargetMode').value||undefined,
+  classEffect:document.getElementById('configSkillEffect').value,
+  tier:Number(document.getElementById('configSkillTier').value)||1,
+  classId:window.pendingNewClassId||selectedGameClassId(),
+  enemyUsable:document.getElementById('configSkillEnemyUsable').checked,
+  unlock:'Clase'
+ };
+}
+function currentConfigClassJson(){
+ const id=window.pendingNewClassId||selectedGameClassId(),base=resolveClassDef(id);
+ return {
+  classId:id,
+  name:document.getElementById('configClassName').value.trim()||id,
+  desc:document.getElementById('configClassDesc').value.trim()||'Clase personalizada.',
+  icon:window.currentConfigClassIconHex||'',
+  stats:{strength:Number(configClassStr.value)||0,vitality:Number(configClassVit.value)||0,agility:Number(configClassAgi.value)||0,luck:Number(configClassLuck.value)||0,intelligence:Number(configClassInt.value)||0,wisdom:Number(configClassWis.value)||0},
+  starterSkills:base?.skills||[],
+  resourceBias:base?.resourceBias||'stamina'
+ };
+}
+async function saveConfigClass(item,skillsBag){
+ const row=window.pendingNewClassId?null:configClassRowForId(item.classId);
+ const method=row?'PUT':'POST',url=row?`/api/config-class?id=${encodeURIComponent(row.id)}`:'/api/config-class';
+ const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag})});
+ const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');
+ window.pendingNewClassId=null;
+ await fetchConfigClasses();
+ return data;
+}
+function renderConfigClasses(){
+ const sel=document.getElementById('configClassSelect'),list=document.getElementById('configClassesList');if(!sel)return;
+ const previous=sel.value||selectedClass,ids=allClassIds();
+ sel.innerHTML=ids.map(id=>`<option value="${id}">${resolveClassDef(id)?.name||id}</option>`).join('');
+ sel.value=ids.includes(previous)?previous:selectedClass;
+ if(list)list.innerHTML=ids.map(id=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'',c=resolveClassDef(id);return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${c.custom?'Clase personalizada':'Clase base'} · ${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}${row?.skills_json?' · Skills personalizadas':''}</span></div></div>`}).join('');
+ loadSelectedConfigClass();
+}
+function loadSelectedConfigClass(){
+ window.pendingNewClassId=null;
+ const id=selectedGameClassId(),def=resolveClassDef(id),row=configClassRowForId(id);
+ configClassName.value=def?.name||id;
+ document.getElementById('configClassDesc').value=def?.desc||'';
+ const stats=def?.stats||{};
+ configClassStr.value=stats.strength??2;configClassVit.value=stats.vitality??2;configClassAgi.value=stats.agility??2;configClassLuck.value=stats.luck??2;configClassInt.value=stats.intelligence??2;configClassWis.value=stats.wisdom??2;
+ window.currentConfigClassIconHex=row?.class_json?.icon||row?.icon||'';
+ renderConfigIconPreview(window.currentConfigClassIconHex,'configClassIconPreview','configClassIconStatus');
+ configClassIconStatus.textContent=window.currentConfigClassIconHex?'Icono cargado para esta clase.':'Sin icono: usará los pixels por defecto.';
+ drawClassPreview(configClassIconPreview,id);
+ window.currentClassSkillsDraft=classSkillBagFor(id);
+ renderClassSkillSelect();
+}
 
 function renderConfigItemRow(i){const item=i.item_json||i,skills=Array.isArray(item.skillIds)?item.skillIds:[],isPotion=item.type==='potion',weaponType=item.slot==='weapon'&&(item.weaponType||item.weaponCategory)?` · ${item.weaponType||item.weaponCategory}`:'',weaponRange=item.slot==='weapon'?` · alcance ${weaponRangeBounds(item).min}-${weaponRangeBounds(item).max}`:'';return `<div class="configItem"><span class="tierDot" style="background:${tierColor(i.tier)}"></span><div><b>${i.nombre||'Sin nombre'}</b><span class="small">${isPotion?'Poción · ':''}${tierDefs[item.rarity||i.tier]?.label||item.rarity||i.tier} · iLvl ${item.itemLevel||i.ilvl||1}${weaponType}${weaponRange}${isPotion?` · ${potionEffectLabels[item.potionEffectType]||item.kind||'efecto'}`:''}${skills.length?` · ${skillNames(skills)}`:''}</span><div class="configItemActions"><button type="button" data-config-edit="${i.id}">Editar</button><button type="button" data-config-duplicate="${i.id}">Duplicar</button><button type="button" data-config-delete="${i.id}">Borrar</button></div></div></div>`}
 function renderConfigItems(){const root=document.getElementById('configItemsList');if(!root)return;if(!configItems.length){root.innerHTML='<p class="small">No hay objetos configurados.</p>';return}const knownConfigGroups=[...slots,'consumable'];const grouped=configItems.reduce((acc,i)=>{const item=i.item_json||i,slot=item.type==='potion'?'consumable':(i.slot||item.slot||'otros'),weaponGroup=slot==='weapon'?(item.weaponType||item.weaponCategory||'Sin tipo de arma'):null,key=weaponGroup?`${slot}::${weaponGroup}`:slot;(acc[key]??={slot,weaponGroup,items:[]}).items.push(i);return acc},{}),orderedKeys=[...knownConfigGroups.flatMap(slot=>Object.keys(grouped).filter(key=>grouped[key].slot===slot).sort((a,b)=>(grouped[a].weaponGroup||'').localeCompare(grouped[b].weaponGroup||'','es'))),...Object.keys(grouped).filter(key=>!knownConfigGroups.includes(grouped[key].slot)).sort((a,b)=>a.localeCompare(b,'es'))];root.innerHTML=orderedKeys.map((key,index)=>{const group=grouped[key],title=group.weaponGroup?`${slotNames[group.slot]||group.slot} · ${group.weaponGroup}`:(group.slot==='consumable'?itemTypes.potion:(slotNames[group.slot]||group.slot));return `<details class="configSlotGroup" ${index===0?'open':''}><summary><span>${title}</span><b>${group.items.length}</b></summary><div class="configSlotItems">${group.items.map(renderConfigItemRow).join('')}</div></details>`}).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigItemForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigItem(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigItem(b.dataset.configDelete))}
@@ -3946,7 +4103,74 @@ function setupChestConfigMode(){
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests')})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
-function setupClassConfigMode(){const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});if(!editor)return;configClassSelect.onchange=loadSelectedConfigClass;saveConfigClassBtn.onclick=async()=>{configClassStatus.textContent='Guardando clase...';try{await saveConfigClass(currentConfigClassJson());configClassStatus.textContent='Clase guardada en BDD.'}catch(e){configClassStatus.textContent=e.message}};rollbackConfigClassBtn.onclick=async()=>{configClassStatus.textContent='Restaurando pixels por defecto...';try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson());configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}}}
+function setupClassConfigMode(){
+ const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
+ if(!editor)return;
+ setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill'});
+ const effectSel=document.getElementById('configSkillEffect');
+ if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
+ configClassSelect.onchange=loadSelectedConfigClass;
+ document.getElementById('configClassSkillSelect').onchange=e=>loadSkillIntoForm(e.target.value);
+ document.getElementById('newConfigClassBtn').onclick=()=>{
+  const name=prompt('Nombre de la nueva clase:');if(!name)return;
+  window.pendingNewClassId=slugifyClassName(name);
+  configClassName.value=name;document.getElementById('configClassDesc').value='Clase personalizada.';
+  configClassStr.value=configClassVit.value=configClassAgi.value=configClassLuck.value=configClassInt.value=configClassWis.value=2;
+  window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');
+  window.currentClassSkillsDraft={};renderClassSkillSelect();
+  configClassStatus.textContent=`Nueva clase "${name}" lista para configurar. Añade skills y pulsa Guardar clase.`;
+ };
+ document.getElementById('duplicateConfigClassBtn').onclick=()=>{
+  const baseId=selectedGameClassId(),base=resolveClassDef(baseId);if(!base)return;
+  const name=prompt('Nombre de la copia:',`${base.name} (copia)`);if(!name)return;
+  const newId=slugifyClassName(name);
+  window.pendingNewClassId=newId;
+  configClassName.value=name;document.getElementById('configClassDesc').value=base.desc||'';
+  configClassStr.value=base.stats.strength;configClassVit.value=base.stats.vitality;configClassAgi.value=base.stats.agility;configClassLuck.value=base.stats.luck;configClassInt.value=base.stats.intelligence;configClassWis.value=base.stats.wisdom;
+  const sourceBag=classSkillBagFor(baseId),newBag={};
+  for(const [sid,s] of Object.entries(sourceBag))newBag[`${newId}_${sid}`]={...s,classId:newId};
+  window.currentClassSkillsDraft=newBag;
+  renderClassSkillSelect();
+  configClassStatus.textContent=`Copia de "${base.name}" lista como "${name}". Pulsa Guardar clase para crearla.`;
+ };
+ document.getElementById('newConfigSkillBtn').onclick=()=>{
+  const id=window.pendingNewClassId||selectedGameClassId(),n=Object.keys(window.currentClassSkillsDraft||{}).length+1;
+  const skillId=`${id}_custom_${n}`;
+  window.currentClassSkillsDraft=window.currentClassSkillsDraft||{};
+  window.currentClassSkillsDraft[skillId]={name:'Nueva skill',icon:'✦',iconImage:'',desc:'Descripción pendiente.',cd:5,resource:'stamina',cost:10,type:'physical',rarity:'common',range:1,classEffect:'ranged',tier:1,classId:id,enemyUsable:true,unlock:'Clase'};
+  renderClassSkillSelect();
+  document.getElementById('configClassSkillSelect').value=skillId;loadSkillIntoForm(skillId);
+ };
+ document.getElementById('duplicateConfigSkillBtn').onclick=()=>{
+  const src=window.editingConfigSkillId;if(!src||!window.currentClassSkillsDraft?.[src])return;
+  const n=Object.keys(window.currentClassSkillsDraft).length+1,newId=`${src}_copy${n}`;
+  window.currentClassSkillsDraft[newId]={...window.currentClassSkillsDraft[src]};
+  renderClassSkillSelect();
+  document.getElementById('configClassSkillSelect').value=newId;loadSkillIntoForm(newId);
+ };
+ document.getElementById('saveConfigSkillBtn').onclick=()=>{
+  const oldId=window.editingConfigSkillId,newId=document.getElementById('configSkillId').value.trim()||oldId;
+  const skill=currentSkillFormJson();
+  window.currentClassSkillsDraft=window.currentClassSkillsDraft||{};
+  if(oldId&&oldId!==newId)delete window.currentClassSkillsDraft[oldId];
+  window.currentClassSkillsDraft[newId]=skill;
+  renderClassSkillSelect();
+  document.getElementById('configClassSkillSelect').value=newId;
+  document.getElementById('configSkillStatus').textContent='Skill guardada en el borrador de la clase. Pulsa "Guardar clase" para persistir.';
+ };
+ document.getElementById('rollbackConfigSkillIconBtn').onclick=()=>{
+  window.currentConfigSkillIconHex='';renderConfigIconPreview('','configSkillIconPreview','configSkillIconStatus');
+  document.getElementById('configSkillIconStatus').textContent='Sin imagen: se usa el icono de texto/emoji.';
+ };
+ saveConfigClassBtn.onclick=async()=>{
+  configClassStatus.textContent='Guardando clase...';
+  try{await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Clase guardada en BDD.'}catch(e){configClassStatus.textContent=e.message}
+ };
+ rollbackConfigClassBtn.onclick=async()=>{
+  configClassStatus.textContent='Restaurando pixels por defecto...';
+  try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
+ };
+}
 function togglePotionEffectFields(){
  const type=configPotionEffect?.value||'heal';
  document.querySelectorAll('[data-potion-field]').forEach(el=>el.classList.add('hidden'));
@@ -4010,7 +4234,7 @@ async function finishCharacterCreation(){
 }
 
 function openSinglePlayerScreen(){
- if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
+ if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
  landingOverlay.classList.add('hidden');
  singlePlayerOverlay.classList.remove('hidden');
  document.getElementById('spListStatus')?.classList.add('hidden');
@@ -4084,7 +4308,7 @@ async function openSessionContinue(){
 
 async function resumeSession(sessionId){
  try{
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
   const [statusRes,worldsRes]=await Promise.all([fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`),fetch('/api/dungeon-worlds')]);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||'No se pudo cargar la sesión');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -5515,7 +5739,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
   await mpRealtimeConnect(session.id);
   const worldsRes=await fetch('/api/dungeon-worlds');
   const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
@@ -5912,10 +6136,10 @@ renderRaceChoices();
 
 function renderClassChoices(){
  const root=document.getElementById('classChoices');
- root.innerHTML=Object.entries(classDefs).map(([id,c])=>`<div class="classCard ${id===selectedClass?'selected':''}" data-class="${id}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`).join('');
+ root.innerHTML=allClassIds().map(id=>{const c=resolveClassDef(id);return `<div class="classCard ${id===selectedClass?'selected':''}" data-class="${id}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`}).join('');
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{selectedClass=el.dataset.class;renderClassChoices()});
- const c=classDefs[selectedClass];document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
+ const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();
 
