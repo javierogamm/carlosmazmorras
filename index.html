@@ -8,6 +8,7 @@
 
 </head>
 <body>
+<button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
 <header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
 <div class="layout">
@@ -158,7 +159,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -311,6 +312,32 @@
     <div id="configEnemyStatus" class="small"></div>
    </section>
    <section class="panel"><h2>Familias y enemigos</h2><div id="configEnemyFamiliesList" class="configItemsList"></div><hr><div id="configEnemiesList" class="configItemsList"></div></section>
+  </div>
+ </div>
+
+ <div class="configTabPanel hidden" id="configTabChests">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de cofres del tesoro</h2>
+    <p class="small">Define cofres que sustituyen a los genéricos en la generación de mazmorras, consolidados en <code>config_chest</code>. 5 tiers de cofre; el tier que aparece en cada piso depende del piso y del nivel del jugador.</p>
+    <div class="configForm">
+     <label>Tier de cofre <select id="configChestTier"><option value="1">I</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V</option></select></label>
+     <label>Tipo <select id="configChestType"><option value="equipment">Equipo</option><option value="weapon">Arma</option><option value="potion">Poción</option><option value="skill">Habilidad</option></select></label>
+     <label>Nombre <input id="configChestName" maxlength="80" placeholder="Cofre de fuego..."></label>
+    </div>
+    <label>Icono cofre <input type="file" id="configChestImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configChestCropZoom" min="25" max="400" value="100"></label><button type="button" id="configChestMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configChestMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configChestCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final del cofre a 50x50 px.</div></div>
+    <div class="configPreview"><canvas id="configChestIconPreview" width="50" height="50"></canvas><span id="configChestIconStatus" class="small">Sin icono</span></div>
+    <label>Tiers de objeto que puede soltar <select id="configChestItemTiers" multiple size="6"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
+    <label>Buscar objetos concretos (deja sin marcar ninguno para aleatorio) <input type="text" id="configChestItemSearch" placeholder="Buscar por nombre..."></label>
+    <div id="configChestItemResults" class="configItemsList"></div>
+    <div id="configChestSpecificSummary" class="small">Aleatorio dentro de los tiers seleccionados.</div>
+    <button class="start" id="saveConfigChestBtn" type="button">GUARDAR COFRE</button>
+    <button id="newConfigChestBtn" type="button">NUEVO COFRE</button>
+    <div id="configChestStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Cofres guardados</h2><div id="configChestsList" class="configItemsList"></div></section>
   </div>
  </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
