@@ -260,6 +260,7 @@
       <label>Recurso <select id="configSkillResource"><option value="stamina">Stamina</option><option value="mana">Maná</option></select></label>
       <label>Coste de recurso <input id="configSkillCost" type="number" min="0" value="10"></label>
       <label>Enfriamiento (turnos) <input id="configSkillCd" type="number" min="0" value="5"></label>
+      <label>PA (coste en modo turnos por Puntos de Acción, single y multi) <input id="configSkillApCost" type="number" min="0" value="10"></label>
       <label>Tipo <select id="configSkillType"><option value="physical">Físico</option><option value="magic">Mágico</option><option value="utility">Utilidad</option></select></label>
       <label>Rareza <select id="configSkillRarity"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option></select></label>
       <label>Alcance (0 = cuerpo a cuerpo) <input id="configSkillRange" type="number" min="0" value="1"></label>
@@ -286,8 +287,10 @@
      <div class="configForm">
       <label>Stat de buff <select id="configSkillBuffStat"><option value="">— (usa Daño, como antes)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option><option value="armor">Armadura</option><option value="damage">Daño</option></select></label>
       <label>Coeficiente de buff <input id="configSkillBuffStatCoef" type="number" step="0.01" value="0.15"></label>
+      <label>Duración del buff (turnos, 0 = automática) <input id="configSkillBuffTurns" type="number" min="0" value="0"></label>
       <label>Stat de debuff <select id="configSkillDebuffStat"><option value="">— (usa aturdimiento genérico)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
       <label>Coeficiente de debuff <input id="configSkillDebuffStatCoef" type="number" step="0.01" value="1"></label>
+      <label>Duración del debuff (turnos, 0 = automática) <input id="configSkillDebuffTurns" type="number" min="0" value="0"></label>
      </div>
     </details>
     <details class="configAccordion">
@@ -299,6 +302,7 @@
       <label>Stat DOT <select id="configSkillDotStat"><option value="">Ninguna</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
       <label>Modo del stat DOT <select id="configSkillDotStatMode"><option value="add">Sumatorio</option><option value="mult">Multiplicador</option></select></label>
       <label>Coeficiente del stat DOT <input id="configSkillDotStatCoef" type="number" step="0.01" value="1"></label>
+      <label>Duración del DOT (turnos, 0 = automática) <input id="configSkillDotTurns" type="number" min="0" value="0"></label>
      </div>
     </details>
     <details class="configAccordion">
