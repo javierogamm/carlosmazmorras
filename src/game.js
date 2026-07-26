@@ -9,6 +9,9 @@ applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
+// 'hardcode' = the 16 built-in classes/skills; 'advanced' = only classes
+// created in the admin editor (config_class), never a hardcoded fallback.
+let selectedSkillMode='hardcode';
 let selectedDungeonWorld=null;
 let currentCharacter=null;
 let multiSessionId=null;
@@ -24,6 +27,7 @@ let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtRe
 const APP_VERSION='0.53.2';
 let configItems=[];
 let configClasses=[];
+let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
@@ -878,6 +882,35 @@ function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=world
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies();const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value=''});}
 function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+// Applies one buff/debuff effect entry to a numeric stat. The modern shape
+// is {mode:'add'|'mult',value} - a flat number added, or a straight
+// multiplier. A bare number is legacy shorthand for a percentage bonus
+// (current*(1+eff)), kept for the many hardcoded buffs elsewhere in the
+// file that still use it and for skills_json rows saved before this shape
+// existed - falling back gracefully instead of producing NaN.
+function applyStatDelta(current,eff){
+ if(eff==null)return current;
+ if(typeof eff==='object')return eff.mode==='mult'?current*eff.value:current+eff.value;
+ return current*(1+eff);
+}
+// 'armor'/'damage' buffs target an aggregate (total('armor')/total('damage'),
+// and the per-attack damage roll) rather than a raw player stat, so they're
+// read live from activeBuffs at the point of use instead of being folded
+// into recomputeDerived - these two split an effects[key] entry into its
+// multiplicative and additive contributions across every active buff.
+function activeBuffMultFactor(key){
+ return (game.player?.activeBuffs||[]).reduce((m,b)=>{
+  const eff=b.effects?.[key];if(eff==null)return m;
+  if(typeof eff==='object')return eff.mode==='mult'?m*eff.value:m;
+  return m*(1+eff); // legacy percentage buffs (bloodBuff, teleportBuff, etc)
+ },1)
+}
+function activeBuffFlatBonus(key){
+ return (game.player?.activeBuffs||[]).reduce((s,b)=>{
+  const eff=b.effects?.[key];
+  return (eff&&typeof eff==='object'&&eff.mode!=='mult')?s+eff.value:s;
+ },0)
+}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
@@ -897,11 +930,15 @@ function recomputeDerived(){
  // Buff-type skills can target any of the 6 core stats directly (buffStat)
  // instead of always touching damage/armor - applied here, before the
  // damage/armor/hp/stamina/mana deltas below are derived from allStats.
- // effects[k] is {mode:'add'|'mult',value} - a flat number added, or a
- // straight multiplier, never a "+X%" coefficient.
+ // effects[k] is normally {mode:'add'|'mult',value}: a flat number added, or
+ // a straight multiplier, never a "+X%" coefficient. A bare number is also
+ // accepted and treated as a legacy percentage bonus (current*(1+eff)) -
+ // both the many hardcoded creative-effect buffs elsewhere in this file
+ // (bloodBuff, teleportBuff, fortify, etc) and any skills_json rows saved
+ // by the admin editor before this add/mult rework still use that shape.
  for(const b of p.activeBuffs||[])for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){
   const eff=b.effects?.[k];if(eff==null)continue;
-  allStats[k]=Math.round(eff.mode==='mult'?allStats[k]*eff.value:allStats[k]+eff.value);
+  allStats[k]=Math.round(applyStatDelta(allStats[k],eff));
  }
  d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*5);
  d.maxStamina+=Math.max(0,(allStats.vitality-base.vitality)*4+(allStats.agility-base.agility)*2);
@@ -909,7 +946,6 @@ function recomputeDerived(){
  d.damage+=Math.floor((allStats.strength-base.strength)*1.2);
  d.armor+=Math.floor((allStats.vitality-base.vitality)*.6);
  for(const b of p.activeBuffs||[]){
-  if(b.effects?.armor)d.armor=Math.round(d.armor*(1+b.effects.armor));
   if(b.effects?.maxHp)d.maxHp+=b.effects.maxHp;
  }
  for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
@@ -1129,7 +1165,16 @@ function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.pla
 }
 
 function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas.classList.add(cls)}
-function reveal(cx,cy,r=game.player.vision){for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true}
+// A NaN/undefined/zero vision radius (e.g. a custom Advanced-mode class
+// whose stats object was missing agility, or any other corrupt player.vision
+// value) must never silently turn this into a no-op: NaN bounds make every
+// loop comparison false, so nothing gets revealed and the whole floor stays
+// pitch black regardless of how far the player walks. Falls back to the
+// base radius (4, matching the default character's own formula) instead.
+function reveal(cx,cy,r=game.player.vision){
+ if(!Number.isFinite(r)||r<=0)r=4;
+ for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
+}
 
 
 let pendingClassSkillRequests=[];
@@ -1238,7 +1283,7 @@ function start(){
  const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor(stats.agility/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -2171,18 +2216,34 @@ function skillStatMultiplier(id,actor=game.player){
  if(d.dmgStat&&d.dmgStatMode==='mult')return 1+statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??.02);
  return 1
 }
-// Per-tick DOT power: when a skill defines dotDice/dotDie it rolls its own
-// dice (once, at application time - the roll then holds for the status'
-// whole duration, same as its power currently works) plus an optional stat
-// contribution; skills without dot fields keep their existing hand-tuned
-// level-scaled formula via `fallback`.
-function skillDotPower(id,fallback,actor=game.player){
- const d=skillDefs[id]||{};
+// Per-tick DOT power, generalized over any object carrying dotDice/dotDie/
+// dotStat/dotStatMode/dotStatCoef - a full skillDefs entry (legacy single-
+// effect skills) or a single effect component (composable skills). Rolls
+// once at application time (the roll then holds for the status' whole
+// duration); objects without dot fields keep the caller's hand-tuned
+// level-scaled fallback.
+function dotPowerFor(defLike,fallback,actor=game.player){
+ const d=defLike||{};
  if(!(d.dotDice>0))return fallback;
  const roll=rollDice(`${d.dotDice}d${d.dotDie||6}`).total;
  const statVal=d.dotStat?statValueFor(actor,d.dotStat):0;
  const contribution=d.dotStatMode==='mult'?roll*(statVal*(d.dotStatCoef??.02)):statVal*(d.dotStatCoef??1);
  return Math.max(1,Math.round(roll+contribution))
+}
+function skillDotPower(id,fallback,actor=game.player){return dotPowerFor(skillDefs[id],fallback,actor)}
+// Unified dice+stat scalar, generalized over any object carrying dmgDice/
+// dmgDie/dmgStat/dmgStatMode/dmgStatCoef - a full skillDefs entry or a
+// single effect component. `fallback` is the level-scaled formula used when
+// no dice are configured.
+function dicePowerFor(defLike,fallback,actor=game.player){
+ const d=defLike||{};
+ if(d.dmgDice>0){
+  const roll=rollDice(`${d.dmgDice}d${d.dmgDie||6}`).total;
+  const statVal=d.dmgStat?statValueFor(actor,d.dmgStat):0;
+  const contribution=d.dmgStatMode==='mult'?roll*(statVal*(d.dmgStatCoef??.02)):statVal*(d.dmgStatCoef??1);
+  return Math.max(1,Math.round(roll+contribution))
+ }
+ return fallback
 }
 // Unified "scalar power" used by self-cast classEffect skills (ranged/dash/
 // aoe/multihit/ultimate/execute/massive pass it as attack()'s flat bonus;
@@ -2190,16 +2251,11 @@ function skillDotPower(id,fallback,actor=game.player){
 // effects is configurable through the same dice+stat fields as direct hits.
 function resolveSkillPower(id,actor=game.player){
  const d=skillDefs[id]||{},lvl=skillLevel(id),power=skillPowerMultiplier(id);
- if(d.dmgDice>0){
-  const roll=rollDice(`${d.dmgDice}d${d.dmgDie||6}`).total;
-  const statVal=d.dmgStat?statValueFor(actor,d.dmgStat):0;
-  const contribution=d.dmgStatMode==='mult'?roll*(statVal*(d.dmgStatCoef??.02)):statVal*(d.dmgStatCoef??1);
-  return Math.max(1,Math.round((roll+contribution)*power))
- }
- return Math.round((8+lvl*3+(d.resource==='mana'?statValueFor(actor,'intelligence')+statValueFor(actor,'wisdom')/2:statValueFor(actor,'strength')+statValueFor(actor,'agility')/3))*power)
+ const fallback=Math.round((8+lvl*3+(d.resource==='mana'?statValueFor(actor,'intelligence')+statValueFor(actor,'wisdom')/2:statValueFor(actor,'strength')+statValueFor(actor,'agility')/3)));
+ return Math.round(dicePowerFor(d,fallback,actor)*power)
 }
 function activeBuffDamageMultiplier(){
- return (game.player.activeBuffs||[]).reduce((m,b)=>m*(1+(b.effects?.damage||0)),1)*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
+ return activeBuffMultFactor('damage')*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
 }
 function diceDamageLabel(id){
  const expr=skillDiceExpr(id),d=skillDefs[id]||{};
@@ -2208,7 +2264,7 @@ function diceDamageLabel(id){
  return `${expr} + atributo`
 }
 
-function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;return v}
+function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
 function critChance(){return Math.min(.38,.04+game.player.stats.agility*.012+game.player.stats.luck*.005)}
 function attack(e,bonus=0,options={}){
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
@@ -2216,7 +2272,7 @@ function attack(e,bonus=0,options={}){
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
  const statMultFactor=skillId?skillStatMultiplier(skillId):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35)*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -2679,34 +2735,49 @@ function teleportPlayerTo(x,y){
  game.player.x=x;game.player.y=y;anim.heroX=anim.targetX=x;anim.heroY=anim.targetY=y;reveal(x,y);return true
 }
 
+// Applies a stat buff to the caster using the shared buffStat/buffStatMode/
+// buffStatCoef/buffTurns fields when the skill defines them, otherwise a
+// hand-tuned default (legacy percentage armor+damage, or a single flat stat)
+// - shared by every hardcoded "signature" buff below so an admin can make
+// ANY of them fully configurable, not just the 12 generic tags.
+function applyCreativeBuff(id,d,lvl,fallbackEffects,fallbackTurns){
+ const turns=d.buffTurns??fallbackTurns;
+ if(d.buffStat){
+  const mode=d.buffStatMode||'add',value=d.buffStatCoef??(mode==='mult'?1.2:5);
+  applyBuff(id,d.name,turns,{[d.buffStat]:{mode,value}});
+ }else applyBuff(id,d.name,turns,fallbackEffects);
+}
 function applyClassEffectState(effect,id,target,x,y,lvl){
- const p=game.player,d=skillDefs[id],turns=2+Math.floor(lvl/3);
+ const p=game.player,d=skillDefs[id];
  const area=(r=2)=>game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=r);
  const status=(e,type,t,power,label)=>addEnemyStatus(e,type,t,power,label);
  const hit=(e,m=1)=>attack(e,0,{skillId:id,multiplier:m});
 
- if(effect==='armorBreak'){hit(target,.9);status(target,'armorBreak',4,.20,'Quebradura');return true}
- if(effect==='pullRoot'){hit(target,.8);const dx=Math.sign(p.x-target.x),dy=Math.sign(p.y-target.y);const nx=target.x+dx,ny=target.y+dy;if(!blocked(nx,ny)&&!game.enemies.some(e=>e!==target&&e.x===nx&&e.y===ny)){target.x=nx;target.y=ny}status(target,'root',2,0,'Inmovilizado');return true}
- if(effect==='counter'){p.shield+=8+lvl*2;p.counterReady={turns:5,damage:'1d8+'+lvl};applyBuff(id,d.name,5,{armor:.12});return true}
- if(effect==='bloodBuff'){const loss=Math.max(1,Math.floor(p.hp*.10));p.hp=Math.max(1,p.hp-loss);applyBuff(id,d.name,5,{damage:.25,dodge:.15});return true}
- if(effect==='lifestealBuff'){applyBuff(id,d.name,6,{lifesteal:.20});return true}
+ if(effect==='armorBreak'){hit(target,.9);status(target,'armorBreak',d.debuffTurns??4,.20,'Quebradura');return true}
+ if(effect==='pullRoot'){hit(target,.8);const dx=Math.sign(p.x-target.x),dy=Math.sign(p.y-target.y);const nx=target.x+dx,ny=target.y+dy;if(!blocked(nx,ny)&&!game.enemies.some(e=>e!==target&&e.x===nx&&e.y===ny)){target.x=nx;target.y=ny}status(target,'root',d.debuffTurns??2,0,'Inmovilizado');return true}
+ if(effect==='counter'){p.shield+=8+lvl*2;p.counterReady={turns:5,damage:'1d8+'+lvl};applyCreativeBuff(id,d,lvl,{armor:.12},5);return true}
+ // Self-damage then a stat buff - the exact "dmg(self)+buff(self)" combo the
+ // new composable effects list expresses directly; this hardcoded version
+ // stays for skills still on the legacy single-effect system.
+ if(effect==='bloodBuff'){const loss=Math.max(1,Math.floor(p.hp*.10));p.hp=Math.max(1,p.hp-loss);applyCreativeBuff(id,d,lvl,{damage:{mode:'mult',value:1.25}},5);return true}
+ if(effect==='lifestealBuff'){applyBuff(id,d.name,d.buffTurns??6,{lifesteal:.20});return true}
  if(effect==='overcharge'){p.hp=Math.max(1,p.hp-Math.floor(p.hp*.30));p.nextSkillMultiplier=2;return true}
  if(effect==='cheatDeath'){p.cheatDeathTurns=5;return true}
  if(effect==='missingHpNova'){const bonus=1+Math.min(.75,1-p.hp/p.maxHp);for(const e of area(3))hit(e,bonus);return true}
- if(effect==='raiseMark'){status(target,'raiseMark',5,1,'Segunda Muerte');return true}
- if(effect==='holyMark'||effect==='mark'||effect==='bountyMark'){hit(target,.65);status(target,effect,6,effect==='bountyMark'?.5:.2,d.name);return true}
- if(effect==='doomMark'){status(target,'doomMark',5,1,'Mal Presagio');return true}
- if(effect==='doomCountdown'){status(target,'doomCountdown',4,8+lvl*3,'Cuenta final');return true}
+ if(effect==='raiseMark'){status(target,'raiseMark',d.debuffTurns??5,1,'Segunda Muerte');return true}
+ if(effect==='holyMark'||effect==='mark'||effect==='bountyMark'){hit(target,.65);status(target,effect,d.debuffTurns??6,effect==='bountyMark'?.5:.2,d.name);return true}
+ if(effect==='doomMark'){status(target,'doomMark',d.debuffTurns??5,1,'Mal Presagio');return true}
+ if(effect==='doomCountdown'){status(target,'doomCountdown',d.dotTurns??4,dotPowerFor(d,8+lvl*3),'Cuenta final');return true}
  if(effect==='repeatSkill'){p.repeatNextSkill=.60;return true}
  if(effect==='resetCooldowns'){for(const k of Object.keys(p.cooldowns))p.cooldowns[k]=0;p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+Math.ceil(d.cost*.30));return true}
  if(effect==='reveal'){const r=12+lvl;for(let yy=Math.max(0,p.y-r);yy<=Math.min(ROWS-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(COLS-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
- if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,4,{staminaRegen:4+lvl});return true}
- if(effect==='cleanseHeal'||effect==='purge'||effect==='absolution'){p.debuff=0;healEntity(p,10+lvl*4);if(effect!=='cleanseHeal')for(const e of area(3))hit(e,.75);return true}
- if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=5+lvl;healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
- if(effect==='freeze'){hit(target,.8);status(target,'freeze',2,0,'Congelado');return true}
- if(effect==='stun'||effect==='silence'){hit(target,.75);status(target,effect,effect==='stun'?1:3,0,d.name);return true}
- if(effect==='poison'||effect==='burn'||effect==='bleed'||effect==='dot'||effect==='decayDot'){hit(target,.7);status(target,effect,d.dotTurns??4,skillDotPower(id,2+lvl*.7),d.name);return true}
- if(effect==='root'||effect==='rootBleed'||effect==='bountyRoot'){hit(target,.7);status(target,'root',2,0,'Inmovilizado');if(effect==='rootBleed')status(target,'dot',d.dotTurns??4,skillDotPower(id,2+lvl*.6),'Sangrado');return true}
+ if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,d.buffTurns??4,{staminaRegen:4+lvl});return true}
+ if(effect==='cleanseHeal'||effect==='purge'||effect==='absolution'){p.debuff=0;healEntity(p,dicePowerFor(d,10+lvl*4,p));if(effect!=='cleanseHeal')for(const e of area(3))hit(e,.75);return true}
+ if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=dicePowerFor(d,5+lvl,p);healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
+ if(effect==='freeze'){hit(target,.8);status(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
+ if(effect==='stun'||effect==='silence'){hit(target,.75);status(target,effect,d.debuffTurns??(effect==='stun'?1:3),0,d.name);return true}
+ if(effect==='poison'||effect==='burn'||effect==='bleed'||effect==='dot'||effect==='decayDot'){hit(target,.7);status(target,effect,d.dotTurns??4,dotPowerFor(d,2+lvl*.7),d.name);return true}
+ if(effect==='root'||effect==='rootBleed'||effect==='bountyRoot'){hit(target,.7);status(target,'root',d.debuffTurns??2,0,'Inmovilizado');if(effect==='rootBleed')status(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.6),'Sangrado');return true}
  return false
 }
 
@@ -2720,41 +2791,149 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
 // each call site (execute multiplier, debuff status, etc.) never runs.
 const GENERIC_CLASS_EFFECTS=new Set(['ranged','shield','dash','debuff','aoe','heal','multihit','utility','ultimate','execute','buff','massive']);
 function applyCreativeClassEffect(id,target,x,y){
- const d=skillDefs[id],lvl=skillLevel(id),effect=d.classEffect,turns=2+Math.floor(lvl/3),p=game.player;
+ const d=skillDefs[id],lvl=skillLevel(id),effect=d.classEffect,p=game.player;
  if(applyClassEffectState(effect,id,target,x,y,lvl))return true;
  const enemiesIn=(radius)=>game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=radius);
  const hit=(e,m=.9)=>attack(e,0,{skillId:id,multiplier:m});
- if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',2+Math.floor(lvl/4),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'dot',d.dotTurns??4,skillDotPower(id,2+lvl*.5),'Sangrado');return true}
- if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',2,0,'Congelado');return true}
- if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect==='poison'?'poison':effect==='decayDot'?'decayDot':'dot',d.dotTurns??(4+Math.floor(lvl/4)),skillDotPower(id,2+lvl*.8),d.name);return true}
- if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);healEntity(p,5+lvl*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+4+lvl);return true}
- if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,2+Math.floor(lvl/5),1,d.name);return true}
- if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'dot',d.dotTurns??4,skillDotPower(id,2+lvl*.5),'Sangrado');return true}
- if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'dot',d.dotTurns??4,skillDotPower(id,2+lvl*.5),'Sangrado');return true}
+ if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',d.debuffTurns??(2+Math.floor(lvl/4)),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
+ if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
+ if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect==='poison'?'poison':effect==='decayDot'?'decayDot':'dot',d.dotTurns??(4+Math.floor(lvl/4)),dotPowerFor(d,2+lvl*.8),d.name);return true}
+ if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);const power=dicePowerFor(d,5+lvl*2,p);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
+ if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,d.debuffTurns??(2+Math.floor(lvl/5)),1,d.name);return true}
+ if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
+ if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['combo','comboMark','markedExecute','bountyExecute','packExecute','pierce','lineShot','ricochet','chain','blinkChain'].includes(effect)){hit(target,effect.includes('Execute')||effect==='markedExecute'?1.7:1.15);return true}
- if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',2,0,'Confuso');return true}
- if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyBuff(id,d.name,3+Math.floor(lvl/3),{armor:.12,damage:.08});if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
- if(['trap','rootZone'].includes(effect)){addSkillObject('trap',id,x,y,6+lvl,1+lvl*.2,1);return true}
- if(['consecrate','stormTotem','areaDot'].includes(effect)){addSkillObject(effect==='stormTotem'?'totem':'zone',id,x,y,4+Math.floor(lvl/2),1+lvl*.15,2);return true}
+ if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',d.debuffTurns??2,0,'Confuso');return true}
+ if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyCreativeBuff(id,d,lvl,{armor:.12,damage:.08},3+Math.floor(lvl/3));if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
+ if(['trap','rootZone'].includes(effect)){addSkillObject('trap',id,x,y,d.dotTurns??(6+lvl),dotPowerFor(d,1+lvl*.2),1);return true}
+ if(['consecrate','stormTotem','areaDot'].includes(effect)){addSkillObject(effect==='stormTotem'?'totem':'zone',id,x,y,d.dotTurns??(4+Math.floor(lvl/2)),dotPowerFor(d,1+lvl*.15),2);return true}
  if(['summon','summonTurret','summonHealer','summonTank','summonScanner','summonElite','multiSummon','clones','clone'].includes(effect)){
   const kind=effect.includes('Turret')?'turret':effect.includes('Healer')?'healer':effect.includes('Tank')?'tank':effect.includes('clone')?'clone':(id==='necromancer_t1_2'||d.classId==='necromancer')?'skeleton':d.classId==='shaman'?'wolf':'companion';
-  const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,7+lvl,1+lvl*.18);return true
+  const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,d.buffTurns??(7+lvl),1+lvl*.18);return true
  }
- if(['cleanseHeal','bigHeal','regenHeal','survivalHeal','healShield'].includes(effect)){healEntity(p,10+lvl*4+Math.floor(p.stats.wisdom||p.stats.vitality));if(effect==='healShield')p.shield+=8+lvl*2;applyBuff(id,d.name,3,{maxHp:0});return true}
+ if(['cleanseHeal','bigHeal','regenHeal','survivalHeal','healShield'].includes(effect)){healEntity(p,dicePowerFor(d,10+lvl*4+Math.floor(p.stats.wisdom||p.stats.vitality),p));if(effect==='healShield')p.shield+=8+lvl*2;applyBuff(id,d.name,d.buffTurns??3,{maxHp:0});return true}
  if(['buffArmor','counter','bloodBuff','lifestealBuff','rampage','overcharge','fortress','holyShield','holyAvatar','randomBuff','luckBuff','sniperBuff','stealthShot','shapeShift','lichBuff','implantBuff','mechBuff','wisdomBuff','martyrBuff','oakBuff','resourceRegen','reflect','monkAvatar','tauntBuff','beastAvatar','cheatDeath','cheatDeathHeal','rewind'].includes(effect)){
   const armor=effect.includes('Armor')||effect.includes('Shield')||effect.includes('fortress')||effect.includes('Avatar')?.28:.12;
   const damage=effect.includes('blood')||effect.includes('rampage')||effect.includes('overcharge')||effect.includes('Avatar')?.24:.10;
-  applyBuff(id,d.name,5+Math.floor(lvl/2),{armor,damage});if(effect.includes('Shield'))p.shield+=8+lvl*3;if(effect.includes('cheatDeath'))p.cheatDeath=1;return true
+  applyCreativeBuff(id,d,lvl,{armor,damage},5+Math.floor(lvl/2));
+  if(effect.includes('Shield'))p.shield+=8+lvl*3;if(effect.includes('cheatDeath'))p.cheatDeath=1;return true
  }
  const radius=d.tier===3?3:2,targets=enemiesIn(radius);
  if(!targets.length)return false;
  for(const e of targets){hit(e,d.tier===3?1.25:.85);
-  if(/root|cage|forest|blackHole/.test(effect))addEnemyStatus(e,'root',2,0,'Inmovilizado');
-  if(/freeze|thermal/.test(effect))addEnemyStatus(e,'freeze',2,0,'Congelado');
-  if(/burn|plague|dot|storm|rain|decay|nova/.test(effect))addEnemyStatus(e,'dot',d.dotTurns??3,skillDotPower(id,2+lvl*.6),d.name);
-  if(/stun|knockdown|massStun/.test(effect))addEnemyStatus(e,'stun',1+Math.floor(lvl/5),0,'Aturdido');
+  if(/root|cage|forest|blackHole/.test(effect))addEnemyStatus(e,'root',d.debuffTurns??2,0,'Inmovilizado');
+  if(/freeze|thermal/.test(effect))addEnemyStatus(e,'freeze',d.debuffTurns??2,0,'Congelado');
+  if(/burn|plague|dot|storm|rain|decay|nova/.test(effect))addEnemyStatus(e,'dot',d.dotTurns??3,dotPowerFor(d,2+lvl*.6),d.name);
+  if(/stun|knockdown|massStun/.test(effect))addEnemyStatus(e,'stun',d.debuffTurns??(1+Math.floor(lvl/5)),0,'Aturdido');
  }
  return true
+}
+
+// ---- Composable skill effects (Advanced/custom skills) ---------------------
+// A skill can carry def.effects = [{kind,target,...}, ...] instead of a
+// single classEffect tag: an ordered, stackable list of independent effect
+// components (deal damage, apply a DOT, buff a stat, debuff a stat, heal,
+// move/teleport, apply crowd control, drain), each with its own target
+// (self/enemy/area) and its own dice/stat/turns configuration - reusing the
+// exact same dmgDice/dmgStat/buffStat/debuffStat/etc fields the single-
+// effect system already uses, just scoped per component instead of per
+// skill. When def.effects is a non-empty array it is authoritative: the
+// legacy classEffect dispatch in useSkill/resolveTargetedSkill is skipped
+// entirely for that skill. This is how "dmg + bloodBuff-style self-buff +
+// debuff all at once" gets expressed going forward, and how a caster
+// targeting itself with a 'dmg' component becomes self-damage directly,
+// with no need for a dedicated bloodBuff-style hack.
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)'}[kind]||kind}
+function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
+// What clicking/targeting the WHOLE skill needs, derived from its
+// components: any component that must hit an enemy or an area drives the
+// overall target mode (enemy beats area beats none); an all-self skill
+// (pure buff/heal/move-self) needs no click at all, matching how the
+// existing self-cast classEffect skills behave.
+function effectsListTargetMode(id){
+ const d=skillDefs[id];const list=d?.effects||[];
+ if(list.some(c=>c.target==='enemy'))return'enemy';
+ if(list.some(c=>c.target==='area'||(c.kind==='move'&&c.mode==='teleport')))return'area';
+ if(list.some(c=>c.target==='ally'))return'ally';
+ return null
+}
+function resolveComponentEnemyTargets(comp,ctx){
+ if(comp.target==='area'){
+  const radius=comp.range||2;
+  return game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(game.player,e));
+ }
+ return ctx.clickedEnemy?[ctx.clickedEnemy]:(ctx.nearest?[ctx.nearest]:[]);
+}
+function applyEffectComponent(id,comp,ctx){
+ const d=skillDefs[id],p=game.player,lvl=skillLevel(id);
+ if(comp.kind==='dmg'){
+  if(comp.target==='self'){
+   const power=dicePowerFor(comp,8+lvl*2,p);
+   p.hp=Math.max(1,p.hp-power);floating(`-${power}`,p.x,p.y,'#ff8888');effect('flash');
+   return true
+  }
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||(comp.target==='area'?.85:1)});
+  return true
+ }
+ if(comp.kind==='dot'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  for(const e of targets){attack(e,0,{skillId:id,multiplier:.7});addEnemyStatus(e,comp.flavor||'dot',comp.turns??4,dotPowerFor(comp,2+lvl*.7),d.name)}
+  return true
+ }
+ if(comp.kind==='buff'){
+  const stat=comp.stat||'strength',mode=comp.mode||'add',value=comp.value??(mode==='mult'?1.2:5),turns=comp.turns??(6+Math.floor(lvl/2));
+  applyBuff(`${id}:${stat}`,d.name,turns,{[stat]:{mode,value}});
+  return true
+ }
+ if(comp.kind==='debuff'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const mode=comp.mode||'add',value=comp.value??(mode==='mult'?.8:2),turns=comp.turns??(2+Math.floor(lvl/3));
+  for(const e of targets){attack(e,0,{skillId:id,multiplier:.7});if(comp.stat)applyEnemyStatDebuff(e,comp.stat,mode,value,turns,d.name);else e.weakened=turns}
+  return true
+ }
+ if(comp.kind==='heal'){
+  const power=dicePowerFor(comp,8+lvl*3,p);
+  if(comp.target==='ally'&&ctx.clickedAlly){
+   healEntity(ctx.clickedAlly,power*2,ctx.clickedAlly.x,ctx.clickedAlly.y);
+   sendMpAction('ally_heal',{targetId:ctx.clickedAlly.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
+  }else{
+   healEntity(p,power*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+  }
+  return true
+ }
+ if(comp.kind==='move'){
+  const range=Math.max(1,comp.range||3);
+  if(comp.mode==='teleport'){if(blocked(ctx.x,ctx.y)||game.enemies.some(e=>e.hp>0&&e.x===ctx.x&&e.y===ctx.y))return false;return teleportPlayerTo(ctx.x,ctx.y)}
+  const dashTarget=ctx.clickedEnemy||ctx.nearest;if(!dashTarget)return false;
+  const dx=Math.sign(dashTarget.x-p.x),dy=Math.sign(dashTarget.y-p.y);
+  for(let i=0;i<range;i++){const nx=p.x+dx,ny=p.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==dashTarget&&e.x===nx&&e.y===ny)||(dashTarget.x===nx&&dashTarget.y===ny))break;p.x=nx;p.y=ny}
+  reveal(p.x,p.y);attack(dashTarget,0,{skillId:id,multiplier:comp.multiplier||1});
+  return true
+ }
+ if(comp.kind==='cc'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  for(const e of targets){attack(e,0,{skillId:id,multiplier:.75});addEnemyStatus(e,comp.type||'stun',comp.turns??2,0,d.name)}
+  return true
+ }
+ if(comp.kind==='drain'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const power=dicePowerFor(comp,5+lvl*2,p);
+  for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
+  healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+  return true
+ }
+ return false
+}
+// Runs every component in def.effects against a shared cast context; a
+// skill "succeeds" (consumes cost/cooldown) if ANY component actually did
+// something, matching the existing used-flag convention.
+function applySkillEffectsList(id,ctx){
+ const list=skillDefs[id]?.effects||[];
+ let used=false;
+ for(const comp of list)if(applyEffectComponent(id,comp,ctx))used=true;
+ return used
 }
 
 // ---- Action-point turn system ------------------------------------------------
@@ -2780,7 +2959,7 @@ const AP_COST_BY_EFFECT={
 };
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode))}
-function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};return 30+Math.ceil((st.agility||0)/2)}
+function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const base=30+Math.ceil((st.agility||0)/2);return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
 function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
 function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
@@ -2993,6 +3172,7 @@ function skillRangeLabel(id){
 function isSelfHealSkill(id){return skillDefs[id]?.classEffect==='heal'}
 function skillTargetMode(id){
  const d=skillDefs[id];if(!d)return null;
+ if(hasEffectsList(id))return effectsListTargetMode(id);
  if(d.targetMode==='self')return null;
  if(d.targetMode==='area')return 'area';
  if(d.targetMode==='enemy')return 'enemy';
@@ -3024,7 +3204,13 @@ function resolveTargetedSkill(slot,x,y){
  if(game.player[d.resource]<d.cost){log(`Necesitas ${d.cost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
  const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
- if(mode==='enemy'){
+ if(hasEffectsList(id)){
+  const clickedEnemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
+  const clickedAlly=!clickedEnemy&&game.multiplayer?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
+  if(mode==='enemy'&&!clickedEnemy){log('Debes seleccionar un enemigo.','sys');return false}
+  used=applySkillEffectsList(id,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
+  if(!used&&mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');
+ }else if(mode==='enemy'){
   const enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
   if(d.classId&&!GENERIC_CLASS_EFFECTS.has(d.classEffect)&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
   if(used){}else{
@@ -3079,6 +3265,17 @@ function useSkill(slot){
  if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}if(game.player[def.resource]<def.cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
+ if(hasEffectsList(id)){
+  // All-self composable skill (skillTargetMode already returned null, so
+  // every component targets 'self') - self-contained, returns directly
+  // instead of falling into the legacy id-specific/classEffect chain below.
+  const visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
+  const used=applySkillEffectsList(id,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
+  if(!used){log('No hay un objetivo válido.','sys');return}
+  if(!apCan('skill',skillApCost(id)))return;
+  game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
+  return
+ }
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
  let used=!def.classEffect&&skillDefs[id]?.unlock!=='Botín';
  const skillMult=skillPowerMultiplier(id);if(id==='smash'){const a=near(1);if(!a.length)used=false;else a.forEach(e=>attack(e,Math.round(Math.floor(total('armor')/2)*skillMult),{skillId:id}))}
@@ -3695,7 +3892,11 @@ function resolveClassDef(id){
  return {
   name:j?.name||base?.name||id,
   desc:j?.desc||base?.desc||'Clase personalizada.',
-  stats:j?.stats||base?.stats||{strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2},
+  // merge over full defaults (not just fall back when the whole stats
+  // object is missing) - a custom Advanced-mode class saved with a partial
+  // stats blob (e.g. missing agility) must not leave that stat undefined,
+  // which cascades into NaN vision/maxHp/maxStamina/etc at character creation
+  stats:{strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2,...(j?.stats||base?.stats||{})},
   skills:j?.starterSkills||base?.skills||[],
   resourceBias:j?.resourceBias||base?.resourceBias||'stamina',
   custom:!base
@@ -3792,11 +3993,24 @@ function skillNames(ids=[]){return ids.map(id=>skillDefs[id]?.name||id).join(', 
 // make every other call site "read the DB first, fall back to the hardcoded
 // system" for free.
 const HARDCODED_CLASS_SKILL_TREE_IDS=new Set(Object.keys(classSkillTrees));
+// A skills_json row saved before the buff/debuff add-or-multiply rework
+// carries a buffStatCoef/debuffStatCoef written under the OLD percentage
+// semantics (e.g. 0.15 meaning "+15%") but has no buffStatMode/debuffStatMode
+// key at all, since that field didn't exist yet. Blindly merging it in would
+// silently reintroduce the "buffs round down to +0" bug that motivated this
+// fix - the stale coefficient wins over the already-corrected hardcoded
+// default. Strip it so the merge falls back to the current hardcoded value.
+function stripStaleCoefficients(override){
+ const o={...override};
+ if(o.buffStatCoef!=null&&!('buffStatMode' in override))delete o.buffStatCoef;
+ if(o.debuffStatCoef!=null&&!('debuffStatMode' in override))delete o.debuffStatCoef;
+ return o;
+}
 function applyClassSkillOverrides(){
  for(const row of configClasses){
   const bag=row.skills_json;if(!bag||typeof bag!=='object')continue;
   const classId=row.class_json?.classId||normalizeClassName(row.nombre);
-  for(const [skillId,override] of Object.entries(bag))skillDefs[skillId]={...(skillDefs[skillId]||{}),...override};
+  for(const [skillId,override] of Object.entries(bag))skillDefs[skillId]={...(skillDefs[skillId]||{}),...stripStaleCoefficients(override)};
   // classes without a hardcoded tree get theirs (re)synthesized every time,
   // so editing a custom class's skill tiers takes effect on the next load
   if(!HARDCODED_CLASS_SKILL_TREE_IDS.has(classId)){
@@ -3806,7 +4020,25 @@ function applyClassSkillOverrides(){
   }
  }
 }
-async function fetchConfigClasses(){try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses();renderClassChoices()}catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}}
+// Advanced-mode character creation depends on config_class being loaded,
+// but the class-choice screen can render before anything ever triggers
+// this fetch (it's normally only pulled in when the admin Configuración
+// screen opens). configClassesLoaded/configClassesFetchInFlight let
+// renderClassChoices() self-heal: fetch once, dedupe concurrent callers,
+// and tell "still loading" apart from "genuinely no rows yet".
+async function fetchConfigClasses(){
+ if(configClassesFetchInFlight)return configClassesFetchInFlight;
+ configClassesFetchInFlight=(async()=>{
+  try{const r=await fetch('/api/config-class');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses()}
+  catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}
+  // set the "loaded" flag before the self-healing render below, or a
+  // genuinely-empty result would re-trigger the loading state forever
+  // (renderClassChoices only re-fetches while configClassesLoaded is false)
+  configClassesLoaded=true;configClassesFetchInFlight=null;
+  renderClassChoices();
+ })();
+ return configClassesFetchInFlight;
+}
 function selectedGameClassId(){return configClassSelect?.value||selectedClass}
 // ---- Class/skill editor (config_class, skills_json) ----------------------
 // 'bleed'/'burn' are intentionally absent: any periodic-damage effect is
@@ -3834,9 +4066,67 @@ function renderClassSkillSelect(){
  sel.innerHTML=ids.map(id=>`<option value="${id}">T${bag[id].tier||1} · ${bag[id].name||id}</option>`).join('')||'<option value="">Sin skills</option>';
  if(ids.length)loadSkillIntoForm(ids.includes(sel.value)?sel.value:ids[0]);
 }
+// ---- Composable effects list editor (admin) --------------------------------
+const STAT_KEYS_CORE=['strength','vitality','agility','luck','intelligence','wisdom'];
+const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA'};
+function statOptionsHtml(selected,extra=[]){return [...STAT_KEYS_CORE,...extra].map(s=>`<option value="${s}" ${selected===s?'selected':''}>${STAT_LABELS_ES[s]||s}</option>`).join('')}
+function defaultComponentFor(kind){
+ const base={kind};
+ if(kind==='dmg')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1};
+ if(kind==='dot')return {...base,target:'enemy',dotDice:1,dotDie:6,dotStat:'strength',dotStatMode:'add',dotStatCoef:.5,turns:4,flavor:'dot'};
+ if(kind==='buff')return {...base,target:'self',stat:'strength',mode:'add',value:5,turns:6};
+ if(kind==='debuff')return {...base,target:'enemy',stat:'strength',mode:'add',value:2,turns:3};
+ if(kind==='heal')return {...base,target:'self',dmgDice:2,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:1};
+ if(kind==='move')return {...base,mode:'dash',range:3};
+ if(kind==='cc')return {...base,target:'enemy',type:'stun',turns:2};
+ if(kind==='drain')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
+ return base;
+}
+function effectComponentTargetOptions(kind){
+ if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
+ if(kind==='dot'||kind==='cc'||kind==='drain')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
+ if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'}];
+ return null
+}
+function effectDiceFieldsHtml(comp,i,prefix='dmg'){
+ const f=k=>`${prefix}${k}`,dice=comp[f('Dice')],die=comp[f('Die')],stat=comp[f('Stat')],mode=comp[f('StatMode')],coef=comp[f('StatCoef')];
+ return `<label>Nº de dados <input type="number" min="0" value="${dice||0}" data-effect-idx="${i}" data-effect-field="${f('Dice')}"></label>
+ <label>Dado <select data-effect-idx="${i}" data-effect-field="${f('Die')}">${[4,6,8,10,12,20].map(n=>`<option value="${n}" ${Number(die)===n?'selected':''}>d${n}</option>`).join('')}</select></label>
+ <label>Stat <select data-effect-idx="${i}" data-effect-field="${f('Stat')}"><option value="">Automática</option>${statOptionsHtml(stat)}</select></label>
+ <label>Modo <select data-effect-idx="${i}" data-effect-field="${f('StatMode')}"><option value="add" ${mode!=='mult'?'selected':''}>Sumatorio</option><option value="mult" ${mode==='mult'?'selected':''}>Multiplicador</option></select></label>
+ <label>Coeficiente <input type="number" step="0.1" value="${coef??1}" data-effect-idx="${i}" data-effect-field="${f('StatCoef')}"></label>`
+}
+function effectComponentCardHtml(comp,i){
+ const targetOpts=effectComponentTargetOptions(comp.kind);
+ const targetHtml=targetOpts?`<label>Objetivo <select data-effect-idx="${i}" data-effect-field="target">${targetOpts.map(o=>`<option value="${o.v}" ${comp.target===o.v?'selected':''}>${o.l}</option>`).join('')}</select></label>`:'';
+ let fields='';
+ if(comp.kind==='dmg'||comp.kind==='drain'||comp.kind==='heal')fields=effectDiceFieldsHtml(comp,i);
+ else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
+ else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap']:[])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
+ else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ return `<div class="effectCard"><div class="effectCardHead"><b>${effectKindLabel(comp.kind)}</b><button type="button" data-remove-effect="${i}">Quitar</button></div><div class="configForm">${targetHtml}${fields}</div></div>`;
+}
+function renderSkillEffectsList(){
+ const wrap=document.getElementById('configSkillEffectsList');if(!wrap)return;
+ const list=window.currentSkillEffectsDraft||[];
+ wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos: la skill usará el sistema heredado de abajo.</p>';
+ wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const idx=Number(el.dataset.effectIdx),field=el.dataset.effectField;
+   const isNumber=el.type==='number';
+   window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):el.value;
+  });
+ });
+ wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',()=>{
+  window.currentSkillEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderSkillEffectsList();
+ }));
+}
 function loadSkillIntoForm(skillId){
  const s=(window.currentClassSkillsDraft||{})[skillId];if(!s)return;
  window.editingConfigSkillId=skillId;
+ window.currentSkillEffectsDraft=JSON.parse(JSON.stringify(s.effects||[]));
+ renderSkillEffectsList();
  document.getElementById('configClassSkillSelect').value=skillId;
  document.getElementById('configSkillId').value=skillId;
  document.getElementById('configSkillName').value=s.name||'';
@@ -3914,6 +4204,7 @@ function currentSkillFormJson(){
   dotStatMode:document.getElementById('configSkillDotStatMode').value,
   dotStatCoef:Number(document.getElementById('configSkillDotStatCoef').value)||0,
   dotTurns:Number(document.getElementById('configSkillDotTurns').value)||undefined,
+  effects:(window.currentSkillEffectsDraft&&window.currentSkillEffectsDraft.length)?window.currentSkillEffectsDraft:undefined,
   unlock:'Clase'
  };
 }
@@ -3932,7 +4223,11 @@ function currentConfigClassJson(){
 async function saveConfigClass(item,skillsBag){
  const row=window.pendingNewClassId?null:configClassRowForId(item.classId);
  const method=row?'PUT':'POST',url=row?`/api/config-class?id=${encodeURIComponent(row.id)}`:'/api/config-class';
- const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag})});
+ // saving a class from this editor is the explicit signal that it's ready
+ // for Advanced skill mode - flips config_class.advanced to true so
+ // classIdsForSkillMode('advanced') picks it up regardless of whether its
+ // classId happens to reuse a hardcoded one (a reskinned/renamed class).
+ const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag,advanced:true})});
  const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');
  window.pendingNewClassId=null;
  await fetchConfigClasses();
@@ -3943,7 +4238,7 @@ function renderConfigClasses(){
  const previous=sel.value||selectedClass,ids=allClassIds();
  sel.innerHTML=ids.map(id=>`<option value="${id}">${resolveClassDef(id)?.name||id}</option>`).join('');
  sel.value=ids.includes(previous)?previous:selectedClass;
- if(list)list.innerHTML=ids.map(id=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'',c=resolveClassDef(id);return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${c.custom?'Clase personalizada':'Clase base'} · ${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}${row?.skills_json?' · Skills personalizadas':''}</span></div></div>`}).join('');
+ if(list)list.innerHTML=ids.map(id=>{const row=configClassRowForId(id),icon=row?.class_json?.icon||row?.icon||'',c=resolveClassDef(id);return `<div class="configItem"><span class="tierDot" style="background:${icon?'#8c72e8':'#4d395a'}"></span><div><b>${c.name}</b><span class="small">${c.custom?'Clase personalizada':'Clase base'} · ${row?`BDD #${row.id}`:'Sin fila BDD'} · ${icon?'Icono subido':'Pixels por defecto'}${row?.skills_json?' · Skills personalizadas':''}${row?.advanced?' · <b style="color:#ffc35a">Advanced</b>':''}</span></div></div>`}).join('');
  loadSelectedConfigClass();
 }
 function loadSelectedConfigClass(){
@@ -4255,7 +4550,7 @@ function setupClassConfigMode(){
  document.getElementById('duplicateConfigSkillBtn').onclick=()=>{
   const src=window.editingConfigSkillId;if(!src||!window.currentClassSkillsDraft?.[src])return;
   const n=Object.keys(window.currentClassSkillsDraft).length+1,newId=`${src}_copy${n}`;
-  window.currentClassSkillsDraft[newId]={...window.currentClassSkillsDraft[src]};
+  window.currentClassSkillsDraft[newId]={...window.currentClassSkillsDraft[src],effects:JSON.parse(JSON.stringify(window.currentClassSkillsDraft[src].effects||[]))};
   renderClassSkillSelect();
   document.getElementById('configClassSkillSelect').value=newId;loadSkillIntoForm(newId);
  };
@@ -4276,6 +4571,12 @@ function setupClassConfigMode(){
  document.getElementById('rollbackConfigSkillIconBtn').onclick=()=>{
   window.currentConfigSkillIconHex='';renderConfigIconPreview('','configSkillIconPreview','configSkillIconStatus');
   document.getElementById('configSkillIconStatus').textContent='Sin imagen: se usa el icono de texto/emoji.';
+ };
+ document.getElementById('addSkillEffectBtn').onclick=()=>{
+  const kind=document.getElementById('configEffectKindPicker').value;
+  window.currentSkillEffectsDraft=window.currentSkillEffectsDraft||[];
+  window.currentSkillEffectsDraft.push(defaultComponentFor(kind));
+  renderSkillEffectsList();
  };
  document.getElementById('exportConfigSkillsBtn').onclick=()=>{
   const blob=new Blob([JSON.stringify(window.currentClassSkillsDraft||{},null,2)],{type:'application/json'}),a=document.createElement('a');
@@ -6265,14 +6566,41 @@ function renderRaceChoices(){
 }
 renderRaceChoices();
 
+// Advanced eligibility is the explicit config_class.advanced flag (set by
+// saveConfigClass whenever a class is saved from the editor) - not whether
+// the classId happens to collide with a hardcoded one, since a class can be
+// a deliberate reskin/rename of a hardcoded class (same classId, different
+// name/stats/skills) and still be meant purely for Advanced mode.
+function classIdsForSkillMode(mode){
+ if(mode==='advanced'){
+  const ids=new Set();
+  for(const row of configClasses){const cid=row.class_json?.classId;if(cid&&row.advanced===true)ids.add(cid)}
+  return [...ids];
+ }
+ return Object.keys(classDefs);
+}
 function renderClassChoices(){
- const root=document.getElementById('classChoices');
- root.innerHTML=allClassIds().map(id=>{const c=resolveClassDef(id);return `<div class="classCard ${id===selectedClass?'selected':''}" data-class="${id}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`}).join('');
+ const root=document.getElementById('classChoices'),ids=classIdsForSkillMode(selectedSkillMode);
+ if(!ids.length){
+  if(selectedSkillMode==='advanced'&&!configClassesLoaded){
+   root.innerHTML='<p class="small">Cargando clases Advanced desde la base de datos...</p>';
+   document.getElementById('classDetail').innerHTML='';
+   fetchConfigClasses();
+   return;
+  }
+  root.innerHTML='<p class="small">No hay clases Advanced configuradas todavía. Créalas en Configuración → Clases, o vuelve a Hardcode.</p>';
+  document.getElementById('classDetail').innerHTML='';
+  return;
+ }
+ if(!ids.includes(selectedClass))selectedClass=ids[0];
+ root.innerHTML=ids.map(id=>{const c=resolveClassDef(id);return `<div class="classCard ${id===selectedClass?'selected':''}" data-class="${id}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`}).join('');
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{selectedClass=el.dataset.class;renderClassChoices()});
  const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();
+document.getElementById('skillModeHardcode')?.addEventListener('change',()=>{selectedSkillMode='hardcode';renderClassChoices()});
+document.getElementById('skillModeAdvanced')?.addEventListener('change',()=>{selectedSkillMode='advanced';renderClassChoices()});
 
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabview').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
