@@ -3090,7 +3090,7 @@ function draw(){
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
  for(const a of game.altars||[])if(game.seen[a.y]?.[a.x]){let p=sc(a.x,a.y);altarSprite(p.x,p.y,a)}
  for(const k of game.keys)if(game.seen[k.y][k.x]){let p=sc(k.x,k.y);keySprite(p.x,p.y)}
- for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);chestSprite(p.x,p.y)}
+ for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);drawChestSprite(p.x,p.y,chest)}
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){const t=e.animT??1,ix=(e.prevX??e.x)+(e.x-(e.prevX??e.x))*t,iy=(e.prevY??e.y)+(e.y-(e.prevY??e.y))*t;let p=sc(ix,iy);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
@@ -3392,6 +3392,19 @@ function drawPaperDoll(canvas,p){
  q.fillStyle='#e8d8a7';q.font='6px monospace';q.textAlign='center';q.fillText((p.className||'CLASE').toUpperCase().slice(0,20),64,181)
 }
 function chestSprite(x,y){px(x+8,y+27,48,27,'#553018');px(x+10,y+19,44,15,'#a65d2c');px(x+14,y+21,36,4,'#d38a43');px(x+28,y+24,8,22,'#f2c456');px(x+13,y+47,38,4,'#321b12')}
+// Renders the chest's own config_chest icon when it has one (same hex-icon
+// pipeline used for tiles/doors); falls back to the procedural sprite only
+// while that image is still loading.
+function drawChestSprite(x,y,c){
+ const icon=c.chestDef?.icon;
+ if(icon){
+  let img=tileImageCache.get(icon);
+  if(!img){img=tileImageFromHex(icon);tileImageCache.set(icon,img)}
+  if(img.complete){ctx.drawImage(img,x+7,y+7,TILE-14,TILE-14);return}
+  img.onload=()=>game&&draw();
+ }
+ chestSprite(x,y);
+}
 function trapSprite(x,y){
  ctx.strokeStyle='#ff9d4f';ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(x+16,y+16);ctx.lineTo(x+48,y+48);ctx.moveTo(x+48,y+16);ctx.lineTo(x+16,y+48);ctx.stroke();
@@ -3830,7 +3843,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!configItems.length)await fetchConfigItems();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -4111,7 +4124,7 @@ function logoutMultiSession(){
  const id=multiSessionId;multiSessionId=null;
  fetch(`/api/multi-session?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({logout:true})}).catch(e=>console.error(e));
 }
-const MAIN_MENU_SCREEN_IDS=['app','singlePlayerOverlay','multiplayerOverlay','mpLobbyOverlay','configScreen','scoresScreen','dungeonOverlay','startOverlay','storyOverlay'];
+const MAIN_MENU_SCREEN_IDS=['app','singlePlayerOverlay','multiplayerOverlay','mpLobbyOverlay','configScreen','scoresScreen','dungeonOverlay','dungeonPreviewOverlay','startOverlay','storyOverlay'];
 function goToMainMenu(){
  if(game&&!confirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
  if(game?.multiplayer){logoutMultiSession();mpFlushCheckpointBeacon();cleanupMultiplayerRuntime()}
@@ -4185,9 +4198,39 @@ async function mpStartCreateFlow(){
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
 
+const ENEMY_TIER_LABELS={i:'I',ii:'II',iii:'III',iv:'IV'};
+// Reads the world's already-precomputed floors (world_json.floors, baked in
+// createDungeonWorldJson) - no need to regenerate anything, this is exactly
+// what will actually be used when the player enters each floor.
+function buildDungeonPreviewText(worldJson){
+ const floors=worldJson?.floors||[];
+ if(!floors.length)return 'Esta dungeon no tiene pisos precalculados.';
+ return floors.map(f=>{
+  const enemyTiers={};for(const e of f.enemies||[]){const t=e.tier||'i';enemyTiers[t]=(enemyTiers[t]||0)+1}
+  const enemyLine=Object.keys(ENEMY_TIER_LABELS).map(t=>`Tier ${ENEMY_TIER_LABELS[t]}: ${enemyTiers[t]||0}`).join(' · ');
+  const bossLine=f.boss?` · Jefe: ${f.boss.name||'Jefe'}`:'';
+  const chestTiers={},chestNames=[];
+  for(const c of f.chests||[]){const t=c.chestDef?.tier||'?';chestTiers[t]=(chestTiers[t]||0)+1;if(c.chestDef?.name)chestNames.push(c.chestDef.name)}
+  const chestTierLine=[1,2,3,4,5].map(t=>`Tier ${t}: ${chestTiers[t]||0}`).join(' · ');
+  const nameCounts=chestNames.reduce((acc,n)=>{acc[n]=(acc[n]||0)+1;return acc},{});
+  const namesLine=Object.keys(nameCounts).length?Object.entries(nameCounts).map(([n,c])=>c>1?`${n} x${c}`:n).join(', '):'Ninguno';
+  return `PISO ${f.floor} (${f.themeName||''})\n Enemigos -> ${enemyLine}${bossLine}\n Cofres por tier -> ${chestTierLine}\n Cofres asignados -> ${namesLine}`;
+ }).join('\n\n');
+}
 function proceedAfterWorldChosen(){
- if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
- enterWorldWithCharacter();
+ const text=document.getElementById('dungeonPreviewText');
+ if(text)text.textContent=buildDungeonPreviewText(selectedDungeonWorld?.world_json);
+ dungeonOverlay.classList.add('hidden');
+ document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');
+ document.getElementById('dungeonPreviewContinueBtn').onclick=()=>{
+  document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
+  if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
+  enterWorldWithCharacter();
+ };
+ document.getElementById('dungeonPreviewBackBtn').onclick=()=>{
+  document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
+  dungeonOverlay.classList.remove('hidden');
+ };
 }
 
 async function mpCreateHostSession(){
