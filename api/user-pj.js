@@ -8,6 +8,16 @@ function supabaseConfig(){
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
 function requestId(req){return req.query?.id||req.body?.id||req.body?.pj_id||null}
+// The `shards` column is a plain TEXT column (not jsonb), so the API always
+// stores/reads a JSON-encoded string there - encode on the way in, decode on
+// the way out, so callers never have to think about the storage format.
+function shardsToText(v){try{return JSON.stringify(v&&typeof v==='object'?v:{})}catch{return '{}'}}
+function shardsFromText(v){
+ if(v&&typeof v==='object')return v;
+ if(typeof v==='string'){try{const p=JSON.parse(v||'{}');return p&&typeof p==='object'?p:{}}catch{return {}}}
+ return {};
+}
+function withParsedShards(row){if(row&&typeof row==='object'&&'shards' in row)row.shards=shardsFromText(row.shards);return row}
 function cleanPj(body){
  return {
   nombre:body.nombre??null,
@@ -17,7 +27,7 @@ function cleanPj(body){
   pj_score:body.pj_score??0,
   // tier shards from the Creator's Room disenchant altar - a real column,
   // not nested in pj_json, so it can be updated independently
-  shards:body.shards??{},
+  shards:shardsToText(body.shards),
   // items created/edited in the Creator's Room (craft system) - exclusive
   // to this character, not part of the shared config_items catalog
   custom_items:body.custom_items??[],
@@ -35,25 +45,25 @@ module.exports=async(req,res)=>{
     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
-    return res.status(200).json(Array.isArray(data)?data[0]||null:data);
+    return res.status(200).json(Array.isArray(data)?withParsedShards(data[0])||null:withParsedShards(data));
    }
    if(nombre){
     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&nombre=eq.${encodeURIComponent(nombre)}&order=last_use.desc.nullslast`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
-    return res.status(200).json(data);
+    return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
    }
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,shards,custom_items&order=pj_score.desc.nullslast`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(data);
+   return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
   }
   if(req.method==='POST'){
    const row=cleanPj(req.body||{});
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(Array.isArray(data)?data[0]:data);
+   return res.status(200).json(Array.isArray(data)?withParsedShards(data[0]):withParsedShards(data));
   }
   if(req.method==='PUT'){
    const id=requestId(req);
@@ -64,13 +74,13 @@ module.exports=async(req,res)=>{
    if('pj_status' in body)row.pj_status=body.pj_status;
    if('pj_score' in body)row.pj_score=body.pj_score;
    if('pj_name' in body)row.pj_name=body.pj_name;
-   if('shards' in body)row.shards=body.shards;
+   if('shards' in body)row.shards=shardsToText(body.shards);
    if('custom_items' in body)row.custom_items=body.custom_items;
    row.last_use=body.last_use??new Date().toISOString();
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(data);
+   return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):withParsedShards(data));
   }
   res.setHeader('Allow','GET, POST, PUT');return res.status(405).json({error:'Método no permitido'});
  }catch(e){return res.status(500).json({error:e.message});}

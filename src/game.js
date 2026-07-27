@@ -2617,6 +2617,14 @@ function shardsForItem(item){return 10+Math.floor(Math.random()*11)}
 // fetches can land out of order and let an earlier, stale write clobber a
 // later one on the server, silently losing shards the player just earned.
 // Chaining every save onto the previous one's promise keeps them in order.
+// The shards column is stored as text server-side; api/user-pj.js parses it
+// back into an object before responding, but this stays as a cheap defensive
+// normalizer in case a stale/raw value ever slips through as a string.
+function normalizeShards(v){
+ if(v&&typeof v==='object')return v;
+ if(typeof v==='string'){try{const p=JSON.parse(v||'{}');return p&&typeof p==='object'?p:{}}catch{return {}}}
+ return {};
+}
 let shardsPersistChain=Promise.resolve();
 function persistShards(){
  if(!game?.pjId){log('No se pueden guardar los shards: no hay personaje activo.','sys');return}
@@ -5467,7 +5475,7 @@ async function resumeSession(sessionId){
   const floorNum=state.currentFloor||1;
   const overlay=state.floors?.[String(floorNum)]||null;
   game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
- game.player.shards=pj.shards||game.player.shards||{};
+ game.player.shards=pj.shards?normalizeShards(pj.shards):(game.player.shards||{});
  game.player.customItems=pj.custom_items||game.player.customItems||[];
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
@@ -5500,7 +5508,7 @@ async function enterWorldWithCharacter(){
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
  // shards live in their own user_pj column (not pj_json) so they survive
  // independently of the rest of the character bundle - see persistShards()
- game.player.shards=currentCharacter.shards||game.player.shards||{};
+ game.player.shards=currentCharacter.shards?normalizeShards(currentCharacter.shards):(game.player.shards||{});
  // custom-crafted items (Creator's Room) live in their own user_pj column too
  game.player.customItems=currentCharacter.custom_items||game.player.customItems||[];
  generateFloor();
