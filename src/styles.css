@@ -146,6 +146,8 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .zoomControl input{width:130px;accent-color:#ffc35a}
 @media(max-width:600px){.zoomControl input{width:90px}}
 .floatText{position:fixed;pointer-events:none;z-index:70;font-weight:bold;font-size:20px;text-shadow:2px 2px #000;animation:floatUp .8s ease-out forwards}
+.rangedTracer{--tracer-color:#9be8ff;position:fixed;height:3px;transform-origin:0 50%;pointer-events:none;z-index:65;background:linear-gradient(90deg,transparent,var(--tracer-color) 35%,var(--tracer-color) 85%,transparent);box-shadow:0 0 6px 1px var(--tracer-color);animation:rangedTracerFade .26s ease-out forwards}
+@keyframes rangedTracerFade{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
 @keyframes floatUp{0%{transform:translateY(0) scale(.8);opacity:1}30%{transform:translateY(-12px) scale(1.15)}100%{transform:translateY(-52px);opacity:0}}
 .shake{animation:shake .18s linear}.flash{animation:flash .18s linear}
 @keyframes shake{0%,100%{transform:translate(0)}25%{transform:translate(-4px,2px)}50%{transform:translate(4px,-2px)}75%{transform:translate(-2px,-1px)}}
