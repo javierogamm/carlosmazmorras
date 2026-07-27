@@ -2619,14 +2619,16 @@ function shardsForItem(item){return 10+Math.floor(Math.random()*11)}
 // Chaining every save onto the previous one's promise keeps them in order.
 let shardsPersistChain=Promise.resolve();
 function persistShards(){
- if(!game?.pjId)return;
+ if(!game?.pjId){log('No se pueden guardar los shards: no hay personaje activo.','sys');return}
  const id=game.pjId,payload=JSON.stringify({shards:game.player.shards||{}});
- shardsPersistChain=shardsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los shards',e));
+ shardsPersistChain=shardsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload}))
+  .then(async r=>{if(!r.ok){const d=await r.json().catch(()=>({}));log(`No se pudieron guardar los shards en el servidor: ${d.error||d.message||r.status}`,'sys');console.error('persistShards falló',d)}})
+  .catch(e=>{log('No se pudieron guardar los shards (sin conexión con el servidor).','sys');console.error('No se pudieron guardar los shards',e)});
 }
 // Disenchanting is not gated to the Creator's Room anymore - any equipment
 // item in the backpack can be broken down into shards from the Mochila tab
 // itself, from anywhere in the dungeon (see the inventory render in
-// updateUI() and its "Deshacer" button wired to disenchantItemById()).
+// updateUI() and its "Deshacer" button wired to confirmDisenchantItem()).
 function disenchantItem(item){
  const idx=(game.inventory||[]).indexOf(item);if(idx<0)return;
  const n=shardsForItem(item);
@@ -2638,7 +2640,11 @@ function disenchantItem(item){
  renderCraftShardsSummary();
  updateUI();
 }
-function disenchantItemById(id){const item=(game.inventory||[]).find(i=>i.id===id);if(item)disenchantItem(item)}
+function confirmDisenchantItem(id){
+ const item=(game.inventory||[]).find(i=>i.id===id);if(!item)return;
+ if(!confirm(`¿Deshacer "${item.name}" a cambio de 10-20 shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
+ disenchantItem(item);
+}
 // Opens the Creator's Room altar for the 4 actual crafting actions (create,
 // upgrade tier, add stat, upgrade stat). Disenchanting lives outside it now.
 function openCraftModal(){switchCraftTab('create');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
@@ -2712,7 +2718,9 @@ function persistCustomItems(){
  syncCustomItemsRecord();
  if(!game?.pjId)return;
  const id=game.pjId,payload=JSON.stringify({custom_items:game.player.customItems||[]});
- customItemsPersistChain=customItemsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los objetos personalizados',e));
+ customItemsPersistChain=customItemsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload}))
+  .then(async r=>{if(!r.ok){const d=await r.json().catch(()=>({}));log(`No se pudieron guardar los objetos personalizados: ${d.error||d.message||r.status}`,'sys');console.error('persistCustomItems falló',d)}})
+  .catch(e=>{log('No se pudieron guardar los objetos personalizados (sin conexión).','sys');console.error('No se pudieron guardar los objetos personalizados',e)});
 }
 function setCraftStatus(id,msg){const el=document.getElementById(id);if(el)el.textContent=msg}
 // Shards tab: one row per tier with its (optionally admin-configured, via
@@ -3863,7 +3871,7 @@ function updateObjectiveHud(){
 function updateUI(){
  if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
- inventory.innerHTML=game.inventory.length?game.inventory.map(i=>{const canDisenchant=i.type!=='potion'&&i.slot!=='consumable';return `<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}${canDisenchant?`<div class="itemDisenchantRow"><canvas class="shardTierIcon" width="20" height="20" data-shard-tier="${i.rarity}"></canvas><button type="button" class="disenchantItemBtn" onclick="event.stopPropagation();disenchantItemById('${i.id}')">Deshacer (10-20 shards ${tierDefs[i.rarity]?.label||i.rarity})</button></div>`:''}</div></div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ inventory.innerHTML=game.inventory.length?game.inventory.map(i=>{const canDisenchant=i.type!=='potion'&&i.slot!=='consumable';return `<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 10-20 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
