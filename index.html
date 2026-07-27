@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.53.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.53.0">
+<title>MAZMORRA // BOTÍN v0.54.0 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.54.0">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.54.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -158,7 +158,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.54.0 MULTIPLAYER</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -476,9 +476,37 @@
 <div class="overlay hidden" id="disenchantOverlay">
 <div class="modal">
 <h2>ALTAR DEL CREADOR</h2>
-<p class="small">Deshace objetos de tu inventario a cambio de shards de tier. La cantidad depende del iLvl y la rareza del objeto.</p>
-<p class="small" id="disenchantShardsSummary"></p>
+<div class="craftTabs">
+<button type="button" class="craftTabBtn active" data-craft-tab="disenchant">Deshacer</button>
+<button type="button" class="craftTabBtn" data-craft-tab="create">Crear objeto</button>
+<button type="button" class="craftTabBtn" data-craft-tab="tier">Mejorar tier</button>
+<button type="button" class="craftTabBtn" data-craft-tab="addstat">Añadir stat</button>
+<button type="button" class="craftTabBtn" data-craft-tab="upgradestat">Mejorar stat</button>
+</div>
+<p class="small" id="craftShardsSummary"></p>
+<div class="craftPane" id="craftPaneDisenchant">
+<p class="small">Deshace objetos de tu inventario a cambio de shards de su tier (entre 10 y 20 shards por objeto).</p>
 <div id="disenchantList" class="configItemsList"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneCreate">
+<p class="small">Crea un objeto nuevo de cualquier slot y tier, con su stat principal a la base del tier. Coste: 40 shards del tier elegido.</p>
+<label>Slot <select id="craftCreateSlot"></select></label>
+<label>Tier <select id="craftCreateTier"></select></label>
+<button type="button" id="craftCreateBtn">CREAR OBJETO</button>
+<div id="craftCreateStatus" class="small"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneTier">
+<p class="small">Sube el tier de un objeto: su stat principal pasa a la base del tier objetivo. Coste: 20 shards del tier objetivo.</p>
+<div id="craftTierList" class="configItemsList"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneAddStat">
+<p class="small">Añade una stat adicional (empieza en +1 común). Raros/Épicos: 1 stat extra · Legendarios: 2 · Artefactos: 3. Coste: 20 shards comunes.</p>
+<div id="craftAddStatList" class="configItemsList"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneUpgradeStat">
+<p class="small">Sube el bonus de una stat existente. El bonus nunca puede superar el máximo del tier del objeto. +2/+3: shards infrecuentes · +4/+5: raras · +6/+7: épicas · +8/+9: legendarias · +10: artefacto. Coste: 20 shards por subida.</p>
+<div id="craftUpgradeStatList" class="configItemsList"></div>
+</div>
 <button id="disenchantCloseBtn" type="button">CERRAR</button>
 </div>
 </div>
@@ -561,7 +589,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.53.0"></script>
+<script src="./src/game.js?v=0.54.0"></script>
 
 </body>
 </html>

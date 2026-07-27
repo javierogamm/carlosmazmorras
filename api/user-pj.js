@@ -18,6 +18,9 @@ function cleanPj(body){
   // tier shards from the Creator's Room disenchant altar - a real column,
   // not nested in pj_json, so it can be updated independently
   shards:body.shards??{},
+  // items created/edited in the Creator's Room (craft system) - exclusive
+  // to this character, not part of the shared config_items catalog
+  custom_items:body.custom_items??[],
   last_use:body.last_use??new Date().toISOString()
  };
 }
@@ -40,7 +43,7 @@ module.exports=async(req,res)=>{
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(data);
    }
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,shards&order=pj_score.desc.nullslast`,{headers:headers(key)});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,shards,custom_items&order=pj_score.desc.nullslast`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
@@ -62,6 +65,7 @@ module.exports=async(req,res)=>{
    if('pj_score' in body)row.pj_score=body.pj_score;
    if('pj_name' in body)row.pj_name=body.pj_name;
    if('shards' in body)row.shards=body.shards;
+   if('custom_items' in body)row.custom_items=body.custom_items;
    row.last_use=body.last_use??new Date().toISOString();
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
