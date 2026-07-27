@@ -2216,6 +2216,19 @@ function skillStatMultiplier(id,actor=game.player){
  if(d.dmgStat&&d.dmgStatMode==='mult')return 1+statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??.02);
  return 1
 }
+// Same formulas as skillStatModifier/skillStatMultiplier above, but sourced
+// from a single effect component's own dmgStat/dmgStatMode/dmgStatCoef
+// instead of the skill's top-level fields (which composable skills don't
+// set at all). Without this, a 'dmg'/'aoe'/'multihit'/'execute' component's
+// Stat picker would be silently ignored by attack()'s skillId-based lookup.
+function componentStatModifier(comp,actor=game.player){
+ if(comp?.dmgStat&&comp.dmgStatMode!=='mult')return Math.round(statValueFor(actor,comp.dmgStat)*(comp.dmgStatCoef??1));
+ return undefined
+}
+function componentStatMultiplier(comp,actor=game.player){
+ if(comp?.dmgStat&&comp.dmgStatMode==='mult')return 1+statValueFor(actor,comp.dmgStat)*(comp.dmgStatCoef??.02);
+ return undefined
+}
 // Per-tick DOT power, generalized over any object carrying dotDice/dotDie/
 // dotStat/dotStatMode/dotStatCoef - a full skillDefs entry (legacy single-
 // effect skills) or a single effect component (composable skills). Rolls
@@ -2269,8 +2282,8 @@ function critChance(){return Math.min(.38,.04+game.player.stats.agility*.012+gam
 function attack(e,bonus=0,options={}){
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
  const roll=rollDice(expr);
- const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
- const statMultFactor=skillId?skillStatMultiplier(skillId):1;
+ const statMod=options.statMod??(skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45)));
+ const statMultFactor=options.statMultFactor??(skillId?skillStatMultiplier(skillId):1);
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
  const markMult=1+((e.statuses||[]).find(s=>s.type==='mark'&&s.turns>0)?.power||0);
  let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult));
@@ -2908,7 +2921,7 @@ function applyEffectComponent(id,comp,ctx){
   }
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||(comp.target==='area'?.85:1)});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||(comp.target==='area'?.85:1),statMod:componentStatModifier(comp,p),statMultFactor:componentStatMultiplier(comp,p)});
   return true
  }
  if(comp.kind==='dot'){
@@ -2963,14 +2976,14 @@ function applyEffectComponent(id,comp,ctx){
   const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(p,e));
   if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.85});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.85,statMod:componentStatModifier(comp,p),statMultFactor:componentStatMultiplier(comp,p)});
   return true
  }
  if(comp.kind==='multihit'){
   const target=ctx.clickedEnemy||ctx.nearest;if(!target)return false;
   const hits=Math.max(1,comp.hits||3);
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(let i=0;i<hits;i++)attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6});
+  for(let i=0;i<hits;i++)attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6,statMod:componentStatModifier(comp,p),statMultFactor:componentStatMultiplier(comp,p)});
   return true
  }
  if(comp.kind==='mark'){
@@ -3011,7 +3024,7 @@ function applyEffectComponent(id,comp,ctx){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const threshold=(comp.threshold??35)/100,execMult=comp.execMultiplier??2.5;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1)});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1),statMod:componentStatModifier(comp,p),statMultFactor:componentStatMultiplier(comp,p)});
   return true
  }
  if(comp.kind==='pullroot'){
