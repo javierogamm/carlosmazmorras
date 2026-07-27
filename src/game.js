@@ -2604,6 +2604,14 @@ function tickBuffs(){
  ended.forEach(b=>log(`${b.name} termina.`,'sys'));
  if(ended.length)recomputeDerived()
 }
+// Player-side heal-over-time stacks from a stackable 'hot' effect component -
+// the enemy-side equivalent (DOT) already lives in tickEnemyStatuses(); the
+// player has no statuses array of its own, so this is a small parallel list.
+function tickPlayerHots(){
+ const p=game.player;if(!p?.hots?.length)return;
+ for(const h of p.hots){healEntity(p,Math.max(1,Math.round(h.power)));h.turns--}
+ p.hots=p.hots.filter(h=>h.turns>0);
+}
 function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
  const potions=(game.player.activePotions||[]).map(b=>`<span class="effectBadge potion">${b.name}: ${b.turns}T</span>`);
@@ -2683,7 +2691,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
   friendly:true,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2}:{})
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,iconImage:custom.iconImage||''}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado durante ${turns} turnos.`,'good')
 }
@@ -2712,7 +2720,7 @@ function companionTurn(){
     if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
     const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
     if(!target)break;
-    if(gridDistance(c,target)>c.range){moveCompanionToward(c,target);break}
+    if(gridDistance(c,target)>c.range){if(!c.stationary)moveCompanionToward(c,target);break}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
    }
@@ -2869,7 +2877,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',utility:'Utilidad'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -2973,7 +2981,12 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='summon'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||''});
+  return true
+ }
+ if(comp.kind==='summonturret'){
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),stationary:true,iconImage:comp.iconImage||''});
   return true
  }
  if(comp.kind==='utility'){
@@ -2987,6 +3000,39 @@ function applyEffectComponent(id,comp,ctx){
   if(mode==='shield'){game.player.shield+=Math.max(1,comp.value||10);return true}
   if(mode==='resource'){const res=d.resource||'stamina',max=res==='mana'?'maxMana':'maxStamina';p[res]=Math.min(p[max],p[res]+Math.max(1,comp.value||10));return true}
   return false
+ }
+ if(comp.kind==='hot'){
+  p.hots=p.hots||[];
+  const power=dicePowerFor(comp,3+lvl,p);
+  p.hots.push({turns:comp.turns??4,power});
+  return true
+ }
+ if(comp.kind==='execute'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const threshold=(comp.threshold??35)/100,execMult=comp.execMultiplier??2.5;
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1)});
+  return true
+ }
+ if(comp.kind==='pullroot'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  for(const e of targets){
+   attack(e,0,{skillId:id,multiplier:comp.multiplier||.8});
+   const dx=Math.sign(p.x-e.x),dy=Math.sign(p.y-e.y),nx=e.x+dx,ny=e.y+dy;
+   if(!blocked(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)){e.x=nx;e.y=ny}
+   addEnemyStatus(e,'root',comp.turns??2,0,d.name);
+  }
+  return true
+ }
+ if(comp.kind==='counter'){
+  p.shield+=Math.max(0,comp.shield??10);
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d8';
+  p.counterReady={turns:comp.turns??5,damage:expr};
+  return true
+ }
+ if(comp.kind==='cheatdeath'){
+  p.cheatDeathTurns=Math.max(1,comp.turns??5);
+  return true
  }
  return false
 }
@@ -3049,7 +3095,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn();startPlayerAP();busy=false;updateUI();draw()},500);
 }
@@ -3071,7 +3117,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      const phaseStart=(game.mpTurnActions||[]).length;
      enemyTurn();
@@ -3878,7 +3924,13 @@ function companionSprite(x,y,c){
  ctx.shadowBlur=9;
  R(8,54,48,5,'#07140d99');
 
- if(shape==='allySkeleton'){
+ if(c.iconImage){
+  // author-picked image for a stackable 'summon'/'summonturret' effect,
+  // takes over from the procedural allyX shapes below
+  let img=tileImageCache.get('companion:'+c.iconImage);
+  if(!img){img=tileImageFromHex(c.iconImage);tileImageCache.set('companion:'+c.iconImage,img)}
+  if(img.complete)ctx.drawImage(img,x+7,y+7,50,50);else img.onload=()=>game&&draw();
+ }else if(shape==='allySkeleton'){
   R(20,6,24,18,'#ded8bc');R(24,11,5,5,'#18211c');R(36,11,5,5,'#18211c');
   R(27,24,10,16,'#c7c0a5');R(15,25,9,23,'#d8d1b7');R(41,25,9,23,'#d8d1b7');
   R(23,39,6,17,'#d8d1b7');R(36,39,6,17,'#d8d1b7');
@@ -4156,13 +4208,19 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
+ if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
+ if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
+ if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execMultiplier:2.5};
+ if(kind==='pullroot')return {...base,target:'enemy',turns:2};
+ if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
+ if(kind==='cheatdeath')return {...base,turns:5};
  return base;
 }
 function effectComponentTargetOptions(kind){
  if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
- if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
+ if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark'||kind==='execute'||kind==='pullroot')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
  if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'}];
  return null
 }
@@ -4196,7 +4254,16 @@ function effectComponentCardHtml(comp,i){
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
   </select></label>
-  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}`;
+  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
+  ${summonIconRowHtml(comp,i)}`;
+ }
+ else if(comp.kind==='summonturret'){
+  fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??16}" data-effect-idx="${i}" data-effect-field="hp"></label>
+  <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+  <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
+  <label>Alcance de ataque (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+  ${effectDiceFieldsHtml(comp,i)}
+  ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='utility'){
   const mode=comp.mode||'reveal';
@@ -4208,10 +4275,47 @@ function effectComponentCardHtml(comp,i){
   </select></label>
   ${mode!=='stealth'?`<label>${mode==='reveal'?'Radio':mode==='shield'?'Cantidad de escudo':'Cantidad restaurada'} <input type="number" min="1" value="${comp.value??10}" data-effect-idx="${i}" data-effect-field="value"></label>`:''}`;
  }
+ else if(comp.kind==='hot')fields=`${effectDiceFieldsHtml(comp,i)}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='execute')fields=`${effectDiceFieldsHtml(comp,i)}<label>Umbral de vida del objetivo (%) <input type="number" min="1" max="99" value="${comp.threshold??35}" data-effect-idx="${i}" data-effect-field="threshold"></label><label>Multiplicador de ejecución (por debajo del umbral) <input type="number" step="0.1" min="1" value="${comp.execMultiplier??2.5}" data-effect-idx="${i}" data-effect-field="execMultiplier"></label>`;
+ else if(comp.kind==='pullroot')fields=`<label>Turnos enraizado <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='counter')fields=`<label>Escudo otorgado <input type="number" min="0" value="${comp.shield??10}" data-effect-idx="${i}" data-effect-field="shield"></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos de ventana (hasta el próximo golpe) <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  return `<details class="effectCard" open><summary class="effectCardHead"><b>${i+1}. ${effectKindLabel(comp.kind)}</b><button type="button" data-remove-effect="${i}">Quitar</button></summary><div class="configForm">${targetHtml}${fields}</div></details>`;
+}
+// Icon picker row embedded inside a summon/summonturret effect card: shows
+// the currently assigned image (if any) plus buttons that pull from / clear
+// against the shared "Imagen de invocación" editor above (window.currentSummonIconHex).
+function summonIconRowHtml(comp,i){
+ return `<div class="effectIconRow">
+  <canvas class="effectIconThumb" width="50" height="50" ${comp.iconImage?`data-summon-icon-idx="${i}"`:''}></canvas>
+  <button type="button" data-use-summon-icon="${i}">Usar imagen del editor de arriba →</button>
+  ${comp.iconImage?`<button type="button" data-clear-summon-icon="${i}">Quitar imagen</button>`:'<span class="small">Sin imagen: usará el sprite genérico de aliado.</span>'}
+ </div>`;
+}
+// Every already-uploaded custom icon in the system (items, enemies, classes,
+// skills), deduped by hex, so a summon effect can reuse one instead of the
+// admin having to crop the same image again.
+function summonIconOptionsList(){
+ const seen=new Set(),opts=[];
+ const add=(hex,label)=>{if(!hex||seen.has(hex))return;seen.add(hex);opts.push({hex,label})};
+ for(const row of configItems||[]){const item=row.item_json||row;add(item.icon||row.icon,`Objeto: ${item.name||row.nombre||row.id}`)}
+ for(const row of configEnemyDetails||[]){add(row.icon,`Enemigo: ${row.class||row.type||row.id}`)}
+ for(const row of configClasses||[]){
+  const cj=row.class_json||{};
+  add(cj.icon,`Clase: ${cj.name||row.nombre||row.id}`);
+  for(const [sid,s] of Object.entries(row.skills_json||{}))add(s.iconImage,`Skill: ${s.name||sid}`);
+ }
+ return opts;
+}
+function populateSummonIconExistingList(){
+ const sel=document.getElementById('configSummonIconExisting');if(!sel)return;
+ const current=sel.value,opts=summonIconOptionsList();
+ sel.innerHTML='<option value="">— Elegir de la lista —</option>'+opts.map(o=>`<option value="${o.hex}">${o.label}</option>`).join('');
+ if(opts.some(o=>o.hex===current))sel.value=current;
 }
 function renderSkillEffectsList(){
  const wrap=document.getElementById('configSkillEffectsList');if(!wrap)return;
+ populateSummonIconExistingList();
  const list=window.currentSkillEffectsDraft||[];
  wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos todavía: elige un tipo arriba y pulsa "Añadir efecto".</p>';
  wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
@@ -4228,6 +4332,20 @@ function renderSkillEffectsList(){
   e.preventDefault();e.stopPropagation();
   window.currentSkillEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderSkillEffectsList();
  }));
+ wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const idx=Number(btn.dataset.useSummonIcon);
+  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación".');return}
+  window.currentSkillEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderSkillEffectsList();
+ }));
+ wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  window.currentSkillEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderSkillEffectsList();
+ }));
+ wrap.querySelectorAll('[data-summon-icon-idx]').forEach(c=>{
+  const comp=window.currentSkillEffectsDraft[Number(c.dataset.summonIconIdx)];
+  if(comp?.iconImage)drawSkillIconImg(c,comp.iconImage);
+ });
 }
 // Old skills (authored before the stackable effects list existed) stored
 // their damage/buff/debuff/dot config as flat fields on the skill itself
@@ -4595,6 +4713,15 @@ function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
  if(!editor)return;
  setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill'});
+ setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación'});
+ const summonExistingSel=document.getElementById('configSummonIconExisting');
+ if(summonExistingSel)summonExistingSel.onchange=()=>{
+  if(!summonExistingSel.value)return;
+  window.currentSummonIconHex=summonExistingSel.value;
+  renderConfigIconPreview(summonExistingSel.value,'configSummonIconPreview','configSummonIconStatus');
+  document.getElementById('configSummonIconStatus').textContent='Imagen reutilizada de la lista.';
+ };
+ populateSummonIconExistingList();
  const effectSel=document.getElementById('configSkillEffect');
  if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
  configClassSelect.onchange=loadSelectedConfigClass;

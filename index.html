@@ -287,11 +287,26 @@
        <option value="multihit">Multihit (varios impactos)</option>
        <option value="mark">Marca (aumenta el daño recibido)</option>
        <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
        <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
       </select>
       <button type="button" id="addSkillEffectBtn">AÑADIR EFECTO →</button>
      </div>
      <div id="configSkillEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion">
+     <summary>Imagen de invocación</summary>
+     <p class="small">Elige la imagen que usarán tus efectos de tipo Invocación / Invocación-torreta: reutiliza una imagen ya usada en otro objeto/enemigo/clase/skill de la lista, o sube y recorta una nueva (igual que en el resto de editores). Cuando esté lista, pulsa "Usar esta imagen" dentro de la tarjeta del efecto de invocación que quieras ilustrar.</p>
+     <label>Reutilizar imagen existente <select id="configSummonIconExisting"><option value="">— Elegir de la lista —</option></select></label>
+     <label>Subir imagen nueva <input type="file" id="configSummonImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configSummonCropZoom" min="25" max="400" value="100"></label><button type="button" id="configSummonMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configSummonMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configSummonCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia.</div></div>
+     <div class="configPreview"><canvas id="configSummonIconPreview" width="50" height="50"></canvas><span id="configSummonIconStatus" class="small">Sin imagen seleccionada.</span></div>
     </details>
     <details class="configAccordion">
      <summary>Icono de imagen</summary>
