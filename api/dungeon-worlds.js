@@ -11,7 +11,20 @@ module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,world_name,world_json&order=created_at.desc`,{headers:headers(key)});
+   const id=req.query?.id||null;
+   if(id){
+    // single-world fetch: the only place that needs the full (potentially
+    // heavy) world_json payload, so listing screens never have to pull it.
+    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,world_name,world_json&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
+    const data=await r.json();
+    if(!r.ok)return res.status(r.status).json(data);
+    return res.status(200).json(Array.isArray(data)?data[0]||null:data);
+   }
+   // light=1: listing/lookup views only need id/name/date, not the full
+   // precomputed-floors JSON, which grows unbounded with every saved world
+   // and can otherwise blow past the serverless response size limit.
+   const sel=req.query?.light?'id,created_at,world_name':'id,created_at,world_name,world_json';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${sel}&order=created_at.desc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
