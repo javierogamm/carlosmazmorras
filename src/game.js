@@ -2595,7 +2595,7 @@ function useAltar(a){
  // the Creator's Room altar is a reusable utility (dismantle items into
  // shards), not a one-shot buff, so it never sets a.used and instead opens
  // the disenchant picker
- if(a.kind==='disenchant'){openDisenchantModal();return}
+ if(a.kind==='disenchant'){openCraftModal();return}
  a.used=true;
  if(game.multiplayer)sendMpAction('activate_altar',{at:{x:a.x,y:a.y}});
  const p=game.player;
@@ -2623,6 +2623,10 @@ function persistShards(){
  const id=game.pjId,payload=JSON.stringify({shards:game.player.shards||{}});
  shardsPersistChain=shardsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los shards',e));
 }
+// Disenchanting is not gated to the Creator's Room anymore - any equipment
+// item in the backpack can be broken down into shards from the Mochila tab
+// itself, from anywhere in the dungeon (see the inventory render in
+// updateUI() and its "Deshacer" button wired to disenchantItemById()).
 function disenchantItem(item){
  const idx=(game.inventory||[]).indexOf(item);if(idx<0)return;
  const n=shardsForItem(item);
@@ -2631,18 +2635,13 @@ function disenchantItem(item){
  game.inventory.splice(idx,1);
  log(`Deshecho ${item.name}: +${n} shard(s) de ${tierDefs[item.rarity]?.label||item.rarity}.`,'good');
  persistShards();
- renderDisenchantModal();
  renderCraftShardsSummary();
  updateUI();
 }
-function renderDisenchantModal(){
- const root=document.getElementById('disenchantList');if(!root)return;
- const items=craftEligibleItems();
- root.innerHTML=items.length?items.map((it,i)=>`<div class="configItem"><span class="tierDot" style="background:${tierColor(it.rarity)}"></span><div><b>${it.name}</b><span class="small">${tierDefs[it.rarity]?.label||it.rarity} · iLvl ${it.itemLevel||1} · 10-20 shard(s) de ${tierDefs[it.rarity]?.label||it.rarity}</span><div class="configItemActions"><button type="button" data-disenchant-idx="${i}">Deshacer</button></div></div></div>`).join(''):'<p class="small">No tienes objetos de equipo para deshacer.</p>';
- root.querySelectorAll('[data-disenchant-idx]').forEach(b=>b.onclick=()=>disenchantItem(items[Number(b.dataset.disenchantIdx)]));
- renderCraftShardsSummary();
-}
-function openDisenchantModal(){switchCraftTab('disenchant');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
+function disenchantItemById(id){const item=(game.inventory||[]).find(i=>i.id===id);if(item)disenchantItem(item)}
+// Opens the Creator's Room altar for the 4 actual crafting actions (create,
+// upgrade tier, add stat, upgrade stat). Disenchanting lives outside it now.
+function openCraftModal(){switchCraftTab('create');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
 
 // ---- Creator's Room: full craft system (create/upgrade tier/add stat/upgrade stat) ----
 // Bonus values by tier: common+1, uncommon+2, rare+4, epic+6, legendary+8, artifact+10.
@@ -2716,6 +2715,14 @@ function persistCustomItems(){
  customItemsPersistChain=customItemsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los objetos personalizados',e));
 }
 function setCraftStatus(id,msg){const el=document.getElementById(id);if(el)el.textContent=msg}
+// Shards tab: one row per tier with its (optionally admin-configured, via
+// config_world_object shard_<tier> keys) icon and current count.
+function renderShardsTab(){
+ const root=document.getElementById('shards');if(!root)return;
+ const shards=game.player.shards||{};
+ root.innerHTML=`<div class="configItemsList">${LOOT_RARITY_ORDER.map(t=>`<div class="configItem shardRow"><canvas class="shardTierIcon" width="28" height="28" data-shard-tier="${t}"></canvas><div><b style="color:${tierColor(t)}">${tierDefs[t]?.label||t}</b><span class="small">${shards[t]||0} shard(s)</span></div></div>`).join('')}</div><p class="small">Consigue shards deshaciendo objetos desde la Mochila. Se gastan en el Altar del Creador para crear y mejorar equipo.</p>`;
+ setTimeout(()=>document.querySelectorAll('#shards .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier)),0);
+}
 function renderCraftShardsSummary(){
  const el=document.getElementById('craftShardsSummary');if(!el)return;
  const shards=game.player.shards||{};
@@ -2724,10 +2731,9 @@ function renderCraftShardsSummary(){
 function switchCraftTab(tab){
  document.querySelectorAll('.craftTabBtn').forEach(b=>b.classList.toggle('active',b.dataset.craftTab===tab));
  document.querySelectorAll('.craftPane').forEach(p=>p.classList.add('hidden'));
- const map={disenchant:'craftPaneDisenchant',create:'craftPaneCreate',tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
+ const map={create:'craftPaneCreate',tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
  document.getElementById(map[tab])?.classList.remove('hidden');
- if(tab==='disenchant')renderDisenchantModal();
- else if(tab==='create')renderCraftCreatePane();
+ if(tab==='create')renderCraftCreatePane();
  else if(tab==='tier')renderCraftTierPane();
  else if(tab==='addstat')renderCraftAddStatPane();
  else if(tab==='upgradestat')renderCraftUpgradeStatPane();
@@ -2756,7 +2762,7 @@ function craftCreateItem(slot,tier){
  log(`Creaste ${item.name} (${tierDefs[tier]?.label||tier}).`,'good');
  persistCustomItems();
  setCraftStatus('craftCreateStatus',`¡Creado! ${item.name}`);
- renderDisenchantModal();renderCraftTierPane();renderCraftAddStatPane();renderCraftUpgradeStatPane();renderCraftShardsSummary();
+ renderCraftTierPane();renderCraftAddStatPane();renderCraftUpgradeStatPane();renderCraftShardsSummary();
  updateUI();
 }
 function renderCraftTierPane(){
@@ -3855,10 +3861,10 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
- inventory.innerHTML=game.inventory.length?game.inventory.map(i=>`<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
- setTimeout(()=>document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)}),0);
+ inventory.innerHTML=game.inventory.length?game.inventory.map(i=>{const canDisenchant=i.type!=='potion'&&i.slot!=='consumable';return `<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}${canDisenchant?`<div class="itemDisenchantRow"><canvas class="shardTierIcon" width="20" height="20" data-shard-tier="${i.rarity}"></canvas><button type="button" class="disenchantItemBtn" onclick="event.stopPropagation();disenchantItemById('${i.id}')">Deshacer (10-20 shards ${tierDefs[i.rarity]?.label||i.rarity})</button></div>`:''}</div></div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
@@ -3988,7 +3994,7 @@ function showInspect(entity,clientX,clientY){
  else if(entity.type==='chest')h=`<h4>Cofre</h4><p>${entity.data.open?'Está vacío.':'Contiene botín aleatorio y puede ocultar habilidades.'}</p>`;
  else if(entity.type==='door')h=`<h4>Puerta ${entity.data.locked?'cerrada':'abierta'}</h4><p>${entity.data.locked?'Necesitas una llave o un efecto especial.':'Puedes atravesarla.'}</p>`;
  else if(entity.type==='safeRoom')h=`<h4>Sala segura</h4><p>Los enemigos no pueden entrar.</p><p>${entity.data.rested?'Ya has descansado aquí.':'Sitúate sobre el fuego central y pulsa DESCANSAR para recuperar toda la vida, stamina y maná.'}</p>`;
- else if(entity.type==='altar')h=`<h4>${entity.data.kind==='disenchant'?'Altar del Creador':'Altar'}</h4><p>${entity.data.kind==='disenchant'?'Deshace objetos de tu inventario a cambio de shards. Reutilizable.':entity.data.used?'Ya lo has usado.':entity.data.kind==='heal'?'Restaura una parte importante de tu vida.':entity.data.kind==='shield'?'Te concede un escudo.':'Potencia tu daño y armadura durante varios turnos.'}</p>`;
+ else if(entity.type==='altar')h=`<h4>${entity.data.kind==='disenchant'?'Altar del Creador':'Altar'}</h4><p>${entity.data.kind==='disenchant'?'Crea y mejora equipo con shards. Reutilizable. (Deshacer objetos ya no requiere esta sala: hazlo desde la Mochila.)':entity.data.used?'Ya lo has usado.':entity.data.kind==='heal'?'Restaura una parte importante de tu vida.':entity.data.kind==='shield'?'Te concede un escudo.':'Potencia tu daño y armadura durante varios turnos.'}</p>`;
  else if(entity.type==='trap')h=`<h4>Trampa</h4><p>Un mecanismo oculto. Evita pisarlo.</p>`;
  else if(entity.type==='stairs')h=`<h4>Escaleras</h4><p>Conducen al siguiente nivel de la mazmorra.</p>`;
  else if(entity.type==='wall')h=`<h4>Muro</h4><p>Piedra antigua. No parece impresionada por tus credenciales.</p>`;
@@ -5107,6 +5113,7 @@ const WORLD_OBJECT_KINDS=[
  {key:'key',label:'Llave'},
  {key:'stairsDown',label:'Escaleras de bajada'},
  {key:'trap',label:'Trampa'},
+ ...LOOT_RARITY_ORDER.map(t=>({key:`shard_${t}`,label:`Shard: ${tierDefs[t]?.label||t}`})),
  ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
 ];
 let configWorldObjects={};
@@ -5164,6 +5171,20 @@ function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
  if(img.complete){ctx.drawImage(img,x+offset,y+offset,size,size);return true}
  img.onload=()=>game&&draw();
  return false
+}
+// Same lookup as drawWorldObjectIcon but paints onto an arbitrary UI canvas
+// (inventory rows, shards tab, ...) instead of the game's main ctx. Falls
+// back to a tier-colored dot when the admin hasn't configured a custom icon.
+function drawShardTierIconToCanvas(canvas,tier){
+ if(!canvas)return;
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,canvas.width,canvas.height);
+ const hex=configWorldObjects[`shard_${tier}`];
+ if(hex){
+  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
+  if(img.complete&&img.naturalWidth){q.drawImage(img,0,0,canvas.width,canvas.height);return}
+  img.onload=()=>drawShardTierIconToCanvas(canvas,tier);
+ }
+ q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects()})}
 
@@ -5347,7 +5368,7 @@ async function finishCharacterCreation(){
 }
 
 function openSinglePlayerScreen(){
- if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
+ if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();
  landingOverlay.classList.add('hidden');
  singlePlayerOverlay.classList.remove('hidden');
  document.getElementById('spListStatus')?.classList.add('hidden');
@@ -5421,7 +5442,7 @@ async function openSessionContinue(){
 
 async function resumeSession(sessionId){
  try{
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();
   const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
@@ -6860,7 +6881,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();
   await mpRealtimeConnect(session.id);
   const worldRes=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`);
   const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');

@@ -68,12 +68,14 @@
 <div class="tabs">
 <button class="active" data-tab="inventory">Mochila</button>
 <button data-tab="equipment">Equipo</button>
+<button data-tab="shards">Shards</button>
 <button data-tab="skills">Habilidades</button>
 <button data-tab="achievements">Logros</button>
 <button data-tab="trade" class="hidden">Comercio</button>
 </div>
 <div id="inventory" class="tabview"></div>
 <div id="equipment" class="tabview hidden"></div>
+<div id="shards" class="tabview hidden"></div>
 <div id="skills" class="tabview hidden"></div>
 <div id="achievements" class="tabview hidden"></div>
 <div id="trade" class="tabview hidden"></div>
@@ -476,19 +478,15 @@
 <div class="overlay hidden" id="disenchantOverlay">
 <div class="modal">
 <h2>ALTAR DEL CREADOR</h2>
+<p class="small">Deshacer objetos por shards ya no requiere esta sala: hazlo desde el botón "Deshacer" de cualquier objeto en tu Mochila. Aquí solo se crea y mejora equipo.</p>
 <div class="craftTabs">
-<button type="button" class="craftTabBtn active" data-craft-tab="disenchant">Deshacer</button>
-<button type="button" class="craftTabBtn" data-craft-tab="create">Crear objeto</button>
+<button type="button" class="craftTabBtn active" data-craft-tab="create">Crear objeto</button>
 <button type="button" class="craftTabBtn" data-craft-tab="tier">Mejorar tier</button>
 <button type="button" class="craftTabBtn" data-craft-tab="addstat">Añadir stat</button>
 <button type="button" class="craftTabBtn" data-craft-tab="upgradestat">Mejorar stat</button>
 </div>
 <p class="small" id="craftShardsSummary"></p>
-<div class="craftPane" id="craftPaneDisenchant">
-<p class="small">Deshace objetos de tu inventario a cambio de shards de su tier (entre 10 y 20 shards por objeto).</p>
-<div id="disenchantList" class="configItemsList"></div>
-</div>
-<div class="craftPane hidden" id="craftPaneCreate">
+<div class="craftPane" id="craftPaneCreate">
 <p class="small">Crea un objeto nuevo de cualquier slot y tier, con su stat principal a la base del tier. Coste: 40 shards del tier elegido.</p>
 <label>Slot <select id="craftCreateSlot"></select></label>
 <label>Tier <select id="craftCreateTier"></select></label>
