@@ -271,8 +271,8 @@
      <label>Descripción <input id="configSkillDesc" maxlength="200" placeholder="Descripción de la skill"></label>
     </details>
     <details class="configAccordion" open>
-     <summary>Efectos apilables (avanzado)</summary>
-     <p class="small">Añade uno o más efectos independientes a la skill: daño, DOT, buff, debuff, curación, movimiento, control o drenaje, cada uno con su propio objetivo (a ti mismo / enemigo / área). Si un efecto de Daño apunta "A ti mismo", se hace daño propio directamente (ya no hace falta una skill especial tipo "bloodBuff" para eso). Cuando hay al menos un efecto aquí, este sistema manda y las secciones de abajo (heredadas) se ignoran.</p>
+     <summary>Efectos apilables</summary>
+     <p class="small">Toda skill se define como una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, movimiento, control, drenaje, AOE, multihit, marca, invocación o utilidad), cada uno con su propio objetivo (a ti mismo / enemigo / área) cuando aplique. Con un solo efecto añadido, la skill es simplemente una pila de tamaño 1. Si un efecto de Daño apunta "A ti mismo", se hace daño propio directamente (ya no hace falta una skill especial tipo "bloodBuff" para eso).</p>
      <div class="configItemActions">
       <select id="configEffectKindPicker">
        <option value="dmg">Daño</option>
@@ -283,47 +283,15 @@
        <option value="move">Movimiento (dash/teleport)</option>
        <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
        <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="utility">Utilidad</option>
       </select>
       <button type="button" id="addSkillEffectBtn">AÑADIR EFECTO →</button>
      </div>
      <div id="configSkillEffectsList" class="effectsList"></div>
-    </details>
-    <details class="configAccordion">
-     <summary>Daño de impacto (heredado - solo si no hay efectos apilables arriba)</summary>
-     <p class="small">Deja "Nº de dados" en 0 para usar la fórmula automática por tier/nivel. Con dados &gt; 0, el daño de la skill será esa tirada + la contribución del stat elegido.</p>
-     <div class="configForm">
-      <label>Nº de dados <input id="configSkillDmgDice" type="number" min="0" value="0"></label>
-      <label>Dado de daño <select id="configSkillDmgDie"><option value="4">d4</option><option value="6" selected>d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option><option value="20">d20</option></select></label>
-      <label>Stat usada <select id="configSkillDmgStat"><option value="">Automática (por tipo)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
-      <label>Modo del stat <select id="configSkillDmgStatMode"><option value="add">Sumatorio (se suma al daño)</option><option value="mult">Multiplicador (escala la tirada)</option></select></label>
-      <label>Coeficiente del stat <input id="configSkillDmgStatCoef" type="number" step="0.01" value="1"></label>
-     </div>
-    </details>
-    <details class="configAccordion">
-     <summary>Buff / Debuff (heredado - solo si no hay efectos apilables arriba)</summary>
-     <p class="small">Solo aplica si el efecto de la skill es "buff" (te mejora un stat propio) o "debuff" (empeora un stat de un enemigo durante unos turnos). El valor NUNCA es un porcentaje: en modo Sumatorio se suma tal cual al stat, en modo Multiplicador el stat se multiplica directamente por ese número (ej. 1.2 = ×1.2).</p>
-     <div class="configForm">
-      <label>Stat de buff <select id="configSkillBuffStat"><option value="">— (sin buff de stat)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option><option value="armor">Armadura</option><option value="damage">Daño</option><option value="ap">PA (Puntos de Acción)</option></select></label>
-      <label>Modo del buff <select id="configSkillBuffStatMode"><option value="add">Sumatorio (+N al stat)</option><option value="mult">Multiplicador (×N el stat)</option></select></label>
-      <label>Valor del buff <input id="configSkillBuffStatCoef" type="number" step="0.1" value="5"></label>
-      <label>Duración del buff (turnos, 0 = automática) <input id="configSkillBuffTurns" type="number" min="0" value="0"></label>
-      <label>Stat de debuff <select id="configSkillDebuffStat"><option value="">— (usa aturdimiento genérico)</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
-      <label>Modo del debuff <select id="configSkillDebuffStatMode"><option value="add">Sumatorio (-N al stat)</option><option value="mult">Multiplicador (×N el stat)</option></select></label>
-      <label>Valor del debuff <input id="configSkillDebuffStatCoef" type="number" step="0.1" value="2"></label>
-      <label>Duración del debuff (turnos, 0 = automática) <input id="configSkillDebuffTurns" type="number" min="0" value="0"></label>
-     </div>
-    </details>
-    <details class="configAccordion">
-     <summary>Daño periódico (DOT) (heredado - solo si no hay efectos apilables arriba)</summary>
-     <p class="small">Solo aplica si el efecto de la skill inflige un estado periódico (sangrado, veneno, quemadura, etc). Deja "Nº de dados" en 0 para usar la fórmula automática.</p>
-     <div class="configForm">
-      <label>Nº de dados DOT <input id="configSkillDotDice" type="number" min="0" value="0"></label>
-      <label>Dado DOT <select id="configSkillDotDie"><option value="4">d4</option><option value="6" selected>d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option></select></label>
-      <label>Stat DOT <select id="configSkillDotStat"><option value="">Ninguna</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
-      <label>Modo del stat DOT <select id="configSkillDotStatMode"><option value="add">Sumatorio</option><option value="mult">Multiplicador</option></select></label>
-      <label>Coeficiente del stat DOT <input id="configSkillDotStatCoef" type="number" step="0.01" value="1"></label>
-      <label>Duración del DOT (turnos, 0 = automática) <input id="configSkillDotTurns" type="number" min="0" value="0"></label>
-     </div>
     </details>
     <details class="configAccordion">
      <summary>Icono de imagen</summary>

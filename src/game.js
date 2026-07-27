@@ -2272,7 +2272,8 @@ function attack(e,bonus=0,options={}){
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
  const statMultFactor=skillId?skillStatMultiplier(skillId):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()));
+ const markMult=1+((e.statuses||[]).find(s=>s.type==='mark'&&s.turns>0)?.power||0);
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -2655,25 +2656,36 @@ function findFreeAdjacentToPlayer(){
  }
  return{x:game.player.x,y:game.player.y}
 }
-function summonCompanion(kind='companion',turns=8,power=1){
+// `custom` (from a stackable 'summon' effect component) overrides the
+// hardcoded per-kind stat table with author-configured hp/atk/range/effect,
+// so admin-authored summons don't need a dedicated `kind` entry here.
+function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  game.companions=game.companions||[];
- const names={companion:'Compañero',skeleton:'Siervo óseo',turret:'Torreta',healer:'Custodio',tank:'Guardián',wolf:'Lobo espiritual',clone:'Clon'};
  const pos=findFreeAdjacentToPlayer();
- const stats={
-  skeleton:{hp:18+Math.round(power*5),atk:'1d6+2',range:1,shape:'allySkeleton'},
-  turret:{hp:14+Math.round(power*3),atk:'1d6+2',range:7,shape:'allyTurret'},
-  healer:{hp:16+Math.round(power*4),atk:'1d4',range:4,shape:'allyHealer'},
-  tank:{hp:28+Math.round(power*7),atk:'1d6+1',range:1,shape:'allyTank'},
-  wolf:{hp:20+Math.round(power*5),atk:'1d8',range:1,shape:'allyWolf'},
-  clone:{hp:10+Math.round(power*2),atk:'1d4+1',range:1,shape:'allyClone'},
-  companion:{hp:18+Math.round(power*4),atk:'1d6',range:1,shape:'allyCompanion'}
- }[kind]||{hp:18,atk:'1d6',range:1,shape:'allyCompanion'};
+ let stats,name;
+ if(custom){
+  stats={hp:Math.max(1,Math.round(custom.hp||20)),atk:custom.atk||'1d4',range:Math.max(1,custom.range||1),shape:'allyCompanion'};
+  name=custom.name||'Invocación';
+ }else{
+  const names={companion:'Compañero',skeleton:'Siervo óseo',turret:'Torreta',healer:'Custodio',tank:'Guardián',wolf:'Lobo espiritual',clone:'Clon'};
+  stats={
+   skeleton:{hp:18+Math.round(power*5),atk:'1d6+2',range:1,shape:'allySkeleton'},
+   turret:{hp:14+Math.round(power*3),atk:'1d6+2',range:7,shape:'allyTurret'},
+   healer:{hp:16+Math.round(power*4),atk:'1d4',range:4,shape:'allyHealer'},
+   tank:{hp:28+Math.round(power*7),atk:'1d6+1',range:1,shape:'allyTank'},
+   wolf:{hp:20+Math.round(power*5),atk:'1d8',range:1,shape:'allyWolf'},
+   clone:{hp:10+Math.round(power*2),atk:'1d4+1',range:1,shape:'allyClone'},
+   companion:{hp:18+Math.round(power*4),atk:'1d6',range:1,shape:'allyCompanion'}
+  }[kind]||{hp:18,atk:'1d6',range:1,shape:'allyCompanion'};
+  name=names[kind]||'Aliado';
+ }
  game.companions.push({
-  id:`comp-${Date.now()}-${Math.random()}`,kind,name:names[kind]||'Aliado',
+  id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
-  friendly:true
+  friendly:true,
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2}:{})
  });
- reveal(pos.x,pos.y,2);draw();log(`${names[kind]||'Un aliado'} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado durante ${turns} turnos.`,'good')
+ reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado durante ${turns} turnos.`,'good')
 }
 function moveCompanionToward(c,target){
  const dx=Math.sign(target.x-c.x),dy=Math.sign(target.y-c.y);
@@ -2692,6 +2704,20 @@ function companionTurn(){
   c.turns--;
   if(c.hp<=0||c.turns<=0)continue;
   const enemies=game.enemies.filter(e=>e.hp>0);
+  if(c.effectType){
+   // custom summon from a stackable 'summon' effect component: runs
+   // actionsPerTurn independent actions instead of the fixed one-action
+   // kind-based branches below (actionsPerTurn = author's "PA" / 10)
+   for(let n=0;n<(c.actionsPerTurn||1);n++){
+    if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
+    const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
+    if(!target)break;
+    if(gridDistance(c,target)>c.range){moveCompanionToward(c,target);break}
+    if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
+    else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
+   }
+   continue
+  }
   if(c.kind==='healer'){
    healEntity(game.player,Math.max(3,Math.round(c.power*2)));
    const nearby=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
@@ -2843,7 +2869,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',utility:'Utilidad'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -2923,6 +2949,44 @@ function applyEffectComponent(id,comp,ctx){
   for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
   healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
   return true
+ }
+ if(comp.kind==='aoe'){
+  const radius=Math.max(1,comp.range||2);
+  const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(p,e));
+  if(!targets.length)return false;
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.85});
+  return true
+ }
+ if(comp.kind==='multihit'){
+  const target=ctx.clickedEnemy||ctx.nearest;if(!target)return false;
+  const hits=Math.max(1,comp.hits||3);
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  for(let i=0;i<hits;i++)attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6});
+  return true
+ }
+ if(comp.kind==='mark'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const turns=comp.turns??4,power=(comp.value??25)/100;
+  for(const e of targets)addEnemyStatus(e,'mark',turns,power,d.name);
+  return true
+ }
+ if(comp.kind==='summon'){
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2});
+  return true
+ }
+ if(comp.kind==='utility'){
+  const mode=comp.mode||'reveal';
+  if(mode==='reveal'){
+   const radius=Math.max(1,comp.value||10);
+   for(let y=Math.max(0,p.y-radius);y<Math.min(ROWS,p.y+radius+1);y++)for(let x=Math.max(0,p.x-radius);x<Math.min(COLS,p.x+radius+1);x++)if(Math.hypot(x-p.x,y-p.y)<=radius)game.seen[y][x]=true;
+   return true
+  }
+  if(mode==='stealth'){game.player.shadowVeil=1;return true}
+  if(mode==='shield'){game.player.shield+=Math.max(1,comp.value||10);return true}
+  if(mode==='resource'){const res=d.resource||'stamina',max=res==='mana'?'maxMana':'maxStamina';p[res]=Math.min(p[max],p[res]+Math.max(1,comp.value||10));return true}
+  return false
  }
  return false
 }
@@ -4089,11 +4153,16 @@ function defaultComponentFor(kind){
  if(kind==='move')return {...base,mode:'dash',range:3};
  if(kind==='cc')return {...base,target:'enemy',type:'stun',turns:2};
  if(kind==='drain')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
+ if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
+ if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
+ if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2};
+ if(kind==='utility')return {...base,mode:'reveal',value:10};
  return base;
 }
 function effectComponentTargetOptions(kind){
  if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
- if(kind==='dot'||kind==='cc'||kind==='drain')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
+ if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
  if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'}];
  return null
 }
@@ -4114,27 +4183,69 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap']:[])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
- return `<div class="effectCard"><div class="effectCardHead"><b>${effectKindLabel(comp.kind)}</b><button type="button" data-remove-effect="${i}">Quitar</button></div><div class="configForm">${targetHtml}${fields}</div></div>`;
+ else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
+ else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
+ else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='summon'){
+  const effectType=comp.effectType||'damage';
+  fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
+  <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+  <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
+  <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
+   <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
+   <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
+   <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
+  </select></label>
+  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}`;
+ }
+ else if(comp.kind==='utility'){
+  const mode=comp.mode||'reveal';
+  fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode">
+   <option value="reveal" ${mode==='reveal'?'selected':''}>Revelar mapa (radio)</option>
+   <option value="stealth" ${mode==='stealth'?'selected':''}>Sigilo (evita la respuesta enemiga)</option>
+   <option value="shield" ${mode==='shield'?'selected':''}>Escudo plano</option>
+   <option value="resource" ${mode==='resource'?'selected':''}>Restaurar recurso (maná/stamina)</option>
+  </select></label>
+  ${mode!=='stealth'?`<label>${mode==='reveal'?'Radio':mode==='shield'?'Cantidad de escudo':'Cantidad restaurada'} <input type="number" min="1" value="${comp.value??10}" data-effect-idx="${i}" data-effect-field="value"></label>`:''}`;
+ }
+ return `<details class="effectCard" open><summary class="effectCardHead"><b>${i+1}. ${effectKindLabel(comp.kind)}</b><button type="button" data-remove-effect="${i}">Quitar</button></summary><div class="configForm">${targetHtml}${fields}</div></details>`;
 }
 function renderSkillEffectsList(){
  const wrap=document.getElementById('configSkillEffectsList');if(!wrap)return;
  const list=window.currentSkillEffectsDraft||[];
- wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos: la skill usará el sistema heredado de abajo.</p>';
+ wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos todavía: elige un tipo arriba y pulsa "Añadir efecto".</p>';
  wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
   el.addEventListener('change',()=>{
    const idx=Number(el.dataset.effectIdx),field=el.dataset.effectField;
    const isNumber=el.type==='number';
    window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):el.value;
+   // these two fields change which sub-fields the card shows, so re-render
+   // that one card's layout instead of leaving stale/hidden inputs behind
+   if(field==='effectType'||field==='mode')renderSkillEffectsList();
   });
  });
- wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',()=>{
+ wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
   window.currentSkillEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderSkillEffectsList();
  }));
+}
+// Old skills (authored before the stackable effects list existed) stored
+// their damage/buff/debuff/dot config as flat fields on the skill itself
+// instead of in `effects`. The dedicated form fields for those are gone now
+// that everything routes through the stackable list, so translate them into
+// the equivalent component(s) once, on load, instead of losing them.
+function legacyEffectsFromSkill(s){
+ const list=[],selfTarget=['buff','shield','heal','utility'].includes(s.classEffect);
+ if(s.dmgDice>0)list.push({kind:'dmg',target:selfTarget?'self':'enemy',dmgDice:s.dmgDice,dmgDie:s.dmgDie||6,dmgStat:s.dmgStat||'',dmgStatMode:s.dmgStatMode||'add',dmgStatCoef:s.dmgStatCoef??1});
+ if(s.buffStat)list.push({kind:'buff',target:'self',stat:s.buffStat,mode:s.buffStatMode||'add',value:s.buffStatCoef??5,turns:s.buffTurns||6});
+ if(s.debuffStat)list.push({kind:'debuff',target:'enemy',stat:s.debuffStat,mode:s.debuffStatMode||'add',value:s.debuffStatCoef??2,turns:s.debuffTurns||3});
+ if(s.dotDice>0)list.push({kind:'dot',target:'enemy',dotDice:s.dotDice,dotDie:s.dotDie||6,dotStat:s.dotStat||'',dotStatMode:s.dotStatMode||'add',dotStatCoef:s.dotStatCoef??1,turns:s.dotTurns||4,flavor:'dot'});
+ return list;
 }
 function loadSkillIntoForm(skillId){
  const s=(window.currentClassSkillsDraft||{})[skillId];if(!s)return;
  window.editingConfigSkillId=skillId;
- window.currentSkillEffectsDraft=JSON.parse(JSON.stringify(s.effects||[]));
+ window.currentSkillEffectsDraft=(s.effects&&s.effects.length)?JSON.parse(JSON.stringify(s.effects)):legacyEffectsFromSkill(s);
  renderSkillEffectsList();
  document.getElementById('configClassSkillSelect').value=skillId;
  document.getElementById('configSkillId').value=skillId;
@@ -4151,25 +4262,6 @@ function loadSkillIntoForm(skillId){
  document.getElementById('configSkillTargetMode').value=s.targetMode||'';
  document.getElementById('configSkillEffect').value=s.classEffect||'ranged';
  document.getElementById('configSkillEnemyUsable').checked=s.enemyUsable!==false;
- document.getElementById('configSkillDmgDice').value=s.dmgDice||0;
- document.getElementById('configSkillDmgDie').value=String(s.dmgDie||6);
- document.getElementById('configSkillDmgStat').value=s.dmgStat||'';
- document.getElementById('configSkillDmgStatMode').value=s.dmgStatMode||'add';
- document.getElementById('configSkillDmgStatCoef').value=s.dmgStatCoef??1;
- document.getElementById('configSkillBuffStat').value=s.buffStat||'';
- document.getElementById('configSkillBuffStatMode').value=s.buffStatMode||'add';
- document.getElementById('configSkillBuffStatCoef').value=s.buffStatCoef??5;
- document.getElementById('configSkillBuffTurns').value=s.buffTurns||0;
- document.getElementById('configSkillDebuffStat').value=s.debuffStat||'';
- document.getElementById('configSkillDebuffStatMode').value=s.debuffStatMode||'add';
- document.getElementById('configSkillDebuffStatCoef').value=s.debuffStatCoef??2;
- document.getElementById('configSkillDebuffTurns').value=s.debuffTurns||0;
- document.getElementById('configSkillDotDice').value=s.dotDice||0;
- document.getElementById('configSkillDotDie').value=String(s.dotDie||6);
- document.getElementById('configSkillDotStat').value=s.dotStat||'';
- document.getElementById('configSkillDotStatMode').value=s.dotStatMode||'add';
- document.getElementById('configSkillDotStatCoef').value=s.dotStatCoef??1;
- document.getElementById('configSkillDotTurns').value=s.dotTurns||0;
  document.getElementById('configSkillDesc').value=s.desc||'';
  window.currentConfigSkillIconHex=s.iconImage||'';
  renderConfigIconPreview(window.currentConfigSkillIconHex,'configSkillIconPreview','configSkillIconStatus');
@@ -4194,25 +4286,6 @@ function currentSkillFormJson(){
   tier:Number(document.getElementById('configSkillTier').value)||1,
   classId:window.pendingNewClassId||selectedGameClassId(),
   enemyUsable:document.getElementById('configSkillEnemyUsable').checked,
-  dmgDice:Number(document.getElementById('configSkillDmgDice').value)||0,
-  dmgDie:Number(document.getElementById('configSkillDmgDie').value)||6,
-  dmgStat:document.getElementById('configSkillDmgStat').value||undefined,
-  dmgStatMode:document.getElementById('configSkillDmgStatMode').value,
-  dmgStatCoef:Number(document.getElementById('configSkillDmgStatCoef').value)||0,
-  buffStat:document.getElementById('configSkillBuffStat').value||undefined,
-  buffStatMode:document.getElementById('configSkillBuffStatMode').value,
-  buffStatCoef:Number(document.getElementById('configSkillBuffStatCoef').value)||0,
-  buffTurns:Number(document.getElementById('configSkillBuffTurns').value)||undefined,
-  debuffStat:document.getElementById('configSkillDebuffStat').value||undefined,
-  debuffStatMode:document.getElementById('configSkillDebuffStatMode').value,
-  debuffStatCoef:Number(document.getElementById('configSkillDebuffStatCoef').value)||0,
-  debuffTurns:Number(document.getElementById('configSkillDebuffTurns').value)||undefined,
-  dotDice:Number(document.getElementById('configSkillDotDice').value)||0,
-  dotDie:Number(document.getElementById('configSkillDotDie').value)||6,
-  dotStat:document.getElementById('configSkillDotStat').value||undefined,
-  dotStatMode:document.getElementById('configSkillDotStatMode').value,
-  dotStatCoef:Number(document.getElementById('configSkillDotStatCoef').value)||0,
-  dotTurns:Number(document.getElementById('configSkillDotTurns').value)||undefined,
   effects:(window.currentSkillEffectsDraft&&window.currentSkillEffectsDraft.length)?window.currentSkillEffectsDraft:undefined,
   unlock:'Clase'
  };
