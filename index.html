@@ -159,7 +159,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.53.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -240,8 +240,11 @@
     <h3>Equipo inicial</h3>
     <div class="configForm">
      <label>Arma inicial <select id="configClassStarterWeapon"><option value="">— Automático (genérico) —</option></select></label>
-     <label>Pociones iniciales (0-3, deja vacío para las de curación por defecto) <select id="configClassStarterPotions" multiple size="5"></select></label>
     </div>
+    <p class="small">Pociones iniciales (deja vacío para las 2 de curación por defecto)</p>
+    <label>Buscar pociones <input type="text" id="configClassPotionSearch" placeholder="Buscar por nombre..."></label>
+    <div id="configClassPotionResults" class="configItemsList"></div>
+    <div id="configClassPotionSummary" class="small"></div>
     <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
     <div id="configClassStatus" class="small"></div>
    </section>
@@ -446,6 +449,23 @@
     <div id="configChestStatus" class="small"></div>
    </section>
    <section class="panel"><h2>Cofres guardados</h2><div id="configChestsList" class="configItemsList"></div></section>
+  </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabWorldObjects">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Icono del objeto seleccionado</h2>
+    <p class="small">Elige un objeto de la lista de la derecha y sube/recorta su icono. Sin icono = sprite por defecto del juego.</p>
+    <p class="small" id="configWorldObjectSelected">Ningún objeto seleccionado.</p>
+    <label>Imagen <input type="file" id="configWorldObjectImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configWorldObjectCropZoom" min="25" max="400" value="100"></label><button type="button" id="configWorldObjectMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configWorldObjectMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final a 50x50 px.</div></div>
+    <div class="configPreview"><canvas id="configWorldObjectIconPreview" width="50" height="50"></canvas><span id="configWorldObjectIconStatus" class="small">Sin icono</span></div>
+    <button class="start" id="saveConfigWorldObjectBtn" type="button">GUARDAR ICONO</button>
+    <button id="rollbackConfigWorldObjectBtn" type="button">QUITAR ICONO (sprite por defecto)</button>
+    <div id="configWorldObjectStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
   </div>
  </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>

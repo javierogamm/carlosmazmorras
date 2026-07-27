@@ -1086,7 +1086,11 @@ const classStarterWeaponCategories={
  beastGuardian:'Armas eléctricas pesadas'
 };
 function makeStarterWeapon(classId){
- // config_items first: lowest-ilvl weapon of the class category (or any melee)
+ // config_items first: lowest-ilvl COMMON/tier-1 weapon of the class's own
+ // weapon category - the starter weapon must always be tier 1 of the
+ // class's weapon type, never a higher-tier item even if that's all that's
+ // configured for the category (falls through to the guaranteed tier-1
+ // manually-built weapon below instead).
  const weapons=configItems.filter(r=>((r.item_json||r).slot||r.slot)==='weapon');
  // an advanced/custom class can pin an explicit starter weapon TYPE in its
  // editor (class_json.starterWeaponType) - translate that to the same
@@ -1096,12 +1100,12 @@ function makeStarterWeapon(classId){
  const explicitCat=starterType?configWeaponTypeCategories[starterType]:'';
  if(weapons.length){
   const cat=explicitCat||classStarterWeaponCategories[classId]||'';
-  let cands=weapons.filter(r=>((r.item_json||r).weaponCategory||'')===cat);
-  if(!cands.length)cands=weapons.filter(r=>configWeaponKind(r.item_json||r)==='melee');
-  if(!cands.length)cands=weapons;
-  cands=[...cands].sort((a,b)=>(Number((a.item_json||a).itemLevel||a.ilvl)||1)-(Number((b.item_json||b).itemLevel||b.ilvl)||1));
-  const item=configuredItemFromRow(cands[0],{itemLevel:{min:1,max:2}},1);
-  if(item){item.name=`${item.name} de aprendiz`;return item}
+  let cands=weapons.filter(r=>{const it=r.item_json||r;return (it.weaponCategory||'')===cat&&(it.rarity||r.tier||'common')==='common'});
+  if(cands.length){
+   cands=[...cands].sort((a,b)=>(Number((a.item_json||a).itemLevel||a.ilvl)||1)-(Number((b.item_json||b).itemLevel||b.ilvl)||1));
+   const item=configuredItemFromRow(cands[0],{itemLevel:{min:1,max:2}},1);
+   if(item){item.name=`${item.name} de aprendiz`;return item}
+  }
  }
  const category=explicitCat||classStarterWeaponCategories[classId]||'Espadas básicas y elementales';
  const row=weaponRowForCategory(category),col=0,canonicalCategory=weaponRows[row].category;
@@ -3669,6 +3673,7 @@ function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26')}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
+ for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
@@ -3999,11 +4004,13 @@ function drawChestSprite(x,y,c){
  chestSprite(x,y);
 }
 function trapSprite(x,y){
+ if(drawWorldObjectIcon('trap',x,y))return;
  ctx.strokeStyle='#ff9d4f';ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(x+16,y+16);ctx.lineTo(x+48,y+48);ctx.moveTo(x+48,y+16);ctx.lineTo(x+16,y+48);ctx.stroke();
  ctx.strokeStyle='rgba(255,157,79,.45)';ctx.strokeRect(x+10,y+10,44,44);
 }
 function altarSprite(x,y,a){
+ if(drawWorldObjectIcon('altar_'+a.kind,x,y))return;
  const disenchant=a.kind==='disenchant';
  const col=disenchant?'#4d7dff':a.used?'#5b6472':a.kind==='heal'?'#8dffa8':a.kind==='shield'?'#9be8ff':'#ffd45f';
  const grayed=!disenchant&&a.used;
@@ -4012,7 +4019,7 @@ function altarSprite(x,y,a){
  ctx.fillStyle=grayed?'#7d8595':'#0c0f16';ctx.font='12px monospace';ctx.textAlign='center';
  ctx.fillText(disenchant?'⚒':a.kind==='heal'?'✚':a.kind==='shield'?'▣':'✦',x+32,y+37);
 }
-function stairsSprite(x,y){for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
+function stairsSprite(x,y){if(drawWorldObjectIcon('stairsDown',x,y))return;for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
 function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?'#342a23':'#8b4e2c');if(!d.open){for(let i=0;i<3;i++)px(x+15,y+13+i*15,34,3,'#5b301f');px(x+17,y+10,3,48,'#b16d3c');px(x+44,y+10,3,48,'#5e321f');px(x+39,y+34,7,7,d.locked?'#ffd24f':'#271713')}}
 // Each floor's tileset can define its own door look (config_floor.doorTiles,
 // same icon editor as walls/floors); replaces the generic doorSprite whenever
@@ -4030,7 +4037,7 @@ function drawDoorTile(x,y,d){
  // tile, on top of whatever art was drawn (icon or procedural)
  if(d.locked)px(x+Math.floor((TILE-5)/2),y+6,5,TILE-12,'#ffd24f');
 } 
-function keySprite(x,y){px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
+function keySprite(x,y){if(drawWorldObjectIcon('key',x,y))return;px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
 
 function companionSprite(x,y,c){
  const shape=c.shape||'allyCompanion';
@@ -4526,7 +4533,7 @@ function currentSkillFormJson(){
 }
 function currentConfigClassJson(){
  const id=window.pendingNewClassId||selectedGameClassId(),base=resolveClassDef(id);
- const starterWeaponSel=document.getElementById('configClassStarterWeapon'),starterPotionsSel=document.getElementById('configClassStarterPotions');
+ const starterWeaponSel=document.getElementById('configClassStarterWeapon');
  return {
   classId:id,
   name:document.getElementById('configClassName').value.trim()||id,
@@ -4536,7 +4543,7 @@ function currentConfigClassJson(){
   starterSkills:base?.skills||[],
   resourceBias:base?.resourceBias||'stamina',
   starterWeaponType:starterWeaponSel?.value||'',
-  starterPotionIds:starterPotionsSel?[...starterPotionsSel.selectedOptions].map(o=>o.value):[]
+  starterPotionIds:[...(window.currentClassStarterPotionIds||[])]
  };
 }
 async function saveConfigClass(item,skillsBag){
@@ -4579,21 +4586,38 @@ function loadSelectedConfigClass(){
  renderClassSkillSelect();
  renderConfigClassStarterGearOptions(row?.class_json?.starterWeaponType||'',row?.class_json?.starterPotionIds||[]);
 }
-// Populates the starter-weapon-type and starter-potions pickers for the
-// advanced class editor and selects whatever this class row already has
-// (empty = fall back to the generic per-classId table / default potions
-// at character creation, see makeStarterWeapon/addStarterPotions).
+// Populates the starter-weapon-type picker and the searchable starter-
+// potions checklist for the advanced class editor, selecting whatever this
+// class row already has (empty = fall back to the generic per-classId
+// table / default potions at character creation, see
+// makeStarterWeapon/addStarterPotions).
 function renderConfigClassStarterGearOptions(selectedWeaponType='',selectedPotionIds=[]){
  const weaponSel=document.getElementById('configClassStarterWeapon');
  if(weaponSel){
   weaponSel.innerHTML='<option value="">— Automático (genérico) —</option>'+configWeaponTypes.map(t=>`<option value="${t}" ${t===selectedWeaponType?'selected':''}>${t}</option>`).join('');
  }
- const potionSel=document.getElementById('configClassStarterPotions');
- if(potionSel){
-  const potionRows=configItems.filter(r=>(r.item_json||r).type==='potion');
-  const selected=new Set((selectedPotionIds||[]).map(String));
-  potionSel.innerHTML=potionRows.map(r=>{const item=r.item_json||r;return `<option value="${r.id}" ${selected.has(String(r.id))?'selected':''}>${item.name||r.nombre||r.id}</option>`}).join('')||'<option value="" disabled>No hay pociones configuradas todavía</option>';
- }
+ window.currentClassStarterPotionIds=(selectedPotionIds||[]).map(String);
+ const search=document.getElementById('configClassPotionSearch');if(search)search.value='';
+ renderConfigClassPotionResults();
+}
+// Searchable checklist of every configured potion, mirroring the chest
+// item picker (renderChestItemResults) so starter potions are actually
+// visible/browsable instead of buried in a barely-usable <select multiple>.
+function renderConfigClassPotionResults(){
+ const root=document.getElementById('configClassPotionResults'),summary=document.getElementById('configClassPotionSummary');
+ if(!root)return;
+ window.currentClassStarterPotionIds=window.currentClassStarterPotionIds||[];
+ const q=(document.getElementById('configClassPotionSearch')?.value||'').trim().toLowerCase();
+ const pool=configItems.filter(r=>(r.item_json||r).type==='potion').map(r=>({id:String(r.id),name:(r.item_json||r).name||r.nombre||String(r.id)})).filter(x=>!q||x.name.toLowerCase().includes(q));
+ const selected=new Set(window.currentClassStarterPotionIds.map(String));
+ root.innerHTML=pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-class-potion-pick="${x.id}" ${selected.has(x.id)?'checked':''}><span>${x.name}</span></label>`).join(''):'<p class="small">No hay pociones configuradas todavía.</p>';
+ const updateSummary=()=>{if(summary)summary.textContent=window.currentClassStarterPotionIds.length?`${window.currentClassStarterPotionIds.length} poción(es) seleccionada(s) como equipo inicial.`:'Nada seleccionado: se usarán las 2 pociones de curación por defecto.'};
+ root.querySelectorAll('[data-class-potion-pick]').forEach(cb=>cb.onchange=()=>{
+  const id=cb.dataset.classPotionPick;
+  window.currentClassStarterPotionIds=cb.checked?[...window.currentClassStarterPotionIds,id]:window.currentClassStarterPotionIds.filter(x=>x!==id);
+  updateSummary();
+ });
+ updateSummary();
 }
 
 function renderConfigItemRow(i){const item=i.item_json||i,skills=Array.isArray(item.skillIds)?item.skillIds:[],isPotion=item.type==='potion',weaponType=item.slot==='weapon'&&(item.weaponType||item.weaponCategory)?` · ${item.weaponType||item.weaponCategory}`:'',weaponRange=item.slot==='weapon'?` · alcance ${weaponRangeBounds(item).min}-${weaponRangeBounds(item).max}`:'';return `<div class="configItem"><span class="tierDot" style="background:${tierColor(i.tier)}"></span><div><b>${i.nombre||'Sin nombre'}</b><span class="small">${isPotion?'Poción · ':''}${tierDefs[item.rarity||i.tier]?.label||item.rarity||i.tier} · iLvl ${item.itemLevel||i.ilvl||1}${weaponType}${weaponRange}${isPotion?` · ${potionEffectLabels[item.potionEffectType]||item.kind||'efecto'}`:''}${skills.length?` · ${skillNames(skills)}`:''}</span><div class="configItemActions"><button type="button" data-config-edit="${i.id}">Editar</button><button type="button" data-config-duplicate="${i.id}">Duplicar</button><button type="button" data-config-delete="${i.id}">Borrar</button></div></div></div>`}
@@ -4842,7 +4866,79 @@ function setupChestConfigMode(){
  };
  document.getElementById('newConfigChestBtn').onclick=resetConfigChestForm;
 }
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests')})}
+// ---- World object icons (config_world_object) ------------------------------
+// A fixed, known set of non-user-created world props (altars per kind, keys,
+// stairs down, traps, one marker per ROOM_TYPES entry) that can each get a
+// custom icon overriding their procedural pixel sprite. Unlike every other
+// config_* table, rows are upserted by object_key instead of by id - see
+// api/config-world-object.js.
+const WORLD_OBJECT_KINDS=[
+ {key:'altar_heal',label:'Altar: Curación'},
+ {key:'altar_shield',label:'Altar: Escudo'},
+ {key:'altar_power',label:'Altar: Poder'},
+ {key:'altar_disenchant',label:'Altar: Creador (deshacer objetos)'},
+ {key:'key',label:'Llave'},
+ {key:'stairsDown',label:'Escaleras de bajada'},
+ {key:'trap',label:'Trampa'},
+ ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
+];
+let configWorldObjects={};
+let configWorldObjectsLoaded=false;
+async function fetchConfigWorldObjects(){
+ try{
+  const r=await fetch('/api/config-world-object');const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
+  configWorldObjects=Object.fromEntries((Array.isArray(data)?data:[]).map(row=>[row.object_key,row.icon||'']));
+  configWorldObjectsLoaded=true;
+  renderConfigWorldObjectsList();
+  if(game)draw();
+ }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`}
+}
+function renderConfigWorldObjectsList(){
+ const root=document.getElementById('configWorldObjectsList');if(!root)return;
+ root.innerHTML=WORLD_OBJECT_KINDS.map(k=>{const hex=configWorldObjects[k.key];return `<div class="configItem"><span class="tierDot" style="background:${hex?'#8c72e8':'#4d395a'}"></span><div><b>${k.label}</b><span class="small">${hex?'Icono personalizado':'Sprite por defecto'}</span><div class="configItemActions"><button type="button" data-edit-world-object="${k.key}">Editar</button></div></div></div>`}).join('');
+ root.querySelectorAll('[data-edit-world-object]').forEach(b=>b.onclick=()=>loadWorldObjectForEdit(b.dataset.editWorldObject));
+}
+function loadWorldObjectForEdit(objectKey){
+ window.editingWorldObjectKey=objectKey;
+ const kind=WORLD_OBJECT_KINDS.find(k=>k.key===objectKey);
+ document.getElementById('configWorldObjectSelected').textContent=`Editando: ${kind?.label||objectKey}`;
+ window.currentConfigWorldObjectIconHex=configWorldObjects[objectKey]||'';
+ renderConfigIconPreview(window.currentConfigWorldObjectIconHex,'configWorldObjectIconPreview','configWorldObjectIconStatus');
+ document.getElementById('configWorldObjectIconStatus').textContent=window.currentConfigWorldObjectIconHex?'Icono personalizado activo.':'Sin icono: usará el sprite por defecto.';
+}
+function setupConfigWorldObjectsMode(){
+ setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto'});
+ renderConfigWorldObjectsList();
+ document.getElementById('saveConfigWorldObjectBtn').onclick=async()=>{
+  const st=document.getElementById('configWorldObjectStatus'),objectKey=window.editingWorldObjectKey;
+  if(!objectKey){st.textContent='Elige primero un objeto de la lista.';return}
+  st.textContent='Guardando icono...';
+  try{
+   const r=await fetch('/api/config-world-object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
+   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
+   configWorldObjects[objectKey]=window.currentConfigWorldObjectIconHex||'';
+   renderConfigWorldObjectsList();
+   st.textContent='Icono guardado.';
+   if(game)draw();
+  }catch(e){st.textContent=e.message}
+ };
+ document.getElementById('rollbackConfigWorldObjectBtn').onclick=()=>{
+  window.currentConfigWorldObjectIconHex='';
+  renderConfigIconPreview('','configWorldObjectIconPreview','configWorldObjectIconStatus');
+  document.getElementById('configWorldObjectIconStatus').textContent='Sin icono: usará el sprite por defecto.';
+ };
+}
+// Shared draw helper: if object_key has a custom icon, draws it and returns
+// true; otherwise the caller falls back to its own procedural sprite.
+function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
+ const hex=configWorldObjects[objectKey];if(!hex)return false;
+ let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
+ if(img.complete){ctx.drawImage(img,x+offset,y+offset,size,size);return true}
+ img.onload=()=>game&&draw();
+ return false
+}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
 function setupClassConfigMode(){
@@ -4858,6 +4954,7 @@ function setupClassConfigMode(){
   document.getElementById('configSummonIconStatus').textContent='Imagen reutilizada de la lista.';
  };
  populateSummonIconExistingList();
+ document.getElementById('configClassPotionSearch')?.addEventListener('input',renderConfigClassPotionResults);
  const effectSel=document.getElementById('configSkillEffect');
  if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
  configClassSelect.onchange=loadSelectedConfigClass;
@@ -6906,7 +7003,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
 };
 
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
