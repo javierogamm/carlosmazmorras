@@ -4619,17 +4619,26 @@ function setupConfigMode(){renderConfigStatsHelp();renderConfigSkillSelect();con
 async function fetchDungeonWorlds(){
  const status=document.getElementById('worldStatus'),list=document.getElementById('worldList');if(!status||!list)return;
  status.textContent='Cargando dungeons desde Supabase...';list.innerHTML='';
- try{const r=await fetch('/api/dungeon-worlds');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar las dungeons');
+ try{const r=await fetch('/api/dungeon-worlds?light=1');const data=await r.json();if(!r.ok)throw new Error(data.error||data.message||'No se pudieron cargar las dungeons');
   if(!data.length){status.textContent='No hay dungeons guardadas. Crea una nueva.';return}
   status.textContent=`${data.length} dungeon(s) disponibles.`;
-  list.innerHTML=data.map(w=>`<button type="button" class="worldCard" data-world-id="${w.id}"><b>${w.world_name||'Dungeon sin nombre'}</b><span>#${w.id} · ${new Date(w.created_at).toLocaleString()}</span><small>${w.world_json?.floors?.length||0} pisos precomputados</small></button>`).join('');
-  list.querySelectorAll('[data-world-id]').forEach(btn=>btn.onclick=()=>{selectedDungeonWorld=data.find(w=>String(w.id)===btn.dataset.worldId);proceedAfterWorldChosen()});
- }catch(e){status.textContent=`Error: ${e.message}. Revisa SUPABASE_URL y SUPABASE_ANON_KEY en Vercel.`}
+  list.innerHTML=data.map(w=>`<button type="button" class="worldCard" data-world-id="${w.id}"><b>${w.world_name||'Dungeon sin nombre'}</b><span>#${w.id} · ${new Date(w.created_at).toLocaleString()}</span></button>`).join('');
+  list.querySelectorAll('[data-world-id]').forEach(btn=>btn.onclick=async()=>{
+   btn.disabled=true;status.textContent='Cargando dungeon seleccionada...';
+   try{
+    const wr=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(btn.dataset.worldId)}`);
+    const world=await wr.json();
+    if(!wr.ok)throw new Error(world.error||world.message||'No se pudo cargar la dungeon');
+    if(!world)throw new Error('La dungeon ya no existe.');
+    selectedDungeonWorld=world;proceedAfterWorldChosen();
+   }catch(e){status.textContent=`Error cargando dungeon_world: ${e.message}`;btn.disabled=false}
+  });
+ }catch(e){status.textContent=`Error cargando dungeon_world: ${e.message}`}
 }
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!configItems.length)await fetchConfigItems();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||'No se pudo crear la dungeon');
+ try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!configItems.length)await fetchConfigItems();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -4718,12 +4727,12 @@ async function openSessionContinue(){
  status.classList.remove('hidden');list.classList.remove('hidden');
  status.textContent='Cargando sesiones...';list.innerHTML='';
  try{
-  const [chars,sessionsRes,worldsRes]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status?light=1'),fetch('/api/dungeon-worlds')]);
+  const [chars,sessionsRes,worldsRes]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status?light=1'),fetch('/api/dungeon-worlds?light=1')]);
   const myIds=new Set(chars.map(c=>String(c.id)));
   const sessions=await sessionsRes.json();
-  if(!sessionsRes.ok)throw new Error(sessions.error||'No se pudieron cargar las sesiones');
+  if(!sessionsRes.ok)throw new Error(sessions.error||sessions.message||'No se pudieron cargar las sesiones');
   const worlds=await worldsRes.json();
-  if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
+  if(!worldsRes.ok)throw new Error(worlds.error||worlds.message||'No se pudieron cargar los mundos');
   const mine=sessions.filter(s=>{if(s.dungeon_status?.multiplayer)return false;try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
   if(!mine.length){status.textContent='No tienes sesiones activas.';return}
   status.textContent=`${mine.length} sesión(es) activas.`;
@@ -4741,15 +4750,14 @@ async function openSessionContinue(){
 async function resumeSession(sessionId){
  try{
   if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
-  const [statusRes,worldsRes]=await Promise.all([fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`),fetch('/api/dungeon-worlds')]);
-  const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||'No se pudo cargar la sesión');
-  const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
-  const world=worlds.find(w=>String(w.id)===String(session.dungeon_world_id));
-  if(!world)throw new Error('El mundo de esta sesión ya no existe.');
+  const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
+  const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
   const pjId=ids[0];
-  const pjRes=await fetch(`/api/user-pj?id=${encodeURIComponent(pjId)}`);
-  const pj=await pjRes.json();if(!pjRes.ok)throw new Error(pj.error||'No se pudo cargar el personaje');
+  const [worldRes,pjRes]=await Promise.all([fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`),fetch(`/api/user-pj?id=${encodeURIComponent(pjId)}`)]);
+  const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');
+  if(!world)throw new Error('El mundo de esta sesión ya no existe.');
+  const pj=await pjRes.json();if(!pjRes.ok)throw new Error(pj.error||pj.message||'No se pudo cargar el personaje');
   if(!pj||pj.pj_status!=='alive')throw new Error('El personaje de esta sesión ya no está vivo.');
   currentCharacter=pj;selectedDungeonWorld=world;
   const state=session.dungeon_status||{};
@@ -4791,7 +4799,7 @@ async function enterWorldWithCharacter(){
  try{
   const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:{turn:0,currentFloor:1,floors:{},players:{[currentCharacter.id]:{x:game.player.x,y:game.player.y,floor:1,facing:game.player.facing||1}}}})});
   const data=await r.json();
-  if(!r.ok)throw new Error(data.error||'No se pudo crear la sesión');
+  if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la sesión');
   game.dungeonStatusId=data.id;
  }catch(e){log(`No se pudo crear la sesión persistente: ${e.message}`,'sys')}
  banner(`ENTRAS EN ${selectedDungeonWorld.world_name} CON ${game.player.name}`);
@@ -4951,7 +4959,7 @@ async function refreshOpenSessions(){
  try{
   const [chars,r]=await Promise.all([fetchMyCharacters(),fetch('/api/dungeon-status?light=1')]);
   const sessions=await r.json();
-  if(!r.ok)throw new Error(sessions.error||'No se pudieron cargar sesiones');
+  if(!r.ok)throw new Error(sessions.error||sessions.message||'No se pudieron cargar sesiones');
   const myIds=new Set(chars.map(c=>String(c.id)));
   const open=sessions.filter(s=>{
    if(!s.dungeon_status?.multiplayer)return false;
@@ -5027,7 +5035,7 @@ async function mpCreateHostSession(){
  try{
   const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:status})});
   const data=await r.json();
-  if(!r.ok)throw new Error(data.error||'No se pudo crear la sesión multijugador');
+  if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la sesión multijugador');
   mpPendingAction=null;
   openMpLobby(data.id,true);
  }catch(e){alert('Error al crear la sesión: '+e.message)}
@@ -6173,9 +6181,8 @@ async function mpEnterStartedSession(session,starter=false){
   stopMultiHeartbeat();
   if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();
   await mpRealtimeConnect(session.id);
-  const worldsRes=await fetch('/api/dungeon-worlds');
-  const worlds=await worldsRes.json();if(!worldsRes.ok)throw new Error(worlds.error||'No se pudieron cargar los mundos');
-  const world=worlds.find(w=>String(w.id)===String(session.dungeon_world_id));
+  const worldRes=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`);
+  const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');
   if(!world)throw new Error('El mundo de esta sesión ya no existe.');
   selectedDungeonWorld=world;
   const pj=currentCharacter;
@@ -6488,7 +6495,7 @@ async function mpOpenContinueList(){
   const chars=await fetchMyCharacters();
   const myIds=new Set(chars.map(c=>String(c.id)));
   const r=await fetch('/api/dungeon-status?light=1');const sessions=await r.json();
-  if(!r.ok)throw new Error(sessions.error||'No se pudieron cargar sesiones');
+  if(!r.ok)throw new Error(sessions.error||sessions.message||'No se pudieron cargar sesiones');
   const mine=sessions.filter(s=>{if(!s.dungeon_status?.multiplayer)return false;try{return (JSON.parse(s.players_ID||'[]')||[]).some(id=>myIds.has(String(id)))}catch(e){return false}});
   if(!mine.length){status.textContent='No tienes sesiones multijugador propias.';return}
   status.textContent=`${mine.length} sesión(es).`;
