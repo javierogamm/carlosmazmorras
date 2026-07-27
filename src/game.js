@@ -4870,8 +4870,10 @@ function setupChestConfigMode(){
 // A fixed, known set of non-user-created world props (altars per kind, keys,
 // stairs down, traps, one marker per ROOM_TYPES entry) that can each get a
 // custom icon overriding their procedural pixel sprite. Unlike every other
-// config_* table, rows are upserted by object_key instead of by id - see
-// api/config-world-object.js.
+// config_* table, rows are upserted by object_key instead of by id, and this
+// hits /api/config-floor?kind=object instead of its own serverless function
+// - Vercel's Hobby plan caps a project at 12 Serverless Functions and this
+// repo was already at that limit (see api/config-floor.js).
 const WORLD_OBJECT_KINDS=[
  {key:'altar_heal',label:'Altar: Curación'},
  {key:'altar_shield',label:'Altar: Escudo'},
@@ -4886,7 +4888,7 @@ let configWorldObjects={};
 let configWorldObjectsLoaded=false;
 async function fetchConfigWorldObjects(){
  try{
-  const r=await fetch('/api/config-world-object');const data=await r.json();
+  const r=await fetch('/api/config-floor?kind=object');const data=await r.json();
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
   configWorldObjects=Object.fromEntries((Array.isArray(data)?data:[]).map(row=>[row.object_key,row.icon||'']));
   configWorldObjectsLoaded=true;
@@ -4915,7 +4917,7 @@ function setupConfigWorldObjectsMode(){
   if(!objectKey){st.textContent='Elige primero un objeto de la lista.';return}
   st.textContent='Guardando icono...';
   try{
-   const r=await fetch('/api/config-world-object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
+   const r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
    const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
    configWorldObjects[objectKey]=window.currentConfigWorldObjectIconHex||'';
    renderConfigWorldObjectsList();
