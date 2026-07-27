@@ -35,7 +35,7 @@ let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,floors:10,floorPlan:[],apMode:false};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:10,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff4d4d'}};
@@ -879,13 +879,13 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
-function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
+function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,enemyLootPct:document.getElementById('worldEnemyLootPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies();const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value=''});}
-function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue'],['worldEnemyLootPct','worldEnemyLootValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
 // Applies one buff/debuff effect entry to a numeric stat. The modern shape
 // is {mode:'add'|'mult',value} - a flat number added, or a straight
 // multiplier. A bare number is legacy shorthand for a percentage bonus
@@ -1141,9 +1141,16 @@ const configImageCache={};function configIconImage(src){if(!configImageCache[src
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
-function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
- const configured=makeConfiguredLoot(level);if(configured)return configured;
- const slot=pick(slots),rar=weightedRarity(level);
+function makeLoot(level,source='normal',forceRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+ if(forceRarityName){
+  if(configItems.length){
+   const matches=configItems.filter(row=>((row.item_json||row).rarity||row.tier||'common')===forceRarityName);
+   if(matches.length)return configuredItemFromRow(pick(matches),lootRow,level);
+  }
+ } else {
+  const configured=makeConfiguredLoot(level);if(configured)return configured;
+ }
+ const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level)):weightedRarity(level);
  const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
@@ -1765,6 +1772,7 @@ function loadPrecomputedFloor(){
  scaleFloorForPlayerLevel();
  scaleFloorForParty();
  announceFloorArchetype();
+ grantFloorRewardPopup();
  log(`Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');
  updateUI();draw();rollFloorEvent();return true;
 }
@@ -2159,6 +2167,7 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
  scaleFloorForParty();
  announceFloorArchetype();
+ grantFloorRewardPopup();
  updateUI();draw();rollFloorEvent();
 }
 
@@ -2170,6 +2179,26 @@ function announceFloorArchetype(){
  log(`${label}: ${game.floorArchetypeDesc||''} Familia dominante: ${game.enemyFamily}. ${(game.enemies||[]).length} enemigos.`,'story');
  log(`Objetivo: ${objectiveText(obj)}`,'story');
  if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
+}
+// Highest rarity name unlocked for this floor - used to grant a guaranteed
+// top-tier item when the player reaches a new floor (from floor 2 onward).
+function topRarityNameForFloor(floor){
+ const totalFloors=selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors;
+ return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(floor,totalFloors,game?.player?.level||1)];
+}
+// Grants one guaranteed item at the floor's best available rarity and shows
+// a dedicated floor-reward popup. Runs once per floor arrival, floor 2+.
+function grantFloorRewardPopup(){
+ if((game.floor||1)<2||!game?.player)return;
+ const item=makeLoot(game.player.level,'floorReward',topRarityNameForFloor(game.floor));
+ if(!item)return;
+ addInventoryItem(item);
+ const c=document.createElement('canvas');c.width=c.height=64;drawItemIcon(c,item);
+ storyTitle.textContent=`RECOMPENSA DE PISO ${game.floor}`;
+ storyBody.innerHTML=`<div class="narrative"><p>Al llegar al piso ${game.floor} recibes un objeto garantizado de la mejor calidad disponible en este piso.</p><div class="floorRewardItem" style="display:flex;align-items:center;gap:12px;margin:10px 0"><div class="floorRewardIcon"></div><div><b class="${item.rarity}">${item.name}</b><div class="small">${slotNames[item.slot]} · ${item.label} · Nv. ${item.itemLevel}</div><div class="itemScore">Poder ${item.score}</div></div></div><div class="startActions"><button id="continueFloorReward">Continuar</button></div></div>`;
+ storyBody.querySelector('.floorRewardIcon')?.appendChild(c);
+ storyOverlay.classList.remove('hidden');
+ setTimeout(()=>document.getElementById('continueFloorReward')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
 }
 function objectiveText(obj=game?.objective){
  if(!obj)return 'Encuentra la salida.';
@@ -2367,7 +2396,8 @@ function attack(e,bonus=0,options={}){
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
- if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
+ const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
+ if(Math.random()<killLootChance||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
@@ -2920,7 +2950,7 @@ function chestLootItem(c){
 function openChest(c){
  c.opened=true;game.chestsOpened++;
  if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});
- const n=1+(Math.random()<.24?1:0);
+ const n=1+(Math.random()<.20?1:0);
  for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
  game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')
 }
