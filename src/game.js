@@ -1532,10 +1532,19 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // Every floor needs at least 2 Creator's Room (craft) rooms so players can
  // always reach the shard/craft system - except archetypes that deliberately
  // omit 'creator' from their roomWeights (very special floors, e.g. 'horda').
+ // One of the two is always forced onto the room closest to the entrance
+ // (spawn), floor 1 included, so a craft room is never far from the start.
  if('creator' in (arch.roomWeights||{})){
+  const spawnRoom=rooms[0];
+  const distFromSpawn=r=>Math.abs(r.cx-spawnRoom.cx)+Math.abs(r.cy-spawnRoom.cy);
+  const nonSpawn=rooms.filter(r=>r!==spawnRoom&&r.type!=='bossarena');
+  if(nonSpawn.length){
+   const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
+   nearest.type='creator';
+  }
   const creatorRooms=rooms.filter(r=>r.type==='creator');
   while(creatorRooms.length<2){
-   const candidates=rooms.filter(r=>r!==rooms[0]&&r.type!=='creator'&&r.type!=='bossarena');
+   const candidates=rooms.filter(r=>r!==spawnRoom&&r.type!=='creator'&&r.type!=='bossarena');
    if(!candidates.length)break;
    const r=pick(candidates);
    r.type='creator';
@@ -2603,9 +2612,16 @@ function useAltar(a){
 // Every item, regardless of tier/iLvl, breaks down into 10-20 shards of its
 // own tier - a flat random range, not scaled by item power.
 function shardsForItem(item){return 10+Math.floor(Math.random()*11)}
+// Craft actions can fire several shard/item saves in quick succession
+// (disenchant, create, upgrade tier, add/upgrade stat); plain fire-and-forget
+// fetches can land out of order and let an earlier, stale write clobber a
+// later one on the server, silently losing shards the player just earned.
+// Chaining every save onto the previous one's promise keeps them in order.
+let shardsPersistChain=Promise.resolve();
 function persistShards(){
  if(!game?.pjId)return;
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({shards:game.player.shards||{}})}).catch(e=>console.error('No se pudieron guardar los shards',e));
+ const id=game.pjId,payload=JSON.stringify({shards:game.player.shards||{}});
+ shardsPersistChain=shardsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los shards',e));
 }
 function disenchantItem(item){
  const idx=(game.inventory||[]).indexOf(item);if(idx<0)return;
@@ -2692,10 +2708,12 @@ function craftSetPrimaryAffix(item,tier){const def=craftPrimaryStatForSlot(item.
 // custom_items on user_pj mirrors every player-crafted item still in the
 // inventory/equipment, kept separate from the shared config_items catalog.
 function syncCustomItemsRecord(){game.player.customItems=[...(game.inventory||[]),...Object.values(game.player.equipment||{})].filter(i=>i&&i.custom)}
+let customItemsPersistChain=Promise.resolve();
 function persistCustomItems(){
  syncCustomItemsRecord();
  if(!game?.pjId)return;
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({custom_items:game.player.customItems||[]})}).catch(e=>console.error('No se pudieron guardar los objetos personalizados',e));
+ const id=game.pjId,payload=JSON.stringify({custom_items:game.player.customItems||[]});
+ customItemsPersistChain=customItemsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:payload})).catch(e=>console.error('No se pudieron guardar los objetos personalizados',e));
 }
 function setCraftStatus(id,msg){const el=document.getElementById(id);if(el)el.textContent=msg}
 function renderCraftShardsSummary(){
