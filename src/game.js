@@ -919,8 +919,8 @@ function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){if(rb[k])base[k]=(base[k]||0)+rb[k];if(pp[k])base[k]=(base[k]||0)+pp[k]}
- const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.vitality*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.intelligence*5+base.wisdom*3+(rb.maxMana||0),
- critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:6+Math.floor(base.vitality/4)+(rb.staminaRegen||0),manaRegen:4+Math.floor(base.wisdom/4)+(rb.manaRegen||0),rarityFind:rb.rarityFind||0};
+ const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.strength*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.wisdom*5+base.intelligence*3+(rb.maxMana||0),
+ critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:6+Math.floor(base.strength/4)+(rb.staminaRegen||0),manaRegen:4+Math.floor(base.wisdom/4)+(rb.manaRegen||0),rarityFind:rb.rarityFind||0};
  const allStats={...base};
  for(const item of Object.values(p.equipment||{})){
   if(!item)continue;
@@ -945,8 +945,8 @@ function recomputeDerived(){
   allStats[k]=Math.round(applyStatDelta(allStats[k],eff));
  }
  d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*5);
- d.maxStamina+=Math.max(0,(allStats.vitality-base.vitality)*4+(allStats.agility-base.agility)*2);
- d.maxMana+=Math.max(0,(allStats.intelligence-base.intelligence)*5+(allStats.wisdom-base.wisdom)*3);
+ d.maxStamina+=Math.max(0,(allStats.strength-base.strength)*4+(allStats.agility-base.agility)*2);
+ d.maxMana+=Math.max(0,(allStats.wisdom-base.wisdom)*5+(allStats.intelligence-base.intelligence)*3);
  d.damage+=Math.floor((allStats.strength-base.strength)*1.2);
  d.armor+=Math.floor((allStats.vitality-base.vitality)*.6);
  for(const b of p.activeBuffs||[]){
@@ -1134,7 +1134,7 @@ function makeConfiguredLoot(level){if(!configItems.length)return null;const loot
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
  return configuredItemFromRow(row,lootRow,level)}
-function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
@@ -1328,7 +1328,7 @@ function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkill
 function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
- const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
+ const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
@@ -2164,9 +2164,16 @@ const DEFENSE_STAT_LABELS={
  strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',
  luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'
 };
+// Explicit override by the weapon's own generic type (configWeaponTypes),
+// set on every config-created weapon (item.weaponType) - checked before the
+// flavor-name regex below so "basic attack" stat is deterministic by weapon
+// type rather than dependent on whatever flavor name it happened to roll:
+// daggers/claws/rifles/pistols use agility, shotguns use strength.
+const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
 function inferWeaponDefenseStat(item){
+ if(item?.weaponType&&WEAPON_TYPE_STAT[item.weaponType])return WEAPON_TYPE_STAT[item.weaponType];
  const text=`${item?.name||''} ${item?.iconShape||''} ${item?.theme||''}`.toLowerCase();
- if(/(arco|ballesta|rifle|pistola|fusil|rail|bláster|blaster|cañón|canon|daga|dagger|spear|lanza)/.test(text))return'agility';
+ if(/(arco|ballesta|rifle|pistola|fusil|rail|bláster|blaster|cañón|canon|daga|dagger|spear|lanza|garra|claw)/.test(text))return'agility';
  if(/(bastón|baston|staff|orbe|orb|grimorio|book|rúnic|runic|mágic|magic)/.test(text))return'intelligence';
  if(/(sagrado|holy|tótem|totem|reliquia|relic|espíritu|spirit)/.test(text))return'wisdom';
  if(/(martillo|hammer|maza|mace|hacha|axe|yunque|escudo)/.test(text))return'vitality';
@@ -2314,7 +2321,7 @@ function diceDamageLabel(id){
 }
 
 function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
-function critChance(){return Math.min(.38,.04+game.player.stats.agility*.012+game.player.stats.luck*.005)}
+function critChance(){return Math.min(.38,.04+game.player.stats.luck*.015)}
 function attack(e,bonus=0,options={}){
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
  const roll=rollDice(expr);
@@ -2364,7 +2371,7 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  if(p.hp<=0){p.hp=0;game.over=true;updateUI();draw();permanentDeath()}
 }
 
-const statDescriptions={strength:'Aumenta daño físico y pruebas de fuerza.',vitality:'Aumenta vida y resistencia.',agility:'Aumenta evasión y movilidad.',luck:'Mejora crítico, botín y eventos.',intelligence:'Aumenta poder mágico y maná.',wisdom:'Mejora regeneración y percepción.'};
+const statDescriptions={strength:'Aumenta daño físico y la stamina máxima.',vitality:'Aumenta vida y resistencia.',agility:'Aumenta evasión, movilidad y los Puntos de Acción (PA).',luck:'Mejora el % de crítico, botín y eventos.',intelligence:'Aumenta poder mágico y aporta algo de maná extra.',wisdom:'Aumenta el maná máximo y mejora regeneración y percepción.'};
 function queueStatPoint(level){
  const p=game.player;p.unspentStatPoints=(p.unspentStatPoints||0)+1;p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];
  const skillId=LEVEL_UP_RANDOM_SKILL_LEVELS.has(level)?randomClassSkillForLevelReward(level):null;
@@ -2441,8 +2448,8 @@ function grantXp(v){
   const g=levelGrowth(p.level);
   p.nextXp=p.level<LEVEL_CAP?xpNeededForLevel(p.level):0;
   p.maxHp+=g.hp+p.stats.vitality;p.hp=p.maxHp;
-  p.maxStamina+=g.stamina+Math.floor(p.stats.vitality/3);p.stamina=p.maxStamina;
-  p.maxMana+=g.mana+Math.floor((p.stats.intelligence+p.stats.wisdom)/3);p.mana=p.maxMana;
+  p.maxStamina+=g.stamina+Math.floor(p.stats.strength/3);p.stamina=p.maxStamina;
+  p.maxMana+=g.mana+Math.floor((p.stats.wisdom*2+p.stats.intelligence)/3);p.mana=p.maxMana;
   p.baseDamage+=g.damage;p.baseArmor+=g.armor;
   if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
