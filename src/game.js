@@ -12,6 +12,10 @@ let selectedRace='humano';
 // 'hardcode' = the 16 built-in classes/skills; 'advanced' = only classes
 // created in the admin editor (config_class), never a hardcoded fallback.
 let selectedSkillMode='hardcode';
+// Mandatory at character creation, no default: 'classic' (one action/turn)
+// or 'ap' (action-point pool). Mirrors/feeds worldParams().apMode via
+// apModeOn() once the character exists - see start() and apModeOn().
+let selectedCombatMode=null;
 let selectedDungeonWorld=null;
 let currentCharacter=null;
 let multiSessionId=null;
@@ -983,7 +987,22 @@ function addInventoryItem(item){
  }
  game.inventory.push(item);return item
 }
-function addStarterPotions(){for(let i=0;i<2;i++)addInventoryItem(cloneStarterHealingPotion())}
+// An advanced/custom class can pin explicit starter potions in its editor
+// (class_json.starterPotionIds, config_item row ids); falls back to the
+// classic 2x default healing potion when unset/empty (also the behavior
+// for every hardcoded class, which never sets this field).
+function addStarterPotions(classId){
+ const ids=configClassRowForId(classId)?.class_json?.starterPotionIds;
+ if(Array.isArray(ids)&&ids.length){
+  for(const id of ids.slice(0,3)){
+   const row=configItems.find(r=>String(r.id)===String(id));
+   const item=row&&configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+   if(item)addInventoryItem(item)
+  }
+  return
+ }
+ for(let i=0;i<2;i++)addInventoryItem(cloneStarterHealingPotion())
+}
 function compactPotionStacks(){const original=[...(game?.inventory||[])];game.inventory=[];for(const item of original)addInventoryItem(item)}
 
 function potionRarityWeight(tier,quality){
@@ -1067,18 +1086,28 @@ const classStarterWeaponCategories={
  beastGuardian:'Armas eléctricas pesadas'
 };
 function makeStarterWeapon(classId){
- // config_items first: lowest-ilvl weapon of the class category (or any melee)
+ // config_items first: lowest-ilvl COMMON/tier-1 weapon of the class's own
+ // weapon category - the starter weapon must always be tier 1 of the
+ // class's weapon type, never a higher-tier item even if that's all that's
+ // configured for the category (falls through to the guaranteed tier-1
+ // manually-built weapon below instead).
  const weapons=configItems.filter(r=>((r.item_json||r).slot||r.slot)==='weapon');
+ // an advanced/custom class can pin an explicit starter weapon TYPE in its
+ // editor (class_json.starterWeaponType) - translate that to the same
+ // "category" bucket the generic classStarterWeaponCategories table uses,
+ // so both paths share the rest of this lookup unchanged.
+ const starterType=configClassRowForId(classId)?.class_json?.starterWeaponType;
+ const explicitCat=starterType?configWeaponTypeCategories[starterType]:'';
  if(weapons.length){
-  const cat=classStarterWeaponCategories[classId]||'';
-  let cands=weapons.filter(r=>((r.item_json||r).weaponCategory||'')===cat);
-  if(!cands.length)cands=weapons.filter(r=>configWeaponKind(r.item_json||r)==='melee');
-  if(!cands.length)cands=weapons;
-  cands=[...cands].sort((a,b)=>(Number((a.item_json||a).itemLevel||a.ilvl)||1)-(Number((b.item_json||b).itemLevel||b.ilvl)||1));
-  const item=configuredItemFromRow(cands[0],{itemLevel:{min:1,max:2}},1);
-  if(item){item.name=`${item.name} de aprendiz`;return item}
+  const cat=explicitCat||classStarterWeaponCategories[classId]||'';
+  let cands=weapons.filter(r=>{const it=r.item_json||r;return (it.weaponCategory||'')===cat&&(it.rarity||r.tier||'common')==='common'});
+  if(cands.length){
+   cands=[...cands].sort((a,b)=>(Number((a.item_json||a).itemLevel||a.ilvl)||1)-(Number((b.item_json||b).itemLevel||b.ilvl)||1));
+   const item=configuredItemFromRow(cands[0],{itemLevel:{min:1,max:2}},1);
+   if(item){item.name=`${item.name} de aprendiz`;return item}
+  }
  }
- const category=classStarterWeaponCategories[classId]||'Espadas básicas y elementales';
+ const category=explicitCat||classStarterWeaponCategories[classId]||'Espadas básicas y elementales';
  const row=weaponRowForCategory(category),col=0,canonicalCategory=weaponRows[row].category;
  const stat=weaponCategoryStats[canonicalCategory]||'strength';
  const statLabel=DEFENSE_STAT_LABELS[stat]||'Fuerza';
@@ -1144,6 +1173,23 @@ function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
 function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+// Brief tracer line for any hit landed from more than 1 tile away (ranged
+// weapons, ranged skills, enemy ranged attacks) - a plain DOM overlay like
+// floating(), not a canvas draw, so it doesn't need to hook into the
+// animate()/draw() loop to fade out on its own.
+function rangedTracer(x1,y1,x2,y2,color='#9be8ff'){
+ const r=canvas.getBoundingClientRect(),c=camera(),scale=r.width/visibleTiles;
+ const sx1=r.left+(x1-c.x+.5)*scale,sy1=r.top+(y1-c.y+.5)*scale;
+ const sx2=r.left+(x2-c.x+.5)*scale,sy2=r.top+(y2-c.y+.5)*scale;
+ const dx=sx2-sx1,dy=sy2-sy1,len=Math.hypot(dx,dy),angle=Math.atan2(dy,dx)*180/Math.PI;
+ const d=document.createElement('div');
+ d.className='rangedTracer';
+ d.style.left=`${sx1}px`;d.style.top=`${sy1}px`;d.style.width=`${len}px`;
+ d.style.setProperty('--tracer-color',color);
+ d.style.transform=`rotate(${angle}deg)`;
+ document.body.appendChild(d);
+ setTimeout(()=>d.remove(),260);
+}
 
 function setVisibleTiles(value){
  visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(value)||8));
@@ -1280,15 +1326,16 @@ function processClassSkillChoices(){
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
 
 function start(){
+ if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.vitality*4+stats.agility*2,maxMana=30+stats.intelligence*5+stats.wisdom*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
- addStarterPotions();
+ addStarterPotions(selectedClass);
  recomputeDerived();startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
@@ -1319,6 +1366,7 @@ const ROOM_TYPES={
  hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
  traproom:    {label:'Sala trampa',     size:[5,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
  shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
  deadend:     {label:'Callejón',        size:[3,5],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
  knot:        {label:'Nudo de pasillos',size:[3,5],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
  bossarena:   {label:'Arena del jefe',  size:[11,15],enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
@@ -1334,7 +1382,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[26,40], size:[4,11], corridors:'normal', loops:.15, pillars:1},
   enemies:{density:1, elite:1, tierBias:0, bossOnEven:true},
   rewards:{chests:1, rarity:0},
-  roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,deadend:4,knot:4}
+  roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,creator:2,deadend:4,knot:4}
  },
  superboss:{
   label:'Piso de superjefe', minFloor:8, cooldown:7, objective:'bossKill', announce:true,
@@ -1343,7 +1391,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[18,26], size:[5,12], corridors:'normal', loops:.1, pillars:1.2},
   enemies:{density:.5, elite:.8, tierBias:0, bossOnEven:false, superBoss:true},
   rewards:{chests:1.3, rarity:2},
-  roomWeights:{prep:16,shrine:10,filler:20,combat:16,guardpost:10,eliteden:8,vault:6,hub:6,deadend:4}
+  roomWeights:{prep:16,shrine:10,creator:2,filler:20,combat:16,guardpost:10,eliteden:8,vault:6,hub:6,deadend:4}
  },
  laberinto:{
   label:'Piso laberinto', minFloor:3, cooldown:3, objective:'stairs',
@@ -1352,7 +1400,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[40,56], size:[3,6], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
   enemies:{density:.55, elite:.8, tierBias:0, bossOnEven:false},
   rewards:{chests:1.15, rarity:1},
-  roomWeights:{knot:24,deadend:20,filler:18,hub:12,traproom:10,combat:8,vault:5,shrine:3}
+  roomWeights:{knot:24,deadend:20,filler:18,hub:12,traproom:10,combat:8,vault:5,shrine:3,creator:2}
  },
  horda:{
   label:'Piso horda', minFloor:4, cooldown:3, objective:'waves',
@@ -1370,7 +1418,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[16,24], size:[6,12], corridors:'normal', loops:.2, pillars:1.3},
   enemies:{density:.32, elite:6, tierBias:1, bossOnEven:false, miniboss:true},
   rewards:{chests:1.35, rarity:2},
-  roomWeights:{eliteden:30,combat:20,guardpost:14,filler:12,vault:8,hub:6,shrine:5,arena:5}
+  roomWeights:{eliteden:30,combat:20,guardpost:14,filler:12,vault:8,hub:6,shrine:5,creator:2,arena:5}
  },
  bossrush:{
   label:'Piso de asalto de jefes', minFloor:12, cooldown:9, objective:'bossKill', announce:true,
@@ -1379,7 +1427,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[12,18], size:[9,14], corridors:'arena', loops:.15, pillars:1.1},
   enemies:{density:.3, elite:1.5, tierBias:1, bossOnEven:false, bossRush:true},
   rewards:{chests:1.5, rarity:3},
-  roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,filler:12,vault:8,hub:6}
+  roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,creator:2,filler:12,vault:8,hub:6}
  },
  tesoro:{
   label:'Piso del tesoro', minFloor:2, cooldown:5, objective:'stairs',
@@ -1388,7 +1436,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[20,30], size:[4,9], corridors:'normal', loops:.25, pillars:.8},
   enemies:{density:.45, elite:1.2, tierBias:0, bossOnEven:false, greedAmbush:true},
   rewards:{chests:2.8, rarity:3},
-  roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3}
+  roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3,creator:2}
  },
  supervivencia:{
   label:'Piso de supervivencia', minFloor:6, cooldown:5, objective:'survive', announce:true,
@@ -1397,7 +1445,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[16,24], size:[7,13], corridors:'arena', loops:.35, pillars:1.5},
   enemies:{density:.9, elite:1.2, tierBias:0, bossOnEven:false, escalate:true},
   rewards:{chests:1.4, rarity:2},
-  roomWeights:{arena:26,combat:22,filler:16,hub:12,ambush:10,eliteden:8,shrine:6}
+  roomWeights:{arena:26,combat:22,filler:16,hub:12,ambush:10,eliteden:8,shrine:6,creator:2}
  },
  contrarreloj:{
   label:'Piso contrarreloj', minFloor:7, cooldown:5, objective:'timed', announce:true,
@@ -1406,7 +1454,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[22,32], size:[5,10], corridors:'normal', loops:.4, pillars:.9},
   enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
   rewards:{chests:1.3, rarity:2},
-  roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4}
+  roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4,creator:2}
  }
 };
 
@@ -1566,7 +1614,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
    for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
   }
-  if(T.altar&&Math.random()<.85){const pos=freeIn(r);altars.push({...pos,kind:pick(['heal','shield','power']),used:false})}
+  if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
    const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
@@ -2045,6 +2093,7 @@ function roomCellSet(room){
  const set=new Set();for(let y=room.y;y<room.y+room.h;y++)for(let x=room.x;x<room.x+room.w;x++)set.add(key(x,y));return set
 }
 function isSafeCell(x,y){return(game.safeRooms||[]).some(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)}
+function roomTypeAt(x,y){return (game.rooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)?.type||null}
 function safeRoomAt(x,y){return(game.safeRooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)}
 function campAtPlayer(){return(game.safeRooms||[]).find(r=>r.cx===game.player.x&&r.cy===game.player.y)}
 function restInSafeRoom(){
@@ -2279,6 +2328,8 @@ function attack(e,bonus=0,options={}){
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
  const crit=Math.random()<critChance();if(crit&&d>0)d=Math.round(d*1.75);
  if(game?.multiplayer){mpEnsureEnemyIds();sendMpAction(isRangedSkill(skillId)||weaponIsRanged(equippedWeapon())?'ranged_attack':'attack',{attackerType:'player',attackerId:game.pjId,targetType:'enemy',targetId:e.eid,visualAmount:d,result:crit?'critical':d?'hit':'evaded'})}
+ const origin=options.origin||game.player;
+ if(Math.max(Math.abs(origin.x-e.x),Math.abs(origin.y-e.y))>1)rangedTracer(origin.x,origin.y,e.x,e.y,crit?'#ffd75c':'#9be8ff');
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
@@ -2511,6 +2562,10 @@ function springTrap(t){
  log('Pisas una trampa oculta.','combat');
 }
 function useAltar(a){
+ // the Creator's Room altar is a reusable utility (dismantle items into
+ // shards), not a one-shot buff, so it never sets a.used and instead opens
+ // the disenchant picker
+ if(a.kind==='disenchant'){openDisenchantModal();return}
  a.used=true;
  if(game.multiplayer)sendMpAction('activate_altar',{at:{x:a.x,y:a.y}});
  const p=game.player;
@@ -2519,6 +2574,39 @@ function useAltar(a){
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
 }
+// ---- Creator's Room: dismantle items into tier shards ----------------------
+// Shards are keyed by item rarity (common/uncommon/rare/epic/legendary/
+// artifact) and stored on game.player.shards, persisted to user_pj's own
+// `shards` column (not inside pj_json) so they survive independently of the
+// rest of the character bundle - see persistShards()/api/user-pj.js.
+function shardsForItem(item){
+ const tierIdx=Math.max(0,LOOT_RARITY_ORDER.indexOf(item.rarity))+1,ilvl=Number(item.itemLevel||item.score||1);
+ return Math.max(1,Math.round(ilvl/4)+tierIdx);
+}
+function persistShards(){
+ if(!game?.pjId)return;
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({shards:game.player.shards||{}})}).catch(e=>console.error('No se pudieron guardar los shards',e));
+}
+function disenchantItem(item){
+ const idx=(game.inventory||[]).indexOf(item);if(idx<0)return;
+ const n=shardsForItem(item);
+ game.player.shards=game.player.shards||{};
+ game.player.shards[item.rarity]=(game.player.shards[item.rarity]||0)+n;
+ game.inventory.splice(idx,1);
+ log(`Deshecho ${item.name}: +${n} shard(s) de ${tierDefs[item.rarity]?.label||item.rarity}.`,'good');
+ persistShards();
+ renderDisenchantModal();
+ updateUI();
+}
+function renderDisenchantModal(){
+ const root=document.getElementById('disenchantList');if(!root)return;
+ const items=(game.inventory||[]).filter(i=>i.type!=='potion'&&i.slot!=='consumable');
+ root.innerHTML=items.length?items.map((it,i)=>`<div class="configItem"><span class="tierDot" style="background:${tierColor(it.rarity)}"></span><div><b>${it.name}</b><span class="small">${tierDefs[it.rarity]?.label||it.rarity} · iLvl ${it.itemLevel||1} · +${shardsForItem(it)} shard(s)</span><div class="configItemActions"><button type="button" data-disenchant-idx="${i}">Deshacer</button></div></div></div>`).join(''):'<p class="small">No tienes objetos de equipo para deshacer.</p>';
+ root.querySelectorAll('[data-disenchant-idx]').forEach(b=>b.onclick=()=>disenchantItem(items[Number(b.dataset.disenchantIdx)]));
+ const shards=game.player.shards||{},summary=document.getElementById('disenchantShardsSummary');
+ if(summary)summary.textContent='Shards actuales: '+(LOOT_RARITY_ORDER.map(t=>`${tierDefs[t]?.label||t} ${shards[t]||0}`).join(' · '));
+}
+function openDisenchantModal(){renderDisenchantModal();document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
 // Chest tier (1-5) climbs from 1 at floor 1 to 5 at the dungeon's last floor
 // - the same progression shape as enemy tiers (enemyTierWeightsForDepth) -
 // scaling proportionally regardless of how many floors the world has, with
@@ -3068,7 +3156,7 @@ const AP_COST_BY_EFFECT={
  stormTotem:12,trap:12,shadowStrike:11
 };
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
-function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode))}
+function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode||game.player?.combatMode==='ap'))}
 function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const base=30+Math.ceil((st.agility||0)/2);return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
 function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
 function apCan(kind,cost=AP_COSTS[kind]){
@@ -3097,7 +3185,7 @@ function playerFinished(){
  }
  busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
- setTimeout(()=>{enemyTurn();startPlayerAP();busy=false;updateUI();draw()},500);
+ setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
 async function playerFinishedMultiplayer(){
  busy=true;
@@ -3119,11 +3207,11 @@ async function playerFinishedMultiplayer(){
      sendMpAction('enemy_phase_start',{});
      classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
-     const phaseStart=(game.mpTurnActions||[]).length;
-     enemyTurn();
-     // local paced replay of the enemy phase (state is already final; visual only)
-     const enemyActs=(game.mpTurnActions||[]).slice(phaseStart).filter(a=>MP_ACTION_RENDERERS[a.kind]);
-     enemyActs.forEach((a,i)=>setTimeout(()=>{if(game?.multiplayer)try{MP_ACTION_RENDERERS[a.kind](a)}catch(e){}},i*140));
+     // enemyTurn() itself now paces each action with a real delay (PA mode,
+     // always on in multiplayer) - each sendMpAction call it makes goes out
+     // as it happens, so enemies act consecutively for every client instead
+     // of a synchronous burst followed by a separate fake local replay.
+     await new Promise(resolve=>enemyTurn(resolve));
      if(MP_DEBUG_LATENCY)mpDebugEvent('enemy_phase_duration',{ms:performance.now()-t0,enemyCount:(game.enemies||[]).length});
      sendMpAction('enemy_phase_end',{});
     }
@@ -3174,7 +3262,14 @@ async function mpCheckpoint(opts={}){
 }
 
 function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
-function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');return}
+// onDone is called once every enemy has finished acting. In AP mode (always
+// on in multiplayer, optional in single player) each individual action is
+// paced with a real setTimeout gap instead of resolving the whole phase in
+// one synchronous burst, so enemies visibly act one after another - single
+// player sees it live, and multiplayer's actual sendMpAction calls go out
+// spaced the same way, instead of all at once with a separate fake replay
+// tacked on afterward.
+function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
  // One decision per call; returns the AP cost (0 = nothing left to do this turn).
@@ -3192,6 +3287,7 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
   if(wRanged&&dist>1&&dist<=w.rangeMax&&hasLineOfSight(e,chosen)&&Math.random()<.85){
    const dmg=Math.max(1,Math.round(e.atk||e.damage||4));
    if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:chosen===game.player?dmg:Math.round(dmg*.9),result:w.kind==='magic'?'spell':'ranged'});
+   rangedTracer(e.x,e.y,chosen.x,chosen.y,w.kind==='magic'?'#be82ff':'#ffd27a');
    floating(w.kind==='magic'?'✦':'➶',e.x,e.y,w.kind==='magic'?'#be82ff':'#ffd27a');
    if(chosen===game.player)damagePlayer(dmg,w.kind==='magic'?'wisdom':'agility',`${e.name} dispara su ${w.name}`);
    else{const d2=Math.max(1,Math.round(dmg*.9));chosen.hp-=d2;floating(`-${d2}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} dispara a ${chosen.name} con su ${w.name}.`,'combat')}
@@ -3216,21 +3312,43 @@ function enemyTurn(){if(game.over)return;if((game.player.activePotions||[]).some
  
   return 0;
  };
- for(const e of [...game.enemies]){
-  if(game.over)return;
-  if(e.hp<=0)continue;
-  // AP mode: each enemy keeps acting (in order) until its pool runs out.
-  let ap=apModeOn()?20+Math.ceil(e.stats?.agility||0):AP_COSTS.attack;
-  while(ap>0){
-   const cost=enemySingleAction(e);
-   if(!cost)break;
-   ap-=cost;
-   if(!apModeOn())break; // legacy mode: exactly one action per enemy
-   if(game.over)return;
-   if(e.hp<=0||!game.enemies.includes(e))break;
+ const finishEnemyTurn=()=>{
+  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();onDone?.();return}
+  onDone?.();
+ };
+ if(!apModeOn()){
+  // classic mode: exactly one action per enemy, resolved synchronously
+  // (unchanged from before - no pacing requested for this mode)
+  for(const e of [...game.enemies]){
+   if(game.over)break;
+   if(e.hp<=0)continue;
+   enemySingleAction(e);
   }
+  finishEnemyTurn();
+  return;
  }
- if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();return}
+ // AP mode: each enemy keeps acting (in order) until its pool runs out, one
+ // action at a time, with a real delay between actions so the whole phase
+ // doesn't resolve in a single synchronous burst.
+ const queue=[...game.enemies];
+ const stepEnemy=(idx)=>{
+  if(game.over){finishEnemyTurn();return}
+  if(idx>=queue.length){finishEnemyTurn();return}
+  const e=queue[idx];
+  if(e.hp<=0){stepEnemy(idx+1);return}
+  let ap=20+Math.ceil(e.stats?.agility||0);
+  const stepAction=()=>{
+   if(game.over){finishEnemyTurn();return}
+   if(ap<=0||e.hp<=0||!game.enemies.includes(e)){stepEnemy(idx+1);return}
+   const cost=enemySingleAction(e);
+   draw();updateUI();
+   if(!cost){stepEnemy(idx+1);return}
+   ap-=cost;
+   setTimeout(stepAction,160);
+  };
+  stepAction();
+ };
+ stepEnemy(0);
 }
 
 let pendingTargetAction=null;
@@ -3553,8 +3671,9 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y)}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26')}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
+ for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
@@ -3644,7 +3763,7 @@ function showInspect(entity,clientX,clientY){
  else if(entity.type==='chest')h=`<h4>Cofre</h4><p>${entity.data.open?'Está vacío.':'Contiene botín aleatorio y puede ocultar habilidades.'}</p>`;
  else if(entity.type==='door')h=`<h4>Puerta ${entity.data.locked?'cerrada':'abierta'}</h4><p>${entity.data.locked?'Necesitas una llave o un efecto especial.':'Puedes atravesarla.'}</p>`;
  else if(entity.type==='safeRoom')h=`<h4>Sala segura</h4><p>Los enemigos no pueden entrar.</p><p>${entity.data.rested?'Ya has descansado aquí.':'Sitúate sobre el fuego central y pulsa DESCANSAR para recuperar toda la vida, stamina y maná.'}</p>`;
- else if(entity.type==='altar')h=`<h4>Altar</h4><p>${entity.data.used?'Ya lo has usado.':entity.data.kind==='heal'?'Restaura una parte importante de tu vida.':entity.data.kind==='shield'?'Te concede un escudo.':'Potencia tu daño y armadura durante varios turnos.'}</p>`;
+ else if(entity.type==='altar')h=`<h4>${entity.data.kind==='disenchant'?'Altar del Creador':'Altar'}</h4><p>${entity.data.kind==='disenchant'?'Deshace objetos de tu inventario a cambio de shards. Reutilizable.':entity.data.used?'Ya lo has usado.':entity.data.kind==='heal'?'Restaura una parte importante de tu vida.':entity.data.kind==='shield'?'Te concede un escudo.':'Potencia tu daño y armadura durante varios turnos.'}</p>`;
  else if(entity.type==='trap')h=`<h4>Trampa</h4><p>Un mecanismo oculto. Evita pisarlo.</p>`;
  else if(entity.type==='stairs')h=`<h4>Escaleras</h4><p>Conducen al siguiente nivel de la mazmorra.</p>`;
  else if(entity.type==='wall')h=`<h4>Muro</h4><p>Piedra antigua. No parece impresionada por tus credenciales.</p>`;
@@ -3885,18 +4004,22 @@ function drawChestSprite(x,y,c){
  chestSprite(x,y);
 }
 function trapSprite(x,y){
+ if(drawWorldObjectIcon('trap',x,y))return;
  ctx.strokeStyle='#ff9d4f';ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(x+16,y+16);ctx.lineTo(x+48,y+48);ctx.moveTo(x+48,y+16);ctx.lineTo(x+16,y+48);ctx.stroke();
  ctx.strokeStyle='rgba(255,157,79,.45)';ctx.strokeRect(x+10,y+10,44,44);
 }
 function altarSprite(x,y,a){
- const col=a.used?'#5b6472':a.kind==='heal'?'#8dffa8':a.kind==='shield'?'#9be8ff':'#ffd45f';
- px(x+18,y+40,28,14,a.used?'#2a2f3a':'#3a4356');
+ if(drawWorldObjectIcon('altar_'+a.kind,x,y))return;
+ const disenchant=a.kind==='disenchant';
+ const col=disenchant?'#4d7dff':a.used?'#5b6472':a.kind==='heal'?'#8dffa8':a.kind==='shield'?'#9be8ff':'#ffd45f';
+ const grayed=!disenchant&&a.used;
+ px(x+18,y+40,28,14,grayed?'#2a2f3a':disenchant?'#1c2d5c':'#3a4356');
  px(x+22,y+22,20,20,col);
- ctx.fillStyle=a.used?'#7d8595':'#0c0f16';ctx.font='12px monospace';ctx.textAlign='center';
- ctx.fillText(a.kind==='heal'?'✚':a.kind==='shield'?'▣':'✦',x+32,y+37);
+ ctx.fillStyle=grayed?'#7d8595':'#0c0f16';ctx.font='12px monospace';ctx.textAlign='center';
+ ctx.fillText(disenchant?'⚒':a.kind==='heal'?'✚':a.kind==='shield'?'▣':'✦',x+32,y+37);
 }
-function stairsSprite(x,y){for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
+function stairsSprite(x,y){if(drawWorldObjectIcon('stairsDown',x,y))return;for(let i=0;i<5;i++){px(x+8+i*5,y+10+i*9,48-i*10,7,shade('#9d8ba8',i*4));px(x+8+i*5,y+17+i*9,48-i*10,2,'#3b3142')}}
 function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?'#342a23':'#8b4e2c');if(!d.open){for(let i=0;i<3;i++)px(x+15,y+13+i*15,34,3,'#5b301f');px(x+17,y+10,3,48,'#b16d3c');px(x+44,y+10,3,48,'#5e321f');px(x+39,y+34,7,7,d.locked?'#ffd24f':'#271713')}}
 // Each floor's tileset can define its own door look (config_floor.doorTiles,
 // same icon editor as walls/floors); replaces the generic doorSprite whenever
@@ -3914,7 +4037,7 @@ function drawDoorTile(x,y,d){
  // tile, on top of whatever art was drawn (icon or procedural)
  if(d.locked)px(x+Math.floor((TILE-5)/2),y+6,5,TILE-12,'#ffd24f');
 } 
-function keySprite(x,y){px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
+function keySprite(x,y){if(drawWorldObjectIcon('key',x,y))return;px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
 
 function companionSprite(x,y,c){
  const shape=c.shape||'allyCompanion';
@@ -4410,6 +4533,7 @@ function currentSkillFormJson(){
 }
 function currentConfigClassJson(){
  const id=window.pendingNewClassId||selectedGameClassId(),base=resolveClassDef(id);
+ const starterWeaponSel=document.getElementById('configClassStarterWeapon');
  return {
   classId:id,
   name:document.getElementById('configClassName').value.trim()||id,
@@ -4417,7 +4541,9 @@ function currentConfigClassJson(){
   icon:window.currentConfigClassIconHex||'',
   stats:{strength:Number(configClassStr.value)||0,vitality:Number(configClassVit.value)||0,agility:Number(configClassAgi.value)||0,luck:Number(configClassLuck.value)||0,intelligence:Number(configClassInt.value)||0,wisdom:Number(configClassWis.value)||0},
   starterSkills:base?.skills||[],
-  resourceBias:base?.resourceBias||'stamina'
+  resourceBias:base?.resourceBias||'stamina',
+  starterWeaponType:starterWeaponSel?.value||'',
+  starterPotionIds:[...(window.currentClassStarterPotionIds||[])]
  };
 }
 async function saveConfigClass(item,skillsBag){
@@ -4458,6 +4584,40 @@ function loadSelectedConfigClass(){
  if(!window.currentConfigClassIconHex)drawClassPreview(configClassIconPreview,id);
  window.currentClassSkillsDraft=classSkillBagFor(id);
  renderClassSkillSelect();
+ renderConfigClassStarterGearOptions(row?.class_json?.starterWeaponType||'',row?.class_json?.starterPotionIds||[]);
+}
+// Populates the starter-weapon-type picker and the searchable starter-
+// potions checklist for the advanced class editor, selecting whatever this
+// class row already has (empty = fall back to the generic per-classId
+// table / default potions at character creation, see
+// makeStarterWeapon/addStarterPotions).
+function renderConfigClassStarterGearOptions(selectedWeaponType='',selectedPotionIds=[]){
+ const weaponSel=document.getElementById('configClassStarterWeapon');
+ if(weaponSel){
+  weaponSel.innerHTML='<option value="">— Automático (genérico) —</option>'+configWeaponTypes.map(t=>`<option value="${t}" ${t===selectedWeaponType?'selected':''}>${t}</option>`).join('');
+ }
+ window.currentClassStarterPotionIds=(selectedPotionIds||[]).map(String);
+ const search=document.getElementById('configClassPotionSearch');if(search)search.value='';
+ renderConfigClassPotionResults();
+}
+// Searchable checklist of every configured potion, mirroring the chest
+// item picker (renderChestItemResults) so starter potions are actually
+// visible/browsable instead of buried in a barely-usable <select multiple>.
+function renderConfigClassPotionResults(){
+ const root=document.getElementById('configClassPotionResults'),summary=document.getElementById('configClassPotionSummary');
+ if(!root)return;
+ window.currentClassStarterPotionIds=window.currentClassStarterPotionIds||[];
+ const q=(document.getElementById('configClassPotionSearch')?.value||'').trim().toLowerCase();
+ const pool=configItems.filter(r=>(r.item_json||r).type==='potion').map(r=>({id:String(r.id),name:(r.item_json||r).name||r.nombre||String(r.id)})).filter(x=>!q||x.name.toLowerCase().includes(q));
+ const selected=new Set(window.currentClassStarterPotionIds.map(String));
+ root.innerHTML=pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-class-potion-pick="${x.id}" ${selected.has(x.id)?'checked':''}><span>${x.name}</span></label>`).join(''):'<p class="small">No hay pociones configuradas todavía.</p>';
+ const updateSummary=()=>{if(summary)summary.textContent=window.currentClassStarterPotionIds.length?`${window.currentClassStarterPotionIds.length} poción(es) seleccionada(s) como equipo inicial.`:'Nada seleccionado: se usarán las 2 pociones de curación por defecto.'};
+ root.querySelectorAll('[data-class-potion-pick]').forEach(cb=>cb.onchange=()=>{
+  const id=cb.dataset.classPotionPick;
+  window.currentClassStarterPotionIds=cb.checked?[...window.currentClassStarterPotionIds,id]:window.currentClassStarterPotionIds.filter(x=>x!==id);
+  updateSummary();
+ });
+ updateSummary();
 }
 
 function renderConfigItemRow(i){const item=i.item_json||i,skills=Array.isArray(item.skillIds)?item.skillIds:[],isPotion=item.type==='potion',weaponType=item.slot==='weapon'&&(item.weaponType||item.weaponCategory)?` · ${item.weaponType||item.weaponCategory}`:'',weaponRange=item.slot==='weapon'?` · alcance ${weaponRangeBounds(item).min}-${weaponRangeBounds(item).max}`:'';return `<div class="configItem"><span class="tierDot" style="background:${tierColor(i.tier)}"></span><div><b>${i.nombre||'Sin nombre'}</b><span class="small">${isPotion?'Poción · ':''}${tierDefs[item.rarity||i.tier]?.label||item.rarity||i.tier} · iLvl ${item.itemLevel||i.ilvl||1}${weaponType}${weaponRange}${isPotion?` · ${potionEffectLabels[item.potionEffectType]||item.kind||'efecto'}`:''}${skills.length?` · ${skillNames(skills)}`:''}</span><div class="configItemActions"><button type="button" data-config-edit="${i.id}">Editar</button><button type="button" data-config-duplicate="${i.id}">Duplicar</button><button type="button" data-config-delete="${i.id}">Borrar</button></div></div></div>`}
@@ -4706,7 +4866,81 @@ function setupChestConfigMode(){
  };
  document.getElementById('newConfigChestBtn').onclick=resetConfigChestForm;
 }
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests')})}
+// ---- World object icons (config_world_object) ------------------------------
+// A fixed, known set of non-user-created world props (altars per kind, keys,
+// stairs down, traps, one marker per ROOM_TYPES entry) that can each get a
+// custom icon overriding their procedural pixel sprite. Unlike every other
+// config_* table, rows are upserted by object_key instead of by id, and this
+// hits /api/config-floor?kind=object instead of its own serverless function
+// - Vercel's Hobby plan caps a project at 12 Serverless Functions and this
+// repo was already at that limit (see api/config-floor.js).
+const WORLD_OBJECT_KINDS=[
+ {key:'altar_heal',label:'Altar: Curación'},
+ {key:'altar_shield',label:'Altar: Escudo'},
+ {key:'altar_power',label:'Altar: Poder'},
+ {key:'altar_disenchant',label:'Altar: Creador (deshacer objetos)'},
+ {key:'key',label:'Llave'},
+ {key:'stairsDown',label:'Escaleras de bajada'},
+ {key:'trap',label:'Trampa'},
+ ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
+];
+let configWorldObjects={};
+let configWorldObjectsLoaded=false;
+async function fetchConfigWorldObjects(){
+ try{
+  const r=await fetch('/api/config-floor?kind=object');const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
+  configWorldObjects=Object.fromEntries((Array.isArray(data)?data:[]).map(row=>[row.object_key,row.icon||'']));
+  configWorldObjectsLoaded=true;
+  renderConfigWorldObjectsList();
+  if(game)draw();
+ }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`}
+}
+function renderConfigWorldObjectsList(){
+ const root=document.getElementById('configWorldObjectsList');if(!root)return;
+ root.innerHTML=WORLD_OBJECT_KINDS.map(k=>{const hex=configWorldObjects[k.key];return `<div class="configItem"><span class="tierDot" style="background:${hex?'#8c72e8':'#4d395a'}"></span><div><b>${k.label}</b><span class="small">${hex?'Icono personalizado':'Sprite por defecto'}</span><div class="configItemActions"><button type="button" data-edit-world-object="${k.key}">Editar</button></div></div></div>`}).join('');
+ root.querySelectorAll('[data-edit-world-object]').forEach(b=>b.onclick=()=>loadWorldObjectForEdit(b.dataset.editWorldObject));
+}
+function loadWorldObjectForEdit(objectKey){
+ window.editingWorldObjectKey=objectKey;
+ const kind=WORLD_OBJECT_KINDS.find(k=>k.key===objectKey);
+ document.getElementById('configWorldObjectSelected').textContent=`Editando: ${kind?.label||objectKey}`;
+ window.currentConfigWorldObjectIconHex=configWorldObjects[objectKey]||'';
+ renderConfigIconPreview(window.currentConfigWorldObjectIconHex,'configWorldObjectIconPreview','configWorldObjectIconStatus');
+ document.getElementById('configWorldObjectIconStatus').textContent=window.currentConfigWorldObjectIconHex?'Icono personalizado activo.':'Sin icono: usará el sprite por defecto.';
+}
+function setupConfigWorldObjectsMode(){
+ setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto'});
+ renderConfigWorldObjectsList();
+ document.getElementById('saveConfigWorldObjectBtn').onclick=async()=>{
+  const st=document.getElementById('configWorldObjectStatus'),objectKey=window.editingWorldObjectKey;
+  if(!objectKey){st.textContent='Elige primero un objeto de la lista.';return}
+  st.textContent='Guardando icono...';
+  try{
+   const r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
+   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
+   configWorldObjects[objectKey]=window.currentConfigWorldObjectIconHex||'';
+   renderConfigWorldObjectsList();
+   st.textContent='Icono guardado.';
+   if(game)draw();
+  }catch(e){st.textContent=e.message}
+ };
+ document.getElementById('rollbackConfigWorldObjectBtn').onclick=()=>{
+  window.currentConfigWorldObjectIconHex='';
+  renderConfigIconPreview('','configWorldObjectIconPreview','configWorldObjectIconStatus');
+  document.getElementById('configWorldObjectIconStatus').textContent='Sin icono: usará el sprite por defecto.';
+ };
+}
+// Shared draw helper: if object_key has a custom icon, draws it and returns
+// true; otherwise the caller falls back to its own procedural sprite.
+function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
+ const hex=configWorldObjects[objectKey];if(!hex)return false;
+ let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
+ if(img.complete){ctx.drawImage(img,x+offset,y+offset,size,size);return true}
+ img.onload=()=>game&&draw();
+ return false
+}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
 function setupClassConfigMode(){
@@ -4722,6 +4956,7 @@ function setupClassConfigMode(){
   document.getElementById('configSummonIconStatus').textContent='Imagen reutilizada de la lista.';
  };
  populateSummonIconExistingList();
+ document.getElementById('configClassPotionSearch')?.addEventListener('input',renderConfigClassPotionResults);
  const effectSel=document.getElementById('configSkillEffect');
  if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
  configClassSelect.onchange=loadSelectedConfigClass;
@@ -4733,6 +4968,7 @@ function setupClassConfigMode(){
   configClassStr.value=configClassVit.value=configClassAgi.value=configClassLuck.value=configClassInt.value=configClassWis.value=2;
   window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');
   window.currentClassSkillsDraft={};renderClassSkillSelect();
+  renderConfigClassStarterGearOptions('',[]);
   configClassStatus.textContent=`Nueva clase "${name}" lista para configurar. Añade skills y pulsa Guardar clase.`;
  };
  document.getElementById('duplicateConfigClassBtn').onclick=()=>{
@@ -4746,6 +4982,8 @@ function setupClassConfigMode(){
   for(const [sid,s] of Object.entries(sourceBag))newBag[`${newId}_${sid}`]={...s,classId:newId};
   window.currentClassSkillsDraft=newBag;
   renderClassSkillSelect();
+  const baseRow=configClassRowForId(baseId);
+  renderConfigClassStarterGearOptions(baseRow?.class_json?.starterWeaponType||'',baseRow?.class_json?.starterPotionIds||[]);
   configClassStatus.textContent=`Copia de "${base.name}" lista como "${name}". Pulsa Guardar clase para crearla.`;
  };
  document.getElementById('newConfigSkillBtn').onclick=()=>{
@@ -4975,6 +5213,7 @@ async function resumeSession(sessionId){
   const floorNum=state.currentFloor||1;
   const overlay=state.floors?.[String(floorNum)]||null;
   game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
+ game.player.shards=pj.shards||game.player.shards||{};
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
   if(overlay&&overlay.map){
@@ -5004,6 +5243,9 @@ async function enterWorldWithCharacter(){
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
+ // shards live in their own user_pj column (not pj_json) so they survive
+ // independently of the rest of the character bundle - see persistShards()
+ game.player.shards=currentCharacter.shards||game.player.shards||{};
  generateFloor();
  try{
   const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:{turn:0,currentFloor:1,floors:{},players:{[currentCharacter.id]:{x:game.player.x,y:game.player.y,floor:1,facing:game.player.facing||1}}}})});
@@ -5671,6 +5913,8 @@ function renderRemoteAttack(action){
  const target=action.targetType==='player'?(String(action.targetId)===String(game.pjId)?game.player:mpFindOtherPlayer(action.targetId)):mpFindEnemy(action.targetId);
  if(!target)return;
  const crit=action.result==='critical';
+ const attacker=action.enemyId?mpFindEnemy(action.enemyId):action.attackerType==='player'?(String(action.attackerId)===String(game.pjId)?game.player:mpFindOtherPlayer(action.attackerId)):mpFindEnemy(action.attackerId);
+ if(attacker&&Math.max(Math.abs(attacker.x-target.x),Math.abs(attacker.y-target.y))>1)rangedTracer(attacker.x,attacker.y,target.x,target.y,crit?'#ffd75c':'#9be8ff');
  mpFx(action.result==='evaded'?'EVITA':`${crit?'CRIT ':''}${typeof action.visualAmount==='number'?'-'+action.visualAmount:''}`,target.x,target.y,action.result==='evaded'?'#70dc9b':crit?'#ffd75c':'#ff8888');
  effect('flash');
  draw();
@@ -6760,8 +7004,8 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
  startMultiHeartbeat();
 };
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
@@ -6817,6 +7061,8 @@ function renderClassChoices(){
 renderClassChoices();
 document.getElementById('skillModeHardcode')?.addEventListener('change',()=>{selectedSkillMode='hardcode';renderClassChoices()});
 document.getElementById('skillModeAdvanced')?.addEventListener('change',()=>{selectedSkillMode='advanced';renderClassChoices()});
+document.getElementById('combatModeClassic')?.addEventListener('change',()=>{selectedCombatMode='classic'});
+document.getElementById('combatModeAp')?.addEventListener('change',()=>{selectedCombatMode='ap'});
 
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabview').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
