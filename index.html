@@ -490,6 +490,8 @@
 <p class="small">Crea un objeto nuevo de cualquier slot y tier, con su stat principal a la base del tier. Coste: 40 shards del tier elegido.</p>
 <label>Slot <select id="craftCreateSlot"></select></label>
 <label>Tier <select id="craftCreateTier"></select></label>
+<label>Stat principal <select id="craftCreateStat"></select></label>
+<label id="craftCreateOffhandKindLabel" class="hidden">Tipo de mano izquierda <select id="craftCreateOffhandKind"><option value="shield">Escudo (% bloqueo)</option><option value="wand">Varita (regen. maná)</option><option value="dagger">Daga (regen. stamina)</option></select></label>
 <button type="button" id="craftCreateBtn">CREAR OBJETO</button>
 <div id="craftCreateStatus" class="small"></div>
 </div>
@@ -526,6 +528,7 @@
 <label>% vida enemiga <input id="worldLifePct" type="range" value="100" min="25" max="500" step="5"><span id="worldLifeValue">100%</span></label>
 <label>% XP recibida <input id="worldXpReceivedPct" type="range" value="100" min="25" max="500" step="5"><span id="worldXpReceivedValue">100%</span></label>
 <label>% nº de enemigos <input id="worldEnemyCountPct" type="range" value="100" min="25" max="500" step="5"><span id="worldEnemyCountValue">100%</span></label>
+<label>% loot de enemigos <input id="worldEnemyLootPct" type="range" value="100" min="25" max="500" step="5"><span id="worldEnemyLootValue">100%</span></label>
 </div>
 </details>
 <details class="worldSettingsSubAccordion">

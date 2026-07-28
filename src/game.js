@@ -1,7 +1,7 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const gameCanvasWrap=document.getElementById('gameStage');
 ctx.imageSmoothingEnabled=false;
-const TILE=64,COLS=70,ROWS=70,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
+const TILE=64,COLS=49,ROWS=49,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
 let visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(localStorage.getItem('visibleTiles')||8)||8));
 let CANVAS_SIZE=TILE*visibleTiles;
 function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE}
@@ -35,7 +35,7 @@ let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,floors:10,floorPlan:[],apMode:false};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:10,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff4d4d'}};
@@ -89,9 +89,62 @@ const rarities=[
  {name:'artifact',label:'Artefacto',weight:.6,color:'#ff4d4d',affixes:[6,7],passives:1,effects:1,mult:2.65,secondPassive:.75}
 ];
 const LOOT_RARITY_ORDER=rarities.map(r=>r.name);
+// Item tier (1-5) derived from rarity, used to scale guaranteed offhand
+// bonuses (shield block%, wand/dagger regen) - common=1 up to legendary=5,
+// artifact capped at 5 since only 5 tiers of bonus are defined.
+function rarityTierIndex(rarityName){return Math.max(1,Math.min(5,LOOT_RARITY_ORDER.indexOf(rarityName)+1))}
+function shieldBlockForRarity(rarityName){return rarityTierIndex(rarityName)*5}
+function offhandRegenForRarity(rarityName){return rarityTierIndex(rarityName)*3}
+// Left-hand (offhand) items now come in 3 kinds: shields (guaranteed block%),
+// wands (guaranteed mana regen) and daggers (guaranteed stamina regen, dual
+// wielded in the offhand alongside a main-hand weapon). Detected from an
+// explicit item.offhandKind when set (crafted items), else guessed from name/
+// weapon type text - same regex-based convention used elsewhere for wands.
+function detectOffhandKind(item){
+ if(item.offhandKind)return item.offhandKind;
+ const text=`${item.name||''} ${item.weaponType||''} ${item.weaponCategory||''}`;
+ if(/varita/i.test(text))return 'wand';
+ if(/daga/i.test(text))return 'dagger';
+ return 'shield';
+}
+function applyOffhandGuarantee(item){
+ if(!item||item.slot!=='offhand')return item;
+ item.offhandKind=detectOffhandKind(item);
+ item.affixes=item.affixes||[];
+ if(item.offhandKind==='shield'){
+  const v=shieldBlockForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='blockChance');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'blockChance',label:'Prob. de bloqueo',value:v,percent:true});
+ }else if(item.offhandKind==='wand'){
+  const v=offhandRegenForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='manaRegen');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'manaRegen',label:'Regeneración de maná',value:v,percent:false});
+ }else if(item.offhandKind==='dagger'){
+  const v=offhandRegenForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='staminaRegen');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'staminaRegen',label:'Regeneración de stamina',value:v,percent:false});
+ }
+ return item;
+}
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
-function lootProgressRatio(floor,totalFloors){return totalFloors<=1?1:(Math.max(1,Number(floor)||1)-1)/(Math.max(1,Number(totalFloors)||1)-1)}
+// Tier/rarity progression always paces itself against this many floors,
+// regardless of how many floors the current dungeon actually has - a 1-floor
+// (or otherwise short) dungeon must still feel like floor 1 of a normal run,
+// never jump straight to top-tier loot just because it's also the last floor.
+const PROGRESSION_REFERENCE_FLOORS=20;
+function lootProgressRatio(floor,totalFloors){
+ const span=Math.max(PROGRESSION_REFERENCE_FLOORS,Number(totalFloors)||1)-1;
+ return span<=0?0:Math.min(1,(Math.max(1,Number(floor)||1)-1)/span);
+}
+// Maps a real floor number back onto the PROGRESSION_REFERENCE_FLOORS scale -
+// used by any loot formula (potions, skills) that scales off "how far into
+// the run" the player is, so it paces the same way as item/chest tiers
+// regardless of how many floors the current dungeon actually has.
+function effectiveProgressFloor(floor,totalFloors){
+ return 1+lootProgressRatio(floor,totalFloors)*(PROGRESSION_REFERENCE_FLOORS-1);
+}
+function currentTotalFloors(){return selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
  const ratio=lootProgressRatio(floor,totalFloors),level=Number(playerLevel)||1;
  let idx=2;
@@ -506,9 +559,14 @@ function randomLootableSkill(){
  const pool=Object.entries(skillDefs).filter(([id,s])=>!known.has(id)&&(!s.classId||s.classId===game.player.cls||s.enemyUsable));
  if(!pool.length)return null;
  const level=game.player.level||1;
+ // Same floor-progress gate as items/chests (currentLootProgressionRow, paced
+ // against PROGRESSION_REFERENCE_FLOORS) - a rare+ skill shouldn't drop before
+ // its rarity is actually unlocked for this floor, short dungeon or not.
+ const lootRow=currentLootProgressionRow(game?.floor||1,level);
  const allowed=pool.filter(([id,s])=>{
   const r=s.rarity||'common';
   if(s.tier&&level<(s.tier===2?10:s.tier===3?30:1))return false;
+  if(!lootRarityAllowed(r,lootRow))return false;
   return r==='common'||r==='uncommon'||(r==='rare'&&level>=2)||(r==='epic'&&level>=4)||(r==='legendary'&&level>=7)
  });
  const source=allowed.length?allowed:pool;
@@ -879,13 +937,13 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
-function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):''})):[];return p}
+function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,enemyLootPct:document.getElementById('worldEnemyLootPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies();const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value=''});}
-function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue'],['worldEnemyLootPct','worldEnemyLootValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
 // Applies one buff/debuff effect entry to a numeric stat. The modern shape
 // is {mode:'add'|'mult',value} - a flat number added, or a straight
 // multiplier. A bare number is legacy shorthand for a percentage bonus
@@ -1056,7 +1114,8 @@ function pickThemedItem(slot){
 
 function encounterLootQuality(source='normal'){
  const d=difficultyScale(),event=game.activeEvent;
- let q=1+(game.floor-1)*.75+(game.player.level-1)*.22+(d.hp-1)*1.6;
+ const effFloor=effectiveProgressFloor(game.floor,currentTotalFloors());
+ let q=1+(effFloor-1)*.75+(game.player.level-1)*.22+(d.hp-1)*1.6;
  if(source==='elite')q+=1.2;
  if(source==='boss')q+=2.5;
  if(source==='eventBoss')q+=3.5;
@@ -1134,16 +1193,23 @@ function makeConfiguredLoot(level){if(!configItems.length)return null;const loot
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
  return configuredItemFromRow(row,lootRow,level)}
-function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
-function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
- const configured=makeConfiguredLoot(level);if(configured)return configured;
- const slot=pick(slots),rar=weightedRarity(level);
+function makeLoot(level,source='normal',forceRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+ if(forceRarityName){
+  if(configItems.length){
+   const matches=configItems.filter(row=>((row.item_json||row).rarity||row.tier||'common')===forceRarityName);
+   if(matches.length)return configuredItemFromRow(pick(matches),lootRow,level);
+  }
+ } else {
+  const configured=makeConfiguredLoot(level);if(configured)return configured;
+ }
+ const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level)):weightedRarity(level);
  const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
@@ -1155,10 +1221,15 @@ function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow
  const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
  const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
  const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- return{
+ // Offhand loot rolls one of 3 kinds - mostly shields, sometimes a wand or a
+ // dagger held in the left hand alongside the main-hand weapon.
+ const offhandKind=slot==='offhand'?pick(['shield','shield','shield','wand','dagger']):null;
+ const offhandNameCategory=offhandKind==='wand'?configWeaponTypeCategories.Varitas:offhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
+ const offhandName=offhandNameCategory?weaponNameForCategory(offhandNameCategory,weaponPowerColumn(itemLevel,rar,score)):null;
+ return applyOffhandGuarantee({
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
-  theme:themed?.theme||'fantasy',
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
+  theme:themed?.theme||'fantasy',offhandKind,
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
   armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
   flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
@@ -1167,7 +1238,7 @@ function makeLoot(level,source='normal'){const lootRow=currentLootProgressionRow
   rangeMax:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).max:null,
   affixes,passives,effects,
   desc:`Nivel ${itemLevel} · Poder ${score}`
- };
+ });
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
@@ -1355,22 +1426,25 @@ function expectedTierForFloor(floor,total=20){
  return r<.25?1:r<.55?2:r<.8?3:4;
 }
 
+// Room dimension ranges are ~30% smaller than the original design (map grid
+// shrunk from 70x70 to 49x49 to match) - room/chest/enemy counts below are
+// untouched, so the same content packs into a smaller floor.
 const ROOM_TYPES={
- filler:      {label:'Sala vacía',      size:[4,7],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
- combat:      {label:'Sala de combate', size:[6,10], enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
- ambush:      {label:'Emboscada',       size:[5,9],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
- guardpost:   {label:'Puesto de guardia',size:[5,8], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
- eliteden:    {label:'Guarida de élite',size:[7,11], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
- vault:       {label:'Cámara acorazada',size:[4,7],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
- arena:       {label:'Arena',           size:[10,15],enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
- hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
- traproom:    {label:'Sala trampa',     size:[5,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
- shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
- creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
- deadend:     {label:'Callejón',        size:[3,5],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
- knot:        {label:'Nudo de pasillos',size:[3,5],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
- bossarena:   {label:'Arena del jefe',  size:[11,15],enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
- prep:        {label:'Sala de preparación',size:[6,9],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+ filler:      {label:'Sala vacía',      size:[3,5],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ combat:      {label:'Sala de combate', size:[4,7],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
+ ambush:      {label:'Emboscada',       size:[4,6],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[4,6], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[5,8], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[3,5],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ arena:       {label:'Arena',           size:[7,11], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
+ hub:         {label:'Encrucijada',     size:[4,6],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[4,6],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ shrine:      {label:'Altar',           size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ creator:     {label:'Sala del Creador',size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
+ deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
+ knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
+ bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
@@ -1379,7 +1453,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso estándar', minFloor:1, cooldown:0, objective:'stairs',
   desc:'Mezcla equilibrada de salas. Referencia de dificultad.',
   weight:()=>100,
-  layout:{rooms:[26,40], size:[4,11], corridors:'normal', loops:.15, pillars:1},
+  layout:{rooms:[26,40], size:[3,8], corridors:'normal', loops:.15, pillars:1},
   enemies:{density:1, elite:1, tierBias:0, bossOnEven:true},
   rewards:{chests:1, rarity:0},
   roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,creator:2,deadend:4,knot:4}
@@ -1388,7 +1462,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de superjefe', minFloor:8, cooldown:7, objective:'bossKill', announce:true,
   desc:'Algo muy superior habita este piso. Prepárate antes de entrar en su sala.',
   weight:(f,t)=>f<8?0:6+Math.min(8,f/3),
-  layout:{rooms:[18,26], size:[5,12], corridors:'normal', loops:.1, pillars:1.2},
+  layout:{rooms:[18,26], size:[4,8], corridors:'normal', loops:.1, pillars:1.2},
   enemies:{density:.5, elite:.8, tierBias:0, bossOnEven:false, superBoss:true},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{prep:16,shrine:10,creator:2,filler:20,combat:16,guardpost:10,eliteden:8,vault:6,hub:6,deadend:4}
@@ -1397,7 +1471,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso laberinto', minFloor:3, cooldown:3, objective:'stairs',
   desc:'Pasillos, bifurcaciones y caminos falsos. La salida no está a la vista.',
   weight:(f)=>f<3?0:26,
-  layout:{rooms:[40,56], size:[3,6], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
+  layout:{rooms:[40,56], size:[3,4], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
   enemies:{density:.55, elite:.8, tierBias:0, bossOnEven:false},
   rewards:{chests:1.15, rarity:1},
   roomWeights:{knot:24,deadend:20,filler:18,hub:12,traproom:10,combat:8,vault:5,shrine:3,creator:2}
@@ -1406,7 +1480,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso horda', minFloor:4, cooldown:3, objective:'waves',
   desc:'Oleadas continuas en salas amplias. Sobrevive a todas para abrir la salida.',
   weight:(f)=>f<4?0:22,
-  layout:{rooms:[14,22], size:[8,15], corridors:'arena', loops:.3, pillars:1.4},
+  layout:{rooms:[14,22], size:[6,11], corridors:'arena', loops:.3, pillars:1.4},
   enemies:{density:1.35, elite:.7, tierBias:-1, bossOnEven:false, waves:true},
   rewards:{chests:1.2, rarity:1},
   roomWeights:{arena:34,combat:24,filler:14,hub:10,ambush:8,eliteden:5,vault:5}
@@ -1415,7 +1489,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de élites', minFloor:5, cooldown:4, objective:'stairs',
   desc:'Pocos enemigos, casi todos de gran poder. Combates tácticos.',
   weight:(f)=>f<5?0:16,
-  layout:{rooms:[16,24], size:[6,12], corridors:'normal', loops:.2, pillars:1.3},
+  layout:{rooms:[16,24], size:[4,8], corridors:'normal', loops:.2, pillars:1.3},
   enemies:{density:.32, elite:6, tierBias:1, bossOnEven:false, miniboss:true},
   rewards:{chests:1.35, rarity:2},
   roomWeights:{eliteden:30,combat:20,guardpost:14,filler:12,vault:8,hub:6,shrine:5,creator:2,arena:5}
@@ -1424,7 +1498,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de asalto de jefes', minFloor:12, cooldown:9, objective:'bossKill', announce:true,
   desc:'Arenas encadenadas. Cada una guarda un jefe; el último es el más fuerte.',
   weight:(f,t)=>f<12?0:5+Math.min(7,f/4),
-  layout:{rooms:[12,18], size:[9,14], corridors:'arena', loops:.15, pillars:1.1},
+  layout:{rooms:[12,18], size:[6,10], corridors:'arena', loops:.15, pillars:1.1},
   enemies:{density:.3, elite:1.5, tierBias:1, bossOnEven:false, bossRush:true},
   rewards:{chests:1.5, rarity:3},
   roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,creator:2,filler:12,vault:8,hub:6}
@@ -1433,7 +1507,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso del tesoro', minFloor:2, cooldown:5, objective:'stairs',
   desc:'Riqueza a la vista y poca resistencia... al principio.',
   weight:(f)=>f<2?0:12,
-  layout:{rooms:[20,30], size:[4,9], corridors:'normal', loops:.25, pillars:.8},
+  layout:{rooms:[20,30], size:[3,6], corridors:'normal', loops:.25, pillars:.8},
   enemies:{density:.45, elite:1.2, tierBias:0, bossOnEven:false, greedAmbush:true},
   rewards:{chests:2.8, rarity:3},
   roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3,creator:2}
@@ -1442,7 +1516,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de supervivencia', minFloor:6, cooldown:5, objective:'survive', announce:true,
   desc:'No hay salida todavía. Aguanta: la escalera aparecerá al resistir lo suficiente.',
   weight:(f)=>f<6?0:14,
-  layout:{rooms:[16,24], size:[7,13], corridors:'arena', loops:.35, pillars:1.5},
+  layout:{rooms:[16,24], size:[5,9], corridors:'arena', loops:.35, pillars:1.5},
   enemies:{density:.9, elite:1.2, tierBias:0, bossOnEven:false, escalate:true},
   rewards:{chests:1.4, rarity:2},
   roomWeights:{arena:26,combat:22,filler:16,hub:12,ambush:10,eliteden:8,shrine:6,creator:2}
@@ -1451,7 +1525,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso contrarreloj', minFloor:7, cooldown:5, objective:'timed', announce:true,
   desc:'El piso colapsa. Encuentra la salida antes de que se agote el tiempo.',
   weight:(f)=>f<7?0:13,
-  layout:{rooms:[22,32], size:[5,10], corridors:'normal', loops:.4, pillars:.9},
+  layout:{rooms:[22,32], size:[4,7], corridors:'normal', loops:.4, pillars:.9},
   enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4,creator:2}
@@ -1765,6 +1839,7 @@ function loadPrecomputedFloor(){
  scaleFloorForPlayerLevel();
  scaleFloorForParty();
  announceFloorArchetype();
+ grantFloorRewardPopup();
  log(`Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');
  updateUI();draw();rollFloorEvent();return true;
 }
@@ -2159,6 +2234,7 @@ function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=
  for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
  scaleFloorForParty();
  announceFloorArchetype();
+ grantFloorRewardPopup();
  updateUI();draw();rollFloorEvent();
 }
 
@@ -2170,6 +2246,25 @@ function announceFloorArchetype(){
  log(`${label}: ${game.floorArchetypeDesc||''} Familia dominante: ${game.enemyFamily}. ${(game.enemies||[]).length} enemigos.`,'story');
  log(`Objetivo: ${objectiveText(obj)}`,'story');
  if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
+}
+// Highest rarity name unlocked for this floor - used to grant a guaranteed
+// top-tier item when the player reaches a new floor (from floor 2 onward).
+function topRarityNameForFloor(floor){
+ return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(floor,currentTotalFloors(),game?.player?.level||1)];
+}
+// Grants one guaranteed item at the floor's best available rarity and shows
+// a dedicated floor-reward popup. Runs once per floor arrival, floor 2+.
+function grantFloorRewardPopup(){
+ if((game.floor||1)<2||!game?.player)return;
+ const item=makeLoot(game.player.level,'floorReward',topRarityNameForFloor(game.floor));
+ if(!item)return;
+ addInventoryItem(item);
+ const c=document.createElement('canvas');c.width=c.height=64;drawItemIcon(c,item);
+ storyTitle.textContent=`RECOMPENSA DE PISO ${game.floor}`;
+ storyBody.innerHTML=`<div class="narrative"><p>Al llegar al piso ${game.floor} recibes un objeto garantizado de la mejor calidad disponible en este piso.</p><div class="floorRewardItem" style="display:flex;align-items:center;gap:12px;margin:10px 0"><div class="floorRewardIcon"></div><div><b class="${item.rarity}">${item.name}</b><div class="small">${slotNames[item.slot]} · ${item.label} · Nv. ${item.itemLevel}</div><div class="itemScore">Poder ${item.score}</div></div></div><div class="startActions"><button id="continueFloorReward">Continuar</button></div></div>`;
+ storyBody.querySelector('.floorRewardIcon')?.appendChild(c);
+ storyOverlay.classList.remove('hidden');
+ setTimeout(()=>document.getElementById('continueFloorReward')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
 }
 function objectiveText(obj=game?.objective){
  if(!obj)return 'Encuentra la salida.';
@@ -2367,7 +2462,8 @@ function attack(e,bonus=0,options={}){
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
- if(Math.random()<Math.min(.65,.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
+ const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
+ if(Math.random()<killLootChance||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
@@ -2382,7 +2478,10 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
  if((p.activePotions||[]).some(b=>b.effect?.invulnerable)){mult=0;result='invulnerabilidad activa'}
- const d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ let d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ const blockChance=Math.min(.75,(p.derived?.blockChance||0)/100);
+ const blocked=mult>0&&d>0&&Math.random()<blockChance;
+ if(blocked){d=0;result=`${result} · bloqueado con el escudo`}
  let finalDamage=d;
  const lifeBuff=(p.activeBuffs||[]).find(b=>b.effects?.lifesteal);
  if(lifeBuff&&options?.skillId)healEntity(p,Math.max(1,Math.round(finalDamage*lifeBuff.effects.lifesteal)));
@@ -2678,8 +2777,31 @@ function craftShardTierForValue(v){
 }
 function hasShards(tier,n){return (game.player.shards?.[tier]||0)>=n}
 function spendShards(tier,n){game.player.shards=game.player.shards||{};game.player.shards[tier]=Math.max(0,(game.player.shards[tier]||0)-n);persistShards()}
+const SHARD_TRANSMUTE_COST=10;
+// Consumes 10 shards of one tier to produce 1 shard of the next tier up -
+// lets players work toward a target tier's crafting/upgrade cost instead of
+// being stuck disenchanting for the exact tier they need.
+function transmuteShards(tier){
+ const idx=LOOT_RARITY_ORDER.indexOf(tier),next=LOOT_RARITY_ORDER[idx+1];
+ if(!next){log('No hay un tier superior al que transmutar.','sys');return}
+ if(!hasShards(tier,SHARD_TRANSMUTE_COST)){log(`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${SHARD_TRANSMUTE_COST}).`,'sys');return}
+ spendShards(tier,SHARD_TRANSMUTE_COST);
+ game.player.shards=game.player.shards||{};game.player.shards[next]=(game.player.shards[next]||0)+1;
+ persistShards();
+ log(`Transmutados ${SHARD_TRANSMUTE_COST} shards de ${tierDefs[tier]?.label||tier} en 1 shard de ${tierDefs[next]?.label||next}.`,'good');
+ renderShardsTab();renderCraftShardsSummary();
+}
 function craftEligibleItems(){return (game.inventory||[]).filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
 function craftPrimaryStatForSlot(slot){const cands=primaryAffixes.filter(a=>a.slots.includes(slot));return cands.length?pick(cands):primaryAffixes[0]}
+// Stats a player may pick as a crafted item's primary bonus for a given slot:
+// the 6 core stats valid for that slot, plus armor when the slot allows it
+// (armor's bonus is doubled vs a normal stat at the same tier, see
+// craftSetPrimaryAffix).
+function craftStatOptionsForSlot(slot){
+ const primary=primaryAffixes.filter(a=>a.slots.includes(slot));
+ const armor=secondaryAffixes.find(a=>a.key==='armor'&&a.slots.includes(slot));
+ return armor?[...primary,armor]:primary;
+}
 // The item's "main bonus" is its first affix matching one of the 6 core
 // stats; crafted items always have exactly one, created up front.
 function craftMainAffix(item){
@@ -2690,10 +2812,12 @@ function craftMainAffix(item){
  return a;
 }
 function craftExtraStatCount(item){const main=craftMainAffix(item);return (item.affixes||[]).filter(a=>a!==main).length}
-function craftItemShell(slot,tier){
+function craftItemShell(slot,tier,offhandKind='shield'){
  const rar=rarities.find(r=>r.name===tier)||rarities[0];
  const itemLevel=Math.max(1,game.player.level||1);
- const iconShape=pick(itemIconShapes[slot]||['gem']);
+ const resolvedOffhandKind=slot==='offhand'?(offhandKind||'shield'):null;
+ const offhandCategory=resolvedOffhandKind==='wand'?configWeaponTypeCategories.Varitas:resolvedOffhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
+ const iconShape=resolvedOffhandKind==='dagger'?'blade':pick(itemIconShapes[slot]||['gem']);
  const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
  const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
  const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,40):null;
@@ -2701,11 +2825,12 @@ function craftItemShell(slot,tier){
  const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
  const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,40):null;
  const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):`${pick(itemBases[slot]||['Objeto'])} del Creador`;
+ const offhandName=offhandCategory?weaponNameForCategory(offhandCategory,weaponPowerColumn(itemLevel,rar,40)):null;
+ const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||`${pick(itemBases[slot]||['Objeto'])} del Creador`);
  const rangeBounds=slot==='weapon'?weaponRangeBounds({weaponCategory,name}):null;
  return {
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score:0,
-  name,theme:'crafted',
+  name,theme:'crafted',offhandKind:resolvedOffhandKind,
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
   armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
   flavor:'Objeto crafteado en el Altar del Creador.',
@@ -2717,7 +2842,14 @@ function craftItemShell(slot,tier){
   desc:`Objeto crafteado · ${rar.label}`
  };
 }
-function craftSetPrimaryAffix(item,tier){const def=craftPrimaryStatForSlot(item.slot);item.affixes=[{key:def.key,label:def.label,value:CRAFT_TIER_BONUS[tier],percent:false}]}
+// Armor's crafted bonus is double a normal stat's at the same tier (tier N ->
+// +N for a core stat, +2N for armor), per the tier-bonus table above.
+function craftSetPrimaryAffix(item,tier,statKey){
+ const options=craftStatOptionsForSlot(item.slot);
+ const def=(statKey&&options.find(o=>o.key===statKey))||craftPrimaryStatForSlot(item.slot);
+ const value=def.key==='armor'?CRAFT_TIER_BONUS[tier]*2:CRAFT_TIER_BONUS[tier];
+ item.affixes=[{key:def.key,label:def.label,value,percent:!!def.percent}];
+}
 // custom_items on user_pj mirrors every player-crafted item still in the
 // inventory/equipment, kept separate from the shared config_items catalog.
 function syncCustomItemsRecord(){game.player.customItems=[...(game.inventory||[]),...Object.values(game.player.equipment||{})].filter(i=>i&&i.custom)}
@@ -2736,8 +2868,13 @@ function setCraftStatus(id,msg){const el=document.getElementById(id);if(el)el.te
 function renderShardsTab(){
  const root=document.getElementById('shards');if(!root)return;
  const shards=game.player.shards||{};
- root.innerHTML=`<div class="configItemsList">${LOOT_RARITY_ORDER.map(t=>`<div class="configItem shardRow"><canvas class="shardTierIcon" width="28" height="28" data-shard-tier="${t}"></canvas><div><b style="color:${tierColor(t)}">${tierDefs[t]?.label||t}</b><span class="small">${shards[t]||0} shard(s)</span></div></div>`).join('')}</div><p class="small">Consigue shards deshaciendo objetos desde la Mochila. Se gastan en el Altar del Creador para crear y mejorar equipo.</p>`;
+ root.innerHTML=`<div class="configItemsList">${LOOT_RARITY_ORDER.map((t,i)=>{
+  const next=LOOT_RARITY_ORDER[i+1];
+  const canTransmute=next&&hasShards(t,SHARD_TRANSMUTE_COST);
+  return `<div class="configItem shardRow"><canvas class="shardTierIcon" width="28" height="28" data-shard-tier="${t}"></canvas><div><b style="color:${tierColor(t)}">${tierDefs[t]?.label||t}</b><span class="small">${shards[t]||0} shard(s)</span>${next?`<div class="configItemActions"><button type="button" data-transmute-tier="${t}" ${canTransmute?'':'disabled'}>Transmutar ${SHARD_TRANSMUTE_COST} → 1 ${tierDefs[next]?.label||next}</button></div>`:''}</div></div>`;
+ }).join('')}</div><p class="small">Consigue shards deshaciendo objetos desde la Mochila. Se gastan en el Altar del Creador para crear y mejorar equipo, o transmuta ${SHARD_TRANSMUTE_COST} de un tier en 1 del siguiente.</p>`;
  setTimeout(()=>document.querySelectorAll('#shards .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier)),0);
+ root.querySelectorAll('[data-transmute-tier]').forEach(b=>b.onclick=()=>transmuteShards(b.dataset.transmuteTier));
 }
 function renderCraftShardsSummary(){
  const el=document.getElementById('craftShardsSummary');if(!el)return;
@@ -2757,23 +2894,42 @@ function switchCraftTab(tab){
 }
 function populateCraftCreateSelectsOnce(){
  const slotSel=document.getElementById('craftCreateSlot');
- if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1'}
+ if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1';slotSel.addEventListener('change',()=>{renderCraftCreateStatOptions();renderCraftCreateOffhandKind()})}
  const tierSel=document.getElementById('craftCreateTier');
  if(tierSel&&!tierSel.dataset.filled){tierSel.innerHTML=LOOT_RARITY_ORDER.map(t=>`<option value="${t}">${tierDefs[t]?.label||t} (+${CRAFT_TIER_BONUS[t]}, coste ${CRAFT_CREATE_COST})</option>`).join('');tierSel.dataset.filled='1'}
+ renderCraftCreateStatOptions();renderCraftCreateOffhandKind();
+}
+// Stat picker options depend on the currently selected slot (armor only
+// offered where it applies); armor's bonus is flagged as double in its label.
+function renderCraftCreateStatOptions(){
+ const slotSel=document.getElementById('craftCreateSlot'),statSel=document.getElementById('craftCreateStat');
+ if(!slotSel||!statSel)return;
+ const options=craftStatOptionsForSlot(slotSel.value);
+ const prev=statSel.value;
+ statSel.innerHTML=options.map(o=>`<option value="${o.key}">${o.label}${o.key==='armor'?' (bonus x2)':''}</option>`).join('');
+ if(options.some(o=>o.key===prev))statSel.value=prev;
+}
+function renderCraftCreateOffhandKind(){
+ const slotSel=document.getElementById('craftCreateSlot'),label=document.getElementById('craftCreateOffhandKindLabel');
+ if(!slotSel||!label)return;
+ label.classList.toggle('hidden',slotSel.value!=='offhand');
 }
 function renderCraftCreatePane(){
  populateCraftCreateSelectsOnce();
  const btn=document.getElementById('craftCreateBtn');
  if(btn&&!btn.dataset.wired){btn.dataset.wired='1';btn.onclick=()=>{
   const slot=document.getElementById('craftCreateSlot').value,tier=document.getElementById('craftCreateTier').value;
-  craftCreateItem(slot,tier);
+  const statKey=document.getElementById('craftCreateStat')?.value;
+  const offhandKind=document.getElementById('craftCreateOffhandKind')?.value;
+  craftCreateItem(slot,tier,statKey,offhandKind);
  }}
 }
-function craftCreateItem(slot,tier){
+function craftCreateItem(slot,tier,statKey,offhandKind){
  if(!hasShards(tier,CRAFT_CREATE_COST)){setCraftStatus('craftCreateStatus',`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${CRAFT_CREATE_COST}).`);return}
  spendShards(tier,CRAFT_CREATE_COST);
- const item=craftItemShell(slot,tier);
- craftSetPrimaryAffix(item,tier);
+ const item=craftItemShell(slot,tier,offhandKind);
+ craftSetPrimaryAffix(item,tier,statKey);
+ applyOffhandGuarantee(item);
  game.inventory=game.inventory||[];game.inventory.push(item);
  log(`Creaste ${item.name} (${tierDefs[tier]?.label||tier}).`,'good');
  persistCustomItems();
@@ -2800,7 +2956,8 @@ function craftUpgradeItemTier(item,targetTier){
  spendShards(targetTier,CRAFT_TIER_UPGRADE_COST);
  item.rarity=targetTier;item.label=tierDefs[targetTier]?.label||targetTier;item.custom=true;
  const main=craftMainAffix(item);
- main.value=CRAFT_TIER_BONUS[targetTier];
+ main.value=main.key==='armor'?CRAFT_TIER_BONUS[targetTier]*2:CRAFT_TIER_BONUS[targetTier];
+ applyOffhandGuarantee(item);
  log(`${item.name} mejorado a ${item.label}.`,'good');
  persistCustomItems();renderCraftTierPane();renderCraftAddStatPane();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
@@ -2854,13 +3011,14 @@ function craftUpgradeStat(item,affix){
  log(`${item.name}: ${affix.label} sube a +${newValue}.`,'good');
  persistCustomItems();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
-// Chest tier (1-5) climbs from 1 at floor 1 to 5 at the dungeon's last floor
-// - the same progression shape as enemy tiers (enemyTierWeightsForDepth) -
-// scaling proportionally regardless of how many floors the world has, with
-// character level as a secondary nudge on top so a stronger character finds
-// slightly better chests early rather than the floor being the only factor.
+// Chest tier (1-5) climbs from 1 at floor 1 towards 5 over
+// PROGRESSION_REFERENCE_FLOORS floors of depth - paced against that fixed
+// reference rather than the dungeon's own floor count, so a short dungeon
+// (even a single floor) still starts at tier 1 instead of jumping straight to
+// its "last floor" tier; character level is a secondary nudge on top so a
+// stronger character finds slightly better chests early.
 function chestTierForFloor(floor,level,totalFloors=20){
- const depth=((floor||1)-1)/Math.max(1,(totalFloors||20)-1);
+ const depth=((floor||1)-1)/Math.max(1,Math.max(PROGRESSION_REFERENCE_FLOORS,totalFloors||20)-1);
  return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
 }
 // A whole floor giving out the exact same chest tier every time reads as
@@ -2920,7 +3078,7 @@ function chestLootItem(c){
 function openChest(c){
  c.opened=true;game.chestsOpened++;
  if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});
- const n=1+(Math.random()<.24?1:0);
+ const n=1+(Math.random()<.20?1:0);
  for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
  game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')
 }
@@ -2946,6 +3104,13 @@ function tickPlayerHots(){
  const p=game.player;if(!p?.hots?.length)return;
  for(const h of p.hots){healEntity(p,Math.max(1,Math.round(h.power)));h.turns--}
  p.hots=p.hots.filter(h=>h.turns>0);
+}
+// Applies derived.staminaRegen/manaRegen (base regen + item/race bonuses,
+// including the guaranteed wand/dagger offhand regen) once per turn.
+function tickPlayerRegen(){
+ const p=game.player;if(!p)return;
+ p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
+ p.mana=Math.min(p.maxMana,p.mana+Math.max(0,p.derived?.manaRegen||0));
 }
 function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
@@ -3430,7 +3595,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -3452,7 +3617,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      // enemyTurn() itself now paces each action with a real delay (PA mode,
      // always on in multiplayer) - each sendMpAction call it makes goes out
