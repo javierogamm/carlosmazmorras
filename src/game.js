@@ -137,6 +137,14 @@ function lootProgressRatio(floor,totalFloors){
  const span=Math.max(PROGRESSION_REFERENCE_FLOORS,Number(totalFloors)||1)-1;
  return span<=0?0:Math.min(1,(Math.max(1,Number(floor)||1)-1)/span);
 }
+// Maps a real floor number back onto the PROGRESSION_REFERENCE_FLOORS scale -
+// used by any loot formula (potions, skills) that scales off "how far into
+// the run" the player is, so it paces the same way as item/chest tiers
+// regardless of how many floors the current dungeon actually has.
+function effectiveProgressFloor(floor,totalFloors){
+ return 1+lootProgressRatio(floor,totalFloors)*(PROGRESSION_REFERENCE_FLOORS-1);
+}
+function currentTotalFloors(){return selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
  const ratio=lootProgressRatio(floor,totalFloors),level=Number(playerLevel)||1;
  let idx=2;
@@ -551,9 +559,14 @@ function randomLootableSkill(){
  const pool=Object.entries(skillDefs).filter(([id,s])=>!known.has(id)&&(!s.classId||s.classId===game.player.cls||s.enemyUsable));
  if(!pool.length)return null;
  const level=game.player.level||1;
+ // Same floor-progress gate as items/chests (currentLootProgressionRow, paced
+ // against PROGRESSION_REFERENCE_FLOORS) - a rare+ skill shouldn't drop before
+ // its rarity is actually unlocked for this floor, short dungeon or not.
+ const lootRow=currentLootProgressionRow(game?.floor||1,level);
  const allowed=pool.filter(([id,s])=>{
   const r=s.rarity||'common';
   if(s.tier&&level<(s.tier===2?10:s.tier===3?30:1))return false;
+  if(!lootRarityAllowed(r,lootRow))return false;
   return r==='common'||r==='uncommon'||(r==='rare'&&level>=2)||(r==='epic'&&level>=4)||(r==='legendary'&&level>=7)
  });
  const source=allowed.length?allowed:pool;
@@ -1101,7 +1114,8 @@ function pickThemedItem(slot){
 
 function encounterLootQuality(source='normal'){
  const d=difficultyScale(),event=game.activeEvent;
- let q=1+(game.floor-1)*.75+(game.player.level-1)*.22+(d.hp-1)*1.6;
+ const effFloor=effectiveProgressFloor(game.floor,currentTotalFloors());
+ let q=1+(effFloor-1)*.75+(game.player.level-1)*.22+(d.hp-1)*1.6;
  if(source==='elite')q+=1.2;
  if(source==='boss')q+=2.5;
  if(source==='eventBoss')q+=3.5;
@@ -2233,8 +2247,7 @@ function announceFloorArchetype(){
 // Highest rarity name unlocked for this floor - used to grant a guaranteed
 // top-tier item when the player reaches a new floor (from floor 2 onward).
 function topRarityNameForFloor(floor){
- const totalFloors=selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors;
- return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(floor,totalFloors,game?.player?.level||1)];
+ return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(floor,currentTotalFloors(),game?.player?.level||1)];
 }
 // Grants one guaranteed item at the floor's best available rarity and shows
 // a dedicated floor-reward popup. Runs once per floor arrival, floor 2+.
