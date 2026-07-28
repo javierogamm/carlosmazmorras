@@ -18,6 +18,22 @@ function shardsFromText(v){
  return {};
 }
 function withParsedShards(row){if(row&&typeof row==='object'&&'shards' in row)row.shards=shardsFromText(row.shards);return row}
+// Keeps `user.max_pj_lv`/`user.accumulated_points` in sync with the highest
+// character level and the summed pj_score (the same number shown in the
+// PUNTUACIONES/top-players table) across every character - alive or dead -
+// that belongs to this username. Best-effort: a failure here must never
+// block saving the character itself.
+async function updateUserAggregates(url,key,nombre){
+ if(!nombre)return;
+ try{
+  const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
+  const rows=await r.json();
+  if(!r.ok||!Array.isArray(rows))return;
+  const maxLevel=rows.reduce((m,row)=>Math.max(m,Number(row.pj_json?.player?.level)||1),0);
+  const totalScore=rows.reduce((s,row)=>s+(Number(row.pj_score)||0),0);
+  await fetch(`${url}/rest/v1/user?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:headers(key),body:JSON.stringify({max_pj_lv:maxLevel,accumulated_points:totalScore})});
+ }catch(e){/* ignore - aggregate refresh is best-effort */}
+}
 function cleanPj(body){
  return {
   nombre:body.nombre??null,
@@ -63,6 +79,7 @@ module.exports=async(req,res)=>{
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
+   await updateUserAggregates(url,key,row.nombre);
    return res.status(200).json(Array.isArray(data)?withParsedShards(data[0]):withParsedShards(data));
   }
   if(req.method==='PUT'){
@@ -80,6 +97,8 @@ module.exports=async(req,res)=>{
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
+   const savedRow=Array.isArray(data)?data[0]:data;
+   await updateUserAggregates(url,key,savedRow?.nombre);
    return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):withParsedShards(data));
   }
   res.setHeader('Allow','GET, POST, PUT');return res.status(405).json({error:'Método no permitido'});
