@@ -2734,9 +2734,9 @@ function useAltar(a){
 // artifact) and stored on game.player.shards, persisted to user_pj's own
 // `shards` column (not inside pj_json) so they survive independently of the
 // rest of the character bundle - see persistShards()/api/user-pj.js.
-// Every item, regardless of tier/iLvl, breaks down into 10-20 shards of its
+// Every item, regardless of tier/iLvl, breaks down into 3-5 shards of its
 // own tier - a flat random range, not scaled by item power.
-function shardsForItem(item){return 10+Math.floor(Math.random()*11)}
+function shardsForItem(item){return 3+Math.floor(Math.random()*3)}
 // Craft actions can fire several shard/item saves in quick succession
 // (disenchant, create, upgrade tier, add/upgrade stat); plain fire-and-forget
 // fetches can land out of order and let an earlier, stale write clobber a
@@ -2775,19 +2775,18 @@ function disenchantItem(item){
 }
 function confirmDisenchantItem(id){
  const item=(game.inventory||[]).find(i=>i.id===id);if(!item)return;
- if(!confirm(`¿Deshacer "${item.name}" a cambio de 10-20 shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
+ if(!confirm(`¿Deshacer "${item.name}" a cambio de 3-5 shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
  disenchantItem(item);
 }
 // Opens the Creator's Room altar for the 4 actual crafting actions (create,
 // upgrade tier, add stat, upgrade stat). Disenchanting lives outside it now.
-function openCraftModal(){switchCraftTab('create');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
+function openCraftModal(){switchCraftTab('tier');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
 
 // ---- Creator's Room: full craft system (create/upgrade tier/add stat/upgrade stat) ----
 // Bonus values by tier: common+1, uncommon+2, rare+4, epic+6, legendary+8, artifact+10.
 const CRAFT_TIER_BONUS={common:1,uncommon:2,rare:4,epic:6,legendary:8,artifact:10};
 // Extra (non-primary) stat slots an item can hold, on top of its main bonus, by tier.
 const CRAFT_EXTRA_STAT_SLOTS={common:0,uncommon:0,rare:1,epic:1,legendary:2,artifact:3};
-const CRAFT_CREATE_COST=40;
 const CRAFT_TIER_UPGRADE_COST=20;
 const CRAFT_ADD_STAT_COST=20;
 const CRAFT_STAT_UPGRADE_COST=20;
@@ -2822,15 +2821,6 @@ function transmuteShards(tier){
 // equipped - equipped items live in game.player.equipment, not game.inventory.
 function craftEligibleItems(){return [...(game.inventory||[]),...Object.values(game.player?.equipment||{})].filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
 function craftPrimaryStatForSlot(slot){const cands=primaryAffixes.filter(a=>a.slots.includes(slot));return cands.length?pick(cands):primaryAffixes[0]}
-// Stats a player may pick as a crafted item's primary bonus for a given slot:
-// the 6 core stats valid for that slot, plus armor when the slot allows it
-// (armor's bonus is doubled vs a normal stat at the same tier, see
-// craftSetPrimaryAffix).
-function craftStatOptionsForSlot(slot){
- const primary=primaryAffixes.filter(a=>a.slots.includes(slot));
- const armor=secondaryAffixes.find(a=>a.key==='armor'&&a.slots.includes(slot));
- return armor?[...primary,armor]:primary;
-}
 // The item's "main bonus" is its first affix matching one of the 6 core
 // stats; crafted items always have exactly one, created up front.
 function craftMainAffix(item){
@@ -2841,52 +2831,6 @@ function craftMainAffix(item){
  return a;
 }
 function craftExtraStatCount(item){const main=craftMainAffix(item);return (item.affixes||[]).filter(a=>a!==main).length}
-function craftItemShell(slot,tier,offhandKind='shield',iconChoice=null){
- const rar=rarities.find(r=>r.name===tier)||rarities[0];
- const itemLevel=Math.max(1,game.player.level||1);
- const resolvedOffhandKind=slot==='offhand'?(offhandKind||'shield'):null;
- const offhandCategory=resolvedOffhandKind==='wand'?configWeaponTypeCategories.Varitas:resolvedOffhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
- let iconShape=resolvedOffhandKind==='dagger'?'blade':pick(itemIconShapes[slot]||['gem']);
- let weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
- let weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
- let weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,40):null;
- let armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
- let armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,40):null;
- let chosenIconHex=null;
- // Player picked a specific existing icon from the grid instead of the
- // random weapon/armor row+column or shape - override whichever fields the
- // rest of this function otherwise derives randomly.
- if(iconChoice?.kind==='weaponRow'&&slot==='weapon'){weaponIconRow=iconChoice.row;weaponIconCol=iconChoice.col;weaponCategory=weaponRows[weaponIconRow]?.category||weaponCategory}
- else if(iconChoice?.kind==='armorRow'&&slot==='chest'){armorIconRow=iconChoice.row;armorIconCol=iconChoice.col}
- else if(iconChoice?.kind==='configIcon'){chosenIconHex=iconChoice.hex}
- else if(iconChoice?.kind==='shape'){iconShape=iconChoice.shape}
- const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
- const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- const offhandName=offhandCategory?weaponNameForCategory(offhandCategory,weaponPowerColumn(itemLevel,rar,40)):null;
- const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||`${pick(itemBases[slot]||['Objeto'])} del Creador`);
- const rangeBounds=slot==='weapon'?weaponRangeBounds({weaponCategory,name}):null;
- return {
-  id:crypto.randomUUID(),slot,iconShape,icon:chosenIconHex||'',rarity:rar.name,label:rar.label,itemLevel,score:0,
-  name,theme:'crafted',offhandKind:resolvedOffhandKind,
-  weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
-  armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
-  flavor:'Objeto crafteado en el Altar del Creador.',
-  defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):null,
-  rangeMin:rangeBounds?rangeBounds.min:null,rangeMax:rangeBounds?rangeBounds.max:null,
-  damageDice:slot==='weapon'?'1d6':null,
-  affixes:[],passives:[],effects:[],
-  custom:true,
-  desc:`Objeto crafteado · ${rar.label}`
- };
-}
-// Armor's crafted bonus is double a normal stat's at the same tier (tier N ->
-// +N for a core stat, +2N for armor), per the tier-bonus table above.
-function craftSetPrimaryAffix(item,tier,statKey){
- const options=craftStatOptionsForSlot(item.slot);
- const def=(statKey&&options.find(o=>o.key===statKey))||craftPrimaryStatForSlot(item.slot);
- const value=def.key==='armor'?CRAFT_TIER_BONUS[tier]*2:CRAFT_TIER_BONUS[tier];
- item.affixes=[{key:def.key,label:def.label,value,percent:!!def.percent}];
-}
 // custom_items on user_pj mirrors every player-crafted item still in the
 // inventory/equipment, kept separate from the shared config_items catalog.
 function syncCustomItemsRecord(){game.player.customItems=[...(game.inventory||[]),...Object.values(game.player.equipment||{})].filter(i=>i&&i.custom)}
@@ -2921,106 +2865,12 @@ function renderCraftShardsSummary(){
 function switchCraftTab(tab){
  document.querySelectorAll('.craftTabBtn').forEach(b=>b.classList.toggle('active',b.dataset.craftTab===tab));
  document.querySelectorAll('.craftPane').forEach(p=>p.classList.add('hidden'));
- const map={create:'craftPaneCreate',tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
+ const map={tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
  document.getElementById(map[tab])?.classList.remove('hidden');
- if(tab==='create')renderCraftCreatePane();
- else if(tab==='tier')renderCraftTierPane();
+ if(tab==='tier')renderCraftTierPane();
  else if(tab==='addstat')renderCraftAddStatPane();
  else if(tab==='upgradestat')renderCraftUpgradeStatPane();
  renderCraftShardsSummary();
-}
-function populateCraftCreateSelectsOnce(){
- const slotSel=document.getElementById('craftCreateSlot');
- if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1';slotSel.addEventListener('change',()=>{renderCraftCreateStatOptions();renderCraftCreateOffhandKind();renderCraftCreateIconGrid()})}
- const tierSel=document.getElementById('craftCreateTier');
- if(tierSel&&!tierSel.dataset.filled){tierSel.innerHTML=LOOT_RARITY_ORDER.map(t=>`<option value="${t}">${tierDefs[t]?.label||t} (+${CRAFT_TIER_BONUS[t]}, coste ${CRAFT_CREATE_COST})</option>`).join('');tierSel.dataset.filled='1';tierSel.addEventListener('change',renderCraftCreateIconGrid)}
- renderCraftCreateStatOptions();renderCraftCreateOffhandKind();renderCraftCreateIconGrid();
-}
-// Candidate icons for the create-item grid, scoped to the slot+tier being
-// crafted: weapon/armor slots offer every row+column of that rarity's power
-// band (same band weaponCategoryForLoot/armorRowForLoot roll from); other
-// slots offer every admin-configured icon for that slot (same tier
-// preferred, any tier as fallback) plus the built-in procedural shapes.
-function craftIconCandidates(slot,tier){
- const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===tier));
- const level=game?.player?.level||1;
- const levelCap=level>=45?19:level>=35?18:level>=25?17:level>=18?16:level>=12?15:level>=7?12:8;
- const minRow=rarityIndex>=4?17:rarityIndex>=3?12:rarityIndex>=2?6:rarityIndex>=1?3:0;
- const rawMaxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?11:8;
- const maxRow=Math.max(minRow,Math.min(rawMaxRow,levelCap));
- const cands=[];
- if(slot==='weapon'){
-  for(let row=minRow;row<=maxRow;row++)for(let col=0;col<WEAPON_ICON_COLUMNS;col++)cands.push({kind:'weaponRow',row,col});
-  return cands;
- }
- if(slot==='chest'){
-  for(let row=minRow;row<=maxRow;row++)for(let col=0;col<ARMOR_ICON_COLUMNS;col++)cands.push({kind:'armorRow',row,col});
-  return cands;
- }
- const configHexes=configItems.filter(r=>{const it=r.item_json||r;return (it.slot||r.slot)===slot&&!!(it.icon||r.icon)}).map(r=>{const it=r.item_json||r;return {kind:'configIcon',hex:it.icon||r.icon,rarity:it.rarity||r.tier}});
- const sameTier=configHexes.filter(c=>c.rarity===tier);
- cands.push(...(sameTier.length?sameTier:configHexes));
- for(const shape of itemIconShapes[slot]||['gem'])cands.push({kind:'shape',shape});
- return cands;
-}
-function craftIconThumbItem(cand,tier){
- const rar=rarities.find(r=>r.name===tier)||rarities[0];
- if(cand.kind==='weaponRow')return {slot:'weapon',rarity:rar.name,weaponIconRow:cand.row,weaponIconCol:cand.col,weaponCategory:weaponRows[cand.row]?.category};
- if(cand.kind==='armorRow')return {slot:'chest',rarity:rar.name,armorIconRow:cand.row,armorIconCol:cand.col,armorCategory:armorRows[cand.row]?.category};
- if(cand.kind==='configIcon')return {slot:'trinket1',rarity:rar.name,icon:cand.hex};
- return {slot:'trinket1',rarity:rar.name,iconShape:cand.shape};
-}
-function renderCraftCreateIconGrid(){
- const root=document.getElementById('craftCreateIconGrid');if(!root)return;
- const slot=document.getElementById('craftCreateSlot')?.value,tier=document.getElementById('craftCreateTier')?.value;
- window.currentCraftIconChoice=null;
- if(!slot||!tier){root.innerHTML='';return}
- const cands=craftIconCandidates(slot,tier).slice(0,240);
- root.innerHTML=cands.length?cands.map((c,i)=>`<button type="button" class="craftIconOption" data-craft-icon-idx="${i}"><canvas width="40" height="40" data-craft-icon-thumb="${i}"></canvas></button>`).join(''):'<p class="small">No hay iconos disponibles para este slot/tier: se usará uno aleatorio.</p>';
- setTimeout(()=>root.querySelectorAll('[data-craft-icon-thumb]').forEach(c=>drawItemIcon(c,craftIconThumbItem(cands[Number(c.dataset.craftIconThumb)],tier))),0);
- root.querySelectorAll('[data-craft-icon-idx]').forEach(btn=>btn.onclick=()=>{
-  root.querySelectorAll('.craftIconOption').forEach(b=>b.classList.remove('selected'));
-  btn.classList.add('selected');
-  window.currentCraftIconChoice=cands[Number(btn.dataset.craftIconIdx)];
- });
-}
-// Stat picker options depend on the currently selected slot (armor only
-// offered where it applies); armor's bonus is flagged as double in its label.
-function renderCraftCreateStatOptions(){
- const slotSel=document.getElementById('craftCreateSlot'),statSel=document.getElementById('craftCreateStat');
- if(!slotSel||!statSel)return;
- const options=craftStatOptionsForSlot(slotSel.value);
- const prev=statSel.value;
- statSel.innerHTML=options.map(o=>`<option value="${o.key}">${o.label}${o.key==='armor'?' (bonus x2)':''}</option>`).join('');
- if(options.some(o=>o.key===prev))statSel.value=prev;
-}
-function renderCraftCreateOffhandKind(){
- const slotSel=document.getElementById('craftCreateSlot'),label=document.getElementById('craftCreateOffhandKindLabel');
- if(!slotSel||!label)return;
- label.classList.toggle('hidden',slotSel.value!=='offhand');
-}
-function renderCraftCreatePane(){
- populateCraftCreateSelectsOnce();
- const btn=document.getElementById('craftCreateBtn');
- if(btn&&!btn.dataset.wired){btn.dataset.wired='1';btn.onclick=()=>{
-  const slot=document.getElementById('craftCreateSlot').value,tier=document.getElementById('craftCreateTier').value;
-  const statKey=document.getElementById('craftCreateStat')?.value;
-  const offhandKind=document.getElementById('craftCreateOffhandKind')?.value;
-  craftCreateItem(slot,tier,statKey,offhandKind,window.currentCraftIconChoice);
- }}
-}
-function craftCreateItem(slot,tier,statKey,offhandKind,iconChoice){
- if(!hasShards(tier,CRAFT_CREATE_COST)){setCraftStatus('craftCreateStatus',`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${CRAFT_CREATE_COST}).`);return}
- spendShards(tier,CRAFT_CREATE_COST);
- const item=craftItemShell(slot,tier,offhandKind,iconChoice);
- craftSetPrimaryAffix(item,tier,statKey);
- applyOffhandGuarantee(item);
- game.inventory=game.inventory||[];game.inventory.push(item);
- log(`Creaste ${item.name} (${tierDefs[tier]?.label||tier}).`,'good');
- persistCustomItems();
- setCraftStatus('craftCreateStatus',`¡Creado! ${item.name}`);
- renderCraftTierPane();renderCraftAddStatPane();renderCraftUpgradeStatPane();renderCraftShardsSummary();
- updateUI();
 }
 function renderCraftTierPane(){
  const root=document.getElementById('craftTierList');if(!root)return;
@@ -4233,7 +4083,10 @@ function updateObjectiveHud(){
 function updateUI(){
  if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
- inventory.innerHTML=game.inventory.length?game.inventory.map(i=>{const canDisenchant=i.type!=='potion'&&i.slot!=='consumable';return `<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 10-20 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
+ inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ const potionsEl=document.getElementById('potions');
+ if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">No llevas pociones.</p>';
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
