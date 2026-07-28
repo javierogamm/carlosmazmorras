@@ -5666,8 +5666,8 @@ async function openSessionContinue(){
    let ids=[];try{ids=JSON.parse(s.players_ID||'[]')}catch(e){}
    const owner=chars.find(c=>ids.map(String).includes(String(c.id)));
    const world=worlds.find(w=>String(w.id)===String(s.dungeon_world_id));
-   const floor=s.dungeon_status?.currentFloor||1,turn=s.dungeon_status?.turn||0;
-   return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${owner?.pj_name||'Sesión'}</b><span>${world?.world_name||('Mundo #'+s.dungeon_world_id)} · Piso ${floor}</span><small>Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button>`;
+   const floor=s.dungeon_status?.currentFloor||1,turn=s.dungeon_status?.turn||0,totalFloors=world?.world_json?.params?.floors||world?.world_json?.floors?.length||'?';
+   return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${world?.world_name||('Mundo #'+s.dungeon_world_id)}</b><span>${owner?.pj_name||'Sesión'} · ${totalFloors} pisos</span><small>Piso actual ${floor} · Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button>`;
   }).join('');
   list.querySelectorAll('[data-session-id]').forEach(btn=>btn.onclick=()=>resumeSession(btn.dataset.sessionId));
  }catch(e){status.textContent=`Error: ${e.message}`}
