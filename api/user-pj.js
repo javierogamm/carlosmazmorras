@@ -29,7 +29,7 @@ async function updateUserAggregates(url,key,nombre){
   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
   const rows=await r.json();
   if(!r.ok||!Array.isArray(rows))return;
-  const maxLevel=rows.reduce((m,row)=>Math.max(m,Number(row.pj_json?.player?.level)||1),1);
+  const maxLevel=rows.reduce((m,row)=>Math.max(m,Number(row.pj_json?.player?.level)||1),0);
   const totalScore=rows.reduce((s,row)=>s+(Number(row.pj_score)||0),0);
   await fetch(`${url}/rest/v1/user?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:headers(key),body:JSON.stringify({max_pj_lv:maxLevel,accumulated_points:totalScore})});
  }catch(e){/* ignore - aggregate refresh is best-effort */}

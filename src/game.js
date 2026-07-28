@@ -2592,6 +2592,7 @@ function scaleFloorForPlayerLevel(){
 }
 function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
+ const startLevel=p.level;
  v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
  while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
   p.xp-=p.nextXp;p.level++;
@@ -2605,6 +2606,36 @@ function grantXp(v){
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
+ // Levelling up changes both this character's score (used in accumulated_points)
+ // and possibly the account's max_pj_lv gate threshold - push the save right
+ // away instead of waiting for the next turn-end persist, so unlocks react
+ // immediately rather than a move/action later.
+ if(p.level>startLevel&&game.pjId){
+  const bundle=characterBundleFromGame();
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:p.name,last_use:new Date().toISOString()})})
+   .then(()=>refreshCurrentUserProgress())
+   .catch(e=>console.error('No se pudo guardar el personaje tras subir de nivel',e));
+ }
+}
+// Recomputes window.currentUser.max_pj_lv/accumulated_points from this
+// user's characters (same source the server aggregates from) and refreshes
+// the login stats banner and localStorage copy in place - keeps race/class
+// gate checks correct within the same session (login, new character, level
+// up) without forcing a re-login.
+async function refreshCurrentUserProgress(){
+ if(!window.currentUser?.nombre)return;
+ try{
+  const r=await fetch(`/api/user-pj?nombre=${encodeURIComponent(window.currentUser.nombre)}`);
+  const chars=await r.json();
+  if(!r.ok||!Array.isArray(chars))return;
+  const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.pj_json?.player?.level)||1),0);
+  const totalScore=chars.reduce((s,c)=>s+(Number(c.pj_score)||0),0);
+  window.currentUser.max_pj_lv=maxLevel;
+  window.currentUser.accumulated_points=totalScore;
+  try{localStorage.setItem('mazmorraUser',JSON.stringify(window.currentUser))}catch(e){}
+  const statsEl=document.getElementById('userProgressStats');
+  if(statsEl)statsEl.textContent=`Nivel máximo de PJ: ${maxLevel} · PUNTUACIÓN: ${Math.round(totalScore)}`;
+ }catch(e){/* best-effort refresh, ignore network errors */}
 }
 function gainXp(v,id){
  // multiplayer: experience from a kill is split and shared with every party member
@@ -5698,6 +5729,7 @@ async function finishCharacterCreation(){
   const data=await r.json();
   if(!r.ok)throw new Error(data.error||'No se pudo guardar el personaje');
   banner(`PERSONAJE ${bundle.player.name} CREADO`);
+  refreshCurrentUserProgress();
  }catch(e){alert('Error al guardar el personaje: '+e.message)}
  game=null;
  startOverlay.classList.add('hidden');
