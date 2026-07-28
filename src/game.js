@@ -128,7 +128,15 @@ function applyOffhandGuarantee(item){
 }
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
-function lootProgressRatio(floor,totalFloors){return totalFloors<=1?1:(Math.max(1,Number(floor)||1)-1)/(Math.max(1,Number(totalFloors)||1)-1)}
+// Tier/rarity progression always paces itself against this many floors,
+// regardless of how many floors the current dungeon actually has - a 1-floor
+// (or otherwise short) dungeon must still feel like floor 1 of a normal run,
+// never jump straight to top-tier loot just because it's also the last floor.
+const PROGRESSION_REFERENCE_FLOORS=20;
+function lootProgressRatio(floor,totalFloors){
+ const span=Math.max(PROGRESSION_REFERENCE_FLOORS,Number(totalFloors)||1)-1;
+ return span<=0?0:Math.min(1,(Math.max(1,Number(floor)||1)-1)/span);
+}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
  const ratio=lootProgressRatio(floor,totalFloors),level=Number(playerLevel)||1;
  let idx=2;
@@ -2753,6 +2761,20 @@ function craftShardTierForValue(v){
 }
 function hasShards(tier,n){return (game.player.shards?.[tier]||0)>=n}
 function spendShards(tier,n){game.player.shards=game.player.shards||{};game.player.shards[tier]=Math.max(0,(game.player.shards[tier]||0)-n);persistShards()}
+const SHARD_TRANSMUTE_COST=10;
+// Consumes 10 shards of one tier to produce 1 shard of the next tier up -
+// lets players work toward a target tier's crafting/upgrade cost instead of
+// being stuck disenchanting for the exact tier they need.
+function transmuteShards(tier){
+ const idx=LOOT_RARITY_ORDER.indexOf(tier),next=LOOT_RARITY_ORDER[idx+1];
+ if(!next){log('No hay un tier superior al que transmutar.','sys');return}
+ if(!hasShards(tier,SHARD_TRANSMUTE_COST)){log(`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${SHARD_TRANSMUTE_COST}).`,'sys');return}
+ spendShards(tier,SHARD_TRANSMUTE_COST);
+ game.player.shards=game.player.shards||{};game.player.shards[next]=(game.player.shards[next]||0)+1;
+ persistShards();
+ log(`Transmutados ${SHARD_TRANSMUTE_COST} shards de ${tierDefs[tier]?.label||tier} en 1 shard de ${tierDefs[next]?.label||next}.`,'good');
+ renderShardsTab();renderCraftShardsSummary();
+}
 function craftEligibleItems(){return (game.inventory||[]).filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
 function craftPrimaryStatForSlot(slot){const cands=primaryAffixes.filter(a=>a.slots.includes(slot));return cands.length?pick(cands):primaryAffixes[0]}
 // Stats a player may pick as a crafted item's primary bonus for a given slot:
@@ -2830,8 +2852,13 @@ function setCraftStatus(id,msg){const el=document.getElementById(id);if(el)el.te
 function renderShardsTab(){
  const root=document.getElementById('shards');if(!root)return;
  const shards=game.player.shards||{};
- root.innerHTML=`<div class="configItemsList">${LOOT_RARITY_ORDER.map(t=>`<div class="configItem shardRow"><canvas class="shardTierIcon" width="28" height="28" data-shard-tier="${t}"></canvas><div><b style="color:${tierColor(t)}">${tierDefs[t]?.label||t}</b><span class="small">${shards[t]||0} shard(s)</span></div></div>`).join('')}</div><p class="small">Consigue shards deshaciendo objetos desde la Mochila. Se gastan en el Altar del Creador para crear y mejorar equipo.</p>`;
+ root.innerHTML=`<div class="configItemsList">${LOOT_RARITY_ORDER.map((t,i)=>{
+  const next=LOOT_RARITY_ORDER[i+1];
+  const canTransmute=next&&hasShards(t,SHARD_TRANSMUTE_COST);
+  return `<div class="configItem shardRow"><canvas class="shardTierIcon" width="28" height="28" data-shard-tier="${t}"></canvas><div><b style="color:${tierColor(t)}">${tierDefs[t]?.label||t}</b><span class="small">${shards[t]||0} shard(s)</span>${next?`<div class="configItemActions"><button type="button" data-transmute-tier="${t}" ${canTransmute?'':'disabled'}>Transmutar ${SHARD_TRANSMUTE_COST} → 1 ${tierDefs[next]?.label||next}</button></div>`:''}</div></div>`;
+ }).join('')}</div><p class="small">Consigue shards deshaciendo objetos desde la Mochila. Se gastan en el Altar del Creador para crear y mejorar equipo, o transmuta ${SHARD_TRANSMUTE_COST} de un tier en 1 del siguiente.</p>`;
  setTimeout(()=>document.querySelectorAll('#shards .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier)),0);
+ root.querySelectorAll('[data-transmute-tier]').forEach(b=>b.onclick=()=>transmuteShards(b.dataset.transmuteTier));
 }
 function renderCraftShardsSummary(){
  const el=document.getElementById('craftShardsSummary');if(!el)return;
@@ -2968,13 +2995,14 @@ function craftUpgradeStat(item,affix){
  log(`${item.name}: ${affix.label} sube a +${newValue}.`,'good');
  persistCustomItems();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
-// Chest tier (1-5) climbs from 1 at floor 1 to 5 at the dungeon's last floor
-// - the same progression shape as enemy tiers (enemyTierWeightsForDepth) -
-// scaling proportionally regardless of how many floors the world has, with
-// character level as a secondary nudge on top so a stronger character finds
-// slightly better chests early rather than the floor being the only factor.
+// Chest tier (1-5) climbs from 1 at floor 1 towards 5 over
+// PROGRESSION_REFERENCE_FLOORS floors of depth - paced against that fixed
+// reference rather than the dungeon's own floor count, so a short dungeon
+// (even a single floor) still starts at tier 1 instead of jumping straight to
+// its "last floor" tier; character level is a secondary nudge on top so a
+// stronger character finds slightly better chests early.
 function chestTierForFloor(floor,level,totalFloors=20){
- const depth=((floor||1)-1)/Math.max(1,(totalFloors||20)-1);
+ const depth=((floor||1)-1)/Math.max(1,Math.max(PROGRESSION_REFERENCE_FLOORS,totalFloors||20)-1);
  return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
 }
 // A whole floor giving out the exact same chest tier every time reads as
