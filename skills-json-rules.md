@@ -72,7 +72,7 @@ If `{p}Dice` is 0, a hand-tuned per-kind fallback (roughly `~8 + skillLevel*2..4
 
 Per-component `target` field, where applicable (see §4 table for which kinds accept which target values):
 - `"enemy"`: the clicked enemy, or nearest visible enemy if the skill is self-cast.
-- `"area"`: all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight.
+- `"area"`: for damage/debuff-style kinds (`dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `execute`, `pullroot`) — all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight (`resolveComponentEnemyTargets`). For `heal`/`hot` — all allies (companions + other human players) within `range` tiles of the cast point, via the analogous `resolveComponentAllyTargets` (see §4.5/§4.15 for exactly who counts as an "ally" and how each is healed).
 - `"self"`: the caster.
 - `"ally"`: clicked ally (multiplayer only).
 
@@ -90,21 +90,22 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 | `dot` | enemy, area | damage-over-time status |
 | `buff` | self (implicit) | stat buff on caster |
 | `debuff` | enemy, area | stat debuff on target(s) |
-| `heal` | self, ally | instant heal (+ resource restore if self) |
+| `heal` | self, ally, area | instant heal (+ resource restore if self/area) |
 | `move` | — | dash-and-hit or teleport |
 | `cc` | enemy, area | stun/freeze/silence/root |
 | `drain` | enemy, area | damage enemy, heal+restore resource for self |
 | `aoe` | — (always area around cast point) | area damage with explicit radius |
-| `multihit` | — (always the resolved single target) | N repeated hits on one target |
+| `multihit` | — (always the resolved single target) | N repeated hits on one target, paced 0.5s apart |
 | `mark` | enemy, area | target takes +X% damage from ALL sources for N turns |
 | `summon` | — | temporary mobile ally, author-configurable |
 | `summonturret` | — | temporary **stationary**, long-range ally |
 | `utility` | — | reveal map / stealth / flat shield / restore resource |
-| `hot` | self (implicit) | heal-over-time on caster |
+| `hot` | self, area | heal-over-time on caster (+ allies if area) |
 | `execute` | enemy, area | normal hit, multiplied if target is below an HP% threshold |
 | `pullroot` | enemy, area | pulls target 1 tile toward caster, then roots |
 | `counter` | — (self) | shield + arms a one-time counterattack |
 | `cheatdeath` | — (self) | survive the next lethal hit at 1 HP |
+| `holyshield` | — (self) | absorb-shield: soaks damage before it touches HP |
 
 ### 4.1 `dmg` — Damage
 ```json
@@ -143,6 +144,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 ```
 - Magnitude via dicePowerFor (fallback ~`8+lvl*3`), applied as `heal = power*2` HP, plus `power` restored to the skill's own `resource` pool.
 - `target:"ally"` (multiplayer): heals the clicked ally instead, same `power*2` amount, syncs over the network.
+- `target:"area"`: heals the caster (same as self, incl. resource restore) **and** every ally within `range` tiles (default 2, Chebyshev) of the cast point — companions (AI summons) and other human players alike (`resolveComponentAllyTargets`). Companions are healed directly; each human ally in range gets its own `power*2` heal synced over the network exactly like the single-target `"ally"` case.
 
 ### 4.6 `move` — Dash or teleport
 ```json
@@ -177,6 +179,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 { "kind":"multihit", "hits":3, "dmgDice":1, "dmgDie":6, "dmgStat":"strength", "dmgStatMode":"add", "dmgStatCoef":.6 }
 ```
 - Attacks the resolved target (clicked enemy, or nearest) `hits` times independently (separate rolls, separate defense saves, separate crit checks). `multiplier` optional, default 0.6 per hit.
+- Hits are **paced 0.5s apart** (staggered via `setTimeout`, one attack + redraw per tick) instead of all landing in the same frame — same look as normal consecutive attacks. A hit is skipped if the target already died from an earlier one in the sequence. The component still returns success synchronously (as soon as a valid target is resolved); the hits themselves land over the following `(hits-1)*0.5s`.
 
 ### 4.11 `mark` — Damage-taken amplifier
 ```json
@@ -223,6 +226,9 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 { "kind":"hot", "target":"self", "dmgDice":1, "dmgDie":6, "dmgStat":"wisdom", "dmgStatMode":"add", "dmgStatCoef":.5, "turns":4 }
 ```
 - Magnitude via dicePowerFor (fallback `~3+lvl`), applied once per player turn for `turns` turns. Stacks are independent (multiple `hot` applications run in parallel, not refreshed/merged).
+- `target:"area"`: same self HOT as above, **plus** every ally within `range` tiles (default 2) of the cast point (`resolveComponentAllyTargets`):
+  - Companions (AI summons) get the identical `{turns, power}` HOT pushed onto their own stack, ticked every companion turn (`tickEntityHots`, the same generic ticker the player uses).
+  - Other human players (multiplayer) have no live per-turn HOT-sync channel yet, so their whole HOT is instead sent as **one upfront instant heal** of `power*turns` via the existing `ally_heal` network action — mechanically equivalent total healing, just front-loaded instead of ticking turn by turn.
 
 ### 4.16 `execute` — Execute below HP threshold
 ```json
@@ -248,6 +254,24 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 { "kind":"cheatdeath", "turns":5 }
 ```
 - Arms `player.cheatDeathTurns`. The next time HP would hit 0 while this is armed, HP is set to 1 instead and the charge is consumed (one-shot; `turns` is stored but not decremented/ticked — it only matters as "armed vs not").
+
+### 4.20 `holyshield` — Absorb shield
+```json
+{ "kind":"holyshield", "target":"self", "value":20, "stat":"", "mode":"add", "statCoef":1, "turns":0 }
+```
+- Grants `player.holyShield` points that **absorb incoming damage before it touches HP** — a dedicated damage-buffer pool, distinct from both `utility`'s `mode:"shield"` (§4.14, which adds flat **armor** instead, no HP absorption) and `counter`'s `shield` field (§4.18, also armor). Consumed in `damagePlayer()` right after the block-chance check and before HP is reduced: `absorbed = min(holyShield, incomingDamage)`; the log line reports how much was absorbed and whether the shield broke (`holyShield` hits 0).
+- Magnitude formula (same "dice/stat" idiom as `dicePowerFor`, but flat `value` instead of a dice roll):
+  ```
+  statVal = stat ? statValueFor(player, stat) : 0
+  contribution = mode==='mult' ? value*(statVal*statCoef) : statVal*statCoef
+  amount = max(1, round(value + contribution))
+  player.holyShield += amount
+  ```
+- `stat`: any of §5 core stats, or `""` (no stat scaling — pure flat `value`).
+- `mode`: `"add"` (contribution is `statVal*statCoef`, added once) or `"mult"` (contribution scales with `value` too: `value*statVal*statCoef` — bigger base `value` also amplifies the stat's contribution).
+- `turns`: `0` (default) = the shield has **no time limit** — it persists until damage breaks it entirely, however many turns that takes. `>0` = the shield also expires after that many player turns even if not fully depleted (ticked by `tickHolyShield`, which zeroes it out when the counter reaches 0). Casting `holyshield` again **adds** to the current pool (`+=`) and raises the timer to `max(current, new)` turns if a limit is set — it does not overwrite/refresh from zero.
+- No `target` options beyond self — always cast on the caster, no click/target needed (like `buff`/`cheatdeath`).
+- Shown to the player in the active-effects HUD as `Escudo: <points>[ (<turns>T)]`.
 
 ## 5. Stat keys
 

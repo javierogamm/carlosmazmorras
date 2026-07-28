@@ -3120,13 +3120,17 @@ function tickBuffs(){
  ended.forEach(b=>log(`${b.name} termina.`,'sys'));
  if(ended.length)recomputeDerived()
 }
-// Player-side heal-over-time stacks from a stackable 'hot' effect component -
-// the enemy-side equivalent (DOT) already lives in tickEnemyStatuses(); the
-// player has no statuses array of its own, so this is a small parallel list.
+// Heal-over-time stacks from a stackable 'hot' effect component - the
+// enemy-side equivalent (DOT) already lives in tickEnemyStatuses(). Shared
+// between the player and companions (an area 'hot' pushes onto both), since
+// neither has any other statuses array of its own.
+function tickEntityHots(entity){
+ if(!entity?.hots?.length)return;
+ for(const h of entity.hots){healEntity(entity,Math.max(1,Math.round(h.power)));h.turns--}
+ entity.hots=entity.hots.filter(h=>h.turns>0);
+}
 function tickPlayerHots(){
- const p=game.player;if(!p?.hots?.length)return;
- for(const h of p.hots){healEntity(p,Math.max(1,Math.round(h.power)));h.turns--}
- p.hots=p.hots.filter(h=>h.turns>0);
+ tickEntityHots(game.player);
 }
 // Applies derived.staminaRegen/manaRegen (base regen + item/race bonuses,
 // including the guaranteed wand/dagger offhand regen) once per turn.
@@ -3243,6 +3247,7 @@ function companionTurn(){
  for(const c of [...game.companions]){
   c.turns--;
   if(c.hp<=0||c.turns<=0)continue;
+  tickEntityHots(c);
   const enemies=game.enemies.filter(e=>e.hp>0);
   if(c.effectType){
    // custom summon from a stackable 'summon' effect component: runs
@@ -3430,6 +3435,19 @@ function resolveComponentEnemyTargets(comp,ctx){
  }
  return ctx.clickedEnemy?[ctx.clickedEnemy]:(ctx.nearest?[ctx.nearest]:[]);
 }
+// Allies within radius for area heal/hot: companions (AI summons) and other
+// human players (multiplayer) around the cast point - mirrors
+// resolveComponentEnemyTargets' area branch but for the ally side. A single
+// clicked ally (existing 'ally' target) still resolves to just ctx.clickedAlly.
+function resolveComponentAllyTargets(comp,ctx){
+ if(comp.target==='area'){
+  const cx=ctx.x??game.player.x,cy=ctx.y??game.player.y,radius=comp.range||2;
+  const companions=(game.companions||[]).filter(c=>c.hp>0&&Math.max(Math.abs(c.x-cx),Math.abs(c.y-cy))<=radius);
+  const others=(game.otherPlayers||[]).filter(pl=>pl.hp>0&&Math.max(Math.abs(pl.x-cx),Math.abs(pl.y-cy))<=radius);
+  return [...companions,...others];
+ }
+ return ctx.clickedAlly?[ctx.clickedAlly]:[];
+}
 function applyEffectComponent(id,comp,ctx){
  const d=skillDefs[id],p=game.player,lvl=skillLevel(id);
  if(comp.kind==='dmg'){
@@ -3461,7 +3479,13 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='heal'){
   const power=dicePowerFor(comp,8+lvl*3,p);
-  if(comp.target==='ally'&&ctx.clickedAlly){
+  if(comp.target==='area'){
+   healEntity(p,power*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+   for(const ally of resolveComponentAllyTargets(comp,ctx)){
+    healEntity(ally,power*2,ally.x,ally.y);
+    if(ally.pjId)sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
+   }
+  }else if(comp.target==='ally'&&ctx.clickedAlly){
    healEntity(ctx.clickedAlly,power*2,ctx.clickedAlly.x,ctx.clickedAlly.y);
    sendMpAction('ally_heal',{targetId:ctx.clickedAlly.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
   }else{
@@ -3502,7 +3526,14 @@ function applyEffectComponent(id,comp,ctx){
   const target=ctx.clickedEnemy||ctx.nearest;if(!target)return false;
   const hits=Math.max(1,comp.hits||3);
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(let i=0;i<hits;i++)attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6});
+  // Paced like consecutive attacks (one every 0.5s) instead of all landing
+  // in the same tick, same staggered-setTimeout idiom used elsewhere
+  // (chest loot toasts, mp action replay) rather than a synchronous loop.
+  for(let i=0;i<hits;i++)setTimeout(()=>{
+   if(target.hp<=0)return;
+   attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6});
+   draw();updateUI();
+  },i*500);
   return true
  }
  if(comp.kind==='mark'){
@@ -3535,8 +3566,23 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='hot'){
   p.hots=p.hots||[];
-  const power=dicePowerFor(comp,3+lvl,p);
-  p.hots.push({turns:comp.turns??4,power});
+  const power=dicePowerFor(comp,3+lvl,p),turns=comp.turns??4;
+  p.hots.push({turns,power});
+  if(comp.target==='area'){
+   for(const ally of resolveComponentAllyTargets(comp,ctx)){
+    if(ally.pjId){
+     // Remote players have no live per-turn HOT-tick channel over the
+     // network yet, so their share is one upfront instant heal covering the
+     // whole duration instead of ticking turn by turn like companions/self.
+     const total=Math.max(1,Math.round(power*turns));
+     healEntity(ally,total,ally.x,ally.y);
+     sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:total,resAmount:0,resType:d.resource,id:crypto.randomUUID()});
+    }else{
+     ally.hots=ally.hots||[];
+     ally.hots.push({turns,power});
+    }
+   }
+  }
   return true
  }
  if(comp.kind==='execute'){
@@ -4807,7 +4853,8 @@ function defaultComponentFor(kind){
 function effectComponentTargetOptions(kind){
  if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
  if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark'||kind==='execute'||kind==='pullroot')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
- if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'}];
+ if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'},{v:'area',l:'Área (aliados cercanos)'}];
+ if(kind==='hot')return [{v:'self',l:'A ti mismo'},{v:'area',l:'Área (aliados cercanos)'}];
  return null
 }
 function effectDiceFieldsHtml(comp,i,prefix='dmg'){
