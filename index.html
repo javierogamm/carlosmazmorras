@@ -36,6 +36,7 @@
 </div>
 <div class="gameStage" id="gameStage">
 <canvas id="game" width="512" height="512"></canvas>
+<div class="gameHudIdentity" id="gameHudIdentity"></div>
 <div class="vitalBars" id="vitalBars">
  <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
  <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★</span><span class="vbValue" id="hudXpText"></span></div>
@@ -55,6 +56,7 @@
 <button data-move="-1,0" aria-label="Mover izquierda">◀</button>
 <div class="waitCancelWrap">
   <button id="waitBtn">ESPERAR</button>
+  <button id="confirmTargetBtn" class="cancelTargetBtn hidden">CONFIRMAR</button>
   <button id="cancelTargetBtn" class="cancelTargetBtn hidden">CANCELAR</button>
 </div>
 <button data-move="1,0" aria-label="Mover derecha">▶</button>
@@ -67,6 +69,7 @@
 <section class="panel sidePanel">
 <div class="tabs">
 <button class="active" data-tab="inventory">Mochila</button>
+<button data-tab="potions">Pociones</button>
 <button data-tab="equipment">Equipo</button>
 <button data-tab="shards">Shards</button>
 <button data-tab="skills">Habilidades</button>
@@ -74,6 +77,7 @@
 <button data-tab="trade" class="hidden">Comercio</button>
 </div>
 <div id="inventory" class="tabview"></div>
+<div id="potions" class="tabview hidden"></div>
 <div id="equipment" class="tabview hidden"></div>
 <div id="shards" class="tabview hidden"></div>
 <div id="skills" class="tabview hidden"></div>
@@ -117,7 +121,7 @@
   <div class="landingActions" id="singlePlayerActions">
    <button class="start" id="spSelectCharBtn">SELECCIONAR PERSONAJE</button>
    <button class="start" id="spNewCharBtn">NUEVO PERSONAJE</button>
-   <button class="start" id="spContinueBtn">CONTINUAR SESIÓN</button>
+   <button class="start" id="spContinueBtn">CARGAR SESIÓN</button>
   </div>
   <div id="spListStatus" class="small hidden"></div>
   <div class="worldList hidden" id="spList"></div>
@@ -173,6 +177,7 @@
     <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
     <label>Tier <select id="configTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
     <label>Tipo de item <select id="configItemType"><option value="equipment">Equipo</option><option value="potion">Poción</option></select></label>
+    <label class="tileRotateLabel"><input id="configItemHidden" type="checkbox"> Oculta (solo aparece en los buscadores al escribir texto que coincida)</label>
     <label id="configSlotWrap">Slot <select id="configSlot"></select></label>
     <input id="configIlvl" type="hidden" value="1">
     <label id="configWeaponCategoryWrap">Tipo de arma <select id="configWeaponCategory"></select></label>
@@ -304,6 +309,7 @@
        <option value="pullroot">Atraer + enraizar</option>
        <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
        <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
       </select>
       <button type="button" id="addSkillEffectBtn">AÑADIR EFECTO →</button>
      </div>
@@ -480,22 +486,12 @@
 <h2>ALTAR DEL CREADOR</h2>
 <p class="small">Deshacer objetos por shards ya no requiere esta sala: hazlo desde el botón "Deshacer" de cualquier objeto en tu Mochila. Aquí solo se crea y mejora equipo.</p>
 <div class="craftTabs">
-<button type="button" class="craftTabBtn active" data-craft-tab="create">Crear objeto</button>
-<button type="button" class="craftTabBtn" data-craft-tab="tier">Mejorar tier</button>
+<button type="button" class="craftTabBtn active" data-craft-tab="tier">Mejorar tier</button>
 <button type="button" class="craftTabBtn" data-craft-tab="addstat">Añadir stat</button>
 <button type="button" class="craftTabBtn" data-craft-tab="upgradestat">Mejorar stat</button>
 </div>
 <p class="small" id="craftShardsSummary"></p>
-<div class="craftPane" id="craftPaneCreate">
-<p class="small">Crea un objeto nuevo de cualquier slot y tier, con su stat principal a la base del tier. Coste: 40 shards del tier elegido.</p>
-<label>Slot <select id="craftCreateSlot"></select></label>
-<label>Tier <select id="craftCreateTier"></select></label>
-<label>Stat principal <select id="craftCreateStat"></select></label>
-<label id="craftCreateOffhandKindLabel" class="hidden">Tipo de mano izquierda <select id="craftCreateOffhandKind"><option value="shield">Escudo (% bloqueo)</option><option value="wand">Varita (regen. maná)</option><option value="dagger">Daga (regen. stamina)</option></select></label>
-<button type="button" id="craftCreateBtn">CREAR OBJETO</button>
-<div id="craftCreateStatus" class="small"></div>
-</div>
-<div class="craftPane hidden" id="craftPaneTier">
+<div class="craftPane" id="craftPaneTier">
 <p class="small">Sube el tier de un objeto: su stat principal pasa a la base del tier objetivo. Coste: 20 shards del tier objetivo.</p>
 <div id="craftTierList" class="configItemsList"></div>
 </div>
