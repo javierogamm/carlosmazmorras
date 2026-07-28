@@ -1,7 +1,7 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const gameCanvasWrap=document.getElementById('gameStage');
 ctx.imageSmoothingEnabled=false;
-const TILE=64,COLS=70,ROWS=70,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
+const TILE=64,COLS=49,ROWS=49,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
 let visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(localStorage.getItem('visibleTiles')||8)||8));
 let CANVAS_SIZE=TILE*visibleTiles;
 function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZE;canvas.height=CANVAS_SIZE}
@@ -1426,22 +1426,25 @@ function expectedTierForFloor(floor,total=20){
  return r<.25?1:r<.55?2:r<.8?3:4;
 }
 
+// Room dimension ranges are ~30% smaller than the original design (map grid
+// shrunk from 70x70 to 49x49 to match) - room/chest/enemy counts below are
+// untouched, so the same content packs into a smaller floor.
 const ROOM_TYPES={
- filler:      {label:'Sala vacía',      size:[4,7],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
- combat:      {label:'Sala de combate', size:[6,10], enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
- ambush:      {label:'Emboscada',       size:[5,9],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
- guardpost:   {label:'Puesto de guardia',size:[5,8], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
- eliteden:    {label:'Guarida de élite',size:[7,11], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
- vault:       {label:'Cámara acorazada',size:[4,7],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
- arena:       {label:'Arena',           size:[10,15],enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
- hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
- traproom:    {label:'Sala trampa',     size:[5,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
- shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
- creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
- deadend:     {label:'Callejón',        size:[3,5],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
- knot:        {label:'Nudo de pasillos',size:[3,5],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
- bossarena:   {label:'Arena del jefe',  size:[11,15],enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
- prep:        {label:'Sala de preparación',size:[6,9],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+ filler:      {label:'Sala vacía',      size:[3,5],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ combat:      {label:'Sala de combate', size:[4,7],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
+ ambush:      {label:'Emboscada',       size:[4,6],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[4,6], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[5,8], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[3,5],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ arena:       {label:'Arena',           size:[7,11], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
+ hub:         {label:'Encrucijada',     size:[4,6],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[4,6],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ shrine:      {label:'Altar',           size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ creator:     {label:'Sala del Creador',size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
+ deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
+ knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
+ bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
@@ -1450,7 +1453,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso estándar', minFloor:1, cooldown:0, objective:'stairs',
   desc:'Mezcla equilibrada de salas. Referencia de dificultad.',
   weight:()=>100,
-  layout:{rooms:[26,40], size:[4,11], corridors:'normal', loops:.15, pillars:1},
+  layout:{rooms:[26,40], size:[3,8], corridors:'normal', loops:.15, pillars:1},
   enemies:{density:1, elite:1, tierBias:0, bossOnEven:true},
   rewards:{chests:1, rarity:0},
   roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,creator:2,deadend:4,knot:4}
@@ -1459,7 +1462,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de superjefe', minFloor:8, cooldown:7, objective:'bossKill', announce:true,
   desc:'Algo muy superior habita este piso. Prepárate antes de entrar en su sala.',
   weight:(f,t)=>f<8?0:6+Math.min(8,f/3),
-  layout:{rooms:[18,26], size:[5,12], corridors:'normal', loops:.1, pillars:1.2},
+  layout:{rooms:[18,26], size:[4,8], corridors:'normal', loops:.1, pillars:1.2},
   enemies:{density:.5, elite:.8, tierBias:0, bossOnEven:false, superBoss:true},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{prep:16,shrine:10,creator:2,filler:20,combat:16,guardpost:10,eliteden:8,vault:6,hub:6,deadend:4}
@@ -1468,7 +1471,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso laberinto', minFloor:3, cooldown:3, objective:'stairs',
   desc:'Pasillos, bifurcaciones y caminos falsos. La salida no está a la vista.',
   weight:(f)=>f<3?0:26,
-  layout:{rooms:[40,56], size:[3,6], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
+  layout:{rooms:[40,56], size:[3,4], corridors:'maze', loops:.55, pillars:.6, deadEnds:.35},
   enemies:{density:.55, elite:.8, tierBias:0, bossOnEven:false},
   rewards:{chests:1.15, rarity:1},
   roomWeights:{knot:24,deadend:20,filler:18,hub:12,traproom:10,combat:8,vault:5,shrine:3,creator:2}
@@ -1477,7 +1480,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso horda', minFloor:4, cooldown:3, objective:'waves',
   desc:'Oleadas continuas en salas amplias. Sobrevive a todas para abrir la salida.',
   weight:(f)=>f<4?0:22,
-  layout:{rooms:[14,22], size:[8,15], corridors:'arena', loops:.3, pillars:1.4},
+  layout:{rooms:[14,22], size:[6,11], corridors:'arena', loops:.3, pillars:1.4},
   enemies:{density:1.35, elite:.7, tierBias:-1, bossOnEven:false, waves:true},
   rewards:{chests:1.2, rarity:1},
   roomWeights:{arena:34,combat:24,filler:14,hub:10,ambush:8,eliteden:5,vault:5}
@@ -1486,7 +1489,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de élites', minFloor:5, cooldown:4, objective:'stairs',
   desc:'Pocos enemigos, casi todos de gran poder. Combates tácticos.',
   weight:(f)=>f<5?0:16,
-  layout:{rooms:[16,24], size:[6,12], corridors:'normal', loops:.2, pillars:1.3},
+  layout:{rooms:[16,24], size:[4,8], corridors:'normal', loops:.2, pillars:1.3},
   enemies:{density:.32, elite:6, tierBias:1, bossOnEven:false, miniboss:true},
   rewards:{chests:1.35, rarity:2},
   roomWeights:{eliteden:30,combat:20,guardpost:14,filler:12,vault:8,hub:6,shrine:5,creator:2,arena:5}
@@ -1495,7 +1498,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de asalto de jefes', minFloor:12, cooldown:9, objective:'bossKill', announce:true,
   desc:'Arenas encadenadas. Cada una guarda un jefe; el último es el más fuerte.',
   weight:(f,t)=>f<12?0:5+Math.min(7,f/4),
-  layout:{rooms:[12,18], size:[9,14], corridors:'arena', loops:.15, pillars:1.1},
+  layout:{rooms:[12,18], size:[6,10], corridors:'arena', loops:.15, pillars:1.1},
   enemies:{density:.3, elite:1.5, tierBias:1, bossOnEven:false, bossRush:true},
   rewards:{chests:1.5, rarity:3},
   roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,creator:2,filler:12,vault:8,hub:6}
@@ -1504,7 +1507,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso del tesoro', minFloor:2, cooldown:5, objective:'stairs',
   desc:'Riqueza a la vista y poca resistencia... al principio.',
   weight:(f)=>f<2?0:12,
-  layout:{rooms:[20,30], size:[4,9], corridors:'normal', loops:.25, pillars:.8},
+  layout:{rooms:[20,30], size:[3,6], corridors:'normal', loops:.25, pillars:.8},
   enemies:{density:.45, elite:1.2, tierBias:0, bossOnEven:false, greedAmbush:true},
   rewards:{chests:2.8, rarity:3},
   roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3,creator:2}
@@ -1513,7 +1516,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso de supervivencia', minFloor:6, cooldown:5, objective:'survive', announce:true,
   desc:'No hay salida todavía. Aguanta: la escalera aparecerá al resistir lo suficiente.',
   weight:(f)=>f<6?0:14,
-  layout:{rooms:[16,24], size:[7,13], corridors:'arena', loops:.35, pillars:1.5},
+  layout:{rooms:[16,24], size:[5,9], corridors:'arena', loops:.35, pillars:1.5},
   enemies:{density:.9, elite:1.2, tierBias:0, bossOnEven:false, escalate:true},
   rewards:{chests:1.4, rarity:2},
   roomWeights:{arena:26,combat:22,filler:16,hub:12,ambush:10,eliteden:8,shrine:6,creator:2}
@@ -1522,7 +1525,7 @@ const FLOOR_ARCHETYPES={
   label:'Piso contrarreloj', minFloor:7, cooldown:5, objective:'timed', announce:true,
   desc:'El piso colapsa. Encuentra la salida antes de que se agote el tiempo.',
   weight:(f)=>f<7?0:13,
-  layout:{rooms:[22,32], size:[5,10], corridors:'normal', loops:.4, pillars:.9},
+  layout:{rooms:[22,32], size:[4,7], corridors:'normal', loops:.4, pillars:.9},
   enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4,creator:2}
