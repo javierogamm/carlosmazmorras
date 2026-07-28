@@ -89,6 +89,43 @@ const rarities=[
  {name:'artifact',label:'Artefacto',weight:.6,color:'#ff4d4d',affixes:[6,7],passives:1,effects:1,mult:2.65,secondPassive:.75}
 ];
 const LOOT_RARITY_ORDER=rarities.map(r=>r.name);
+// Item tier (1-5) derived from rarity, used to scale guaranteed offhand
+// bonuses (shield block%, wand/dagger regen) - common=1 up to legendary=5,
+// artifact capped at 5 since only 5 tiers of bonus are defined.
+function rarityTierIndex(rarityName){return Math.max(1,Math.min(5,LOOT_RARITY_ORDER.indexOf(rarityName)+1))}
+function shieldBlockForRarity(rarityName){return rarityTierIndex(rarityName)*5}
+function offhandRegenForRarity(rarityName){return rarityTierIndex(rarityName)*3}
+// Left-hand (offhand) items now come in 3 kinds: shields (guaranteed block%),
+// wands (guaranteed mana regen) and daggers (guaranteed stamina regen, dual
+// wielded in the offhand alongside a main-hand weapon). Detected from an
+// explicit item.offhandKind when set (crafted items), else guessed from name/
+// weapon type text - same regex-based convention used elsewhere for wands.
+function detectOffhandKind(item){
+ if(item.offhandKind)return item.offhandKind;
+ const text=`${item.name||''} ${item.weaponType||''} ${item.weaponCategory||''}`;
+ if(/varita/i.test(text))return 'wand';
+ if(/daga/i.test(text))return 'dagger';
+ return 'shield';
+}
+function applyOffhandGuarantee(item){
+ if(!item||item.slot!=='offhand')return item;
+ item.offhandKind=detectOffhandKind(item);
+ item.affixes=item.affixes||[];
+ if(item.offhandKind==='shield'){
+  const v=shieldBlockForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='blockChance');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'blockChance',label:'Prob. de bloqueo',value:v,percent:true});
+ }else if(item.offhandKind==='wand'){
+  const v=offhandRegenForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='manaRegen');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'manaRegen',label:'Regeneración de maná',value:v,percent:false});
+ }else if(item.offhandKind==='dagger'){
+  const v=offhandRegenForRarity(item.rarity);
+  const existing=item.affixes.find(a=>a.key==='staminaRegen');
+  if(existing)existing.value=Math.max(existing.value,v);else item.affixes.push({key:'staminaRegen',label:'Regeneración de stamina',value:v,percent:false});
+ }
+ return item;
+}
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
 function lootProgressRatio(floor,totalFloors){return totalFloors<=1?1:(Math.max(1,Number(floor)||1)-1)/(Math.max(1,Number(totalFloors)||1)-1)}
@@ -1134,7 +1171,7 @@ function makeConfiguredLoot(level){if(!configItems.length)return null;const loot
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
  return configuredItemFromRow(row,lootRow,level)}
-function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return item}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
@@ -1162,10 +1199,15 @@ function makeLoot(level,source='normal',forceRarityName=null){const lootRow=curr
  const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
  const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
  const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- return{
+ // Offhand loot rolls one of 3 kinds - mostly shields, sometimes a wand or a
+ // dagger held in the left hand alongside the main-hand weapon.
+ const offhandKind=slot==='offhand'?pick(['shield','shield','shield','wand','dagger']):null;
+ const offhandNameCategory=offhandKind==='wand'?configWeaponTypeCategories.Varitas:offhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
+ const offhandName=offhandNameCategory?weaponNameForCategory(offhandNameCategory,weaponPowerColumn(itemLevel,rar,score)):null;
+ return applyOffhandGuarantee({
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
-  theme:themed?.theme||'fantasy',
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
+  theme:themed?.theme||'fantasy',offhandKind,
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
   armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
   flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
@@ -1174,7 +1216,7 @@ function makeLoot(level,source='normal',forceRarityName=null){const lootRow=curr
   rangeMax:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).max:null,
   affixes,passives,effects,
   desc:`Nivel ${itemLevel} · Poder ${score}`
- };
+ });
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
@@ -2412,7 +2454,10 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
  if((p.activePotions||[]).some(b=>b.effect?.invulnerable)){mult=0;result='invulnerabilidad activa'}
- const d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ let d=Math.max(mult===0?0:1,Math.round(amount*mult));
+ const blockChance=Math.min(.75,(p.derived?.blockChance||0)/100);
+ const blocked=mult>0&&d>0&&Math.random()<blockChance;
+ if(blocked){d=0;result=`${result} · bloqueado con el escudo`}
  let finalDamage=d;
  const lifeBuff=(p.activeBuffs||[]).find(b=>b.effects?.lifesteal);
  if(lifeBuff&&options?.skillId)healEntity(p,Math.max(1,Math.round(finalDamage*lifeBuff.effects.lifesteal)));
@@ -2710,6 +2755,15 @@ function hasShards(tier,n){return (game.player.shards?.[tier]||0)>=n}
 function spendShards(tier,n){game.player.shards=game.player.shards||{};game.player.shards[tier]=Math.max(0,(game.player.shards[tier]||0)-n);persistShards()}
 function craftEligibleItems(){return (game.inventory||[]).filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
 function craftPrimaryStatForSlot(slot){const cands=primaryAffixes.filter(a=>a.slots.includes(slot));return cands.length?pick(cands):primaryAffixes[0]}
+// Stats a player may pick as a crafted item's primary bonus for a given slot:
+// the 6 core stats valid for that slot, plus armor when the slot allows it
+// (armor's bonus is doubled vs a normal stat at the same tier, see
+// craftSetPrimaryAffix).
+function craftStatOptionsForSlot(slot){
+ const primary=primaryAffixes.filter(a=>a.slots.includes(slot));
+ const armor=secondaryAffixes.find(a=>a.key==='armor'&&a.slots.includes(slot));
+ return armor?[...primary,armor]:primary;
+}
 // The item's "main bonus" is its first affix matching one of the 6 core
 // stats; crafted items always have exactly one, created up front.
 function craftMainAffix(item){
@@ -2720,10 +2774,12 @@ function craftMainAffix(item){
  return a;
 }
 function craftExtraStatCount(item){const main=craftMainAffix(item);return (item.affixes||[]).filter(a=>a!==main).length}
-function craftItemShell(slot,tier){
+function craftItemShell(slot,tier,offhandKind='shield'){
  const rar=rarities.find(r=>r.name===tier)||rarities[0];
  const itemLevel=Math.max(1,game.player.level||1);
- const iconShape=pick(itemIconShapes[slot]||['gem']);
+ const resolvedOffhandKind=slot==='offhand'?(offhandKind||'shield'):null;
+ const offhandCategory=resolvedOffhandKind==='wand'?configWeaponTypeCategories.Varitas:resolvedOffhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
+ const iconShape=resolvedOffhandKind==='dagger'?'blade':pick(itemIconShapes[slot]||['gem']);
  const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
  const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
  const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,40):null;
@@ -2731,11 +2787,12 @@ function craftItemShell(slot,tier){
  const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
  const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,40):null;
  const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):`${pick(itemBases[slot]||['Objeto'])} del Creador`;
+ const offhandName=offhandCategory?weaponNameForCategory(offhandCategory,weaponPowerColumn(itemLevel,rar,40)):null;
+ const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||`${pick(itemBases[slot]||['Objeto'])} del Creador`);
  const rangeBounds=slot==='weapon'?weaponRangeBounds({weaponCategory,name}):null;
  return {
   id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score:0,
-  name,theme:'crafted',
+  name,theme:'crafted',offhandKind:resolvedOffhandKind,
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
   armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
   flavor:'Objeto crafteado en el Altar del Creador.',
@@ -2747,7 +2804,14 @@ function craftItemShell(slot,tier){
   desc:`Objeto crafteado · ${rar.label}`
  };
 }
-function craftSetPrimaryAffix(item,tier){const def=craftPrimaryStatForSlot(item.slot);item.affixes=[{key:def.key,label:def.label,value:CRAFT_TIER_BONUS[tier],percent:false}]}
+// Armor's crafted bonus is double a normal stat's at the same tier (tier N ->
+// +N for a core stat, +2N for armor), per the tier-bonus table above.
+function craftSetPrimaryAffix(item,tier,statKey){
+ const options=craftStatOptionsForSlot(item.slot);
+ const def=(statKey&&options.find(o=>o.key===statKey))||craftPrimaryStatForSlot(item.slot);
+ const value=def.key==='armor'?CRAFT_TIER_BONUS[tier]*2:CRAFT_TIER_BONUS[tier];
+ item.affixes=[{key:def.key,label:def.label,value,percent:!!def.percent}];
+}
 // custom_items on user_pj mirrors every player-crafted item still in the
 // inventory/equipment, kept separate from the shared config_items catalog.
 function syncCustomItemsRecord(){game.player.customItems=[...(game.inventory||[]),...Object.values(game.player.equipment||{})].filter(i=>i&&i.custom)}
@@ -2787,23 +2851,42 @@ function switchCraftTab(tab){
 }
 function populateCraftCreateSelectsOnce(){
  const slotSel=document.getElementById('craftCreateSlot');
- if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1'}
+ if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1';slotSel.addEventListener('change',()=>{renderCraftCreateStatOptions();renderCraftCreateOffhandKind()})}
  const tierSel=document.getElementById('craftCreateTier');
  if(tierSel&&!tierSel.dataset.filled){tierSel.innerHTML=LOOT_RARITY_ORDER.map(t=>`<option value="${t}">${tierDefs[t]?.label||t} (+${CRAFT_TIER_BONUS[t]}, coste ${CRAFT_CREATE_COST})</option>`).join('');tierSel.dataset.filled='1'}
+ renderCraftCreateStatOptions();renderCraftCreateOffhandKind();
+}
+// Stat picker options depend on the currently selected slot (armor only
+// offered where it applies); armor's bonus is flagged as double in its label.
+function renderCraftCreateStatOptions(){
+ const slotSel=document.getElementById('craftCreateSlot'),statSel=document.getElementById('craftCreateStat');
+ if(!slotSel||!statSel)return;
+ const options=craftStatOptionsForSlot(slotSel.value);
+ const prev=statSel.value;
+ statSel.innerHTML=options.map(o=>`<option value="${o.key}">${o.label}${o.key==='armor'?' (bonus x2)':''}</option>`).join('');
+ if(options.some(o=>o.key===prev))statSel.value=prev;
+}
+function renderCraftCreateOffhandKind(){
+ const slotSel=document.getElementById('craftCreateSlot'),label=document.getElementById('craftCreateOffhandKindLabel');
+ if(!slotSel||!label)return;
+ label.classList.toggle('hidden',slotSel.value!=='offhand');
 }
 function renderCraftCreatePane(){
  populateCraftCreateSelectsOnce();
  const btn=document.getElementById('craftCreateBtn');
  if(btn&&!btn.dataset.wired){btn.dataset.wired='1';btn.onclick=()=>{
   const slot=document.getElementById('craftCreateSlot').value,tier=document.getElementById('craftCreateTier').value;
-  craftCreateItem(slot,tier);
+  const statKey=document.getElementById('craftCreateStat')?.value;
+  const offhandKind=document.getElementById('craftCreateOffhandKind')?.value;
+  craftCreateItem(slot,tier,statKey,offhandKind);
  }}
 }
-function craftCreateItem(slot,tier){
+function craftCreateItem(slot,tier,statKey,offhandKind){
  if(!hasShards(tier,CRAFT_CREATE_COST)){setCraftStatus('craftCreateStatus',`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${CRAFT_CREATE_COST}).`);return}
  spendShards(tier,CRAFT_CREATE_COST);
- const item=craftItemShell(slot,tier);
- craftSetPrimaryAffix(item,tier);
+ const item=craftItemShell(slot,tier,offhandKind);
+ craftSetPrimaryAffix(item,tier,statKey);
+ applyOffhandGuarantee(item);
  game.inventory=game.inventory||[];game.inventory.push(item);
  log(`Creaste ${item.name} (${tierDefs[tier]?.label||tier}).`,'good');
  persistCustomItems();
@@ -2830,7 +2913,8 @@ function craftUpgradeItemTier(item,targetTier){
  spendShards(targetTier,CRAFT_TIER_UPGRADE_COST);
  item.rarity=targetTier;item.label=tierDefs[targetTier]?.label||targetTier;item.custom=true;
  const main=craftMainAffix(item);
- main.value=CRAFT_TIER_BONUS[targetTier];
+ main.value=main.key==='armor'?CRAFT_TIER_BONUS[targetTier]*2:CRAFT_TIER_BONUS[targetTier];
+ applyOffhandGuarantee(item);
  log(`${item.name} mejorado a ${item.label}.`,'good');
  persistCustomItems();renderCraftTierPane();renderCraftAddStatPane();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
@@ -2976,6 +3060,13 @@ function tickPlayerHots(){
  const p=game.player;if(!p?.hots?.length)return;
  for(const h of p.hots){healEntity(p,Math.max(1,Math.round(h.power)));h.turns--}
  p.hots=p.hots.filter(h=>h.turns>0);
+}
+// Applies derived.staminaRegen/manaRegen (base regen + item/race bonuses,
+// including the guaranteed wand/dagger offhand regen) once per turn.
+function tickPlayerRegen(){
+ const p=game.player;if(!p)return;
+ p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
+ p.mana=Math.min(p.maxMana,p.mana+Math.max(0,p.derived?.manaRegen||0));
 }
 function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
@@ -3460,7 +3551,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -3482,7 +3573,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      // enemyTurn() itself now paces each action with a real delay (PA mode,
      // always on in multiplayer) - each sendMpAction call it makes goes out
