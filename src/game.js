@@ -1508,11 +1508,11 @@ const FLOOR_ARCHETYPES={
   roomWeights:{bossarena:30,prep:16,arena:16,shrine:12,creator:2,filler:12,vault:8,hub:6}
  },
  tesoro:{
-  label:'Piso del tesoro', minFloor:2, cooldown:5, objective:'stairs',
-  desc:'Riqueza a la vista y poca resistencia... al principio.',
-  weight:(f)=>f<2?0:12,
-  layout:{rooms:[20,30], size:[3,6], corridors:'normal', loops:.25, pillars:.8},
-  enemies:{density:.45, elite:1.2, tierBias:0, bossOnEven:false, greedAmbush:true},
+  label:'Piso del tesoro', minFloor:3, cooldown:5, objective:'stairs',
+  desc:'Riqueza a la vista, guardada por veteranos. Piso compacto y denso.',
+  weight:(f)=>f<3?0:12,
+  layout:{rooms:[4,4], size:[3,6], corridors:'normal', loops:.25, pillars:.8},
+  enemies:{density:.45, elite:1.2, tierBias:0, minTier:'iii', bossOnEven:false, greedAmbush:true},
   rewards:{chests:2.8, rarity:3},
   roomWeights:{vault:30,filler:18,traproom:14,combat:12,guardpost:10,deadend:8,hub:5,shrine:3,creator:2}
  },
@@ -1653,7 +1653,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const distanceFromSpawn=r=>Math.abs(r.cx-spawn.cx)+Math.abs(r.cy-spawn.cy);
  const distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
  const stairRoom=distantRooms[0]||rooms.at(-1);
- const bossRoom=rooms.find(r=>r.type==='bossarena'&&r!==spawn)||distantRooms[1]||distantRooms[0]||rooms.at(-1);
+ // The (single-boss) boss room is always the stairs room itself, so the boss
+ // is guaranteed to be waiting right where/next to where the player exits -
+ // bossRush's chained arenas are a separate mechanic and don't use this.
+ const bossRoom=stairRoom;
  const stairs={x:stairRoom.cx,y:stairRoom.cy};
  spawn.type='filler';
 
@@ -1743,7 +1746,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   for(let i=0;i<n&&placed<baseCount;i++){
    const pos=T.place==='edges'?edgeIn(r):freeIn(r);
    const wantElite=Math.random()<Math.min(.85,.05*(E.elite||1)*(T.elite?6:1));
-   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors),pos,floor,false);
+   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),pos,floor,false);
    e.enemyFamily=family.name;e.roomType=r.type;
    if(T.tier||E.tierBias){
     const bump=(T.tier||0)+(E.tierBias||0);
@@ -1754,12 +1757,12 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    enemies.push(e);placed++;
   }
  }
- while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+ while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
 
  // --- bosses ---
  let boss=null;const bosses=[];
  const mkBoss=(pos,label,tierBonus)=>{
-  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors),pos,floor,true);
+  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),pos,floor,true);
   b.enemyFamily=family.name;
   if(tierBonus>0){
    b.maxHp=b.hp=Math.round(b.hp*(1+.45*tierBonus));
@@ -2814,7 +2817,10 @@ function transmuteShards(tier){
  log(`Transmutados ${SHARD_TRANSMUTE_COST} shards de ${tierDefs[tier]?.label||tier} en 1 shard de ${tierDefs[next]?.label||next}.`,'good');
  renderShardsTab();renderCraftShardsSummary();
 }
-function craftEligibleItems(){return (game.inventory||[]).filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
+// Both custom-crafted AND normal (config_items/procedural loot) equipment
+// qualify for add-stat/upgrade-tier, whether currently in the backpack or
+// equipped - equipped items live in game.player.equipment, not game.inventory.
+function craftEligibleItems(){return [...(game.inventory||[]),...Object.values(game.player?.equipment||{})].filter(i=>i&&i.type!=='potion'&&i.slot!=='consumable')}
 function craftPrimaryStatForSlot(slot){const cands=primaryAffixes.filter(a=>a.slots.includes(slot));return cands.length?pick(cands):primaryAffixes[0]}
 // Stats a player may pick as a crafted item's primary bonus for a given slot:
 // the 6 core stats valid for that slot, plus armor when the slot allows it
@@ -2835,24 +2841,32 @@ function craftMainAffix(item){
  return a;
 }
 function craftExtraStatCount(item){const main=craftMainAffix(item);return (item.affixes||[]).filter(a=>a!==main).length}
-function craftItemShell(slot,tier,offhandKind='shield'){
+function craftItemShell(slot,tier,offhandKind='shield',iconChoice=null){
  const rar=rarities.find(r=>r.name===tier)||rarities[0];
  const itemLevel=Math.max(1,game.player.level||1);
  const resolvedOffhandKind=slot==='offhand'?(offhandKind||'shield'):null;
  const offhandCategory=resolvedOffhandKind==='wand'?configWeaponTypeCategories.Varitas:resolvedOffhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
- const iconShape=resolvedOffhandKind==='dagger'?'blade':pick(itemIconShapes[slot]||['gem']);
- const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
- const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
- const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,40):null;
+ let iconShape=resolvedOffhandKind==='dagger'?'blade':pick(itemIconShapes[slot]||['gem']);
+ let weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
+ let weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
+ let weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,40):null;
+ let armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
+ let armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,40):null;
+ let chosenIconHex=null;
+ // Player picked a specific existing icon from the grid instead of the
+ // random weapon/armor row+column or shape - override whichever fields the
+ // rest of this function otherwise derives randomly.
+ if(iconChoice?.kind==='weaponRow'&&slot==='weapon'){weaponIconRow=iconChoice.row;weaponIconCol=iconChoice.col;weaponCategory=weaponRows[weaponIconRow]?.category||weaponCategory}
+ else if(iconChoice?.kind==='armorRow'&&slot==='chest'){armorIconRow=iconChoice.row;armorIconCol=iconChoice.col}
+ else if(iconChoice?.kind==='configIcon'){chosenIconHex=iconChoice.hex}
+ else if(iconChoice?.kind==='shape'){iconShape=iconChoice.shape}
  const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
- const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
- const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,40):null;
  const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
  const offhandName=offhandCategory?weaponNameForCategory(offhandCategory,weaponPowerColumn(itemLevel,rar,40)):null;
  const name=slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||`${pick(itemBases[slot]||['Objeto'])} del Creador`);
  const rangeBounds=slot==='weapon'?weaponRangeBounds({weaponCategory,name}):null;
  return {
-  id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score:0,
+  id:crypto.randomUUID(),slot,iconShape,icon:chosenIconHex||'',rarity:rar.name,label:rar.label,itemLevel,score:0,
   name,theme:'crafted',offhandKind:resolvedOffhandKind,
   weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
   armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
@@ -2917,10 +2931,58 @@ function switchCraftTab(tab){
 }
 function populateCraftCreateSelectsOnce(){
  const slotSel=document.getElementById('craftCreateSlot');
- if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1';slotSel.addEventListener('change',()=>{renderCraftCreateStatOptions();renderCraftCreateOffhandKind()})}
+ if(slotSel&&!slotSel.dataset.filled){slotSel.innerHTML=slots.map(s=>`<option value="${s}">${s}</option>`).join('');slotSel.dataset.filled='1';slotSel.addEventListener('change',()=>{renderCraftCreateStatOptions();renderCraftCreateOffhandKind();renderCraftCreateIconGrid()})}
  const tierSel=document.getElementById('craftCreateTier');
- if(tierSel&&!tierSel.dataset.filled){tierSel.innerHTML=LOOT_RARITY_ORDER.map(t=>`<option value="${t}">${tierDefs[t]?.label||t} (+${CRAFT_TIER_BONUS[t]}, coste ${CRAFT_CREATE_COST})</option>`).join('');tierSel.dataset.filled='1'}
- renderCraftCreateStatOptions();renderCraftCreateOffhandKind();
+ if(tierSel&&!tierSel.dataset.filled){tierSel.innerHTML=LOOT_RARITY_ORDER.map(t=>`<option value="${t}">${tierDefs[t]?.label||t} (+${CRAFT_TIER_BONUS[t]}, coste ${CRAFT_CREATE_COST})</option>`).join('');tierSel.dataset.filled='1';tierSel.addEventListener('change',renderCraftCreateIconGrid)}
+ renderCraftCreateStatOptions();renderCraftCreateOffhandKind();renderCraftCreateIconGrid();
+}
+// Candidate icons for the create-item grid, scoped to the slot+tier being
+// crafted: weapon/armor slots offer every row+column of that rarity's power
+// band (same band weaponCategoryForLoot/armorRowForLoot roll from); other
+// slots offer every admin-configured icon for that slot (same tier
+// preferred, any tier as fallback) plus the built-in procedural shapes.
+function craftIconCandidates(slot,tier){
+ const rarityIndex=Math.max(0,rarities.findIndex(r=>r.name===tier));
+ const level=game?.player?.level||1;
+ const levelCap=level>=45?19:level>=35?18:level>=25?17:level>=18?16:level>=12?15:level>=7?12:8;
+ const minRow=rarityIndex>=4?17:rarityIndex>=3?12:rarityIndex>=2?6:rarityIndex>=1?3:0;
+ const rawMaxRow=rarityIndex>=4?19:rarityIndex>=3?18:rarityIndex>=2?15:rarityIndex>=1?11:8;
+ const maxRow=Math.max(minRow,Math.min(rawMaxRow,levelCap));
+ const cands=[];
+ if(slot==='weapon'){
+  for(let row=minRow;row<=maxRow;row++)for(let col=0;col<WEAPON_ICON_COLUMNS;col++)cands.push({kind:'weaponRow',row,col});
+  return cands;
+ }
+ if(slot==='chest'){
+  for(let row=minRow;row<=maxRow;row++)for(let col=0;col<ARMOR_ICON_COLUMNS;col++)cands.push({kind:'armorRow',row,col});
+  return cands;
+ }
+ const configHexes=configItems.filter(r=>{const it=r.item_json||r;return (it.slot||r.slot)===slot&&!!(it.icon||r.icon)}).map(r=>{const it=r.item_json||r;return {kind:'configIcon',hex:it.icon||r.icon,rarity:it.rarity||r.tier}});
+ const sameTier=configHexes.filter(c=>c.rarity===tier);
+ cands.push(...(sameTier.length?sameTier:configHexes));
+ for(const shape of itemIconShapes[slot]||['gem'])cands.push({kind:'shape',shape});
+ return cands;
+}
+function craftIconThumbItem(cand,tier){
+ const rar=rarities.find(r=>r.name===tier)||rarities[0];
+ if(cand.kind==='weaponRow')return {slot:'weapon',rarity:rar.name,weaponIconRow:cand.row,weaponIconCol:cand.col,weaponCategory:weaponRows[cand.row]?.category};
+ if(cand.kind==='armorRow')return {slot:'chest',rarity:rar.name,armorIconRow:cand.row,armorIconCol:cand.col,armorCategory:armorRows[cand.row]?.category};
+ if(cand.kind==='configIcon')return {slot:'trinket1',rarity:rar.name,icon:cand.hex};
+ return {slot:'trinket1',rarity:rar.name,iconShape:cand.shape};
+}
+function renderCraftCreateIconGrid(){
+ const root=document.getElementById('craftCreateIconGrid');if(!root)return;
+ const slot=document.getElementById('craftCreateSlot')?.value,tier=document.getElementById('craftCreateTier')?.value;
+ window.currentCraftIconChoice=null;
+ if(!slot||!tier){root.innerHTML='';return}
+ const cands=craftIconCandidates(slot,tier).slice(0,240);
+ root.innerHTML=cands.length?cands.map((c,i)=>`<button type="button" class="craftIconOption" data-craft-icon-idx="${i}"><canvas width="40" height="40" data-craft-icon-thumb="${i}"></canvas></button>`).join(''):'<p class="small">No hay iconos disponibles para este slot/tier: se usará uno aleatorio.</p>';
+ setTimeout(()=>root.querySelectorAll('[data-craft-icon-thumb]').forEach(c=>drawItemIcon(c,craftIconThumbItem(cands[Number(c.dataset.craftIconThumb)],tier))),0);
+ root.querySelectorAll('[data-craft-icon-idx]').forEach(btn=>btn.onclick=()=>{
+  root.querySelectorAll('.craftIconOption').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  window.currentCraftIconChoice=cands[Number(btn.dataset.craftIconIdx)];
+ });
 }
 // Stat picker options depend on the currently selected slot (armor only
 // offered where it applies); armor's bonus is flagged as double in its label.
@@ -2944,13 +3006,13 @@ function renderCraftCreatePane(){
   const slot=document.getElementById('craftCreateSlot').value,tier=document.getElementById('craftCreateTier').value;
   const statKey=document.getElementById('craftCreateStat')?.value;
   const offhandKind=document.getElementById('craftCreateOffhandKind')?.value;
-  craftCreateItem(slot,tier,statKey,offhandKind);
+  craftCreateItem(slot,tier,statKey,offhandKind,window.currentCraftIconChoice);
  }}
 }
-function craftCreateItem(slot,tier,statKey,offhandKind){
+function craftCreateItem(slot,tier,statKey,offhandKind,iconChoice){
  if(!hasShards(tier,CRAFT_CREATE_COST)){setCraftStatus('craftCreateStatus',`No tienes suficientes shards de ${tierDefs[tier]?.label||tier} (necesitas ${CRAFT_CREATE_COST}).`);return}
  spendShards(tier,CRAFT_CREATE_COST);
- const item=craftItemShell(slot,tier,offhandKind);
+ const item=craftItemShell(slot,tier,offhandKind,iconChoice);
  craftSetPrimaryAffix(item,tier,statKey);
  applyOffhandGuarantee(item);
  game.inventory=game.inventory||[];game.inventory.push(item);
@@ -4673,14 +4735,14 @@ function enemySprite(x,y,e){
  enemyStatusOverlay(x,y,e);
 }
 // colored border by enemy tier (boss overrides tier coloring with red);
-// elites additionally get a black border outside the tier border instead of
-// the old fixed purple box. Shared by both the hand-drawn sprite path and
-// the icon-hex (customEnemy) path, which used to skip it entirely.
+// elites additionally get an inner orange border, inside the tier border.
+// Shared by both the hand-drawn sprite path and the icon-hex (customEnemy)
+// path, which used to skip it entirely.
 function enemyStatusOverlay(x,y,e){
  const R=(ox,oy,w,h,col)=>px(x+ox,y+oy,w,h,col);
  if(e.boss){ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
  else{ctx.strokeStyle=ENEMY_TIER_BORDER_COLORS[e.tier]||ENEMY_TIER_BORDER_COLORS.i;ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54)}
- if(e.elite){ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,60,60);R(27,6,10,4,'#000')}
+ if(e.elite){ctx.strokeStyle='#ff8c1a';ctx.lineWidth=2;ctx.strokeRect(x+9,y+9,46,46)}
  if(e.hp<e.maxHp){R(8,58,48,5,'#330d14');R(8,58,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
 }
 
@@ -5249,15 +5311,21 @@ function enemyTierWeightsForDepth(d){
   iv:56*Math.max(0,Math.min(1,(d-.45)/.55))
  };
 }
-function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20){
+const ENEMY_TIER_RANK={i:0,ii:1,iii:2,iv:3};
+function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTier=null){
  let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];
+ if(minTier){const minRank=ENEMY_TIER_RANK[minTier]??0,filtered=pool.filter(e=>(ENEMY_TIER_RANK[e.tier]??0)>=minRank);if(filtered.length)pool=filtered}
  const depth=(floor-1)/Math.max(1,totalFloors-1),tierWeights=enemyTierWeightsForDepth(depth);
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
 function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
-function configuredEnemyTemplateFor(e){const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===e.name));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!e.name||t.name===e.name||t.class===e.name))||t.name===e.name||t.class===e.name)||null}
+// Elite enemies get "Élite " prepended to their name at build time (before
+// any world/session snapshot strips their icon to save space) - strip it
+// back off here so the name still matches its family template and the icon
+// can be recovered instead of silently falling back to the generic shape.
+function configuredEnemyTemplateFor(e){const bareName=(e.name||'').replace(/^Élite\s+/,'');const families=normalizedEnemyFamilies(),family=families.find(f=>f.name===(e.enemyFamily||e.family))||families.find(f=>(f.enemies||[]).some(t=>t.type===e.type||t.name===bareName));return (family?.enemies||[]).find(t=>(t.type===e.type&&(!bareName||t.name===bareName||t.class===bareName))||t.name===bareName||t.class===bareName)||null}
 function hydratePrecomputedEnemy(e){if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}return equipEnemy(e)}
 function pickConfiguredFamilyForFloor(floor){const families=normalizedEnemyFamilies();if(!families.length)throw new Error('No hay familias consolidadas en enemy_family. Crea o importa familias antes de generar la dungeon.');return pick(families)}
 function applyInnerAlphaOutline(q,size,px=2){
