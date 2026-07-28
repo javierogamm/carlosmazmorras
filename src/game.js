@@ -3854,6 +3854,12 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activ
 }
 
 let pendingTargetAction=null;
+// Area-target skills go through an extra pick-then-confirm step: a first
+// click on a valid cell just locks in pendingAreaCandidate (shows the AoE
+// radius shaded there); a second click on that same cell, or the CONFIRMAR
+// button, actually casts. pendingAreaHover (mousemove-driven) previews the
+// radius before anything is locked in.
+let pendingAreaCandidate=null,pendingAreaHover=null;
 const AREA_SKILLS=new Set(['smash','quake','ironRain','scrapGrenade','chainSpark','gravityWell','holyCircuit','entropyWave','stormTotem','alchemicalNova','blackSun','worldBreaker','adminOverride','lootSingularity']);
 const ENEMY_TARGET_SKILLS=new Set(['arcSlash','ironHook','manaBolt','shockTrap','toxicEdge','spiritWolf','quantumThief','charge','execute']);
 function equippedWeapon(){return game?.player?.equipment?.weapon||null}
@@ -3917,14 +3923,39 @@ function skillTargetMode(id){
  return null
 }
 function beginTargeting(action){
- pendingTargetAction=action;updateUI();document.getElementById('waitBtn')?.classList.add('hidden');document.getElementById('cancelTargetBtn')?.classList.remove('hidden');
+ pendingTargetAction=action;pendingAreaCandidate=null;pendingAreaHover=null;updateUI();document.getElementById('waitBtn')?.classList.add('hidden');document.getElementById('cancelTargetBtn')?.classList.remove('hidden');document.getElementById('confirmTargetBtn')?.classList.add('hidden');
  document.getElementById('gameStage')?.classList.add('targeting');
  const hint=document.getElementById('targetHint');
  if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=action.mode==='area'?`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`:action.mode==='ally'?`Selecciona un aliado o a ti mismo · alcance ${rangeText} · ESC para cancelar`:`Selecciona un enemigo · alcance ${rangeText} · ESC para cancelar`;hint.classList.remove('hidden')}
  closeInspect()
 }
 function cancelTargeting(message='Apuntado cancelado.'){
- pendingTargetAction=null;document.getElementById('waitBtn')?.classList.remove('hidden');document.getElementById('cancelTargetBtn')?.classList.add('hidden');document.getElementById('gameStage')?.classList.remove('targeting');document.getElementById('targetHint')?.classList.add('hidden');if(message)log(message,'sys')
+ pendingTargetAction=null;pendingAreaCandidate=null;pendingAreaHover=null;document.getElementById('waitBtn')?.classList.remove('hidden');document.getElementById('cancelTargetBtn')?.classList.add('hidden');document.getElementById('confirmTargetBtn')?.classList.add('hidden');document.getElementById('gameStage')?.classList.remove('targeting');document.getElementById('targetHint')?.classList.add('hidden');if(message)log(message,'sys')
+}
+// Radius (in tiles) of the pending area skill's AoE, for the candidate/hover
+// shading preview - mirrors the same radius resolveTargetedSkill() will
+// actually use once confirmed (effects-list "area" component's range, or the
+// legacy classEffect area formula).
+function pendingAreaRadius(){
+ if(!pendingTargetAction||pendingTargetAction.kind!=='skill')return 2;
+ const id=game.player.equippedSkills[pendingTargetAction.slot],d=skillDefs[id];if(!d)return 2;
+ if(hasEffectsList(id)){const areaComp=(d.effects||[]).find(c=>c.target==='area');return areaComp?(areaComp.range||2):2}
+ return Math.min(4,1+Math.floor(skillLevel(id)/4)+(d.tier===3?1:0));
+}
+// Second click on the same locked-in cell (or the CONFIRMAR button) actually
+// casts the area skill; a failed cast (e.g. no enemies in range) re-prompts
+// instead of dropping targeting entirely.
+function confirmAreaTarget(){
+ if(!pendingTargetAction||!pendingAreaCandidate)return;
+ const {x,y}=pendingAreaCandidate,slot=pendingTargetAction.slot;
+ const ok=resolveTargetedSkill(slot,x,y);
+ pendingAreaCandidate=null;pendingAreaHover=null;
+ document.getElementById('confirmTargetBtn')?.classList.add('hidden');
+ if(!ok&&pendingTargetAction){
+  const hint=document.getElementById('targetHint'),action=pendingTargetAction;
+  if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`}
+ }
+ draw();
 }
 function gridDistance(a,b){return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y))}
 function validateTargetCell(x,y,range,minRange=1){const dist=gridDistance(game.player,{x,y});return game.seen?.[y]?.[x]&&dist>=minRange&&dist<=range&&hasLineOfSight(game.player,{x,y})}
@@ -4160,6 +4191,25 @@ function drawTargetingOverlay(){
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})>=(pendingTargetAction.minRange??1)&&gridDistance(game.player,{x:gx,y:gy})<=range&&hasLineOfSight(game.player,{x:gx,y:gy})){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
  ctx.restore()
 }
+// Semi-transparent AoE footprint shading, centered on the locked-in candidate
+// (solid) or the live mouse hover (faint preview before locking in) for a
+// pending area-target skill.
+function drawAreaCandidateOverlay(){
+ if(!pendingTargetAction||pendingTargetAction.mode!=='area')return;
+ const center=pendingAreaCandidate||pendingAreaHover;if(!center)return;
+ const c=camera(),radius=pendingAreaRadius();
+ ctx.save();ctx.globalAlpha=pendingAreaCandidate?.45:.22;ctx.fillStyle='#ff5c9e';
+ for(let gy=center.y-radius;gy<=center.y+radius;gy++)for(let gx=center.x-radius;gx<=center.x+radius;gx++){
+  if(Math.max(Math.abs(gx-center.x),Math.abs(gy-center.y))>radius)continue;
+  const sx=gx-c.x,sy=gy-c.y;if(sx<0||sy<0||sx>=visibleTiles||sy>=visibleTiles)continue;
+  ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6);
+ }
+ ctx.restore();
+ if(pendingAreaCandidate){
+  const sx=pendingAreaCandidate.x-c.x,sy=pendingAreaCandidate.y-c.y;
+  if(sx>=0&&sy>=0&&sx<visibleTiles&&sy<visibleTiles){ctx.save();ctx.strokeStyle='#ff5c9e';ctx.lineWidth=2;ctx.strokeRect(sx*TILE+2,sy*TILE+2,TILE-4,TILE-4);ctx.restore()}
+ }
+}
 
 
 function drawSafeRoomOverlay(sc){
@@ -4195,6 +4245,7 @@ function draw(){
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
+ drawAreaCandidateOverlay();
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
 function skillObjectSprite(x,y,o){
@@ -5181,7 +5232,10 @@ function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.fam
 // fresh floor generation correct automatically; precomputed floors (baked
 // once at world creation against a synthetic level-1 preview character) are
 // re-anchored on load, see scaleFloorForPlayerLevel().
-function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;return Math.max(1,Math.round(playerLevel+(floor-1)*1.4+rng(3)-1))}
+// Clamped to player.level±2 so deeper floors never drift arbitrarily far from
+// the character's actual power - the raw floor-based formula still nudges
+// enemies up within that band, it just can't escape it.
+function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;const raw=Math.round(playerLevel+(floor-1)*1.4+rng(3)-1);return Math.max(1,Math.min(playerLevel+2,Math.max(playerLevel-2,raw)))}
 // Enemy TIER mix shifts from mostly-weak to mostly-strong across the
 // dungeon's depth (d=0 at floor 1, d=1 at the last floor), so every run
 // reads as a progression on top of any room-specific tier rules, regardless
@@ -5766,6 +5820,10 @@ async function resumeSession(sessionId){
     game.boss=game.enemies.find(e=>e.boss)||null;
    }
   }
+  // The restored floor's enemies (snapshot or precomputed) may have been
+  // leveled against a stale player.level - rescale them to the character's
+  // current level (clamped ±2 by enemyLevelForFloor) right after loading.
+  scaleFloorForPlayerLevel();scaleFloorForParty();
   const pos=state.players?.[String(pj.id)];
   if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
@@ -7608,11 +7666,31 @@ function isTypingTarget(el){return ['INPUT','TEXTAREA','SELECT'].includes(el?.ta
 addEventListener('keydown',e=>{if(isTypingTarget(e.target)||!configScreen.classList.contains('hidden'))return;const k=e.key.toLowerCase(),m={arrowup:[0,-1],arrowdown:[0,1],arrowleft:[-1,0],arrowright:[1,0]};if(k==='escape'&&pendingTargetAction){cancelTargeting();return}if(m[k]){e.preventDefault();if(!pendingTargetAction)move(...m[k]);return}if('1234'.includes(k)){e.preventDefault();useSkill(Number(k)-1);return}if(k==='a'){e.preventDefault();beginBasicAttack()}if(k==='e'){e.preventDefault();waitBtn.click()}});
 
 
-document.getElementById('game').addEventListener('click',ev=>{
+function gridCellFromEvent(ev){
  const canvas=ev.currentTarget,rect=canvas.getBoundingClientRect(),scaleX=canvas.width/rect.width,scaleY=canvas.height/rect.height;
  const pxX=(ev.clientX-rect.left)*scaleX,pxY=(ev.clientY-rect.top)*scaleY;
- const c=camera(),gx=c.x+Math.floor(pxX/TILE),gy=c.y+Math.floor(pxY/TILE);
+ const c=camera();
+ return {x:c.x+Math.floor(pxX/TILE),y:c.y+Math.floor(pxY/TILE)};
+}
+document.getElementById('game').addEventListener('mousemove',ev=>{
+ if(!pendingTargetAction||pendingTargetAction.mode!=='area'||pendingAreaCandidate)return;
+ const {x,y}=gridCellFromEvent(ev);
+ if(pendingAreaHover&&pendingAreaHover.x===x&&pendingAreaHover.y===y)return;
+ pendingAreaHover={x,y};draw();
+});
+document.getElementById('game').addEventListener('click',ev=>{
+ const {x:gx,y:gy}=gridCellFromEvent(ev);
  if(pendingTargetAction){
+  if(pendingTargetAction.kind==='skill'&&pendingTargetAction.mode==='area'){
+   if(pendingAreaCandidate&&pendingAreaCandidate.x===gx&&pendingAreaCandidate.y===gy){confirmAreaTarget();return}
+   const range=pendingTargetAction.range||1,minRange=pendingTargetAction.minRange??1;
+   if(!validateTargetCell(gx,gy,range,minRange)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return}
+   pendingAreaCandidate={x:gx,y:gy};pendingAreaHover=null;
+   document.getElementById('confirmTargetBtn')?.classList.remove('hidden');
+   const hint=document.getElementById('targetHint');if(hint)hint.textContent='Pulsa otra vez la misma casilla, o CONFIRMAR, para lanzar · ESC para cancelar';
+   draw();
+   return;
+  }
   if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,gx,gy);
   else resolveBasicAttack(gx,gy);
   return
@@ -7620,6 +7698,7 @@ document.getElementById('game').addEventListener('click',ev=>{
  showInspect(inspectedEntityAt(gx,gy),ev.clientX,ev.clientY)
 });
 document.getElementById('closeInspect')?.addEventListener('click',closeInspect);
+document.getElementById('confirmTargetBtn')?.addEventListener('click',confirmAreaTarget);
 document.getElementById('hudEquipment')?.addEventListener('click',()=>{showTab('equipment')});
 document.getElementById('hudSkills')?.addEventListener('click',()=>{showTab('skills')});
 document.getElementById('hudMap')?.addEventListener('click',()=>{const w=document.getElementById('minimapWrap');w.classList.toggle('minimapHidden');document.getElementById('hudMap').textContent=w.classList.contains('minimapHidden')?'🗺':'✕'});
