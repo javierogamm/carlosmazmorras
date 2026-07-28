@@ -5475,6 +5475,14 @@ function gateUnlocked(type,key){
  const lvl=Number(window.currentUser?.max_pj_lv)||0,pts=Number(window.currentUser?.accumulated_points)||0;
  return lvl>=(g.min_level||0)&&pts>=(g.min_points||0);
 }
+// Cheapest-to-unlock first, so character creation reads as a progression:
+// always-available options up top, harder gates further down.
+function sortByGate(type,ids){
+ return [...ids].sort((a,b)=>{
+  const ga=gateFor(type,a),gb=gateFor(type,b);
+  return (ga.min_level-gb.min_level)||(ga.min_points-gb.min_points);
+ });
+}
 async function fetchConfigGates(){
  try{
   const r=await fetch('/api/config-class?kind=gates');const data=await r.json();
@@ -5761,6 +5769,9 @@ function openCharacterCreation(){
  singlePlayerOverlay.classList.add('hidden');
  app.classList.remove('hidden');
  startOverlay.classList.remove('hidden');
+ nameInput.value='';
+ document.getElementById('raceAccordion')?.removeAttribute('open');
+ document.getElementById('classAccordion')?.removeAttribute('open');
  fetchConfigClasses();
  if(!configGatesLoaded)fetchConfigGates();else{renderRaceChoices();renderClassChoices()}
 }
@@ -7646,10 +7657,14 @@ backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverla
 
 function renderRaceChoices(){
  const root=document.getElementById('raceChoices');if(!root)return;
- root.innerHTML=Object.entries(raceDefs).map(([id,r])=>{
-  const unlocked=gateUnlocked('race',id),g=gateFor('race',id);
-  const lockNote=unlocked?'':`<p class="small gateLockNote"><canvas class="gateLockIcon" width="18" height="18" data-gate-lock></canvas> Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</p>`;
-  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div>`;
+ const raceIds=sortByGate('race',Object.keys(raceDefs));
+ if(!raceIds.includes(selectedRace))selectedRace=raceIds.find(id=>gateUnlocked('race',id))||raceIds[0];
+ root.innerHTML=raceIds.map(id=>{
+  const r=raceDefs[id],unlocked=gateUnlocked('race',id),g=gateFor('race',id);
+  // Locked races have no icon of their own today - the padlock takes that slot.
+  const lockIcon=unlocked?'':`<canvas class="choiceLockIcon" width="40" height="40" data-gate-lock></canvas>`;
+  const lockNote=unlocked?'':`<p class="small gateLockNote">Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</p>`;
+  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}">${lockIcon}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div></div>`;
  }).join('');
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices()});
@@ -7670,7 +7685,7 @@ function classIdsForSkillMode(mode){
  return Object.keys(classDefs);
 }
 function renderClassChoices(){
- const root=document.getElementById('classChoices'),ids=classIdsForSkillMode(selectedSkillMode);
+ const root=document.getElementById('classChoices'),ids=sortByGate('class',classIdsForSkillMode(selectedSkillMode));
  if(!ids.length){
   if(selectedSkillMode==='advanced'&&!configClassesLoaded){
    root.innerHTML='<p class="small">Cargando clases Advanced desde la base de datos...</p>';
@@ -7685,8 +7700,10 @@ function renderClassChoices(){
  if(!ids.includes(selectedClass))selectedClass=ids.find(id=>gateUnlocked('class',id))||ids[0];
  root.innerHTML=ids.map(id=>{
   const c=resolveClassDef(id),unlocked=gateUnlocked('class',id),g=gateFor('class',id);
-  const lockNote=unlocked?'':`<div class="small gateLockNote"><canvas class="gateLockIcon" width="18" height="18" data-gate-lock></canvas> Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</div>`;
-  return `<div class="classCard ${id===selectedClass?'selected':''} ${unlocked?'':'locked'}" data-class="${id}" data-locked="${unlocked?'0':'1'}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div>${lockNote}</div></div>`;
+  const lockNote=unlocked?'':`<div class="small gateLockNote">Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</div>`;
+  // Locked classes show the padlock in place of the class preview icon.
+  const iconCanvas=unlocked?`<canvas width="64" height="64" data-class-preview="${id}"></canvas>`:`<canvas width="64" height="64" data-gate-lock></canvas>`;
+  return `<div class="classCard ${id===selectedClass?'selected':''} ${unlocked?'':'locked'}" data-class="${id}" data-locked="${unlocked?'0':'1'}">${iconCanvas}<div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div>${lockNote}</div></div>`;
  }).join('');
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));

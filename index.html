@@ -573,9 +573,10 @@
 <div class="overlay hidden" id="startOverlay">
 <div class="modal">
 <h2>CREA TU DESGRACIADO PROFESIONAL</h2>
-<label>Nombre <input id="nameInput" value="Carl-ish" maxlength="16"></label>
-<h3>Raza</h3>
+<label>Nombre <input id="nameInput" value="" maxlength="16" placeholder="Nombre de tu personaje"></label>
+<details class="configAccordion" id="raceAccordion"><summary>Raza</summary>
 <div class="choices raceGrid" id="raceChoices"></div>
+</details>
 <h3>Modo de habilidades</h3>
 <div class="skillModeChoice">
  <label><input type="radio" name="skillMode" id="skillModeHardcode" value="hardcode" checked> Hardcode <span class="small">Las 16 clases y skills clásicas del juego.</span></label>
@@ -586,10 +587,11 @@
  <label><input type="radio" name="combatMode" id="combatModeClassic" value="classic"> Clásico <span class="small">Una acción por turno.</span></label>
  <label><input type="radio" name="combatMode" id="combatModeAp" value="ap"> Puntos de Acción (PA) <span class="small">Pool de PA por turno (30+AGI/2): varias acciones antes de pasar turno.</span></label>
 </div>
-<h3>Clase</h3>
+<details class="configAccordion" id="classAccordion"><summary>Clase</summary>
 <p class="small">Cada clase define sus atributos iniciales y su estilo de juego.</p>
 <div class="classGrid" id="classChoices"></div>
 <div id="classDetail" class="narrative"></div>
+</details>
 <button class="start" id="startBtn">CREAR PERSONAJE</button>
 </div>
 </div>
