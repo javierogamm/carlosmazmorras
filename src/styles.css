@@ -69,6 +69,10 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .choice{background:#30203d;border:3px solid #59406b;padding:10px;cursor:pointer}
 .choice.selected{border-color:#ffc35a;box-shadow:0 0 13px #ffc35a55}
+.choice.locked,.classCard.locked{opacity:.5;cursor:not-allowed}
+.gateLockNote{display:flex;align-items:center;gap:6px;margin-top:6px!important;color:#ff9a9a}
+.gateLockIcon{width:18px;height:18px;image-rendering:pixelated;flex:none}
+.userProgressStats{background:#251a2f;border:2px solid #684b7c;padding:8px;color:#ffd68b}
 .skillModeChoice{display:grid;gap:8px;margin-bottom:10px}.skillModeChoice label{display:flex;flex-direction:column;gap:2px;background:#271a31;border:2px solid #513b60;padding:8px;cursor:pointer}.skillModeChoice label:has(input:checked){border-color:#ffc35a;box-shadow:0 0 10px #ffc35a44}
 .classGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:360px;overflow:auto;padding-right:4px}
 .raceGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;max-height:300px;overflow:auto;padding-right:4px}

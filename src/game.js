@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.53.2';
+const APP_VERSION='0.55.0';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -1402,6 +1402,8 @@ function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkill
 
 function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
+ if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
+ if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
  const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
@@ -5376,6 +5378,7 @@ const WORLD_OBJECT_KINDS=[
  {key:'key',label:'Llave'},
  {key:'stairsDown',label:'Escaleras de bajada'},
  {key:'trap',label:'Trampa'},
+ {key:'reward_lock',label:'Bloqueos rewards'},
  ...LOOT_RARITY_ORDER.map(t=>({key:`shard_${t}`,label:`Shard: ${tierDefs[t]?.label||t}`})),
  ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
 ];
@@ -5426,6 +5429,78 @@ function setupConfigWorldObjectsMode(){
   document.getElementById('configWorldObjectIconStatus').textContent='Sin icono: usará el sprite por defecto.';
  };
 }
+
+// ============================================================================
+// UNLOCK GATES - min PJ level / min accumulated points required to pick a
+// given race or class at character creation. Stored in config_unlock_gates,
+// served through config-class.js?kind=gates (Vercel function-count limit).
+// ============================================================================
+let configGates={};
+let configGatesLoaded=false;
+function gateKeyOf(type,key){return `${type}:${key}`}
+function gateFor(type,key){return configGates[gateKeyOf(type,key)]||{min_level:0,min_points:0}}
+function gateUnlocked(type,key){
+ const g=gateFor(type,key);
+ const lvl=Number(window.currentUser?.max_pj_lv)||0,pts=Number(window.currentUser?.accumulated_points)||0;
+ return lvl>=(g.min_level||0)&&pts>=(g.min_points||0);
+}
+async function fetchConfigGates(){
+ try{
+  const r=await fetch('/api/config-class?kind=gates');const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar los bloqueos');
+  configGates={};
+  for(const row of (Array.isArray(data)?data:[]))configGates[gateKeyOf(row.type,row.key)]={min_level:Number(row.min_level)||0,min_points:Number(row.min_points)||0};
+  configGatesLoaded=true;
+  renderConfigGatesLists();
+  renderRaceChoices();renderClassChoices();
+ }catch(e){const st=document.getElementById('configGatesStatus');if(st)st.textContent=`Error cargando bloqueos: ${e.message}`}
+}
+function renderGatesSection(rootId,type,entries){
+ const root=document.getElementById(rootId);if(!root)return;
+ root.innerHTML=entries.map(({key:k,label})=>{
+  const g=gateFor(type,k);
+  return `<div class="configItem"><span class="tierDot" style="background:${(g.min_level||g.min_points)?'#8c72e8':'#4d395a'}"></span><div><b>${label}</b><div class="configForm"><label>Nivel PJ mínimo <input type="number" min="0" step="1" data-gate-level="${gateKeyOf(type,k)}" value="${g.min_level||0}"></label><label>Puntuación mínima <input type="number" min="0" step="1" data-gate-points="${gateKeyOf(type,k)}" value="${g.min_points||0}"></label></div></div></div>`;
+ }).join('');
+}
+function renderConfigGatesLists(){
+ renderGatesSection('configGatesRaces','race',Object.entries(raceDefs).map(([id,r])=>({key:id,label:r.name})));
+ renderGatesSection('configGatesClasses','class',Object.entries(classDefs).map(([id,c])=>({key:id,label:c.name})));
+}
+async function saveConfigGates(){
+ const st=document.getElementById('configGatesStatus');if(st)st.textContent='Guardando...';
+ try{
+  const rows=[...document.querySelectorAll('[data-gate-level]')].map(inp=>{
+   const [type,key]=inp.dataset.gateLevel.split(':');
+   const pointsInp=document.querySelector(`[data-gate-points="${type}:${key}"]`);
+   return {type,key,min_level:Number(inp.value)||0,min_points:Number(pointsInp?.value)||0};
+  });
+  for(const row of rows){
+   const r=await fetch('/api/config-class?kind=gates',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
+   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el bloqueo');
+  }
+  await fetchConfigGates();
+  if(st)st.textContent='Bloqueos guardados.';
+ }catch(e){if(st)st.textContent=`Error: ${e.message}`}
+}
+function setupConfigGatesMode(){
+ renderConfigGatesLists();
+ document.getElementById('saveConfigGatesBtn').onclick=saveConfigGates;
+}
+// Same custom-icon lookup as drawWorldObjectIcon but paints onto an arbitrary
+// UI canvas (lock badges on locked race/class cards) and falls back to a
+// plain glyph instead of the default game sprite when no icon is configured.
+function drawWorldObjectIconToCanvas(canvas,objectKey,fallbackGlyph='🔒'){
+ if(!canvas)return;
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,canvas.width,canvas.height);
+ const hex=configWorldObjects[objectKey];
+ if(hex){
+  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
+  if(img.complete&&img.naturalWidth){q.drawImage(img,0,0,canvas.width,canvas.height);return}
+  img.onload=()=>drawWorldObjectIconToCanvas(canvas,objectKey,fallbackGlyph);
+  return;
+ }
+ q.font=`${canvas.height-4}px sans-serif`;q.textAlign='center';q.textBaseline='middle';q.fillText(fallbackGlyph,canvas.width/2,canvas.height/2+1);
+}
 // Shared draw helper: if object_key has a custom icon, draws it and returns
 // true; otherwise the caller falls back to its own procedural sprite.
 function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
@@ -5449,7 +5524,7 @@ function drawShardTierIconToCanvas(canvas,tier){
  }
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects()})}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
 function setupClassConfigMode(){
@@ -5655,6 +5730,7 @@ function openCharacterCreation(){
  app.classList.remove('hidden');
  startOverlay.classList.remove('hidden');
  fetchConfigClasses();
+ if(!configGatesLoaded)fetchConfigGates();else{renderRaceChoices();renderClassChoices()}
 }
 
 async function openCharacterSelection(){
@@ -7522,7 +7598,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
 
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigGatesMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
@@ -7531,15 +7607,20 @@ document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
 menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
-loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
 backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
 
 
 function renderRaceChoices(){
- const root=document.getElementById('raceChoices');
- root.innerHTML=Object.entries(raceDefs).map(([id,r])=>`<div class="choice ${id===selectedRace?'selected':''}" data-race="${id}"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p></div>`).join('');
- root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{selectedRace=el.dataset.race;renderRaceChoices()});
+ const root=document.getElementById('raceChoices');if(!root)return;
+ root.innerHTML=Object.entries(raceDefs).map(([id,r])=>{
+  const unlocked=gateUnlocked('race',id),g=gateFor('race',id);
+  const lockNote=unlocked?'':`<p class="small gateLockNote"><canvas class="gateLockIcon" width="18" height="18" data-gate-lock></canvas> Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</p>`;
+  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div>`;
+ }).join('');
+ root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
+ root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices()});
 }
 renderRaceChoices();
 
@@ -7569,10 +7650,15 @@ function renderClassChoices(){
   document.getElementById('classDetail').innerHTML='';
   return;
  }
- if(!ids.includes(selectedClass))selectedClass=ids[0];
- root.innerHTML=ids.map(id=>{const c=resolveClassDef(id);return `<div class="classCard ${id===selectedClass?'selected':''}" data-class="${id}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`}).join('');
+ if(!ids.includes(selectedClass))selectedClass=ids.find(id=>gateUnlocked('class',id))||ids[0];
+ root.innerHTML=ids.map(id=>{
+  const c=resolveClassDef(id),unlocked=gateUnlocked('class',id),g=gateFor('class',id);
+  const lockNote=unlocked?'':`<div class="small gateLockNote"><canvas class="gateLockIcon" width="18" height="18" data-gate-lock></canvas> Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</div>`;
+  return `<div class="classCard ${id===selectedClass?'selected':''} ${unlocked?'':'locked'}" data-class="${id}" data-locked="${unlocked?'0':'1'}"><canvas width="64" height="64" data-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div>${lockNote}</div></div>`;
+ }).join('');
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
- root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{selectedClass=el.dataset.class;renderClassChoices()});
+ root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
+ root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices()});
  const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();

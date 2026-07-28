@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.54.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.54.0">
+<title>MAZMORRA // BOTÍN v0.55.0 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.55.0">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.54.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -99,6 +99,7 @@
    <button class="start" id="loginBtn" type="submit">SIGN IN</button>
   </form>
   <div id="loginStatus" class="small"></div>
+  <div id="userProgressStats" class="small userProgressStats hidden"></div>
   <div class="landingActions hidden" id="mainMenuActions">
    <button class="start" id="menuScoresBtn">PUNTUACIONES</button>
    <button class="start" id="menuSingleBtn">SINGLE PLAYER</button>
@@ -164,8 +165,8 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.54.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button></div>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -476,6 +477,22 @@
    <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
   </div>
  </div>
+ <div class="configTabPanel hidden" id="configTabGates">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Bloqueos de razas</h2>
+    <p class="small">Nivel máximo de PJ y puntuación acumulada mínimos (columnas <code>max_pj_lv</code>/<code>accumulated_points</code> del usuario) que hacen falta para poder elegir esta raza al crear personaje. Deja ambos en 0 para que esté siempre desbloqueada.</p>
+    <div id="configGatesRaces" class="configItemsList"></div>
+   </section>
+   <section class="panel">
+    <h2>Bloqueos de clases</h2>
+    <p class="small">Mismo criterio que las razas, para las 16 clases hardcode.</p>
+    <div id="configGatesClasses" class="configItemsList"></div>
+   </section>
+  </div>
+  <button class="start" id="saveConfigGatesBtn" type="button">GUARDAR BLOQUEOS</button>
+  <div id="configGatesStatus" class="small"></div>
+ </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
 </div>
 
@@ -586,7 +603,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.54.0"></script>
+<script src="./src/game.js?v=0.55.0"></script>
 
 </body>
 </html>

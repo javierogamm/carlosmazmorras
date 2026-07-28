@@ -7,7 +7,7 @@ function supabaseConfig(){
  return {url:url.replace(/\/$/,''),key};
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
-function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config};}
+function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config,max_pj_lv:Number(row.max_pj_lv)||0,accumulated_points:Number(row.accumulated_points)||0};}
 
 module.exports=async(req,res)=>{
  try{
@@ -19,7 +19,7 @@ module.exports=async(req,res)=>{
   const nombre=String(req.body?.nombre||'').trim();
   const pass=String(req.body?.pass||'').trim();
   if(!nombre||!pass)return res.status(400).json({error:'Faltan usuario o contraseña'});
-  const selectUrl=`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pass,config&nombre=eq.${encodeURIComponent(nombre)}&limit=1`;
+  const selectUrl=`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pass,config,max_pj_lv,accumulated_points&nombre=eq.${encodeURIComponent(nombre)}&limit=1`;
   const found=await fetch(selectUrl,{headers:headers(key)});
   const users=await found.json();
   if(!found.ok)return res.status(found.status).json(users);

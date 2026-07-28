@@ -1,4 +1,10 @@
 const SUPABASE_TABLE='config_class';
+// Race/class unlock gates (min PJ level + min accumulated points needed to
+// pick that race/class at character creation) share this serverless function
+// via ?kind=gates instead of getting their own file - Vercel's Hobby plan
+// caps a project at 12 Serverless Functions and this repo is already at
+// that limit (see config-floor.js's ?kind=object for the same pattern).
+const GATES_TABLE='config_unlock_gates';
 
 function supabaseConfig(){
  const url=process.env.SUPABASE_URL;
@@ -20,9 +26,31 @@ function cleanClass(body){
  };
 }
 function requestId(req){return req.query?.id||req.body?.id||req.body?.class_id||null}
+
+async function handleGates(req,res,url,key){
+ if(req.method==='GET'){
+  const r=await fetch(`${url}/rest/v1/${GATES_TABLE}?select=type,key,min_level,min_points&order=type.asc,key.asc`,{headers:headers(key)});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(data);
+ }
+ if(req.method==='PUT'){
+  const type=String(req.body?.type||'');
+  const gateKey=String(req.body?.key||'');
+  if(!['race','class'].includes(type)||!gateKey)return res.status(400).json({error:'Falta type (race/class) o key'});
+  const row={type,key:gateKey,min_level:Number(req.body?.min_level)||0,min_points:Number(req.body?.min_points)||0};
+  const r=await fetch(`${url}/rest/v1/${GATES_TABLE}?on_conflict=type,key`,{method:'POST',headers:{...headers(key),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(row)});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(Array.isArray(data)?data[0]:data);
+ }
+ res.setHeader('Allow','GET, PUT');return res.status(405).json({error:'Método no permitido'});
+}
+
 module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
+  if(req.query?.kind==='gates')return handleGates(req,res,url,key);
   if(req.method==='GET'){
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,icon,stats,skills,class_json,skills_json,advanced&order=nombre.asc`,{headers:headers(key)});
    const data=await r.json();
