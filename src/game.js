@@ -1200,7 +1200,7 @@ const configImageCache={};function configIconImage(src){if(!configImageCache[src
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
-function makeLoot(level,source='normal',forceRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  if(forceRarityName){
   if(configItems.length){
    const matches=configItems.filter(row=>((row.item_json||row).rarity||row.tier||'common')===forceRarityName);
@@ -2459,11 +2459,25 @@ function attack(e,bonus=0,options={}){
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
 }
+// Enemy kill loot: once a drop is decided (killLootChance, or always on
+// boss/eventBoss), it's always exactly one of equipment (60%), potion (30%)
+// or skill unlock (10%) - never more than one, never none.
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
- if(Math.random()<killLootChance||e.boss||e.eventBoss){const item=makeLoot(game.player.level+(e.boss?3:0),e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal');addInventoryItem(item);lootToast(item)}if(e.skills?.length&&Math.random()<(e.boss?.38:e.elite?.18:.055)){const drop=pick(e.skills.filter(id=>!game.player.knownSkills.includes(id)));if(drop)unlockSkillLoot(drop)}else if(e.boss||e.eventBoss||Math.random()<.018)unlockSkillLoot(randomLootableSkill())
+ if(Math.random()<killLootChance||e.boss||e.eventBoss){
+  const source=e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal';
+  const roll=Math.random();
+  if(roll<.6){
+   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'equipment');addInventoryItem(item);lootToast(item);
+  }else if(roll<.9){
+   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'potion');addInventoryItem(item);lootToast(item);
+  }else{
+   const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
+   if(drop)unlockSkillLoot(drop);
+  }
+ }
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
@@ -2482,6 +2496,11 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  const blockChance=Math.min(.75,(p.derived?.blockChance||0)/100);
  const blocked=mult>0&&d>0&&Math.random()<blockChance;
  if(blocked){d=0;result=`${result} · bloqueado con el escudo`}
+ if(d>0&&p.holyShield>0){
+  const absorbed=Math.min(p.holyShield,d);
+  p.holyShield-=absorbed;d-=absorbed;
+  result=`${result} · escudo absorbe ${absorbed}${p.holyShield<=0?' (roto)':''}`;
+ }
  let finalDamage=d;
  const lifeBuff=(p.activeBuffs||[]).find(b=>b.effects?.lifesteal);
  if(lifeBuff&&options?.skillId)healEntity(p,Math.max(1,Math.round(finalDamage*lifeBuff.effects.lifesteal)));
@@ -3112,10 +3131,19 @@ function tickPlayerRegen(){
  p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
  p.mana=Math.min(p.maxMana,p.mana+Math.max(0,p.derived?.manaRegen||0));
 }
+// Only ticks down a holyshield's turn limit when one was configured (turns>0
+// on cast) - a shield cast with turns:0 lasts until broken by damage, no
+// timer at all.
+function tickHolyShield(){
+ const p=game.player;if(!p||!(p.holyShieldTurns>0))return;
+ p.holyShieldTurns--;
+ if(p.holyShieldTurns<=0){p.holyShield=0;p.holyShieldTurns=0}
+}
 function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
  const potions=(game.player.activePotions||[]).map(b=>`<span class="effectBadge potion">${b.name}: ${b.turns}T</span>`);
- return[...buffs,...potions].join('')
+ const shield=game.player.holyShield>0?[`<span class="effectBadge buff">Escudo: ${game.player.holyShield}${game.player.holyShieldTurns>0?` (${game.player.holyShieldTurns}T)`:''}</span>`]:[];
+ return[...buffs,...potions,...shield].join('')
 }
 
 
@@ -3377,7 +3405,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3534,6 +3562,18 @@ function applyEffectComponent(id,comp,ctx){
   p.cheatDeathTurns=Math.max(1,comp.turns??5);
   return true
  }
+ if(comp.kind==='holyshield'){
+  // Absorb-shield pool: consumed by damagePlayer() before HP, separate from
+  // the flat armor-boost p.shield used elsewhere. Same dice/stat-scaling
+  // idiom as dicePowerFor/dotPowerFor: mode 'mult' scales the base value by
+  // statVal*coef instead of just adding it.
+  const statVal=comp.stat?statValueFor(p,comp.stat):0,coef=comp.statCoef??1,base=Math.max(0,comp.value??20);
+  const contribution=comp.mode==='mult'?base*(statVal*coef):statVal*coef;
+  const amount=Math.max(1,Math.round(base+contribution));
+  p.holyShield=(p.holyShield||0)+amount;
+  if(comp.turns)p.holyShieldTurns=Math.max(p.holyShieldTurns||0,comp.turns);
+  return true
+ }
  return false
 }
 // Runs every component in def.effects against a shared cast context; a
@@ -3595,7 +3635,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -3617,7 +3657,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      // enemyTurn() itself now paces each action with a real delay (PA mode,
      // always on in multiplayer) - each sendMpAction call it makes goes out
@@ -4015,11 +4055,17 @@ function equipItem(id){
  const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
+function unequipItem(slot){
+ const item=game.player.equipment?.[slot];if(!item)return;
+ game.player.equipment[slot]=null;game.inventory.push(item);
+ storyOverlay?.classList.add('hidden');
+ log(`Desequipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw();
+}
 
 
 function equippedSlotHtml(slot,item){
  if(!item)return`<span class="small">Vacío</span>`;
- return`<button type="button" class="equippedItemButton" onclick="showEquippedItem('${slot}')" title="Ver detalles de ${item.name}"><canvas class="equippedItemIcon" width="48" height="48" data-equipped-slot="${slot}"></canvas></button><div class="equippedItemInfo"><b class="${item.rarity}">${item.name}</b><span class="small">Nv. ${item.itemLevel||1} · Poder ${item.score||0}</span></div>`;
+ return`<button type="button" class="equippedItemButton" onclick="showEquippedItem('${slot}')" ondblclick="event.preventDefault();unequipItem('${slot}')" title="Ver detalles de ${item.name} (doble click para desequipar)"><canvas class="equippedItemIcon" width="48" height="48" data-equipped-slot="${slot}"></canvas></button><div class="equippedItemInfo"><b class="${item.rarity}">${item.name}</b><span class="small">Nv. ${item.itemLevel||1} · Poder ${item.score||0}</span></div>`;
 }
 function showEquippedItem(slot){
  const item=game?.player?.equipment?.[slot];if(!item)return;
@@ -4042,7 +4088,7 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  inventory.innerHTML=game.inventory.length?game.inventory.map(i=>{const canDisenchant=i.type!=='potion'&&i.slot!=='consumable';return `<div class="item" onclick="${i.type==='potion'?'usePotion':'equipItem'}('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.type==='potion'&&i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">${i.type==='potion'?'Poción':slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 10-20 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
@@ -4751,6 +4797,7 @@ function defaultComponentFor(kind){
  if(kind==='pullroot')return {...base,target:'enemy',turns:2};
  if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
  if(kind==='cheatdeath')return {...base,turns:5};
+ if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  return base;
 }
 function effectComponentTargetOptions(kind){
@@ -4815,6 +4862,11 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='pullroot')fields=`<label>Turnos enraizado <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='counter')fields=`<label>Escudo otorgado <input type="number" min="0" value="${comp.shield??10}" data-effect-idx="${i}" data-effect-field="shield"></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos de ventana (hasta el próximo golpe) <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ // Any component targeting 'area' (not just the dedicated 'aoe' kind) needs
+ // its own configurable radius - resolveComponentEnemyTargets already reads
+ // comp.range||2 for all of them, this just exposes it in the admin form.
+ if(comp.target==='area'&&comp.kind!=='aoe')fields+=`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  return `<details class="effectCard" open><summary class="effectCardHead"><b>${i+1}. ${effectKindLabel(comp.kind)}</b><button type="button" data-remove-effect="${i}">Quitar</button></summary><div class="configForm">${targetHtml}${fields}</div></details>`;
 }
 // Icon picker row embedded inside a summon/summonturret effect card: shows
@@ -4860,7 +4912,7 @@ function renderSkillEffectsList(){
    window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):el.value;
    // these two fields change which sub-fields the card shows, so re-render
    // that one card's layout instead of leaving stale/hidden inputs behind
-   if(field==='effectType'||field==='mode')renderSkillEffectsList();
+   if(field==='effectType'||field==='mode'||field==='target')renderSkillEffectsList();
   });
  });
  wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{

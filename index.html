@@ -36,6 +36,7 @@
 </div>
 <div class="gameStage" id="gameStage">
 <canvas id="game" width="512" height="512"></canvas>
+<div class="gameHudIdentity" id="gameHudIdentity"></div>
 <div class="vitalBars" id="vitalBars">
  <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
  <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★</span><span class="vbValue" id="hudXpText"></span></div>
@@ -304,6 +305,7 @@
        <option value="pullroot">Atraer + enraizar</option>
        <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
        <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
       </select>
       <button type="button" id="addSkillEffectBtn">AÑADIR EFECTO →</button>
      </div>
