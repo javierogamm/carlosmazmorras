@@ -3792,7 +3792,7 @@ function applyEffectComponent(id,comp,ctx){
   // for its own author-picked one (activePlayerIconOverride, read from
   // heroSprite()), same as 'transform'.
   const turns=comp.turns??(6+Math.floor(lvl/2)),mult=Math.max(0,(comp.value??150)/100);
-  applyBuff(`${id}:ascend`,d.name,turns,{ascendMult:mult,ascendResource:comp.resource||'any',ascendIcon:comp.iconImage||''});
+  applyBuff(`${id}:ascend`,d.name,turns,{ascendMult:mult,ascendResource:comp.resource||'any',ascendIcon:comp.iconImage||'',blockSkills:comp.allowSkills===false});
   return true
  }
  if(comp.kind==='transform'){
@@ -5386,7 +5386,7 @@ function effectSummaryTag(comp){
   }
   case 'linkdamage':return `Cadena x${(comp.jumps??3)+1} (-${comp.falloff??25}%/salto)`;
   case 'invisible':return `Invisibilidad ${comp.turns??2}T${comp.breakOnAttack!==false?' (se rompe al atacar)':''}`;
-  case 'ascend':return `Ascensión (${comp.value??150}% coste${comp.resource&&comp.resource!=='any'?` de ${comp.resource==='mana'?'maná':'stamina'}`:''})`;
+  case 'ascend':return `Ascensión (${comp.value??150}% coste${comp.resource&&comp.resource!=='any'?` de ${comp.resource==='mana'?'maná':'stamina'}`:''})${comp.allowSkills===false?' · sin skills':''}`;
   case 'transform':return `Transformación (${(comp.damagePct??0)>=0?'+':''}${comp.damagePct??0}% dmg, ${(comp.hpPct??0)>=0?'+':''}${comp.hpPct??0}% vida)${comp.allowSkills===false?' · sin skills':''}`;
   default:return effectKindLabel(comp.kind);
  }
@@ -5437,7 +5437,7 @@ function defaultComponentFor(kind){
  if(kind==='cheatdeath')return {...base,turns:5};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
- if(kind==='ascend')return {...base,resource:'any',value:150,turns:6,iconImage:''};
+ if(kind==='ascend')return {...base,resource:'any',value:150,turns:6,allowSkills:true,iconImage:''};
  if(kind==='transform')return {...base,turns:8,damagePct:0,armorPct:0,hpPct:0,allowSkills:true,iconImage:''};
  return base;
 }
@@ -5592,7 +5592,7 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='invisible')fields=`<p class="small">Mientras esté activa, los enemigos no responden en su turno (como el sigilo). Se acaba sola al agotar los turnos, y opcionalmente también en cuanto atacas.</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="breakOnAttack" ${comp.breakOnAttack!==false?'checked':''}> Se rompe al atacar</label>`;
- else if(comp.kind==='ascend')fields=`<p class="small">Mientras dure, cambia lo que cuestan tus propias skills y puede sustituir tu icono en pantalla por uno propio.</p><label>Recurso afectado <select data-effect-idx="${i}" data-effect-field="resource"><option value="any" ${!comp.resource||comp.resource==='any'?'selected':''}>Cualquiera</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label><label>% de coste mientras dure (100 = coste normal, &lt;100 más barato, &gt;100 más caro) <input type="number" min="0" value="${comp.value??150}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??6}" data-effect-idx="${i}" data-effect-field="turns"></label>${summonIconRowHtml(comp,i)}`;
+ else if(comp.kind==='ascend')fields=`<p class="small">Mientras dure, cambia lo que cuestan tus propias skills y puede sustituir tu icono en pantalla por uno propio.</p><label>Recurso afectado <select data-effect-idx="${i}" data-effect-field="resource"><option value="any" ${!comp.resource||comp.resource==='any'?'selected':''}>Cualquiera</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label><label>% de coste mientras dure (100 = coste normal, &lt;100 más barato, &gt;100 más caro) <input type="number" min="0" value="${comp.value??150}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??6}" data-effect-idx="${i}" data-effect-field="turns"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="allowSkills" ${comp.allowSkills!==false?'checked':''}> Permite lanzar otras habilidades mientras dura</label>${summonIconRowHtml(comp,i)}`;
  else if(comp.kind==='transform')fields=`<p class="small">Mientras dure, cambia tu icono en pantalla y tus stats en %. Los porcentajes pueden ser negativos.</p><label>Turnos <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>% de daño (+/-) <input type="number" step="1" value="${comp.damagePct??0}" data-effect-idx="${i}" data-effect-field="damagePct"></label><label>% de armadura (+/-) <input type="number" step="1" value="${comp.armorPct??0}" data-effect-idx="${i}" data-effect-field="armorPct"></label><label>% de vida máxima (+/-) <input type="number" step="1" value="${comp.hpPct??0}" data-effect-idx="${i}" data-effect-field="hpPct"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="allowSkills" ${comp.allowSkills!==false?'checked':''}> Permite lanzar otras habilidades mientras dura</label>${summonIconRowHtml(comp,i)}`;
  // Any component targeting 'area' (not just the dedicated 'aoe' kind) needs
  // its own configurable radius - resolveComponentEnemyTargets already reads

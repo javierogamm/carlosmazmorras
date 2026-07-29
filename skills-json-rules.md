@@ -48,7 +48,7 @@ Common component shape: `{ "kind": "<kind>", "target": "...", ...kind-specific f
 
 ### 3.1 Shared "dice block" (prefix defaults to `dmg`, some kinds use `dot`)
 
-Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret` (all prefix `dmg`), and `dot` (prefix `dot`).
+Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Note: `summon`/`summonturret`/`clones` never read `dmgStat`/`dmgStatMode`/`dmgStatCoef` for their companion's attacks (flat dice only), and `trap` computes but then discards its own dice/stat magnitude entirely — see §4.12/§4.23.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
@@ -72,7 +72,7 @@ If `{p}Dice` is 0, a hand-tuned per-kind fallback (roughly `~8 + skillLevel*2..4
 
 Per-component `target` field, where applicable (see §4 table for which kinds accept which target values):
 - `"enemy"`: the clicked enemy, or nearest visible enemy if the skill is self-cast.
-- `"area"`: for damage/debuff-style kinds (`dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `execute`, `pullroot`) — all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight (`resolveComponentEnemyTargets`). For `heal`/`hot` — all allies (companions + other human players) within `range` tiles of the cast point, via the analogous `resolveComponentAllyTargets` (see §4.5/§4.15 for exactly who counts as an "ally" and how each is healed).
+- `"area"`: for damage/debuff-style kinds (`dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `execute`, `pullroot`) — all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight (`resolveComponentEnemyTargets`). For `heal`/`hot` — all allies (companions + other human players) within `range` tiles of the cast point, via the analogous `resolveComponentAllyTargets` (see §4.5/§4.16 for exactly who counts as an "ally" and how each is healed).
 - `"self"`: the caster.
 - `"ally"`: clicked ally (multiplayer only).
 
@@ -97,8 +97,9 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 | `aoe` | — (always area around cast point) | area damage with explicit radius |
 | `multihit` | — (always the resolved single target) | N repeated hits on one target, paced 0.5s apart |
 | `mark` | enemy, area | target takes +X% damage from ALL sources for N turns |
-| `summon` | — | temporary mobile ally, author-configurable |
-| `summonturret` | — | temporary **stationary**, long-range ally |
+| `summon` | — | mobile ally, author-configurable effect type (incl. permanent "Compañero" pets) |
+| `summonturret` | — | **stationary**, long-range ally, same effect types as `summon` |
+| `clones` | — | 1-4 mobile allies spawned at once, same effect types as `summon` |
 | `utility` | — | reveal map / stealth / flat shield / restore resource |
 | `hot` | self, area | heal-over-time on caster (+ allies if area) |
 | `execute` | enemy, area | normal hit, multiplied if target is below an HP% threshold |
@@ -106,6 +107,12 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 | `counter` | — (self) | shield + arms a one-time counterattack |
 | `cheatdeath` | — (self) | survive the next lethal hit at 1 HP |
 | `holyshield` | — (self) | absorb-shield: soaks damage before it touches HP |
+| `lineshot` | — (line toward clicked/nearest enemy) | piercing shot, hits every enemy on the line |
+| `trap` | — (cast tile) | invisible trigger, hits whoever steps on it |
+| `linkdamage` | — (always the resolved single target + jumps) | chain-lightning style jumping hit with falloff |
+| `invisible` | — (self) | enemies skip their turn for N turns |
+| `ascend` | self (implicit, buff-typology) | changes % skill-cost of a resource while active, optional icon swap |
+| `transform` | self (implicit, buff-typology) | %-based stat changes + custom icon, optionally blocks other skills |
 
 ### 4.1 `dmg` — Damage
 ```json
@@ -126,16 +133,23 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 ```json
 { "kind":"buff", "target":"self", "stat":"strength", "mode":"add", "value":5, "turns":6 }
 ```
-- `stat`: any of §5 core stats, plus `armor`, `damage`, `ap`.
+- `stat`: any of §5 core stats, plus `armor`, `damage`, `ap`, `dodge`, `critChance`, `blockChance`, `manaRegen`, `staminaRegen`.
 - `mode`: `"add"` (flat +value) or `"mult"` (stat ×value — value is a raw multiplier, e.g. `1.2` = +20%, NOT a percentage number).
-- Defaults: `value` 5 (buff) — see debuff below for its own default.
+- Defaults: `value` 5, `turns` 6.
+- `dodge`/`critChance`/`blockChance` only make sense in `"add"` mode — `value` there is **percentage points** (e.g. `10` = +10% dodge chance), not a multiplier. Total buff-derived `dodge` is capped at 60%; `critChance` (base ~4%+luck*1.5%, plus buffs) is capped at 75% overall. `blockChance` folds into `recomputeDerived()`'s existing block-chance total (no cap of its own beyond the normal derived-stat clamp).
+- `manaRegen`/`staminaRegen` add flat points per turn on top of the character's normal regen (folded in by `recomputeDerived()`, same as `armor`/`damage`).
+- `armor`/`damage` are aggregate multipliers/bonuses read live from active buffs at the point of use (`activeBuffMultFactor`/`activeBuffFlatBonus`), not baked into `recomputeDerived()`.
 
 ### 4.4 `debuff` — Enemy debuff
 ```json
-{ "kind":"debuff", "target":"enemy", "stat":"strength", "mode":"add", "value":2, "turns":3 }
+{ "kind":"debuff", "target":"enemy", "stat":"damage", "mode":"add", "value":2, "turns":3 }
 ```
-- Same `mode`/`value` semantics as buff, applied to the enemy's stat (reversed on expiry).
+- `stat`: `damage` or `ap` only (no `armor` — enemies have no armor stat this system reads, so an armor debuff would be an inert no-op; the dodge/crit/block/regen stats added to `buff` are likewise not offered here for the same reason — enemies have no baseline value in any of those to subtract from). Any §5 core stat also works (mutates `e.stats[stat]` directly, reverted on expiry).
+- `mode`/`value` same semantics as buff.
+- `stat==="damage"`: mutates the enemy's own `atk`/`damage` fields directly (both kept in sync), reverted on expiry.
+- `stat==="ap"`: multiplies the enemy's AP-mode per-turn action pool (`e.apDebuffMult`) — only visible against enemies using the AP/PA turn system; **in `"add"` mode the value is percentage points of PA**, e.g. `value:15` = -15% PA (this only applies to `"add"` mode; the UI shows a hint about it). Reverted on expiry.
 - `stat` omitted → generic "weakened" flag instead of a specific stat debuff.
+- Defaults: `value` 2, `turns` 3.
 - Also lands a ~0.7x generic chip hit.
 
 ### 4.5 `heal` — Instant heal
@@ -192,27 +206,55 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 {
   "kind":"summon", "hp":20, "turns":8, "ap":10, "effectType":"damage",
   "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1,
-  "effectTurns":2, "iconImage":""
+  "effectTurns":2, "iconImage":"", "targetable":true, "hitByAoe":true, "stance":"aggressive"
 }
 ```
 - `hp`: flat max HP of the summon.
-- `turns`: lifespan in player turns.
+- `turns`: lifespan in player turns. Ignored entirely when `permanent:true` (see below).
 - `ap`: **every 10 = 1 action per its turn** (so `ap:20` = 2 actions/turn). Rounded via `max(1, round(ap/10))`.
-- `effectType`: `"damage"` (melee-range-1 attacks nearest enemy, dice via `dmgDice/dmgDie` as a flat expr, no stat scaling), `"heal"` (heals the player each action, magnitude = roll of `dmgDice`d`dmgDie`, no stat scaling either — companions never read `dmgStat`), or `"root"` (applies `root` status to nearest enemy each action, duration = `effectTurns`).
-- Mobile: walks toward its target if out of range 1 each turn.
+- `effectType`: one of 5 options, shared with `summonturret`/`clones`:
+  - `"damage"`: melee-range-1 attacks nearest enemy, dice via `dmgDice/dmgDie` as a flat expr, no stat scaling.
+  - `"heal"`: heals the player each action, magnitude = roll of `dmgDice`d`dmgDie`, no stat scaling.
+  - `"root"`: applies `root` status to nearest enemy each action, duration = `effectTurns`.
+  - `"buff"`: grants the caster a buff (see `stat`/`mode`/`value` below) that is refreshed every action and lasts only while the companion is alive.
+  - `"debuff"`: applies a stat debuff to the nearest enemy each action (see `stat`/`mode`/`value`/`effectTurns` below), same mechanics as the top-level `debuff` kind (§4.4).
+- `stat`/`mode`/`value`: only read when `effectType` is `"buff"` (stat options: `armor`, `damage`, `ap`, plus any §5 core stat) or `"debuff"` (stat options: `damage`, `ap`, plus any §5 core stat) — same semantics as §4.3/§4.4.
+- `effectTurns`: duration of the `root`/`debuff` application per action (default 2); irrelevant for `damage`/`heal`/`buff`.
+- Mobile: walks toward its target if out of range 1 each turn; if there is no living enemy on the floor, follows the player instead of idling (`companionFollowPlayer`).
 - `iconImage`: optional hex PNG (50x50) replacing the default procedural ally sprite; see §8.
+- `targetable` (bool, default `true`): if `false`, enemies can never pick this companion as an attack target (it can still die to AOE-classed enemy skills unless `hitByAoe` is also `false`). Regardless of this flag, a companion can never be targeted on the very turn it spawns (a built-in one-pass grace period).
+- `hitByAoe` (bool, default `true`): if `false`, the companion is immune specifically to enemy skills whose `classEffect` is `aoe`/`multihit`/`ultimate`/`massive` — it can still be targeted by single-target attacks/skills unless `targetable:false` also blocks that.
+- `stance`: `"aggressive"` (default — fights nearby enemies, follows the player when none are in range) or `"passive"` (never attacks, always just follows the player).
+- `permanent` (bool, default `false`) — turns this into a **"Compañero"** pet: doesn't expire from `turns`, only one instance exists per source skill (recasting while it's alive does nothing; recasting while it's downed attempts a revive instead of summoning a duplicate). When it dies:
+  - The caster is immediately hit with a **-10% penalty to every core stat** (flat debuff, `999999`-turn sentinel, removed only on revive).
+  - While alive, it pulls **15% of nearby enemy aggro** toward itself (reselected from targetable companions when an enemy's normal target roll lands on the pet-pull chance).
+  - The downed pet's corpse occupies its last tile; walking onto that tile, or resting in a safe room (free, at full HP), revives it and clears the stat debuff. Manual revive (walking onto it) costs `reviveResource`/`reviveAmount`, and revives it at 50% of `hp`.
+  - `reviveResource`: `"hp"` (default) | `"stamina"` | `"mana"` — resource paid by the caster to revive.
+  - `reviveAmount` (default `20`): amount of `reviveResource` paid.
 
 ### 4.13 `summonturret` — Stationary ranged ally
 ```json
 {
-  "kind":"summonturret", "hp":16, "turns":8, "ap":10, "range":7,
+  "kind":"summonturret", "hp":16, "turns":8, "ap":10, "range":7, "damageMode":"nearest",
   "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1,
   "iconImage":""
 }
 ```
-- Same as `summon` with `effectType` forced to `"damage"`, but **never moves** — idles if no enemy is within `range` instead of approaching. Default `range` 7 (vs 1 for `summon`).
+- Same as `summon` (same 5 `effectType` options: `damage`/`heal`/`root`/`buff`/`debuff`, same `stat`/`mode`/`value`/`effectTurns` fields), but **never moves** — idles if no enemy is within `range` instead of approaching. Default `range` 7 (vs 1 for `summon`). Does not support `permanent`/`targetable`/`hitByAoe`/`stance` (always a temporary, non-companion-pet ally).
+- `damageMode` (only read when `effectType:"damage"`): `"nearest"` (default — single-target the closest enemy within `range`) or `"area"` (hits every enemy within `range` tiles of the turret each action instead of just one).
 
-### 4.14 `utility` — Misc self effects
+### 4.14 `clones` — Multiple mobile allies at once
+```json
+{
+  "kind":"clones", "count":2, "hp":14, "turns":8, "ap":10, "effectType":"damage",
+  "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1,
+  "effectTurns":2, "iconImage":""
+}
+```
+- Spawns `count` (1-4, default 2) independent mobile allies in one cast, each behaving exactly like a non-permanent `summon` companion — same 5 `effectType` options (`damage`/`heal`/`root`/`buff`/`debuff` with the same `stat`/`mode`/`value`/`effectTurns` fields), same mobility, same `iconImage`. Each clone contributes its own instance of a `buff`/`debuff` independently (they stack, one per living clone).
+- Does not support `permanent`/`targetable`/`hitByAoe`/`stance` — always temporary, always targetable/vulnerable like a plain summon.
+
+### 4.15 `utility` — Misc self effects
 ```json
 { "kind":"utility", "mode":"reveal", "value":10 }
 ```
@@ -221,7 +263,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 - `mode:"shield"`: adds `value` flat points to `player.shield` (default 10). Shield is **armor**, not an HP buffer — it adds directly to armor total and decays by 1 point every player turn (whether hit or not).
 - `mode:"resource"`: restores `value` points (default 10) of the skill's own `resource` (stamina/mana).
 
-### 4.15 `hot` — Heal over time
+### 4.16 `hot` — Heal over time
 ```json
 { "kind":"hot", "target":"self", "dmgDice":1, "dmgDie":6, "dmgStat":"wisdom", "dmgStatMode":"add", "dmgStatCoef":.5, "turns":4 }
 ```
@@ -230,36 +272,36 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
   - Companions (AI summons) get the identical `{turns, power}` HOT pushed onto their own stack, ticked every companion turn (`tickEntityHots`, the same generic ticker the player uses).
   - Other human players (multiplayer) have no live per-turn HOT-sync channel yet, so their whole HOT is instead sent as **one upfront instant heal** of `power*turns` via the existing `ally_heal` network action — mechanically equivalent total healing, just front-loaded instead of ticking turn by turn.
 
-### 4.16 `execute` — Execute below HP threshold
+### 4.17 `execute` — Execute below HP threshold
 ```json
 { "kind":"execute", "target":"enemy", "dmgDice":2, "dmgDie":6, "dmgStat":"strength", "dmgStatMode":"add", "dmgStatCoef":1, "threshold":35, "execMultiplier":2.5 }
 ```
 - Normal attack roll (full dice+stat scaling) against target(s). If `target.hp/target.maxHp < threshold/100`, the hit is multiplied by `execMultiplier` instead of the normal `multiplier` (default 1).
 
-### 4.17 `pullroot` — Pull + root
+### 4.18 `pullroot` — Pull + root
 ```json
 { "kind":"pullroot", "target":"enemy", "turns":2 }
 ```
 - ~0.8x chip hit, pulls the target 1 tile toward the caster (if the destination is free), then applies `root` for `turns` turns. `multiplier` optional override for the chip hit.
 
-### 4.18 `counter` — Counterattack stance
+### 4.19 `counter` — Counterattack stance
 ```json
 { "kind":"counter", "shield":10, "dmgDice":1, "dmgDie":8, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1, "turns":5 }
 ```
 - Grants `shield` armor points immediately, and arms `player.counterReady = { damage: "{dmgDice}d{dmgDie}", turns }`.
 - The **next** time the player takes any damage (before this expires), the nearest living enemy is struck back for that dice roll at ×0.8, then the counter is consumed (one-shot, regardless of `turns` remaining). `dmgStat`/`dmgStatMode`/`dmgStatCoef` are accepted by the form but **not applied** to the counter hit (dice only).
 
-### 4.19 `cheatdeath` — Cheat death
+### 4.20 `cheatdeath` — Cheat death
 ```json
 { "kind":"cheatdeath", "turns":5 }
 ```
 - Arms `player.cheatDeathTurns`. The next time HP would hit 0 while this is armed, HP is set to 1 instead and the charge is consumed (one-shot; `turns` is stored but not decremented/ticked — it only matters as "armed vs not").
 
-### 4.20 `holyshield` — Absorb shield
+### 4.21 `holyshield` — Absorb shield
 ```json
 { "kind":"holyshield", "target":"self", "value":20, "stat":"", "mode":"add", "statCoef":1, "turns":0 }
 ```
-- Grants `player.holyShield` points that **absorb incoming damage before it touches HP** — a dedicated damage-buffer pool, distinct from both `utility`'s `mode:"shield"` (§4.14, which adds flat **armor** instead, no HP absorption) and `counter`'s `shield` field (§4.18, also armor). Consumed in `damagePlayer()` right after the block-chance check and before HP is reduced: `absorbed = min(holyShield, incomingDamage)`; the log line reports how much was absorbed and whether the shield broke (`holyShield` hits 0).
+- Grants `player.holyShield` points that **absorb incoming damage before it touches HP** — a dedicated damage-buffer pool, distinct from both `utility`'s `mode:"shield"` (§4.15, which adds flat **armor** instead, no HP absorption) and `counter`'s `shield` field (§4.19, also armor). Consumed in `damagePlayer()` right after the block-chance check and before HP is reduced: `absorbed = min(holyShield, incomingDamage)`; the log line reports how much was absorbed and whether the shield broke (`holyShield` hits 0).
 - Magnitude formula (same "dice/stat" idiom as `dicePowerFor`, but flat `value` instead of a dice roll):
   ```
   statVal = stat ? statValueFor(player, stat) : 0
@@ -273,10 +315,62 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 - No `target` options beyond self — always cast on the caster, no click/target needed (like `buff`/`cheatdeath`).
 - Shown to the player in the active-effects HUD as `Escudo: <points>[ (<turns>T)]`.
 
+### 4.22 `lineshot` — Piercing line shot
+```json
+{ "kind":"lineshot", "dmgDice":2, "dmgDie":6, "dmgStat":"agility", "dmgStatMode":"add", "dmgStatCoef":1, "range":6 }
+```
+- No `target` field — always fires in a straight line from the caster toward the clicked enemy (or nearest, if self-cast), up to `range` tiles (default 6), stopping at the first wall.
+- Hits **every** enemy standing on that line (in order), each with the full dice+stat scaling, `multiplier` optional override (default 0.8).
+
+### 4.23 `trap` — Ground trap
+```json
+{ "kind":"trap", "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1, "turns":8, "range":1 }
+```
+- No `target` field — drops an invisible trap on the clicked tile (or the caster's own tile if the skill has no other targeted component forcing a click).
+- Triggers automatically the moment any enemy enters within `range` tiles (default 1) of it, dealing one ×1.15 hit to every enemy in range at that moment via the normal `attack()` pipeline, then disappears. Otherwise expires silently after `turns` player turns (default 8) with no effect.
+- **Quirk**: `dmgDice`/`dmgDie`/`dmgStat`/`dmgStatMode`/`dmgStatCoef` are accepted by the form (and a magnitude is computed from them at cast time via `dicePowerFor`, fallback `~4+lvl*1.5`) but that computed value is **never actually read when the trap triggers** — the triggered hit uses the generic §6.2 fallback dice expression at ×1.15, same as if no dice fields were set at all. Setting these fields has no effect on the trap's real damage; only `turns`/`range` matter.
+
+### 4.24 `linkdamage` — Chain jump damage
+```json
+{ "kind":"linkdamage", "dmgDice":2, "dmgDie":6, "dmgStat":"intelligence", "dmgStatMode":"add", "dmgStatCoef":1, "jumps":3, "falloff":25, "range":4 }
+```
+- No `target` field — hits the clicked enemy (or nearest) first at full dice+stat scaling (`multiplier` optional, default 1), then jumps to the nearest not-yet-hit enemy within `range` tiles (default 4) of the previous target, up to `jumps` additional times (default 3).
+- `falloff` (0-95, default 25): percent damage lost **per jump**, multiplicative and cumulative (jump 1 = `(1-falloff)`, jump 2 = `(1-falloff)^2`, etc.) — does not affect the first hit.
+- Stops early if no valid next target is in range; already-hit enemies are never hit twice.
+
+### 4.25 `invisible` — Temporary invisibility
+```json
+{ "kind":"invisible", "turns":2, "breakOnAttack":true }
+```
+- No `target` field — self-only, casts instantly. Sets `turns` (default 2) of invisibility during which **enemies skip their turn entirely**, same effect as `utility`'s `mode:"stealth"` but lasting multiple turns instead of a single one-shot skip.
+- `breakOnAttack` (bool, default `true`): if `true`, attacking (or casting an offensive skill) while invisible immediately ends the effect early.
+
+### 4.26 `ascend` — Ascensión (skill-cost buff)
+```json
+{ "kind":"ascend", "resource":"any", "value":150, "turns":6, "allowSkills":true, "iconImage":"" }
+```
+- Buff-typology effect (stacks like `buff`, cast on self, no click needed). While active, changes what **the player's own skill casts** cost.
+- `resource`: `"any"` (default — affects every skill regardless of its own resource) | `"mana"` | `"stamina"` (only affects skills using that specific resource).
+- `value` (default 150): the resulting cost **as a percentage of normal** (100 = no change, <100 = cheaper, >100 = more expensive). Read live at cast time by every skill via `effectiveSkillCost()` — cooldowns/AP costs are unaffected, only the `cost`/resource-drain number.
+- `turns` (default 6): duration.
+- `allowSkills` (bool, default `true`): if `false`, **no other skill can be cast at all** while Ascensión is active (same `blockSkills` mechanism as `transform`, shared code path — casting any other skill logs a "your transformation/ascension doesn't allow casting other skills" message and refuses).
+- `iconImage`: optional hex PNG (50x50, see §8). While active, **replaces the player's own rendered character icon** on the map with this image (same icon-override mechanism as `transform` — if both a `transform` and an `ascend` buff with icons are active at once, `transform`'s icon takes priority). Leave `""` to keep the normal character icon.
+
+### 4.27 `transform` — Transformación (self stat/icon buff)
+```json
+{ "kind":"transform", "turns":8, "damagePct":0, "armorPct":0, "hpPct":0, "allowSkills":true, "iconImage":"" }
+```
+- Buff-typology effect (stacks like `buff`, cast on self, no click needed). Applies %-based changes to the caster's own stats for the duration, and/or swaps their rendered icon.
+- `damagePct`/`armorPct` (default `0`, can be negative): percent change applied as a multiplier to the aggregate damage/armor totals (`damage: 1+damagePct/100`, same `activeBuffMultFactor('damage')`/`('armor')` read path as `buff`'s own `mode:"mult"`).
+- `hpPct` (default `0`, can be negative): percent of the caster's **current max HP at cast time**, converted once to a flat amount and applied as a flat max-HP buff (same slot `recomputeDerived()` already folds in for other flat max-HP buffs) — it does not keep rescaling if max HP changes later during the buff's duration.
+- `allowSkills` (bool, default `true`): if `false`, blocks casting any other skill while transformed (see `ascend` above — same shared `blockSkills` mechanism).
+- `iconImage`: optional hex PNG (50x50, see §8). While active, replaces the player's rendered character icon (takes priority over an `ascend` icon if both are active). Leave `""` to keep the normal icon.
+
 ## 5. Stat keys
 
 Core stats (used everywhere a `*Stat` field is expected): `strength, vitality, agility, luck, intelligence, wisdom`.
-Buff-only extra stat targets: `armor, damage, ap`.
+`buff`-only extra stat targets: `armor, damage, ap, dodge, critChance, blockChance, manaRegen, staminaRegen` (the last four are percentage-point/flat-per-turn bonuses, `"add"` mode only — see §4.3).
+`debuff`/`summon`-`effectType:"debuff"`/`summonturret`-`effectType:"debuff"`/`clones`-`effectType:"debuff"` extra stat targets: `damage, ap` only (no `armor` — see §4.4 for why).
 
 ## 6. Damage/formula notes
 
