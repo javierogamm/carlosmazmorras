@@ -847,8 +847,11 @@ const secondaryAffixes=[
  {key:'dodge',label:'Evasión',min:1,max:3,percent:true,slots:['boots','legs','ring1','ring2','trinket1']},
  {key:'physicalPower',label:'Poder físico',min:2,max:6,percent:true,slots:['weapon','hands','chest','trinket1']},
  {key:'magicPower',label:'Poder mágico',min:2,max:6,percent:true,slots:['weapon','offhand','head','neck','trinket2']},
- {key:'staminaRegen',label:'Regeneración de stamina',min:1,max:3,slots:['boots','legs','trinket1']},
- {key:'manaRegen',label:'Regeneración de maná',min:1,max:3,slots:['head','neck','trinket2']}
+ // Regen-per-turn affixes only ever roll on the offhand slot now - stamina/mana
+ // regen has no flat baseline anymore, so the off-hand item (plus race
+ // passives, buffs and potions) is the only gear-side source of it.
+ {key:'staminaRegen',label:'Regeneración de stamina',min:1,max:3,slots:['offhand']},
+ {key:'manaRegen',label:'Regeneración de maná',min:1,max:3,slots:['offhand']}
 ];
 const passivePool=[
  {id:'vampiric',name:'Circuito Vampírico',desc:'Cura un porcentaje del daño causado.',stat:'lifeSteal',min:2,max:8,percent:true},
@@ -977,8 +980,13 @@ function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){if(rb[k])base[k]=(base[k]||0)+rb[k];if(pp[k])base[k]=(base[k]||0)+pp[k]}
+ // staminaRegen/manaRegen have NO flat baseline and no stat scaling - regen
+ // only comes from the off-hand item's affix (staminaRegen/manaRegen only
+ // ever roll on slot 'offhand' now, see secondaryAffixes), race passives,
+ // active buffs (added below via activeBuffFlatBonus) and potions (added
+ // further down from p.activePotions).
  const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.strength*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.wisdom*5+base.intelligence*3+(rb.maxMana||0),
- critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:6+Math.floor(base.strength/4)+(rb.staminaRegen||0),manaRegen:4+Math.floor(base.wisdom/4)+(rb.manaRegen||0),rarityFind:rb.rarityFind||0};
+ critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:rb.staminaRegen||0,manaRegen:rb.manaRegen||0,rarityFind:rb.rarityFind||0};
  const allStats={...base};
  for(const item of Object.values(p.equipment||{})){
   if(!item)continue;
@@ -1010,6 +1018,9 @@ function recomputeDerived(){
  for(const b of p.activeBuffs||[]){
   if(b.effects?.maxHp)d.maxHp+=b.effects.maxHp;
  }
+ // Buffs (e.g. the resourceRegen skill effect) are the other allowed source
+ // of stamina/mana regen besides the off-hand item and potions below.
+ d.staminaRegen+=activeBuffFlatBonus('staminaRegen');d.manaRegen+=activeBuffFlatBonus('manaRegen');
  for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
  d.finalStats=allStats;
  p.derived=d;
@@ -3077,8 +3088,10 @@ function tickEntityHots(entity){
 function tickPlayerHots(){
  tickEntityHots(game.player);
 }
-// Applies derived.staminaRegen/manaRegen (base regen + item/race bonuses,
-// including the guaranteed wand/dagger offhand regen) once per turn.
+// Applies derived.staminaRegen/manaRegen once per turn. No flat baseline and
+// no stat scaling: the only sources are the off-hand item (its rolled affix,
+// or the guaranteed wand/dagger regen), race passives, active buffs and
+// potions - see the staminaRegen/manaRegen assembly in recomputeDerived().
 function tickPlayerRegen(){
  const p=game.player;if(!p)return;
  p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
@@ -3287,7 +3300,7 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  if(effect==='repeatSkill'){p.repeatNextSkill=.60;return true}
  if(effect==='resetCooldowns'){for(const k of Object.keys(p.cooldowns))p.cooldowns[k]=0;p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+Math.ceil(d.cost*.30));return true}
  if(effect==='reveal'){const r=12+lvl;for(let yy=Math.max(0,p.y-r);yy<=Math.min(ROWS-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(COLS-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
- if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,d.buffTurns??4,{staminaRegen:4+lvl});return true}
+ if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,d.buffTurns??4,{staminaRegen:{mode:'add',value:4+lvl}});return true}
  if(effect==='cleanseHeal'||effect==='purge'||effect==='absolution'){p.debuff=0;healEntity(p,dicePowerFor(d,10+lvl*4,p));if(effect!=='cleanseHeal')for(const e of area(3))hit(e,.75);return true}
  if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=dicePowerFor(d,5+lvl,p);healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
  if(effect==='freeze'){hit(target,.8);status(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
