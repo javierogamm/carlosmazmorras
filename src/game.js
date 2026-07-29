@@ -1477,6 +1477,7 @@ const ROOM_TYPES={
  deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
  knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
  bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ megaboss:    {label:'Cámara del megajefe',size:[15,19],enemies:[0,0],tier:3, cover:.05, traps:0,   chest:.4,  exits:1, event:0,  boss:true, megaboss:true},
  prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
@@ -1609,10 +1610,54 @@ function buildFloorObjective(archId,floor,total){
  }
 }
 
+// A megaboss floor is a fixed, deterministic layout - a narrow 10-tile
+// corridor straight into one big central arena room - instead of the usual
+// randomized multi-room dungeon, so it's built directly rather than through
+// the weighted room-typology loop below. Rolled independently of
+// FLOOR_ARCHETYPES (33% on every floor%3===0, see buildFloorPlan) instead of
+// competing on weight/cooldown with the other archetypes.
+function buildMegabossFloorPlan(floor,params){
+ const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
+ const map=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+ const spawnW=5,spawnH=5,spawnX=2,spawnY=Math.max(1,Math.floor(ROWS/2)-Math.floor(spawnH/2));
+ const spawn={x:spawnX,y:spawnY,w:spawnW,h:spawnH,cx:spawnX+Math.floor(spawnW/2),cy:spawnY+Math.floor(spawnH/2),type:'filler'};
+ const corridorY=spawn.cy,corridorStartX=spawnX+spawnW,corridorLen=10;
+ const roomW=16,roomH=16,roomX=corridorStartX+corridorLen,roomY=Math.max(1,Math.min(ROWS-roomH-2,corridorY-Math.floor(roomH/2)));
+ const bossRoom={x:roomX,y:roomY,w:roomW,h:roomH,cx:roomX+Math.floor(roomW/2),cy:roomY+Math.floor(roomH/2),type:'megaboss'};
+ carve(map,spawn);carve(map,bossRoom);
+ for(let x=corridorStartX;x<corridorStartX+corridorLen;x++)map[corridorY][x]=0;
+ const rooms=[spawn,bossRoom],stairs={x:bossRoom.cx,y:bossRoom.cy};
+ const safeRooms=[{...spawn,id:`safe-mb-${floor}`,rested:false}];
+ const family=pickConfiguredFamilyForFloorWithParams(floor,params);
+ const boss=upgradeToMegaboss(buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,total),{x:bossRoom.cx,y:bossRoom.cy},floor,true,megabossLevelForPlayer()));
+ boss.enemyFamily=family.name;
+ const freeInBossRoom=()=>{
+  for(let i=0;i<40;i++){
+   const x=bossRoom.x+1+rng(Math.max(1,bossRoom.w-2)),y=bossRoom.y+1+rng(Math.max(1,bossRoom.h-2));
+   if(map[y]?.[x]===0&&!(x===bossRoom.cx&&y===bossRoom.cy))return{x,y};
+  }
+  return{x:bossRoom.cx,y:bossRoom.cy};
+ };
+ const chests=[];
+ for(let i=0;i<3;i++){const chestDef=pickChestDefForFloor(floor);if(chestDef)chests.push({...freeInBossRoom(),opened:false,chestDef})}
+ const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
+ return {
+  floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors:[],keys:[],chests,traps:[],altars:[],event:null,
+  enemies:[boss],boss,family,archetype:'megaboss',archetypeLabel:'Cámara del megajefe',
+  archetypeDesc:'Un pasillo estrecho conduce a una cámara descomunal. El MEGAJEFE aguarda en el centro.',
+  objective:{type:'bossKill',done:false,label:'Derrota al jefe'},tierExpected:expectedTierForFloor(floor,total),rewardRarityBonus:3,
+  enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
+  themeName:floorTileset.name,floorTileset,announce:true
+ };
+}
 // Shared floor builder used by both the pre-generated world JSON and the live
 // generator, so archetypes/rooms behave identically in single and multiplayer.
 // Assumes `game` is set with at least {floor,player,worldParams}.
 function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
+ // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
+ // 33% chance on every floor that's a multiple of 3, regardless of recency/
+ // cooldown or the other archetypes' weights.
+ if(floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=pickFloorArchetype(floor,total,recent);
  const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
@@ -2118,6 +2163,30 @@ const ENEMY_CLASS_SKILL_PREF={
  tanque:s=>['shield','buff','debuff'].includes(s.classEffect),
  warrior:s=>s.type==='physical'
 };
+// Bosses (and megabosses) get a real "classic" player class instead of the
+// generic archetype skill pool - one candidate matching the boss's archetype
+// (enemyClassOf), e.g. an arquero-archetype boss becomes a sniper or a
+// bountyHunter. Gear/weapon assignment (equipEnemy) still keys off the
+// generic archetype, only the skill kit comes from this real class.
+const BOSS_CLASS_BY_ARCHETYPE={
+ arquero:['sniper','bountyHunter'],
+ francotirador:['sniper','bountyHunter'],
+ caster:['entropyMage','necromancer','seer'],
+ invocador:['necromancer','engineer'],
+ clerigo:['cleric','paladin'],
+ chaman:['shaman','druid'],
+ rogue:['thief','jester'],
+ tanque:['yunque','beastGuardian'],
+ warrior:['berserker','monk','yunque']
+};
+function pickBossClassId(e){return pick(BOSS_CLASS_BY_ARCHETYPE[enemyClassOf(e)]||allClassIds())}
+// Every classId-tagged skillDefs entry for a class, gated by tier the same
+// way a player's own skills unlock (tier2 at level>=10, tier3 at level>=30) -
+// using the BOSS's own level, not the player's.
+function bossSkillPool(classId,level){
+ const maxTier=level>=30?3:level>=10?2:1;
+ return Object.entries(skillDefs).filter(([,s])=>s.classId===classId&&(!s.tier||s.tier<=maxTier)).map(([id])=>id);
+}
 function enemyClassOf(e){
  if(e.enemyClass)return e.enemyClass;
  if(ENEMY_CLASS_GEAR[e.type])return e.type;
@@ -2176,11 +2245,28 @@ function equipEnemy(e,floor=game?.floor||1){
  return e;
 }
 function assignEnemySkills(e){
+ e.skillCooldowns={};
+ if(e.boss){
+  // Bosses (and megabosses) always run a 3-skill kit from a real class
+  // matching their archetype instead of the generic pool below - see
+  // BOSS_CLASS_BY_ARCHETYPE/bossSkillPool. An admin-configured boss with its
+  // own hand-picked skillIds still wins outright, same as before.
+  if(Array.isArray(e.configuredSkillIds)&&e.configuredSkillIds.length){e.skills=[...e.configuredSkillIds];return e}
+  e.bossClassId=e.bossClassId||pickBossClassId(e);
+  e.enemyClassLabel=resolveClassDef(e.bossClassId)?.name||e.enemyClassLabel;
+  const pool=bossSkillPool(e.bossClassId,e.level||1).sort(()=>Math.random()-.5);
+  e.skills=pool.slice(0,3);
+  if(e.skills.length<3){ // thin kit at low level: top up from the generic archetype pool so a boss is never under-equipped
+   const fallback=enemySkillPool(e).filter(id=>!e.skills.includes(id));
+   while(e.skills.length<3&&fallback.length)e.skills.push(fallback.splice(rng(fallback.length),1)[0]);
+  }
+  return e;
+ }
  const cls=enemyClassOf(e);
  const casterClass=['caster','clerigo','chaman','invocador'].includes(cls);
- const chance=e.boss?.95:casterClass?1:e.elite?.6:(cls==='arquero'||cls==='francotirador')?.45:.18+Math.min(.22,(game?.floor||1)*.012);
- e.skills=Array.isArray(e.configuredSkillIds)?[...e.configuredSkillIds]:[];e.skillCooldowns={};
- if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=e.boss?2+(Math.random()<.45?1:0):casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
+ const chance=casterClass?1:e.elite?.6:(cls==='arquero'||cls==='francotirador')?.45:.18+Math.min(.22,(game?.floor||1)*.012);
+ e.skills=Array.isArray(e.configuredSkillIds)?[...e.configuredSkillIds]:[];
+ if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
  return e
 }
 function enemyUseSkill(e,dist,target=game.player){
@@ -2293,6 +2379,7 @@ function announceFloorArchetype(){
  log(`${label}: ${game.floorArchetypeDesc||''} Familia dominante: ${game.enemyFamily}. ${(game.enemies||[]).length} enemigos.`,'story');
  log(`Objetivo: ${objectiveText(obj)}`,'story');
  if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
+ if(game.floorArchetype==='megaboss')log('Un pasillo estrecho es la única vía. Un MEGAJEFE aguarda al final. Prepárate.','combat');
 }
 // Rarity of the guaranteed floor-completion item: a fixed floor->tier ladder
 // (unlike the ratio/level-gated progression used for regular loot), so every
@@ -2518,21 +2605,47 @@ function attack(e,bonus=0,options={}){
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
 }
+// Guaranteed boss-kill rarity by floor - always real equipment (forceRarityName
+// on makeLoot never resolves to a potion or a skill-teaching item, see
+// makeLoot's forceRarityName branch).
+function bossGuaranteedRarityForFloor(floor){
+ if(floor<=4)return'uncommon';
+ if(floor<=8)return'rare';
+ if(floor<=12)return'epic';
+ if(floor<=16)return'legendary';
+ return'artifact';
+}
+// Megaboss floors only ever land on floor%3===0 (see buildMegabossFloorPlan),
+// so this is keyed directly off that fixed progression rather than a general
+// floor formula.
+function megabossGuaranteedDrops(floor){
+ if(floor<6)return{count:1,rarity:'rare'};
+ if(floor<9)return{count:2,rarity:'epic'};
+ if(floor<12)return{count:1,rarity:'legendary'};
+ return{count:1+Math.floor((floor-12)/3),rarity:'artifact'};
+}
 // Enemy kill loot: once a drop is decided (killLootChance, or always on
-// boss/eventBoss), it's always exactly one of equipment (64.5%), potion
-// (32.2%) or skill unlock (3.3%, cut to a third of the old 10% share so
-// skills feel rare) - never more than one, never none.
+// boss/eventBoss), a normal kill gives exactly one of equipment (64.5%),
+// potion (32.2%) or skill unlock (3.3%) - never more than one, never none.
+// Bosses and megabosses skip that roll entirely: they always hand out their
+// guaranteed floor-tiered equipment instead (see bossGuaranteedRarityForFloor/
+// megabossGuaranteedDrops).
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
- if(Math.random()<killLootChance||e.boss||e.eventBoss){
-  const source=e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal';
+ if(e.megaboss){
+  const{count,rarity}=megabossGuaranteedDrops(game.floor);
+  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+3,'boss',rarity);addInventoryItem(item);lootToast(item)}
+ }else if(e.boss){
+  const item=makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));addInventoryItem(item);lootToast(item);
+ }else if(Math.random()<killLootChance||e.eventBoss){
+  const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
   const roll=Math.random();
   if(roll<.645){
-   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'equipment');addInventoryItem(item);lootToast(item);
+   const item=makeLoot(game.player.level,source,null,'equipment');addInventoryItem(item);lootToast(item);
   }else if(roll<.967){
-   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'potion');addInventoryItem(item);lootToast(item);
+   const item=makeLoot(game.player.level,source,null,'potion');addInventoryItem(item);lootToast(item);
   }else{
    const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
    if(drop)unlockSkillLoot(drop);
@@ -2619,27 +2732,41 @@ function scaleFloorForParty(){
 // have rather than rebuilding from scratch) proportionally to a fresh
 // target level anchored on the player's CURRENT level, every time the
 // floor is (re)loaded - for brand new runs and existing/continued sessions alike.
+// Ratio-adjusts one enemy's hp/atk/armor/xp toward a new target level,
+// preserving whatever bonuses it already has (elite/tier/superboss/megaboss
+// bumps) instead of rebuilding it from scratch. Shared by
+// scaleFloorForPlayerLevel() (every enemy incl. the boss, on floor load) and
+// rescaleBossOnLevelUp() (boss only, the instant the player levels up).
+function rescaleEnemyToLevel(e,targetLevel){
+ if(!e||e.level==null||targetLevel==null)return;
+ const oldLevel=e.level;
+ if(targetLevel===oldLevel)return;
+ const hpRatio=(1+targetLevel*.13)/(1+oldLevel*.13),atkRatio=(1+targetLevel*.08)/(1+oldLevel*.08);
+ e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*hpRatio));
+ e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*hpRatio));
+ e.atk=Math.max(1,Math.round((e.atk||e.damage||4)*atkRatio));
+ e.damage=e.atk;
+ e.armor=Math.max(0,Math.round((e.armor||0)*hpRatio));
+ e.xp=Math.max(1,Math.round((e.xp||8)*hpRatio));
+ e.level=targetLevel;
+}
+function bossTargetLevel(){return game.boss?.megaboss?megabossLevelForPlayer():bossLevelForPlayer()}
 function scaleFloorForPlayerLevel(){
  // multiplayer keeps enemies as a single shared/authoritative snapshot across
  // party members (see partyHpMultiplier) - rescaling per-viewer here would
  // desync combat between players at different levels, so this only applies
  // to single player, where "the player" is unambiguous.
  if(game?.multiplayer||!game?.player||!(game.enemies?.length||game.boss))return;
- const rescale=e=>{
-  if(!e||e.level==null)return;
-  const targetLevel=enemyLevelForFloor(game.floor),oldLevel=e.level;
-  if(targetLevel===oldLevel)return;
-  const hpRatio=(1+targetLevel*.13)/(1+oldLevel*.13),atkRatio=(1+targetLevel*.08)/(1+oldLevel*.08);
-  e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*hpRatio));
-  e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*hpRatio));
-  e.atk=Math.max(1,Math.round((e.atk||e.damage||4)*atkRatio));
-  e.damage=e.atk;
-  e.armor=Math.max(0,Math.round((e.armor||0)*hpRatio));
-  e.xp=Math.max(1,Math.round((e.xp||8)*hpRatio));
-  e.level=targetLevel;
- };
- for(const e of game.enemies||[])rescale(e);
- rescale(game.boss);
+ for(const e of game.enemies||[])rescaleEnemyToLevel(e,enemyLevelForFloor(game.floor));
+ if(game.boss)rescaleEnemyToLevel(game.boss,bossTargetLevel());
+}
+// A boss (or megaboss) always sits at playerLevel+1..3 (megaboss: +2..4),
+// independent of the floor - so unlike regular enemies it has to be
+// re-rolled and rescaled the instant the player levels up mid-floor, not
+// just when the floor (re)loads. See the grantXp() level-up loop.
+function rescaleBossOnLevelUp(){
+ if(game?.multiplayer||!game?.boss)return;
+ rescaleEnemyToLevel(game.boss,bossTargetLevel());
 }
 function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
@@ -2657,6 +2784,7 @@ function grantXp(v){
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
+ if(p.level>startLevel)rescaleBossOnLevelUp();
  // Levelling up changes both this character's score (used in accumulated_points)
  // and possibly the account's max_pj_lv gate threshold - push the save right
  // away instead of waiting for the next turn-end persist, so unlocks react
@@ -2698,12 +2826,19 @@ function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))
 function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
 
 function blocked(x,y){const d=game.doors.find(d=>d.x===x&&d.y===y);return game.map[y]?.[x]!==0||(d&&!d.open)}
+// A megaboss visually occupies a 2x2 block anchored on its own x,y (see
+// enemySprite/drawEnemyIconHex) - matches any of those 4 cells instead of
+// just the anchor tile, so walking into (or clicking) any part of its body
+// hits/selects it. Regular enemies still match their single tile exactly.
+function enemyAtCell(x,y){
+ return game.enemies.find(e=>e.hp>0&&(e.megaboss?(x>=e.x&&x<=e.x+1&&y>=e.y&&y<=e.y+1):(e.x===x&&e.y===y)));
+}
 function move(dx,dy){
  if(!game||busy||game.over)return;const p=game.player,nx=p.x+dx,ny=p.y+dy,d=game.doors.find(d=>d.x===nx&&d.y===ny);
  if(dx)p.facing=dx>0?1:-1;
  if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(!apCan('move'))return;if(d.locked)p.keys--;d.open=true;sendMpAction('open_door',{at:{x:nx,y:ny}});log('Abres una puerta.','sys');actionDone('move');return}
  if(blocked(nx,ny))return;
- const e=game.enemies.find(e=>e.x===nx&&e.y===ny);
+ const e=enemyAtCell(nx,ny);
  if(e){if(!apCan('attack'))return;attack(e);actionDone('attack');return}
  if(!apCan('move'))return;
  const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
@@ -3915,25 +4050,29 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
  };
  if(!apModeOn()){
   // classic mode: exactly one action per enemy, resolved synchronously
-  // (unchanged from before - no pacing requested for this mode)
+  // (unchanged from before - no pacing requested for this mode). A megaboss
+  // gets its "+25% PA" here as a 25% chance at an extra action right after
+  // the first, averaging out to 1.25 actions/turn.
   for(const e of [...game.enemies]){
    if(game.over)break;
    if(e.hp<=0)continue;
    enemySingleAction(e);
+   if(e.megaboss&&e.hp>0&&!game.over&&Math.random()<.25)enemySingleAction(e);
   }
   finishEnemyTurn();
   return;
  }
  // AP mode: each enemy keeps acting (in order) until its pool runs out, one
  // action at a time, with a real delay between actions so the whole phase
- // doesn't resolve in a single synchronous burst.
+ // doesn't resolve in a single synchronous burst. A megaboss's pool is +25%
+ // ("+25% PA").
  const queue=[...game.enemies];
  const stepEnemy=(idx)=>{
   if(game.over){finishEnemyTurn();return}
   if(idx>=queue.length){finishEnemyTurn();return}
   const e=queue[idx];
   if(e.hp<=0){stepEnemy(idx+1);return}
-  let ap=20+Math.ceil(e.stats?.agility||0);
+  let ap=Math.round((20+Math.ceil(e.stats?.agility||0))*(e.megaboss?1.25:1));
   const stepAction=()=>{
    if(game.over){finishEnemyTurn();return}
    if(ap<=0||e.hp<=0||!game.enemies.includes(e)){stepEnemy(idx+1);return}
@@ -4065,13 +4204,13 @@ function resolveTargetedSkill(slot,x,y){
  const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(hasEffectsList(id)){
-  const clickedEnemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
+  const clickedEnemy=enemyAtCell(x,y);
   const clickedAlly=!clickedEnemy&&game.multiplayer?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
   if(mode==='enemy'&&!clickedEnemy){log('Debes seleccionar un enemigo.','sys');return false}
   used=applySkillEffectsList(id,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
   if(!used&&mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');
  }else if(mode==='enemy'){
-  const enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
+  const enemy=enemyAtCell(x,y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
   if(d.classId&&!GENERIC_CLASS_EFFECTS.has(d.classEffect)&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
   if(used){}else{
   let mult=d.rarity==='legendary'?2.2:d.rarity==='epic'?1.75:d.rarity==='rare'?1.4:1.1;
@@ -4114,7 +4253,7 @@ function beginBasicAttack(){
  if(adjacent.length===1){if(!apCan('attack'))return;attack(adjacent[0]);actionDone('attack')}else if(adjacent.length>1){beginTargeting({kind:'attack',mode:'enemy',range:1})}else log('No hay ningún enemigo al alcance del arma.','sys')
 }
 function resolveBasicAttack(x,y){
- const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
+ const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=enemyAtCell(x,y);
  if(!enemy){log('Selecciona un enemigo.','sys');return false}
  if(!validateTargetCell(x,y,range,minRange)){log(`Enemigo fuera de alcance (${minRange}-${range}) o sin línea de visión.`,'sys');return false}
  if(!apCan('attack'))return false;
@@ -4417,7 +4556,7 @@ function drawMinimap(){
  q.fillStyle='#6cf0a2';q.fillRect(Math.floor(game.player.x*s),Math.floor(game.player.y*s),Math.max(3,Math.ceil(s+1)),Math.max(3,Math.ceil(s+1)));
 }
 function inspectedEntityAt(gx,gy){
- const enemy=game.enemies.find(e=>e.hp>0&&e.x===gx&&e.y===gy);if(enemy)return{type:'enemy',data:enemy};
+ const enemy=enemyAtCell(gx,gy);if(enemy)return{type:'enemy',data:enemy};
  const item=game.floorItems?.find?.(i=>i.x===gx&&i.y===gy);if(item)return{type:'item',data:item};
  const chest=game.chests?.find?.(i=>i.x===gx&&i.y===gy);if(chest)return{type:'chest',data:chest};
  const door=game.doors?.find?.(i=>i.x===gx&&i.y===gy);if(door)return{type:'door',data:door};
@@ -4781,7 +4920,7 @@ function enemySprite(x,y,e){
  // icon of their own - fall back to their base template's icon instead of
  // rendering fully transparent
  if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}
- if(e.customEnemy&&drawEnemyIconHex(e.icon,x,y,e.boss)){enemyStatusOverlay(x,y,e);return}
+ if(e.customEnemy&&drawEnemyIconHex(e.icon,x,y,e.boss,e.megaboss)){enemyStatusOverlay(x,y,e);return}
  const d=enemyDefs[e.type]||{},shape=d.shape||d.sprite||e.type,c=d.color||({
   cultist:'#8c3b31',slagBeast:'#754032',fireImp:'#d84a2e',chainKnight:'#59606a',magmaPriest:'#8d392a',ashGolem:'#6c625c',
   FurnaceTyrant:'#9b3f24',voidClerk:'#4b416f',phaseHound:'#51466f',dataWraith:'#4b65a2',nullMage:'#34265f',quantumGuard:'#4d587c',errorSpawn:'#8a3f85',NullArchivist:'#3a2864'
@@ -4810,6 +4949,12 @@ function enemySprite(x,y,e){
 // path, which used to skip it entirely.
 function enemyStatusOverlay(x,y,e){
  const R=(ox,oy,w,h,col)=>px(x+ox,y+oy,w,h,col);
+ if(e.megaboss){
+  // Red frame + health bar sized to the full 2x2 block instead of one tile.
+  const box=TILE*2;ctx.strokeStyle='#ff4d4d';ctx.lineWidth=4;ctx.strokeRect(x+4,y+4,box-8,box-8);
+  if(e.hp<e.maxHp){R(8,box-6,box-16,7,'#330d14');R(8,box-6,(box-16)*Math.max(0,e.hp/e.maxHp),7,'#e45c68')}
+  return;
+ }
  if(e.boss){ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
  else{ctx.strokeStyle=ENEMY_TIER_BORDER_COLORS[e.tier]||ENEMY_TIER_BORDER_COLORS.i;ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54)}
  if(e.elite){ctx.strokeStyle='#ff8c1a';ctx.lineWidth=2;ctx.strokeRect(x+9,y+9,46,46)}
@@ -5479,6 +5624,12 @@ function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.fam
 // the character's actual power - the raw floor-based formula still nudges
 // enemies up within that band, it just can't escape it.
 function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;const raw=Math.round(playerLevel+(floor-1)*1.4+rng(3)-1);return Math.max(1,Math.min(playerLevel+2,Math.max(playerLevel-2,raw)))}
+// Bosses ignore the floor-paced formula above entirely: always the player's
+// own level plus a flat 1-3 (megaboss: 2-4) bump, independent of how deep the
+// floor is - recalculated on floor load (scaleFloorForPlayerLevel) and again
+// the moment the player levels up mid-floor (rescaleBossOnLevelUp).
+function bossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(1,3))}
+function megabossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(2,4))}
 // Enemy TIER mix shifts from mostly-weak to mostly-strong across the
 // dungeon's depth (d=0 at floor 1, d=1 at the last floor), so every run
 // reads as a progression on top of any room-specific tier rules, regardless
@@ -5500,7 +5651,22 @@ function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTie
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=boss?[]:(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+// Megaboss stat bump on top of the normal boss formula buildConfiguredEnemy
+// already applied above: double HP, +50% damage, +50% core stats (relative
+// to what a normal boss of the same level would have) - plus a visual/
+// footprint flag used by draw()/inspectedEntityAt()/movement collision to
+// occupy a 2x2 area instead of a single tile. "+25% PA" (see enemyTurn's
+// AP-mode pool and the classic-mode extra-action roll) is applied where the
+// enemy actually acts, not here, since it isn't a baked stat.
+function upgradeToMegaboss(e){
+ e.megaboss=true;e.boss=true;e.footprint=2;
+ e.maxHp=e.hp=Math.round(e.maxHp*2);
+ e.atk=e.damage=Math.round(e.atk*1.5);
+ e.armor=Math.round((e.armor||0)*1.5);
+ if(e.stats)for(const k of Object.keys(e.stats))e.stats[k]=Math.round((e.stats[k]||0)*1.5);
+ return e;
+}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 // Elite enemies get "Élite " prepended to their name at build time (before
 // any world/session snapshot strips their icon to save space) - strip it
@@ -5521,10 +5687,14 @@ function applyInnerAlphaOutline(q,size,px=2){
  }
  q.putImageData(img,0,0)
 }
-function drawEnemyIconHex(hex,x,y,boss=false){
+function drawEnemyIconHex(hex,x,y,boss=false,mega=false){
  if(!hex)return false;
  let img=tileImageCache.get('enemy:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('enemy:'+hex,img)}if(!img)return false;
- const size=boss?78:58,off=(64-size)/2,dx=x+off,dy=y+off;
+ // A megaboss renders across a full 2x2 block anchored at its own (x,y) tile
+ // (top-left corner), instead of centered/overflowing within one tile like a
+ // regular boss - see enemyAtCell()/enemyStatusOverlay() for the matching
+ // click-target and red-frame handling of that footprint.
+ const size=mega?TILE*2:boss?78:58,off=mega?0:(64-size)/2,dx=x+off,dy=y+off;
  const paint=()=>{
   const layer=document.createElement('canvas');layer.width=layer.height=size;
   const lc=layer.getContext('2d');lc.imageSmoothingEnabled=false;lc.drawImage(img,0,0,size,size);
