@@ -1046,6 +1046,10 @@ function recomputeDerived(){
  // Buffs (e.g. the resourceRegen skill effect) are the other allowed source
  // of stamina/mana regen besides the off-hand item and potions below.
  d.staminaRegen+=activeBuffFlatBonus('staminaRegen');d.manaRegen+=activeBuffFlatBonus('manaRegen');
+ // Block chance otherwise only comes from an equipped shield's affix (folded
+ // in above via the equipment-affix loop) - a buff stacks a flat bonus on
+ // top of that, read at block-roll time from p.derived.blockChance.
+ d.blockChance=(d.blockChance||0)+activeBuffFlatBonus('blockChance');
  for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
  d.finalStats=allStats;
  p.derived=d;
@@ -2290,6 +2294,11 @@ function enemyUseSkill(e,dist,target=game.player){
  for(const id of e.skills){
   e.skillCooldowns[id]=Math.max(0,(e.skillCooldowns[id]||0)-1);
   const s=skillDefs[id];if(e.skillCooldowns[id]>0)continue;
+  // A companion/ally with hitByAoe===false is immune to area/multi-target-
+  // flavored enemy skills specifically (still vulnerable to plain weapon
+  // attacks below, and to single-target skills) - skip this one and try the
+  // next skill in the list instead of picking a different target.
+  if(target!==game.player&&target.hitByAoe===false&&['aoe','multihit','ultimate','massive'].includes(s.classEffect))continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
   if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
    const mult=e.boss?1.35:e.elite?1.15:1,statMod=skillStatModifier(id,e),amount=Math.max(2,Math.round(((e.atk||e.damage||4)+statMod)*mult*(s.tier?1+s.tier*.12:1)));
@@ -2600,7 +2609,9 @@ function diceDamageLabel(id){
 }
 
 function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
-function critChance(){return Math.min(.38,.04+game.player.stats.luck*.015)}
+// Buff value for 'critChance' is read as flat percentage points (e.g. 10 =
+// +10%), same convention as the other %-based buffable stats below.
+function critChance(){return Math.min(.75,.04+game.player.stats.luck*.015+activeBuffFlatBonus('critChance')/100)}
 function attack(e,bonus=0,options={}){
  if(game.player.invisibleTurns>0&&game.player.invisibleBreaksOnAttack){game.player.invisibleTurns=0;log('La invisibilidad se rompe al atacar.','sys')}
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
@@ -2677,7 +2688,11 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount*.75));
  let mult=1,result=`fallo defensivo de ${attackDefenseLabel(defenseStat)}`;
+ // 'dodge' buffs (flat percentage points, e.g. 10 = +10%) grant a chance at
+ // full evasion independent of the defense die roll below.
+ const dodgeChance=Math.min(.6,activeBuffFlatBonus('dodge')/100);
  if(defenseDie===20){mult=0;result=`evasión perfecta con ${attackDefenseLabel(defenseStat)}`}
+ else if(dodgeChance>0&&Math.random()<dodgeChance){mult=0;result='esquiva'}
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
  if((p.activePotions||[]).some(b=>b.effect?.invulnerable)){mult=0;result='invulnerabilidad activa'}
@@ -3409,7 +3424,12 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
   friendly:true,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20}:{})
+  // spawnTurn protects it from being picked as an enemy target for the rest
+  // of the turn it was summoned on (see enemySingleAction) - a companion
+  // that appears mid-round shouldn't immediately eat an attack before it's
+  // even had a turn of its own.
+  spawnTurn:game.turn||0,
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3836,10 +3856,10 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion(), companionTurn()).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe});
   return true
  }
  if(comp.kind==='summonturret'){
@@ -4111,12 +4131,17 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(game.over)return 0;
   if(!game.seen[e.y][e.x])return 0;
   if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)return 0;
-  const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0),...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
+  // A companion is only ever a valid target if its own "objeto de ataques"
+  // toggle allows it (targetable!==false) and it wasn't summoned this same
+  // turn (spawnTurn grace - see summonCompanion) - otherwise a pet could get
+  // picked off the instant it appears, before it's had a turn of its own.
+  const targetableCompanions=(game.companions||[]).filter(c=>c.hp>0&&c.targetable!==false&&game.turn-(c.spawnTurn??0)>1);
+  const possibleTargets=[game.player,...targetableCompanions,...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
   let chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   // Permanent companions ("Compañero" pets) pull 15% of enemy aggro: a
-  // living one redirects this specific action onto it 15% of the time,
-  // regardless of who was actually nearest.
-  const pet=(game.companions||[]).find(c=>c.permanent&&c.hp>0);
+  // living, targetable one redirects this specific action onto it 15% of
+  // the time, regardless of who was actually nearest.
+  const pet=targetableCompanions.find(c=>c.permanent);
   if(pet&&pet!==chosen&&Math.random()<.15)chosen=pet;
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
   const chosenRef=game.multiplayer?mpEntityRef(chosen):null;
@@ -5296,7 +5321,7 @@ function effectSummaryTag(comp){
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
-  case 'summon':return comp.permanent?'Compañero (permanente)':'Invocación';
+  case 'summon':return `${comp.permanent?'Compañero (permanente)':'Invocación'}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
   case 'summonturret':{
    const et=comp.effectType||'damage';
    if(et==='heal')return 'Invocación-torreta (curación en área)';
@@ -5339,7 +5364,7 @@ function renderClassSkillsSummaryTable(){
 }
 // ---- Composable effects list editor (admin) --------------------------------
 const STAT_KEYS_CORE=['strength','vitality','agility','luck','intelligence','wisdom'];
-const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA'};
+const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA',dodge:'Esquiva',critChance:'Crítico',blockChance:'Bloqueo',manaRegen:'Regen. maná',staminaRegen:'Regen. stamina'};
 function statOptionsHtml(selected,extra=[]){return [...STAT_KEYS_CORE,...extra].map(s=>`<option value="${s}" ${selected===s?'selected':''}>${STAT_LABELS_ES[s]||s}</option>`).join('')}
 function defaultComponentFor(kind){
  const base={kind};
@@ -5354,7 +5379,7 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
@@ -5397,7 +5422,7 @@ function effectComponentCardHtml(comp,i){
   fields=`${effectDiceFieldsHtml(comp,i)}<label>Recurso que absorbes <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label><span class="small">El objetivo pierde vida por el golpe; tú ganas el recurso elegido (no hace falta que coincida con el coste de la skill).</span>`;
  }
  else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
- else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap']:['damage','ap'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}`;
+ else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
@@ -5419,6 +5444,8 @@ function effectComponentCardHtml(comp,i){
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
   </select></label>
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
+  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="targetable" ${comp.targetable!==false?'checked':''}> Compañero objeto de ataques (los enemigos pueden elegirlo como objetivo; nunca en el mismo turno en que aparece)</label>
+  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="hitByAoe" ${comp.hitByAoe!==false?'checked':''}> Recibe daño de habilidades de área/masivas enemigas (si se desmarca, sigue siendo vulnerable a ataques normales)</label>
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='summonturret'){
