@@ -4953,6 +4953,7 @@ async function fetchConfigClasses(){
   // (renderClassChoices only re-fetches while configClassesLoaded is false)
   configClassesLoaded=true;configClassesFetchInFlight=null;
   renderClassChoices();
+  if(configGatesLoaded)renderConfigGatesLists();
  })();
  return configClassesFetchInFlight;
 }
@@ -5775,7 +5776,23 @@ function renderGatesSection(rootId,type,entries){
 }
 function renderConfigGatesLists(){
  renderGatesSection('configGatesRaces','race',Object.entries(raceDefs).map(([id,r])=>({key:id,label:r.name})));
- renderGatesSection('configGatesClasses','class',Object.entries(classDefs).map(([id,c])=>({key:id,label:c.name})));
+ const classEntries=Object.entries(classDefs).map(([id,c])=>({key:id,label:c.name}));
+ // gateFor/gateUnlocked are keyed purely by classId, and renderClassChoices
+ // already calls gateUnlocked('class',id) for Advanced-mode classes too - the
+ // only gap was this admin list never listing them, so an Advanced class
+ // (config_class row with advanced:true) had no lock to configure. Mirror
+ // classIdsForSkillMode('advanced') exactly, deduped against the hardcoded
+ // ids already listed above (a reskin sharing a hardcoded classId shares its
+ // gate with that hardcoded entry, same as it already does at character
+ // creation).
+ const seen=new Set(Object.keys(classDefs));
+ for(const id of classIdsForSkillMode('advanced')){
+  if(seen.has(id))continue;
+  seen.add(id);
+  const row=configClassRowForId(id);
+  classEntries.push({key:id,label:`${row?.class_json?.name||row?.nombre||id} (Advanced)`});
+ }
+ renderGatesSection('configGatesClasses','class',classEntries);
 }
 async function saveConfigGates(){
  const st=document.getElementById('configGatesStatus');if(st)st.textContent='Guardando...';
