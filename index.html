@@ -221,21 +221,28 @@
  </div>
  </div>
  <div class="configTabPanel hidden" id="configTabClasses">
-  <div class="configLayout">
-   <section class="panel">
-    <h2>Editor de clases</h2>
-    <p class="small">Selecciona una clase, crea una nueva o duplica una existente. Stats, skills e icono se consolidan en <code>config_class</code> (skills en la columna <code>skills_json</code>); el motor las lee de ahí primero y usa el sistema por defecto si no existen.</p>
+  <section class="panel">
+   <h2>Editor de clases</h2>
+   <p class="small">Selecciona una clase, crea una nueva o duplica una existente. Stats, skills e icono se consolidan en <code>config_class</code> (skills en la columna <code>skills_json</code>); el motor las lee de ahí primero y usa el sistema por defecto si no existen.</p>
+   <details class="configAccordion" open>
+    <summary>Clase / Nueva clase / Duplicar clase</summary>
     <label>Clase del juego <select id="configClassSelect"></select></label>
     <div class="configItemActions">
      <button type="button" id="newConfigClassBtn">NUEVA CLASE</button>
      <button type="button" id="duplicateConfigClassBtn">DUPLICAR CLASE</button>
     </div>
+   </details>
+   <details class="configAccordion">
+    <summary>Configuración (nombre, descripción, icono)</summary>
     <label>Nombre <input id="configClassName" maxlength="80" placeholder="Nombre de la clase"></label>
     <label>Descripción <input id="configClassDesc" maxlength="160" placeholder="Descripción de la clase"></label>
     <label>Icono de personaje <input type="file" id="configClassImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
     <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
     <button id="rollbackConfigClassBtn" type="button">ROLLBACK AL ORIGINAL</button>
+   </details>
+   <details class="configAccordion">
+    <summary>Stats y equipo inicial</summary>
     <h3>Stats iniciales</h3>
     <div class="configForm">
      <label>Fuerza <input id="configClassStr" type="number" min="0" value="2"></label>
@@ -253,11 +260,11 @@
     <label>Buscar pociones <input type="text" id="configClassPotionSearch" placeholder="Buscar por nombre..."></label>
     <div id="configClassPotionResults" class="configItemsList"></div>
     <div id="configClassPotionSummary" class="small"></div>
-    <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
-    <div id="configClassStatus" class="small"></div>
-   </section>
-   <section class="panel">
-    <h2>Skills de la clase</h2>
+   </details>
+   <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
+   <div id="configClassStatus" class="small"></div>
+   <details class="configAccordion">
+    <summary>Skills de la clase</summary>
     <button class="start" id="saveConfigSkillBtnTop" type="button">GUARDAR SKILL (Y CLASE)</button>
     <label>Skill <select id="configClassSkillSelect"></select></label>
     <div class="configItemActions">
@@ -335,11 +342,16 @@
     </details>
     <button class="start" id="saveConfigSkillBtn" type="button">GUARDAR SKILL (Y CLASE)</button>
     <div id="configSkillStatus" class="small"></div>
-   </section>
-  </div>
-  <section class="panel">
-   <h2>Clases guardadas</h2>
-   <div id="configClassesList" class="configItemsList"></div>
+   </details>
+   <details class="configAccordion">
+    <summary>Tabla resumen</summary>
+    <p class="small">Vista rápida de todas las skills de la clase seleccionada: nombre, tipo, efectos apilables (daño área, hot a uno mismo, root, etc.) y coste (recurso + PA).</p>
+    <div id="configClassSkillsSummaryTable"></div>
+   </details>
+   <details class="configAccordion">
+    <summary>Clases guardadas</summary>
+    <div id="configClassesList" class="configItemsList"></div>
+   </details>
   </section>
  </div>
 
