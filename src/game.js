@@ -2357,10 +2357,22 @@ function restInSafeRoom(){
  if(!room){log('Debes situarte junto al fuego de una sala segura.','sys');return}
  if(room.rested){log('Ya has descansado en esta sala segura.','sys');return}
  const p=game.player,before={hp:p.hp,stamina:p.stamina,mana:p.mana};
+ // Downed permanent companions revive for free at full HP as part of a
+ // rest, instead of needing the usual resource-cost revive (reviveCompanion
+ // via move()). Lift the death debuff and recompute derived stats before
+ // topping off HP/stamina/mana below, so the fresh (debuff-free) maxHp is
+ // what the player actually gets restored to.
+ const revived=[];
+ for(const c of game.companions||[])if(c.permanent&&c.hp<=0){
+  c.hp=c.maxHp;c.deathHandled=false;
+  game.player.activeBuffs=(game.player.activeBuffs||[]).filter(b=>b.id!==`companionDown:${c.id}`);
+  revived.push(c.name);
+ }
+ if(revived.length)recomputeDerived();
  p.hp=p.maxHp;p.stamina=p.maxStamina;p.mana=p.maxMana;
  room.rested=true;
  updateUI();draw();banner('DESCANSO COMPLETO');
- log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.`,'good')
+ log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.${revived.length?` ${revived.join(', ')} revive${revived.length>1?'n':''} con toda su vida.`:''}`,'good')
 }
 function updateRestButton(){
  const btn=document.getElementById('waitBtn');if(!btn)return;
@@ -3429,7 +3441,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false}:{})
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3443,6 +3455,14 @@ function moveCompanionToward(c,target){
   }
  }
  return false
+}
+// Idle behaviour: with no enemy to fight (or on a passive-stance companion,
+// always), a mobile companion closes in on the player instead of standing
+// still - so it isn't left behind while exploring and is in position by the
+// time a fight actually starts.
+function companionFollowPlayer(c){
+ if(c.stationary)return;
+ if(gridDistance(c,game.player)>1)moveCompanionToward(c,game.player);
 }
 // Permanent companions (the 'summon' effect's "Compañero permanente" mode)
 // never expire by turns and never get removed from game.companions on
@@ -3478,6 +3498,9 @@ function companionTurn(){
    // gated on c.stationary so regular summons and clones keep behaving
    // exactly as before.
    for(let n=0;n<(c.actionsPerTurn||1);n++){
+    // Passive stance: never fights, just stays near the player - checked
+    // before any of the combat branches below.
+    if(c.stance==='passive'){companionFollowPlayer(c);break}
     if(c.stationary&&c.effectType==='heal'){
      const power=Math.max(1,rollDice(c.atk).total),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
@@ -3496,7 +3519,7 @@ function companionTurn(){
     }
     if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
     const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-    if(!target)break;
+    if(!target){companionFollowPlayer(c);break}
     if(gridDistance(c,target)>c.range){if(!c.stationary)moveCompanionToward(c,target);break}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
@@ -3510,8 +3533,9 @@ function companionTurn(){
    if(nearby&&gridDistance(c,nearby)<=c.range)attack(nearby,0,{dice:c.atk,multiplier:.45});
    continue
   }
+  if(c.stance==='passive'){companionFollowPlayer(c);continue}
   const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-  if(!target)continue;
+  if(!target){companionFollowPlayer(c);continue}
   const dist=gridDistance(c,target);
   if(dist<=c.range){
    attack(target,0,{dice:c.atk,multiplier:.65+c.power*.07});
@@ -3856,10 +3880,10 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion(), companionTurn()).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance});
   return true
  }
  if(comp.kind==='summonturret'){
@@ -5321,7 +5345,7 @@ function effectSummaryTag(comp){
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
-  case 'summon':return `${comp.permanent?'Compañero (permanente)':'Invocación'}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
+  case 'summon':return `${comp.permanent?'Compañero (permanente)':'Invocación'}${comp.stance==='passive'?' · pasivo':''}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
   case 'summonturret':{
    const et=comp.effectType||'damage';
    if(et==='heal')return 'Invocación-torreta (curación en área)';
@@ -5379,7 +5403,7 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
@@ -5446,6 +5470,10 @@ function effectComponentCardHtml(comp,i){
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
   <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="targetable" ${comp.targetable!==false?'checked':''}> Compañero objeto de ataques (los enemigos pueden elegirlo como objetivo; nunca en el mismo turno en que aparece)</label>
   <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="hitByAoe" ${comp.hitByAoe!==false?'checked':''}> Recibe daño de habilidades de área/masivas enemigas (si se desmarca, sigue siendo vulnerable a ataques normales)</label>
+  <label>Comportamiento <select data-effect-idx="${i}" data-effect-field="stance">
+   <option value="aggressive" ${comp.stance!=='passive'?'selected':''}>Agresivo (ataca si hay enemigos; si no, te sigue)</option>
+   <option value="passive" ${comp.stance==='passive'?'selected':''}>Pasivo (nunca ataca, solo te sigue)</option>
+  </select></label>
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='summonturret'){
