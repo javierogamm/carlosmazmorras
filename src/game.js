@@ -985,6 +985,22 @@ function activeBuffFlatBonus(key){
   return (eff&&typeof eff==='object'&&eff.mode!=='mult')?s+eff.value:s;
  },0)
 }
+// Ascensión (stackable 'ascend' effect): while active, multiplies what a
+// skill using the given resource actually costs - ascendResource 'any'
+// applies to every skill regardless of resource, otherwise only to skills
+// using that specific one. Read from useSkill() at cast time.
+function skillCostMultiplier(resource){
+ return (game.player?.activeBuffs||[]).reduce((m,b)=>{
+  const mult=b.effects?.ascendMult;if(!mult)return m;
+  const scope=b.effects?.ascendResource;
+  if(scope&&scope!=='any'&&scope!==resource)return m;
+  return m*mult;
+ },1)
+}
+function effectiveSkillCost(def){return Math.max(0,Math.round(def.cost*skillCostMultiplier(def.resource)))}
+// Transformación (stackable 'transform' effect) can be authored to disallow
+// casting any other skill while it's active - see useSkill().
+function skillsBlockedByTransform(){return (game.player?.activeBuffs||[]).some(b=>b.effects?.blockSkills)}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
  const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
@@ -1030,6 +1046,10 @@ function recomputeDerived(){
  // Buffs (e.g. the resourceRegen skill effect) are the other allowed source
  // of stamina/mana regen besides the off-hand item and potions below.
  d.staminaRegen+=activeBuffFlatBonus('staminaRegen');d.manaRegen+=activeBuffFlatBonus('manaRegen');
+ // Block chance otherwise only comes from an equipped shield's affix (folded
+ // in above via the equipment-affix loop) - a buff stacks a flat bonus on
+ // top of that, read at block-roll time from p.derived.blockChance.
+ d.blockChance=(d.blockChance||0)+activeBuffFlatBonus('blockChance');
  for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
  d.finalStats=allStats;
  p.derived=d;
@@ -1477,6 +1497,7 @@ const ROOM_TYPES={
  deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
  knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
  bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ megaboss:    {label:'Cámara del megajefe',size:[15,19],enemies:[0,0],tier:3, cover:.05, traps:0,   chest:.4,  exits:1, event:0,  boss:true, megaboss:true},
  prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
@@ -1609,10 +1630,54 @@ function buildFloorObjective(archId,floor,total){
  }
 }
 
+// A megaboss floor is a fixed, deterministic layout - a narrow 10-tile
+// corridor straight into one big central arena room - instead of the usual
+// randomized multi-room dungeon, so it's built directly rather than through
+// the weighted room-typology loop below. Rolled independently of
+// FLOOR_ARCHETYPES (33% on every floor%3===0, see buildFloorPlan) instead of
+// competing on weight/cooldown with the other archetypes.
+function buildMegabossFloorPlan(floor,params){
+ const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
+ const map=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+ const spawnW=5,spawnH=5,spawnX=2,spawnY=Math.max(1,Math.floor(ROWS/2)-Math.floor(spawnH/2));
+ const spawn={x:spawnX,y:spawnY,w:spawnW,h:spawnH,cx:spawnX+Math.floor(spawnW/2),cy:spawnY+Math.floor(spawnH/2),type:'filler'};
+ const corridorY=spawn.cy,corridorStartX=spawnX+spawnW,corridorLen=10;
+ const roomW=16,roomH=16,roomX=corridorStartX+corridorLen,roomY=Math.max(1,Math.min(ROWS-roomH-2,corridorY-Math.floor(roomH/2)));
+ const bossRoom={x:roomX,y:roomY,w:roomW,h:roomH,cx:roomX+Math.floor(roomW/2),cy:roomY+Math.floor(roomH/2),type:'megaboss'};
+ carve(map,spawn);carve(map,bossRoom);
+ for(let x=corridorStartX;x<corridorStartX+corridorLen;x++)map[corridorY][x]=0;
+ const rooms=[spawn,bossRoom],stairs={x:bossRoom.cx,y:bossRoom.cy};
+ const safeRooms=[{...spawn,id:`safe-mb-${floor}`,rested:false}];
+ const family=pickConfiguredFamilyForFloorWithParams(floor,params);
+ const boss=upgradeToMegaboss(buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,total),{x:bossRoom.cx,y:bossRoom.cy},floor,true,megabossLevelForPlayer()));
+ boss.enemyFamily=family.name;
+ const freeInBossRoom=()=>{
+  for(let i=0;i<40;i++){
+   const x=bossRoom.x+1+rng(Math.max(1,bossRoom.w-2)),y=bossRoom.y+1+rng(Math.max(1,bossRoom.h-2));
+   if(map[y]?.[x]===0&&!(x===bossRoom.cx&&y===bossRoom.cy))return{x,y};
+  }
+  return{x:bossRoom.cx,y:bossRoom.cy};
+ };
+ const chests=[];
+ for(let i=0;i<3;i++){const chestDef=pickChestDefForFloor(floor);if(chestDef)chests.push({...freeInBossRoom(),opened:false,chestDef})}
+ const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
+ return {
+  floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors:[],keys:[],chests,traps:[],altars:[],event:null,
+  enemies:[boss],boss,family,archetype:'megaboss',archetypeLabel:'Cámara del megajefe',
+  archetypeDesc:'Un pasillo estrecho conduce a una cámara descomunal. El MEGAJEFE aguarda en el centro.',
+  objective:{type:'bossKill',done:false,label:'Derrota al jefe'},tierExpected:expectedTierForFloor(floor,total),rewardRarityBonus:3,
+  enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
+  themeName:floorTileset.name,floorTileset,announce:true
+ };
+}
 // Shared floor builder used by both the pre-generated world JSON and the live
 // generator, so archetypes/rooms behave identically in single and multiplayer.
 // Assumes `game` is set with at least {floor,player,worldParams}.
 function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
+ // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
+ // 33% chance on every floor that's a multiple of 3, regardless of recency/
+ // cooldown or the other archetypes' weights.
+ if(floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=pickFloorArchetype(floor,total,recent);
  const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
@@ -2118,6 +2183,30 @@ const ENEMY_CLASS_SKILL_PREF={
  tanque:s=>['shield','buff','debuff'].includes(s.classEffect),
  warrior:s=>s.type==='physical'
 };
+// Bosses (and megabosses) get a real "classic" player class instead of the
+// generic archetype skill pool - one candidate matching the boss's archetype
+// (enemyClassOf), e.g. an arquero-archetype boss becomes a sniper or a
+// bountyHunter. Gear/weapon assignment (equipEnemy) still keys off the
+// generic archetype, only the skill kit comes from this real class.
+const BOSS_CLASS_BY_ARCHETYPE={
+ arquero:['sniper','bountyHunter'],
+ francotirador:['sniper','bountyHunter'],
+ caster:['entropyMage','necromancer','seer'],
+ invocador:['necromancer','engineer'],
+ clerigo:['cleric','paladin'],
+ chaman:['shaman','druid'],
+ rogue:['thief','jester'],
+ tanque:['yunque','beastGuardian'],
+ warrior:['berserker','monk','yunque']
+};
+function pickBossClassId(e){return pick(BOSS_CLASS_BY_ARCHETYPE[enemyClassOf(e)]||allClassIds())}
+// Every classId-tagged skillDefs entry for a class, gated by tier the same
+// way a player's own skills unlock (tier2 at level>=10, tier3 at level>=30) -
+// using the BOSS's own level, not the player's.
+function bossSkillPool(classId,level){
+ const maxTier=level>=30?3:level>=10?2:1;
+ return Object.entries(skillDefs).filter(([,s])=>s.classId===classId&&(!s.tier||s.tier<=maxTier)).map(([id])=>id);
+}
 function enemyClassOf(e){
  if(e.enemyClass)return e.enemyClass;
  if(ENEMY_CLASS_GEAR[e.type])return e.type;
@@ -2176,11 +2265,28 @@ function equipEnemy(e,floor=game?.floor||1){
  return e;
 }
 function assignEnemySkills(e){
+ e.skillCooldowns={};
+ if(e.boss){
+  // Bosses (and megabosses) always run a 3-skill kit from a real class
+  // matching their archetype instead of the generic pool below - see
+  // BOSS_CLASS_BY_ARCHETYPE/bossSkillPool. An admin-configured boss with its
+  // own hand-picked skillIds still wins outright, same as before.
+  if(Array.isArray(e.configuredSkillIds)&&e.configuredSkillIds.length){e.skills=[...e.configuredSkillIds];return e}
+  e.bossClassId=e.bossClassId||pickBossClassId(e);
+  e.enemyClassLabel=resolveClassDef(e.bossClassId)?.name||e.enemyClassLabel;
+  const pool=bossSkillPool(e.bossClassId,e.level||1).sort(()=>Math.random()-.5);
+  e.skills=pool.slice(0,3);
+  if(e.skills.length<3){ // thin kit at low level: top up from the generic archetype pool so a boss is never under-equipped
+   const fallback=enemySkillPool(e).filter(id=>!e.skills.includes(id));
+   while(e.skills.length<3&&fallback.length)e.skills.push(fallback.splice(rng(fallback.length),1)[0]);
+  }
+  return e;
+ }
  const cls=enemyClassOf(e);
  const casterClass=['caster','clerigo','chaman','invocador'].includes(cls);
- const chance=e.boss?.95:casterClass?1:e.elite?.6:(cls==='arquero'||cls==='francotirador')?.45:.18+Math.min(.22,(game?.floor||1)*.012);
- e.skills=Array.isArray(e.configuredSkillIds)?[...e.configuredSkillIds]:[];e.skillCooldowns={};
- if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=e.boss?2+(Math.random()<.45?1:0):casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
+ const chance=casterClass?1:e.elite?.6:(cls==='arquero'||cls==='francotirador')?.45:.18+Math.min(.22,(game?.floor||1)*.012);
+ e.skills=Array.isArray(e.configuredSkillIds)?[...e.configuredSkillIds]:[];
+ if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
  return e
 }
 function enemyUseSkill(e,dist,target=game.player){
@@ -2188,6 +2294,11 @@ function enemyUseSkill(e,dist,target=game.player){
  for(const id of e.skills){
   e.skillCooldowns[id]=Math.max(0,(e.skillCooldowns[id]||0)-1);
   const s=skillDefs[id];if(e.skillCooldowns[id]>0)continue;
+  // A companion/ally with hitByAoe===false is immune to area/multi-target-
+  // flavored enemy skills specifically (still vulnerable to plain weapon
+  // attacks below, and to single-target skills) - skip this one and try the
+  // next skill in the list instead of picking a different target.
+  if(target!==game.player&&target.hitByAoe===false&&['aoe','multihit','ultimate','massive'].includes(s.classEffect))continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
   if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
    const mult=e.boss?1.35:e.elite?1.15:1,statMod=skillStatModifier(id,e),amount=Math.max(2,Math.round(((e.atk||e.damage||4)+statMod)*mult*(s.tier?1+s.tier*.12:1)));
@@ -2293,6 +2404,7 @@ function announceFloorArchetype(){
  log(`${label}: ${game.floorArchetypeDesc||''} Familia dominante: ${game.enemyFamily}. ${(game.enemies||[]).length} enemigos.`,'story');
  log(`Objetivo: ${objectiveText(obj)}`,'story');
  if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
+ if(game.floorArchetype==='megaboss')log('Un pasillo estrecho es la única vía. Un MEGAJEFE aguarda al final. Prepárate.','combat');
 }
 // Rarity of the guaranteed floor-completion item: a fixed floor->tier ladder
 // (unlike the ratio/level-gated progression used for regular loot), so every
@@ -2497,7 +2609,9 @@ function diceDamageLabel(id){
 }
 
 function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
-function critChance(){return Math.min(.38,.04+game.player.stats.luck*.015)}
+// Buff value for 'critChance' is read as flat percentage points (e.g. 10 =
+// +10%), same convention as the other %-based buffable stats below.
+function critChance(){return Math.min(.75,.04+game.player.stats.luck*.015+activeBuffFlatBonus('critChance')/100)}
 function attack(e,bonus=0,options={}){
  if(game.player.invisibleTurns>0&&game.player.invisibleBreaksOnAttack){game.player.invisibleTurns=0;log('La invisibilidad se rompe al atacar.','sys')}
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
@@ -2518,21 +2632,47 @@ function attack(e,bonus=0,options={}){
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
  if(e.hp<=0)kill(e)
 }
+// Guaranteed boss-kill rarity by floor - always real equipment (forceRarityName
+// on makeLoot never resolves to a potion or a skill-teaching item, see
+// makeLoot's forceRarityName branch).
+function bossGuaranteedRarityForFloor(floor){
+ if(floor<=4)return'uncommon';
+ if(floor<=8)return'rare';
+ if(floor<=12)return'epic';
+ if(floor<=16)return'legendary';
+ return'artifact';
+}
+// Megaboss floors only ever land on floor%3===0 (see buildMegabossFloorPlan),
+// so this is keyed directly off that fixed progression rather than a general
+// floor formula.
+function megabossGuaranteedDrops(floor){
+ if(floor<6)return{count:1,rarity:'rare'};
+ if(floor<9)return{count:2,rarity:'epic'};
+ if(floor<12)return{count:1,rarity:'legendary'};
+ return{count:1+Math.floor((floor-12)/3),rarity:'artifact'};
+}
 // Enemy kill loot: once a drop is decided (killLootChance, or always on
-// boss/eventBoss), it's always exactly one of equipment (64.5%), potion
-// (32.2%) or skill unlock (3.3%, cut to a third of the old 10% share so
-// skills feel rare) - never more than one, never none.
+// boss/eventBoss), a normal kill gives exactly one of equipment (64.5%),
+// potion (32.2%) or skill unlock (3.3%) - never more than one, never none.
+// Bosses and megabosses skip that roll entirely: they always hand out their
+// guaranteed floor-tiered equipment instead (see bossGuaranteedRarityForFloor/
+// megabossGuaranteedDrops).
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
- if(Math.random()<killLootChance||e.boss||e.eventBoss){
-  const source=e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal';
+ if(e.megaboss){
+  const{count,rarity}=megabossGuaranteedDrops(game.floor);
+  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+3,'boss',rarity);addInventoryItem(item);lootToast(item)}
+ }else if(e.boss){
+  const item=makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));addInventoryItem(item);lootToast(item);
+ }else if(Math.random()<killLootChance||e.eventBoss){
+  const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
   const roll=Math.random();
   if(roll<.645){
-   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'equipment');addInventoryItem(item);lootToast(item);
+   const item=makeLoot(game.player.level,source,null,'equipment');addInventoryItem(item);lootToast(item);
   }else if(roll<.967){
-   const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'potion');addInventoryItem(item);lootToast(item);
+   const item=makeLoot(game.player.level,source,null,'potion');addInventoryItem(item);lootToast(item);
   }else{
    const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
    if(drop)unlockSkillLoot(drop);
@@ -2548,7 +2688,11 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount*.75));
  let mult=1,result=`fallo defensivo de ${attackDefenseLabel(defenseStat)}`;
+ // 'dodge' buffs (flat percentage points, e.g. 10 = +10%) grant a chance at
+ // full evasion independent of the defense die roll below.
+ const dodgeChance=Math.min(.6,activeBuffFlatBonus('dodge')/100);
  if(defenseDie===20){mult=0;result=`evasión perfecta con ${attackDefenseLabel(defenseStat)}`}
+ else if(dodgeChance>0&&Math.random()<dodgeChance){mult=0;result='esquiva'}
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
  if((p.activePotions||[]).some(b=>b.effect?.invulnerable)){mult=0;result='invulnerabilidad activa'}
@@ -2619,27 +2763,41 @@ function scaleFloorForParty(){
 // have rather than rebuilding from scratch) proportionally to a fresh
 // target level anchored on the player's CURRENT level, every time the
 // floor is (re)loaded - for brand new runs and existing/continued sessions alike.
+// Ratio-adjusts one enemy's hp/atk/armor/xp toward a new target level,
+// preserving whatever bonuses it already has (elite/tier/superboss/megaboss
+// bumps) instead of rebuilding it from scratch. Shared by
+// scaleFloorForPlayerLevel() (every enemy incl. the boss, on floor load) and
+// rescaleBossOnLevelUp() (boss only, the instant the player levels up).
+function rescaleEnemyToLevel(e,targetLevel){
+ if(!e||e.level==null||targetLevel==null)return;
+ const oldLevel=e.level;
+ if(targetLevel===oldLevel)return;
+ const hpRatio=(1+targetLevel*.13)/(1+oldLevel*.13),atkRatio=(1+targetLevel*.08)/(1+oldLevel*.08);
+ e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*hpRatio));
+ e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*hpRatio));
+ e.atk=Math.max(1,Math.round((e.atk||e.damage||4)*atkRatio));
+ e.damage=e.atk;
+ e.armor=Math.max(0,Math.round((e.armor||0)*hpRatio));
+ e.xp=Math.max(1,Math.round((e.xp||8)*hpRatio));
+ e.level=targetLevel;
+}
+function bossTargetLevel(){return game.boss?.megaboss?megabossLevelForPlayer():bossLevelForPlayer()}
 function scaleFloorForPlayerLevel(){
  // multiplayer keeps enemies as a single shared/authoritative snapshot across
  // party members (see partyHpMultiplier) - rescaling per-viewer here would
  // desync combat between players at different levels, so this only applies
  // to single player, where "the player" is unambiguous.
  if(game?.multiplayer||!game?.player||!(game.enemies?.length||game.boss))return;
- const rescale=e=>{
-  if(!e||e.level==null)return;
-  const targetLevel=enemyLevelForFloor(game.floor),oldLevel=e.level;
-  if(targetLevel===oldLevel)return;
-  const hpRatio=(1+targetLevel*.13)/(1+oldLevel*.13),atkRatio=(1+targetLevel*.08)/(1+oldLevel*.08);
-  e.maxHp=Math.max(1,Math.round((e.maxHp||e.hp||1)*hpRatio));
-  e.hp=Math.max(1,Math.round((e.hp||e.maxHp)*hpRatio));
-  e.atk=Math.max(1,Math.round((e.atk||e.damage||4)*atkRatio));
-  e.damage=e.atk;
-  e.armor=Math.max(0,Math.round((e.armor||0)*hpRatio));
-  e.xp=Math.max(1,Math.round((e.xp||8)*hpRatio));
-  e.level=targetLevel;
- };
- for(const e of game.enemies||[])rescale(e);
- rescale(game.boss);
+ for(const e of game.enemies||[])rescaleEnemyToLevel(e,enemyLevelForFloor(game.floor));
+ if(game.boss)rescaleEnemyToLevel(game.boss,bossTargetLevel());
+}
+// A boss (or megaboss) always sits at playerLevel+1..3 (megaboss: +2..4),
+// independent of the floor - so unlike regular enemies it has to be
+// re-rolled and rescaled the instant the player levels up mid-floor, not
+// just when the floor (re)loads. See the grantXp() level-up loop.
+function rescaleBossOnLevelUp(){
+ if(game?.multiplayer||!game?.boss)return;
+ rescaleEnemyToLevel(game.boss,bossTargetLevel());
 }
 function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
@@ -2657,6 +2815,7 @@ function grantXp(v){
   banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
+ if(p.level>startLevel)rescaleBossOnLevelUp();
  // Levelling up changes both this character's score (used in accumulated_points)
  // and possibly the account's max_pj_lv gate threshold - push the save right
  // away instead of waiting for the next turn-end persist, so unlocks react
@@ -2698,12 +2857,21 @@ function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))
 function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
 
 function blocked(x,y){const d=game.doors.find(d=>d.x===x&&d.y===y);return game.map[y]?.[x]!==0||(d&&!d.open)}
+// A megaboss visually occupies a 2x2 block anchored on its own x,y (see
+// enemySprite/drawEnemyIconHex) - matches any of those 4 cells instead of
+// just the anchor tile, so walking into (or clicking) any part of its body
+// hits/selects it. Regular enemies still match their single tile exactly.
+function enemyAtCell(x,y){
+ return game.enemies.find(e=>e.hp>0&&(e.megaboss?(x>=e.x&&x<=e.x+1&&y>=e.y&&y<=e.y+1):(e.x===x&&e.y===y)));
+}
 function move(dx,dy){
  if(!game||busy||game.over)return;const p=game.player,nx=p.x+dx,ny=p.y+dy,d=game.doors.find(d=>d.x===nx&&d.y===ny);
  if(dx)p.facing=dx>0?1:-1;
  if(d&&!d.open){if(d.locked&&p.keys<=0){log('Puerta cerrada: necesitas llave.','sys');return}if(!apCan('move'))return;if(d.locked)p.keys--;d.open=true;sendMpAction('open_door',{at:{x:nx,y:ny}});log('Abres una puerta.','sys');actionDone('move');return}
+ const downedCompanion=(game.companions||[]).find(c=>c.permanent&&c.hp<=0&&c.x===nx&&c.y===ny);
+ if(downedCompanion){reviveCompanion(downedCompanion);return}
  if(blocked(nx,ny))return;
- const e=game.enemies.find(e=>e.x===nx&&e.y===ny);
+ const e=enemyAtCell(nx,ny);
  if(e){if(!apCan('attack'))return;attack(e);actionDone('attack');return}
  if(!apCan('move'))return;
  const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
@@ -3176,14 +3344,29 @@ function enemyHasStatus(e,type){return(e.statuses||[]).some(s=>s.type===type&&s.
 // Debuff skills with a configured debuffStat lower that specific enemy stat
 // for the status' duration (instead of the generic weakened/stunned pair),
 // so "which stat" is a real, reversible mechanical choice rather than cosmetic.
+// 'damage' targets the enemy's own attack power (e.atk/e.damage) directly;
+// 'ap' targets its action-point pool for the turn (see the AP-mode enemy
+// pool in enemyTurn) via a stored multiplier instead of a raw stat, since
+// enemies don't carry a persistent AP field otherwise. Everything else still
+// goes through e.stats[stat] as before.
 function applyEnemyStatDebuff(e,stat,mode,value,turns,label){
  e.statuses=e.statuses||[];
  const existing=e.statuses.find(s=>s.type==='statDebuff'&&s.stat===stat);
  if(existing){existing.turns=Math.max(existing.turns,turns);return}
- e.stats=e.stats||{};
- const before=e.stats[stat]||0;
- e.stats[stat]=mode==='mult'?before*value:before-value;
- e.statuses.push({type:'statDebuff',stat,before,turns,label});
+ if(stat==='damage'){
+  const before=e.atk??e.damage??4;
+  e.atk=e.damage=Math.max(1,Math.round(mode==='mult'?before*value:before-value));
+  e.statuses.push({type:'statDebuff',stat,before,turns,label});
+ }else if(stat==='ap'){
+  const before=e.apDebuffMult??1;
+  e.apDebuffMult=mode==='mult'?before*value:Math.max(0,before-value/100);
+  e.statuses.push({type:'statDebuff',stat,before,turns,label});
+ }else{
+  e.stats=e.stats||{};
+  const before=e.stats[stat]||0;
+  e.stats[stat]=mode==='mult'?before*value:before-value;
+  e.statuses.push({type:'statDebuff',stat,before,turns,label});
+ }
  log(`${e.name}: ${label} (${DEFENSE_STAT_LABELS[stat]||stat} ${mode==='mult'?`×${value}`:`-${value}`}) durante ${turns} turnos.`,'combat')
 }
 function tickEnemyStatuses(){
@@ -3197,7 +3380,11 @@ function tickEnemyStatuses(){
    }
    s.turns--;
    if(s.turns<=0&&s.type==='doomCountdown'&&e.hp>0){const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d68cff');if(e.hp<=0){kill(e);break}}
-   if(s.turns<=0&&s.type==='statDebuff')e.stats[s.stat]=s.before;
+   if(s.turns<=0&&s.type==='statDebuff'){
+    if(s.stat==='damage')e.atk=e.damage=s.before;
+    else if(s.stat==='ap')e.apDebuffMult=s.before;
+    else e.stats[s.stat]=s.before;
+   }
   }
   e.statuses=(e.statuses||[]).filter(s=>s.turns>0)
  }
@@ -3237,9 +3424,14 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
   friendly:true,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||''}:{})
+  // spawnTurn protects it from being picked as an enemy target for the rest
+  // of the turn it was summoned on (see enemySingleAction) - a companion
+  // that appears mid-round shouldn't immediately eat an attack before it's
+  // even had a turn of its own.
+  spawnTurn:game.turn||0,
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false}:{})
  });
- reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado durante ${turns} turnos.`,'good')
+ reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
 function moveCompanionToward(c,target){
  const dx=Math.sign(target.x-c.x),dy=Math.sign(target.y-c.y);
@@ -3252,9 +3444,27 @@ function moveCompanionToward(c,target){
  }
  return false
 }
+// Permanent companions (the 'summon' effect's "Compañero permanente" mode)
+// never expire by turns and never get removed from game.companions on
+// death - they sit "downed" on their tile (see companionSprite/move()) until
+// revived (reviveCompanion), instead of vanishing like a regular summon.
 function companionTurn(){
  game.companions=game.companions||[];
  for(const c of [...game.companions]){
+  if(c.permanent&&c.hp<=0){
+   if(!c.deathHandled){
+    c.deathHandled=true;
+    // Applied without applyBuff()'s own log line (which reads as a positive
+    // "buff active" message and would look wrong for a death debuff) - the
+    // log line right below already covers it.
+    const effects={};for(const k of['strength','vitality','agility','luck','intelligence','wisdom'])effects[k]={mode:'mult',value:.9};
+    game.player.activeBuffs=(game.player.activeBuffs||[]).filter(b=>b.id!==`companionDown:${c.id}`);
+    game.player.activeBuffs.push({id:`companionDown:${c.id}`,name:`${c.name} caído`,turns:999999,effects});
+    recomputeDerived();
+    log(`${c.name} ha caído: sufres un 10% menos en todas tus stats hasta que lo revivas.`,'combat');
+   }
+   continue;
+  }
   c.turns--;
   if(c.hp<=0||c.turns<=0)continue;
   tickEntityHots(c);
@@ -3308,7 +3518,21 @@ function companionTurn(){
    floating(c.kind==='skeleton'?'☠':'◆',c.x,c.y,'#9ee6c0')
   }else moveCompanionToward(c,target)
  }
- game.companions=game.companions.filter(c=>c.hp>0&&c.turns>0);draw()
+ game.companions=game.companions.filter(c=>(c.permanent&&c.hp<=0)||(c.hp>0&&c.turns>0));draw()
+}
+// Pays the configured resource cost to bring a downed permanent companion
+// back at 50% HP and lifts its death debuff - triggered by walking into its
+// tile (see move()).
+function reviveCompanion(c){
+ const resource=c.reviveResource||'hp',cost=c.reviveAmount??20;
+ if((game.player[resource]||0)<cost){log(`Necesitas ${cost} de ${resource==='hp'?'vida':resource==='mana'?'maná':'stamina'} para revivir a ${c.name}.`,'sys');return false}
+ game.player[resource]-=cost;
+ c.hp=Math.max(1,Math.round(c.maxHp*.5));c.deathHandled=false;
+ game.player.activeBuffs=(game.player.activeBuffs||[]).filter(b=>b.id!==`companionDown:${c.id}`);
+ recomputeDerived();
+ log(`${c.name} vuelve a levantarse.`,'good');
+ updateUI();draw();
+ return true;
 }
 function addSkillObject(kind,id,x,y,turns=6,power=1,radius=1){
  game.skillObjects=game.skillObjects||[];
@@ -3445,7 +3669,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3529,6 +3753,29 @@ function applyEffectComponent(id,comp,ctx){
   for(const e of targets){attack(e,0,{skillId:id,multiplier:.7});if(comp.stat)applyEnemyStatDebuff(e,comp.stat,mode,value,turns,d.name);else e.weakened=turns}
   return true
  }
+ if(comp.kind==='ascend'){
+  // Buff-typology effect: while active, changes what a fraction of the
+  // player's own skill casts cost (see skillCostMultiplier(), read from
+  // useSkill()). comp.value is the resulting % of the normal cost (100 = no
+  // change), not an additive bonus.
+  const turns=comp.turns??(6+Math.floor(lvl/2)),mult=Math.max(0,(comp.value??150)/100);
+  applyBuff(`${id}:ascend`,d.name,turns,{ascendMult:mult,ascendResource:comp.resource||'any'});
+  return true
+ }
+ if(comp.kind==='transform'){
+  // Buff-typology effect: swaps the hero's rendered icon (activeTransformIcon,
+  // read from heroSprite()) and applies %-based damage/armor/max-HP changes
+  // for the duration, reusing the same buff-multiplier plumbing as 'buff'
+  // (total('damage')/total('armor')) and the existing flat maxHp buff slot
+  // (recomputeDerived already folds b.effects.maxHp in as a flat bonus, so a
+  // % here is just converted to a flat amount once at cast time). Can also
+  // be authored to block casting any other skill for the duration.
+  const turns=comp.turns??(8+Math.floor(lvl/2));
+  const dmgMult=1+(comp.damagePct??0)/100,armorMult=1+(comp.armorPct??0)/100;
+  const hpBonus=Math.round((p.maxHp||0)*(comp.hpPct??0)/100);
+  applyBuff(`${id}:transform`,d.name,turns,{damage:{mode:'mult',value:dmgMult},armor:{mode:'mult',value:armorMult},maxHp:hpBonus,transformIcon:comp.iconImage||'',blockSkills:comp.allowSkills===false});
+  return true
+ }
  if(comp.kind==='heal'){
   const power=dicePowerFor(comp,8+lvl*3,p);
   if(comp.target==='area'){
@@ -3602,7 +3849,17 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='summon'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||''});
+  if(comp.permanent){
+   // Permanent companion (pet): only one instance per skill - recasting it
+   // while the pet is already up does nothing; recasting while it's downed
+   // attempts a revive instead of summoning a second one (see
+   // reviveCompanion(), companionTurn()).
+   const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
+   if(existing)return existing.hp>0?false:reviveCompanion(existing);
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe});
+   return true
+  }
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe});
   return true
  }
  if(comp.kind==='summonturret'){
@@ -3874,8 +4131,18 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(game.over)return 0;
   if(!game.seen[e.y][e.x])return 0;
   if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)return 0;
-  const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0),...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
-  const chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
+  // A companion is only ever a valid target if its own "objeto de ataques"
+  // toggle allows it (targetable!==false) and it wasn't summoned this same
+  // turn (spawnTurn grace - see summonCompanion) - otherwise a pet could get
+  // picked off the instant it appears, before it's had a turn of its own.
+  const targetableCompanions=(game.companions||[]).filter(c=>c.hp>0&&c.targetable!==false&&game.turn-(c.spawnTurn??0)>1);
+  const possibleTargets=[game.player,...targetableCompanions,...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
+  let chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
+  // Permanent companions ("Compañero" pets) pull 15% of enemy aggro: a
+  // living, targetable one redirects this specific action onto it 15% of
+  // the time, regardless of who was actually nearest.
+  const pet=targetableCompanions.find(c=>c.permanent);
+  if(pet&&pet!==chosen&&Math.random()<.15)chosen=pet;
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
   const chosenRef=game.multiplayer?mpEntityRef(chosen):null;
   if(enemyUseSkill(e,dist,chosen))return AP_COSTS.skill;
@@ -3915,25 +4182,29 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
  };
  if(!apModeOn()){
   // classic mode: exactly one action per enemy, resolved synchronously
-  // (unchanged from before - no pacing requested for this mode)
+  // (unchanged from before - no pacing requested for this mode). A megaboss
+  // gets its "+25% PA" here as a 25% chance at an extra action right after
+  // the first, averaging out to 1.25 actions/turn.
   for(const e of [...game.enemies]){
    if(game.over)break;
    if(e.hp<=0)continue;
    enemySingleAction(e);
+   if(e.megaboss&&e.hp>0&&!game.over&&Math.random()<.25)enemySingleAction(e);
   }
   finishEnemyTurn();
   return;
  }
  // AP mode: each enemy keeps acting (in order) until its pool runs out, one
  // action at a time, with a real delay between actions so the whole phase
- // doesn't resolve in a single synchronous burst.
+ // doesn't resolve in a single synchronous burst. A megaboss's pool is +25%
+ // ("+25% PA").
  const queue=[...game.enemies];
  const stepEnemy=(idx)=>{
   if(game.over){finishEnemyTurn();return}
   if(idx>=queue.length){finishEnemyTurn();return}
   const e=queue[idx];
   if(e.hp<=0){stepEnemy(idx+1);return}
-  let ap=20+Math.ceil(e.stats?.agility||0);
+  let ap=Math.round((20+Math.ceil(e.stats?.agility||0))*(e.megaboss?1.25:1)*(e.apDebuffMult??1));
   const stepAction=()=>{
    if(game.over){finishEnemyTurn();return}
    if(ap<=0||e.hp<=0||!game.enemies.includes(e)){stepEnemy(idx+1);return}
@@ -4061,17 +4332,19 @@ function resolveTargetedSkill(slot,x,y){
  if(!validateTargetCell(x,y,range,mode0==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
- if(game.player[d.resource]<d.cost){log(`Necesitas ${d.cost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
+ if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');cancelTargeting('');return false}
+ const targetedCost=effectiveSkillCost(d);
+ if(game.player[d.resource]<targetedCost){log(`Necesitas ${targetedCost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
  const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(hasEffectsList(id)){
-  const clickedEnemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
+  const clickedEnemy=enemyAtCell(x,y);
   const clickedAlly=!clickedEnemy&&game.multiplayer?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
   if(mode==='enemy'&&!clickedEnemy){log('Debes seleccionar un enemigo.','sys');return false}
   used=applySkillEffectsList(id,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
   if(!used&&mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');
  }else if(mode==='enemy'){
-  const enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
+  const enemy=enemyAtCell(x,y);if(!enemy){log('Debes seleccionar un enemigo.','sys');return false}
   if(d.classId&&!GENERIC_CLASS_EFFECTS.has(d.classEffect)&&applyCreativeClassEffect(id,enemy,x,y)){used=true}
   if(used){}else{
   let mult=d.rarity==='legendary'?2.2:d.rarity==='epic'?1.75:d.rarity==='rare'?1.4:1.1;
@@ -4104,7 +4377,7 @@ function resolveTargetedSkill(slot,x,y){
  }
  if(!used)return false;
  if(!apCan('skill',skillApCost(id)))return false;
- game.player[d.resource]-=d.cost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
+ game.player[d.resource]-=targetedCost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
 }
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
@@ -4114,7 +4387,7 @@ function beginBasicAttack(){
  if(adjacent.length===1){if(!apCan('attack'))return;attack(adjacent[0]);actionDone('attack')}else if(adjacent.length>1){beginTargeting({kind:'attack',mode:'enemy',range:1})}else log('No hay ningún enemigo al alcance del arma.','sys')
 }
 function resolveBasicAttack(x,y){
- const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=game.enemies.find(e=>e.hp>0&&e.x===x&&e.y===y);
+ const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=enemyAtCell(x,y);
  if(!enemy){log('Selecciona un enemigo.','sys');return false}
  if(!validateTargetCell(x,y,range,minRange)){log(`Enemigo fuera de alcance (${minRange}-${range}) o sin línea de visión.`,'sys');return false}
  if(!apCan('attack'))return false;
@@ -4122,7 +4395,10 @@ function resolveBasicAttack(x,y){
 }
 
 function useSkill(slot){
- if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}if(game.player[def.resource]<def.cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
+ if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}
+ if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
+ const cost=effectiveSkillCost(def);
+ if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  if(hasEffectsList(id)){
@@ -4133,7 +4409,7 @@ function useSkill(slot){
   const used=applySkillEffectsList(id,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
   if(!used){log('No hay un objetivo válido.','sys');return}
   if(!apCan('skill',skillApCost(id)))return;
-  game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
+  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
   return
  }
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
@@ -4221,7 +4497,7 @@ function useSkill(slot){
 
  if(!used){log('No hay un objetivo válido.','sys');return}
  if(!apCan('skill',skillApCost(id)))return;
- game.player[def.resource]-=def.cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
+ game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
 function equipItem(id){
@@ -4289,7 +4565,7 @@ function updateUI(){
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
  // detail moves into the title tooltip instead of stacking extra lines.
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,detail=`${d.name} · ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<d.cost?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${d.cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,cost=effectiveSkillCost(d),detail=`${d.name} · ${cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
  setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
@@ -4350,7 +4626,7 @@ function draw(){
  for(const chest of game.chests)if(!chest.opened&&game.seen[chest.y][chest.x]){let p=sc(chest.x,chest.y);drawChestSprite(p.x,p.y,chest)}
  for(const obj of game.skillObjects||[])if(game.seen[obj.y]?.[obj.x]){let p=sc(obj.x,obj.y);skillObjectSprite(p.x,p.y,obj)}
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){const t=e.animT??1,ix=(e.prevX??e.x)+(e.x-(e.prevX??e.x))*t,iy=(e.prevY??e.y)+(e.y-(e.prevY??e.y))*t;let p=sc(ix,iy);enemySprite(p.x,p.y,e)}
- for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
+ for(const ally of game.companions||[])if(((ally.hp>0&&ally.turns>0)||(ally.permanent&&ally.hp<=0))&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;
  if(isPlayerInvisible()){ctx.save();ctx.globalAlpha=.45;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
@@ -4417,7 +4693,7 @@ function drawMinimap(){
  q.fillStyle='#6cf0a2';q.fillRect(Math.floor(game.player.x*s),Math.floor(game.player.y*s),Math.max(3,Math.ceil(s+1)),Math.max(3,Math.ceil(s+1)));
 }
 function inspectedEntityAt(gx,gy){
- const enemy=game.enemies.find(e=>e.hp>0&&e.x===gx&&e.y===gy);if(enemy)return{type:'enemy',data:enemy};
+ const enemy=enemyAtCell(gx,gy);if(enemy)return{type:'enemy',data:enemy};
  const item=game.floorItems?.find?.(i=>i.x===gx&&i.y===gy);if(item)return{type:'item',data:item};
  const chest=game.chests?.find?.(i=>i.x===gx&&i.y===gy);if(chest)return{type:'chest',data:chest};
  const door=game.doors?.find?.(i=>i.x===gx&&i.y===gy);if(door)return{type:'door',data:door};
@@ -4647,7 +4923,13 @@ function drawPlayerStatusFrames(x,y){
   inset+=7;
  }
 }
+// The 'transform' stackable effect's own author-picked icon, if a
+// transform buff is currently active - takes over the hero's rendered
+// appearance until it expires.
+function activeTransformIcon(){return (game.player?.activeBuffs||[]).find(b=>b.effects?.transformIcon)?.effects?.transformIcon||null}
 function heroSprite(x,y){
+ const transformIcon=activeTransformIcon();
+ if(transformIcon&&drawCharacterIcon(ctx,transformIcon,x+3,y+3,58,58,2))return;
  const icon=game.player.classIcon||classIconForId(game.player.cls);
  if(icon&&drawCharacterIcon(ctx,icon,x+3,y+3,58,58,2))return;
  const facing=game.player.facing||1,frame=game.turn%4<2?0:1;
@@ -4731,6 +5013,15 @@ function drawDoorTile(x,y,d){
 function keySprite(x,y){if(drawWorldObjectIcon('key',x,y))return;px(x+14,y+28,27,7,'#d6a832');px(x+37,y+18,16,25,'#f1cb55');px(x+42,y+23,6,6,'#392614');px(x+11,y+23,7,18,'#f1cb55');px(x+7,y+27,7,5,'#f1cb55')}
 
 function companionSprite(x,y,c){
+ // Downed permanent companion: sits on its tile, greyed out, until the
+ // player walks onto it to pay the revive cost (reviveCompanion via move()).
+ if(c.permanent&&c.hp<=0){
+  ctx.save();ctx.globalAlpha=.5;px(x+10,y+10,44,44,'#3a2224');ctx.globalAlpha=1;
+  ctx.fillStyle='#ff8f8f';ctx.font='26px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('☠',x+32,y+28);
+  ctx.font='9px monospace';ctx.fillText('Caído',x+32,y+50);
+  ctx.restore();
+  return;
+ }
  const shape=c.shape||'allyCompanion';
  const R=(ox,oy,w,h,col)=>px(x+ox,y+oy,w,h,col);
  ctx.save();
@@ -4781,7 +5072,7 @@ function enemySprite(x,y,e){
  // icon of their own - fall back to their base template's icon instead of
  // rendering fully transparent
  if(e.customEnemy&&!e.icon){const t=configuredEnemyTemplateFor(e);if(t?.icon)e.icon=t.icon}
- if(e.customEnemy&&drawEnemyIconHex(e.icon,x,y,e.boss)){enemyStatusOverlay(x,y,e);return}
+ if(e.customEnemy&&drawEnemyIconHex(e.icon,x,y,e.boss,e.megaboss)){enemyStatusOverlay(x,y,e);return}
  const d=enemyDefs[e.type]||{},shape=d.shape||d.sprite||e.type,c=d.color||({
   cultist:'#8c3b31',slagBeast:'#754032',fireImp:'#d84a2e',chainKnight:'#59606a',magmaPriest:'#8d392a',ashGolem:'#6c625c',
   FurnaceTyrant:'#9b3f24',voidClerk:'#4b416f',phaseHound:'#51466f',dataWraith:'#4b65a2',nullMage:'#34265f',quantumGuard:'#4d587c',errorSpawn:'#8a3f85',NullArchivist:'#3a2864'
@@ -4810,6 +5101,12 @@ function enemySprite(x,y,e){
 // path, which used to skip it entirely.
 function enemyStatusOverlay(x,y,e){
  const R=(ox,oy,w,h,col)=>px(x+ox,y+oy,w,h,col);
+ if(e.megaboss){
+  // Red frame + health bar sized to the full 2x2 block instead of one tile.
+  const box=TILE*2;ctx.strokeStyle='#ff4d4d';ctx.lineWidth=4;ctx.strokeRect(x+4,y+4,box-8,box-8);
+  if(e.hp<e.maxHp){R(8,box-6,box-16,7,'#330d14');R(8,box-6,(box-16)*Math.max(0,e.hp/e.maxHp),7,'#e45c68')}
+  return;
+ }
  if(e.boss){ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
  else{ctx.strokeStyle=ENEMY_TIER_BORDER_COLORS[e.tier]||ENEMY_TIER_BORDER_COLORS.i;ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54)}
  if(e.elite){ctx.strokeStyle='#ff8c1a';ctx.lineWidth=2;ctx.strokeRect(x+9,y+9,46,46)}
@@ -5024,7 +5321,7 @@ function effectSummaryTag(comp){
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
-  case 'summon':return 'Invocación';
+  case 'summon':return `${comp.permanent?'Compañero (permanente)':'Invocación'}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
   case 'summonturret':{
    const et=comp.effectType||'damage';
    if(et==='heal')return 'Invocación-torreta (curación en área)';
@@ -5045,6 +5342,8 @@ function effectSummaryTag(comp){
   case 'clones':return `Clones x${comp.count||2}`;
   case 'linkdamage':return `Cadena x${(comp.jumps??3)+1} (-${comp.falloff??25}%/salto)`;
   case 'invisible':return `Invisibilidad ${comp.turns??2}T${comp.breakOnAttack!==false?' (se rompe al atacar)':''}`;
+  case 'ascend':return `Ascensión (${comp.value??150}% coste${comp.resource&&comp.resource!=='any'?` de ${comp.resource==='mana'?'maná':'stamina'}`:''})`;
+  case 'transform':return `Transformación (${(comp.damagePct??0)>=0?'+':''}${comp.damagePct??0}% dmg, ${(comp.hpPct??0)>=0?'+':''}${comp.hpPct??0}% vida)${comp.allowSkills===false?' · sin skills':''}`;
   default:return effectKindLabel(comp.kind);
  }
 }
@@ -5065,7 +5364,7 @@ function renderClassSkillsSummaryTable(){
 }
 // ---- Composable effects list editor (admin) --------------------------------
 const STAT_KEYS_CORE=['strength','vitality','agility','luck','intelligence','wisdom'];
-const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA'};
+const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA',dodge:'Esquiva',critChance:'Crítico',blockChance:'Bloqueo',manaRegen:'Regen. maná',staminaRegen:'Regen. stamina'};
 function statOptionsHtml(selected,extra=[]){return [...STAT_KEYS_CORE,...extra].map(s=>`<option value="${s}" ${selected===s?'selected':''}>${STAT_LABELS_ES[s]||s}</option>`).join('')}
 function defaultComponentFor(kind){
  const base={kind};
@@ -5080,7 +5379,7 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
@@ -5094,6 +5393,8 @@ function defaultComponentFor(kind){
  if(kind==='cheatdeath')return {...base,turns:5};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
+ if(kind==='ascend')return {...base,resource:'any',value:150,turns:6};
+ if(kind==='transform')return {...base,turns:8,damagePct:0,armorPct:0,hpPct:0,allowSkills:true,iconImage:''};
  return base;
 }
 function effectComponentTargetOptions(kind){
@@ -5121,16 +5422,21 @@ function effectComponentCardHtml(comp,i){
   fields=`${effectDiceFieldsHtml(comp,i)}<label>Recurso que absorbes <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label><span class="small">El objetivo pierde vida por el golpe; tú ganas el recurso elegido (no hace falta que coincida con el coste de la skill).</span>`;
  }
  else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
- else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap']:[])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='summon'){
-  const effectType=comp.effectType||'damage';
+  const effectType=comp.effectType||'damage',permanent=!!comp.permanent;
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="permanent" ${permanent?'checked':''}> Compañero permanente (para clases con mascota - no expira por turnos)</label>
+  ${!permanent?`<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>`:`<div class="configForm">
+   <label>Recurso para revivirlo <select data-effect-idx="${i}" data-effect-field="reviveResource"><option value="hp" ${(!comp.reviveResource||comp.reviveResource==='hp')?'selected':''}>Vida (HP)</option><option value="stamina" ${comp.reviveResource==='stamina'?'selected':''}>Stamina</option><option value="mana" ${comp.reviveResource==='mana'?'selected':''}>Maná</option></select></label>
+   <label>Cantidad para revivirlo <input type="number" min="1" value="${comp.reviveAmount??20}" data-effect-idx="${i}" data-effect-field="reviveAmount"></label>
+   <p class="small">Si muere, te aplica un debilitamiento del 10% en todas tus stats hasta que camines sobre él y pagues el coste para revivirlo (vuelve con 50% de su vida). Mientras esté vivo, atrae un 15% del agro de los enemigos cercanos.</p>
+  </div>`}
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
@@ -5138,6 +5444,8 @@ function effectComponentCardHtml(comp,i){
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
   </select></label>
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
+  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="targetable" ${comp.targetable!==false?'checked':''}> Compañero objeto de ataques (los enemigos pueden elegirlo como objetivo; nunca en el mismo turno en que aparece)</label>
+  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="hitByAoe" ${comp.hitByAoe!==false?'checked':''}> Recibe daño de habilidades de área/masivas enemigas (si se desmarca, sigue siendo vulnerable a ataques normales)</label>
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='summonturret'){
@@ -5208,6 +5516,8 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='invisible')fields=`<p class="small">Mientras esté activa, los enemigos no responden en su turno (como el sigilo). Se acaba sola al agotar los turnos, y opcionalmente también en cuanto atacas.</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="breakOnAttack" ${comp.breakOnAttack!==false?'checked':''}> Se rompe al atacar</label>`;
+ else if(comp.kind==='ascend')fields=`<p class="small">Mientras dure, cambia lo que cuestan tus propias skills.</p><label>Recurso afectado <select data-effect-idx="${i}" data-effect-field="resource"><option value="any" ${!comp.resource||comp.resource==='any'?'selected':''}>Cualquiera</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label><label>% de coste mientras dure (100 = coste normal, &lt;100 más barato, &gt;100 más caro) <input type="number" min="0" value="${comp.value??150}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??6}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='transform')fields=`<p class="small">Mientras dure, cambia tu icono en pantalla y tus stats en %. Los porcentajes pueden ser negativos.</p><label>Turnos <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>% de daño (+/-) <input type="number" step="1" value="${comp.damagePct??0}" data-effect-idx="${i}" data-effect-field="damagePct"></label><label>% de armadura (+/-) <input type="number" step="1" value="${comp.armorPct??0}" data-effect-idx="${i}" data-effect-field="armorPct"></label><label>% de vida máxima (+/-) <input type="number" step="1" value="${comp.hpPct??0}" data-effect-idx="${i}" data-effect-field="hpPct"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="allowSkills" ${comp.allowSkills!==false?'checked':''}> Permite lanzar otras habilidades mientras dura</label>${summonIconRowHtml(comp,i)}`;
  // Any component targeting 'area' (not just the dedicated 'aoe' kind) needs
  // its own configurable radius - resolveComponentEnemyTargets already reads
  // comp.range||2 for all of them, this just exposes it in the admin form.
@@ -5257,7 +5567,7 @@ function renderSkillEffectsList(){
    window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
    // these two fields change which sub-fields the card shows, so re-render
    // that one card's layout instead of leaving stale/hidden inputs behind
-   if(field==='effectType'||field==='mode'||field==='target'||field==='damageMode')renderSkillEffectsList();
+   if(field==='effectType'||field==='mode'||field==='target'||field==='damageMode'||field==='permanent')renderSkillEffectsList();
   });
  });
  wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
@@ -5479,6 +5789,12 @@ function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.fam
 // the character's actual power - the raw floor-based formula still nudges
 // enemies up within that band, it just can't escape it.
 function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;const raw=Math.round(playerLevel+(floor-1)*1.4+rng(3)-1);return Math.max(1,Math.min(playerLevel+2,Math.max(playerLevel-2,raw)))}
+// Bosses ignore the floor-paced formula above entirely: always the player's
+// own level plus a flat 1-3 (megaboss: 2-4) bump, independent of how deep the
+// floor is - recalculated on floor load (scaleFloorForPlayerLevel) and again
+// the moment the player levels up mid-floor (rescaleBossOnLevelUp).
+function bossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(1,3))}
+function megabossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(2,4))}
 // Enemy TIER mix shifts from mostly-weak to mostly-strong across the
 // dungeon's depth (d=0 at floor 1, d=1 at the last floor), so every run
 // reads as a progression on top of any room-specific tier rules, regardless
@@ -5500,7 +5816,22 @@ function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTie
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false){const lvl=enemyLevelForFloor(floor),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1,boss=wantBoss||template.boss;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=boss?[]:(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+// Megaboss stat bump on top of the normal boss formula buildConfiguredEnemy
+// already applied above: double HP, +50% damage, +50% core stats (relative
+// to what a normal boss of the same level would have) - plus a visual/
+// footprint flag used by draw()/inspectedEntityAt()/movement collision to
+// occupy a 2x2 area instead of a single tile. "+25% PA" (see enemyTurn's
+// AP-mode pool and the classic-mode extra-action roll) is applied where the
+// enemy actually acts, not here, since it isn't a baked stat.
+function upgradeToMegaboss(e){
+ e.megaboss=true;e.boss=true;e.footprint=2;
+ e.maxHp=e.hp=Math.round(e.maxHp*2);
+ e.atk=e.damage=Math.round(e.atk*1.5);
+ e.armor=Math.round((e.armor||0)*1.5);
+ if(e.stats)for(const k of Object.keys(e.stats))e.stats[k]=Math.round((e.stats[k]||0)*1.5);
+ return e;
+}
 function compactEnemyForWorld(e){const {icon,...rest}=e;return rest}
 // Elite enemies get "Élite " prepended to their name at build time (before
 // any world/session snapshot strips their icon to save space) - strip it
@@ -5521,10 +5852,14 @@ function applyInnerAlphaOutline(q,size,px=2){
  }
  q.putImageData(img,0,0)
 }
-function drawEnemyIconHex(hex,x,y,boss=false){
+function drawEnemyIconHex(hex,x,y,boss=false,mega=false){
  if(!hex)return false;
  let img=tileImageCache.get('enemy:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('enemy:'+hex,img)}if(!img)return false;
- const size=boss?78:58,off=(64-size)/2,dx=x+off,dy=y+off;
+ // A megaboss renders across a full 2x2 block anchored at its own (x,y) tile
+ // (top-left corner), instead of centered/overflowing within one tile like a
+ // regular boss - see enemyAtCell()/enemyStatusOverlay() for the matching
+ // click-target and red-frame handling of that footprint.
+ const size=mega?TILE*2:boss?78:58,off=mega?0:(64-size)/2,dx=x+off,dy=y+off;
  const paint=()=>{
   const layer=document.createElement('canvas');layer.width=layer.height=size;
   const lc=layer.getContext('2d');lc.imageSmoothingEnabled=false;lc.drawImage(img,0,0,size,size);
