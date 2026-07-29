@@ -4820,6 +4820,51 @@ function renderClassSkillSelect(){
  const ids=Object.keys(bag).sort((a,b)=>(bag[a].tier||1)-(bag[b].tier||1)||a.localeCompare(b));
  sel.innerHTML=ids.map(id=>`<option value="${id}">T${bag[id].tier||1} · ${bag[id].name||id}</option>`).join('')||'<option value="">Sin skills</option>';
  if(ids.length)loadSkillIntoForm(ids.includes(sel.value)?sel.value:ids[0]);
+ renderClassSkillsSummaryTable();
+}
+// Short human tag for one stacked effect component, used by the class
+// summary table (e.g. "Daño área", "HOT a uno mismo", "Root").
+function effectSummaryTag(comp){
+ const targetLabel={self:'a uno mismo',enemy:'a enemigo',area:'área',ally:'a aliado'}[comp.target]||'';
+ const withTarget=base=>targetLabel?`${base} ${targetLabel}`:base;
+ switch(comp.kind){
+  case 'dmg':return withTarget('Daño');
+  case 'dot':return `DOT (${({bleed:'sangrado',burn:'quemadura',poison:'veneno',dot:'genérico'})[comp.flavor||'dot']})`;
+  case 'buff':return `Buff ${STAT_LABELS_ES[comp.stat]||comp.stat||''}`.trim();
+  case 'debuff':return `Debuff ${STAT_LABELS_ES[comp.stat]||comp.stat||''}`.trim();
+  case 'heal':return withTarget('Curación');
+  case 'move':return comp.mode==='teleport'?'Teletransporte':'Dash';
+  case 'cc':return ({stun:'Aturdir',freeze:'Congelar',silence:'Silenciar',root:'Root'})[comp.type]||'Control';
+  case 'drain':return 'Drenaje';
+  case 'aoe':return 'Daño área';
+  case 'multihit':return `Multihit x${comp.hits||3}`;
+  case 'mark':return 'Marca';
+  case 'summon':return 'Invocación';
+  case 'summonturret':return 'Invocación-torreta';
+  case 'utility':return 'Utilidad';
+  case 'hot':return withTarget('HOT');
+  case 'execute':return 'Ejecutar';
+  case 'pullroot':return 'Atraer+Root';
+  case 'counter':return 'Contraataque';
+  case 'cheatdeath':return 'Desafiar muerte';
+  case 'holyshield':return 'Escudo';
+  default:return effectKindLabel(comp.kind);
+ }
+}
+const SKILL_TYPE_LABELS_ES={physical:'Físico',magic:'Mágico',utility:'Utilidad'};
+function renderClassSkillsSummaryTable(){
+ const wrap=document.getElementById('configClassSkillsSummaryTable');if(!wrap)return;
+ const bag=window.currentClassSkillsDraft||{};
+ const ids=Object.keys(bag).sort((a,b)=>(bag[a].tier||1)-(bag[b].tier||1)||(bag[a].name||a).localeCompare(bag[b].name||b));
+ if(!ids.length){wrap.innerHTML='<p class="small">Sin skills en esta clase todavía.</p>';return}
+ const rows=ids.map(id=>{
+  const s=bag[id];
+  const effects=(s.effects&&s.effects.length)?s.effects:legacyEffectsFromSkill(s);
+  const effectsHtml=effects.length?effects.map(c=>`<span class="summaryEffectTag">${effectSummaryTag(c)}</span>`).join(''):'<span class="small">Sin efectos</span>';
+  const resourceLabel=s.resource==='mana'?'Maná':'Stamina';
+  return `<tr><td>T${s.tier||1} · ${s.name||id}</td><td>${SKILL_TYPE_LABELS_ES[s.type]||s.type||''}</td><td class="summaryEffectsCell">${effectsHtml}</td><td>${s.cost??0} ${resourceLabel} · ${s.apCost??0} PA</td></tr>`;
+ }).join('');
+ wrap.innerHTML=`<table class="configSummaryTable"><thead><tr><th>Nombre skill</th><th>Tipo</th><th>Efectos apilables</th><th>Coste y PA</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // ---- Composable effects list editor (admin) --------------------------------
 const STAT_KEYS_CORE=['strength','vitality','agility','luck','intelligence','wisdom'];
