@@ -1226,8 +1226,15 @@ function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.
 // remains as a fallback for when the table is empty or has no eligible rows.
 function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  if(forceRarityName){
+  // Used only by the guaranteed floor-completion reward (grantFloorRewardPopup):
+  // it must always be real equipment, never a configured potion (which could
+  // also just teach a skill via its learnSkill effect) - so configured
+  // potions are excluded from the pool even if their rarity matches.
   if(configItems.length){
-   const matches=configItems.filter(row=>((row.item_json||row).rarity||row.tier||'common')===forceRarityName);
+   const matches=configItems.filter(row=>{
+    const j=row.item_json||row;
+    return (j.rarity||row.tier||'common')===forceRarityName&&j.type!=='potion';
+   });
    if(matches.length)return configuredItemFromRow(pick(matches),lootRow,level);
   }
  } else {
