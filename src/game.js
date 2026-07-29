@@ -3221,7 +3221,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
   friendly:true,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,iconImage:custom.iconImage||''}:{})
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||''}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado durante ${turns} turnos.`,'good')
 }
@@ -3244,10 +3244,30 @@ function companionTurn(){
   tickEntityHots(c);
   const enemies=game.enemies.filter(e=>e.hp>0);
   if(c.effectType){
-   // custom summon from a stackable 'summon' effect component: runs
-   // actionsPerTurn independent actions instead of the fixed one-action
-   // kind-based branches below (actionsPerTurn = author's "PA" / 10)
+   // custom summon from a stackable 'summon'/'summonturret' effect
+   // component: runs actionsPerTurn independent actions instead of the
+   // fixed one-action kind-based branches below (actionsPerTurn = author's
+   // "PA" / 10). Turrets (c.stationary) get their own heal/buff/area-damage
+   // branches on top of the mobile-summon damage/heal-self/root ones below,
+   // gated on c.stationary so regular summons and clones keep behaving
+   // exactly as before.
    for(let n=0;n<(c.actionsPerTurn||1);n++){
+    if(c.stationary&&c.effectType==='heal'){
+     const power=Math.max(1,rollDice(c.atk).total),radius=c.range||3;
+     const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
+     for(const a of allies)healEntity(a,power,a.x,a.y);
+     floating('✚',c.x,c.y,'#8dffa8');continue
+    }
+    if(c.stationary&&c.effectType==='buff'){
+     if(c.buffStat)applyBuff(`turret:${c.id}`,c.name,2,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
+     continue
+    }
+    if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
+     const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
+     if(!targets.length)continue;
+     for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55});
+     floating('◆',c.x,c.y,'#9ee6c0');continue
+    }
     if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
     const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
     if(!target)break;
@@ -3570,7 +3590,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),stationary:true,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
   return true
  }
  if(comp.kind==='utility'){
@@ -4953,7 +4973,12 @@ function effectSummaryTag(comp){
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
   case 'summon':return 'Invocación';
-  case 'summonturret':return 'Invocación-torreta';
+  case 'summonturret':{
+   const et=comp.effectType||'damage';
+   if(et==='heal')return 'Invocación-torreta (curación en área)';
+   if(et==='buff')return `Invocación-torreta (buff ${STAT_LABELS_ES[comp.stat]||comp.stat||''})`.trim();
+   return `Invocación-torreta (daño ${comp.damageMode==='area'?'en área':'al más cercano'})`;
+  }
   case 'utility':return 'Utilidad';
   case 'hot':return withTarget('HOT');
   case 'execute':return 'Ejecutar';
@@ -5002,7 +5027,7 @@ function defaultComponentFor(kind){
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
  if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
- if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
+ if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
  if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
@@ -5062,11 +5087,28 @@ function effectComponentCardHtml(comp,i){
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='summonturret'){
+  const effectType=comp.effectType||'damage',damageMode=comp.damageMode||'nearest';
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??16}" data-effect-idx="${i}" data-effect-field="hp"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
-  <label>Alcance de ataque (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
-  ${effectDiceFieldsHtml(comp,i)}
+  <label>Tipo de torreta <select data-effect-idx="${i}" data-effect-field="effectType">
+   <option value="damage" ${effectType==='damage'?'selected':''}>Daño</option>
+   <option value="heal" ${effectType==='heal'?'selected':''}>Curación</option>
+   <option value="buff" ${effectType==='buff'?'selected':''}>Buff</option>
+  </select></label>
+  ${effectType==='damage'?`<label>Objetivo del daño <select data-effect-idx="${i}" data-effect-field="damageMode">
+    <option value="nearest" ${damageMode!=='area'?'selected':''}>Enemigo más cercano</option>
+    <option value="area" ${damageMode==='area'?'selected':''}>Área alrededor de la torreta</option>
+   </select></label>
+   <label>${damageMode==='area'?'Radio de área (casillas)':'Alcance de detección (casillas)'} <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+   ${effectDiceFieldsHtml(comp,i)}`:''}
+  ${effectType==='heal'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??3}" data-effect-idx="${i}" data-effect-field="range"></label>
+   ${effectDiceFieldsHtml(comp,i)}
+   <span class="small">Cura a ti y a tus invocaciones dentro del radio, cada turno que la torreta siga viva.</span>`:''}
+  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <span class="small">El buff se mantiene mientras la torreta siga viva.</span>`:''}
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='lineshot'){
@@ -5152,7 +5194,7 @@ function renderSkillEffectsList(){
    window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
    // these two fields change which sub-fields the card shows, so re-render
    // that one card's layout instead of leaving stale/hidden inputs behind
-   if(field==='effectType'||field==='mode'||field==='target')renderSkillEffectsList();
+   if(field==='effectType'||field==='mode'||field==='target'||field==='damageMode')renderSkillEffectsList();
   });
  });
  wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
