@@ -2357,10 +2357,22 @@ function restInSafeRoom(){
  if(!room){log('Debes situarte junto al fuego de una sala segura.','sys');return}
  if(room.rested){log('Ya has descansado en esta sala segura.','sys');return}
  const p=game.player,before={hp:p.hp,stamina:p.stamina,mana:p.mana};
+ // Downed permanent companions revive for free at full HP as part of a
+ // rest, instead of needing the usual resource-cost revive (reviveCompanion
+ // via move()). Lift the death debuff and recompute derived stats before
+ // topping off HP/stamina/mana below, so the fresh (debuff-free) maxHp is
+ // what the player actually gets restored to.
+ const revived=[];
+ for(const c of game.companions||[])if(c.permanent&&c.hp<=0){
+  c.hp=c.maxHp;c.deathHandled=false;
+  game.player.activeBuffs=(game.player.activeBuffs||[]).filter(b=>b.id!==`companionDown:${c.id}`);
+  revived.push(c.name);
+ }
+ if(revived.length)recomputeDerived();
  p.hp=p.maxHp;p.stamina=p.maxStamina;p.mana=p.maxMana;
  room.rested=true;
  updateUI();draw();banner('DESCANSO COMPLETO');
- log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.`,'good')
+ log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.${revived.length?` ${revived.join(', ')} revive${revived.length>1?'n':''} con toda su vida.`:''}`,'good')
 }
 function updateRestButton(){
  const btn=document.getElementById('waitBtn');if(!btn)return;
@@ -3429,7 +3441,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false}:{})
+  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3443,6 +3455,14 @@ function moveCompanionToward(c,target){
   }
  }
  return false
+}
+// Idle behaviour: with no enemy to fight (or on a passive-stance companion,
+// always), a mobile companion closes in on the player instead of standing
+// still - so it isn't left behind while exploring and is in position by the
+// time a fight actually starts.
+function companionFollowPlayer(c){
+ if(c.stationary)return;
+ if(gridDistance(c,game.player)>1)moveCompanionToward(c,game.player);
 }
 // Permanent companions (the 'summon' effect's "Compañero permanente" mode)
 // never expire by turns and never get removed from game.companions on
@@ -3478,14 +3498,24 @@ function companionTurn(){
    // gated on c.stationary so regular summons and clones keep behaving
    // exactly as before.
    for(let n=0;n<(c.actionsPerTurn||1);n++){
+    // Passive stance: never fights, just stays near the player - checked
+    // before any of the combat branches below.
+    if(c.stance==='passive'){companionFollowPlayer(c);break}
     if(c.stationary&&c.effectType==='heal'){
      const power=Math.max(1,rollDice(c.atk).total),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
      for(const a of allies)healEntity(a,power,a.x,a.y);
      floating('✚',c.x,c.y,'#8dffa8');continue
     }
-    if(c.stationary&&c.effectType==='buff'){
-     if(c.buffStat)applyBuff(`turret:${c.id}`,c.name,2,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
+    // Buff type works for any invocation (turret, clone or mobile companion),
+    // not just stationary ones: refreshed to a short window every action
+    // while the companion is alive, so it reads as "permanent while your
+    // companion lives" and fades on its own within a couple of turns of it
+    // dying or expiring. A mobile buff companion has no reason to chase
+    // enemies, so it just stays near the player instead.
+    if(c.effectType==='buff'){
+     if(c.buffStat)applyBuff(`companionBuff:${c.id}`,c.name,3,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
+     if(!c.stationary)companionFollowPlayer(c);
      continue
     }
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
@@ -3496,7 +3526,7 @@ function companionTurn(){
     }
     if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
     const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-    if(!target)break;
+    if(!target){companionFollowPlayer(c);break}
     if(gridDistance(c,target)>c.range){if(!c.stationary)moveCompanionToward(c,target);break}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
@@ -3510,8 +3540,9 @@ function companionTurn(){
    if(nearby&&gridDistance(c,nearby)<=c.range)attack(nearby,0,{dice:c.atk,multiplier:.45});
    continue
   }
+  if(c.stance==='passive'){companionFollowPlayer(c);continue}
   const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-  if(!target)continue;
+  if(!target){companionFollowPlayer(c);continue}
   const dist=gridDistance(c,target);
   if(dist<=c.range){
    attack(target,0,{dice:c.atk,multiplier:.65+c.power*.07});
@@ -3856,10 +3887,10 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion(), companionTurn()).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='summonturret'){
@@ -3958,7 +3989,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:1,name:d.name,effectType:'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||''});
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -5321,7 +5352,10 @@ function effectSummaryTag(comp){
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
-  case 'summon':return `${comp.permanent?'Compañero (permanente)':'Invocación'}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
+  case 'summon':{
+   const et={damage:'daño',heal:'curación',root:'raíz',buff:'buff',debuff:'debuff'}[comp.effectType]||'daño';
+   return `${comp.permanent?'Compañero (permanente)':'Invocación'} · ${et}${comp.stance==='passive'?' · pasivo':''}${comp.targetable===false?' · no atacable':''}${comp.hitByAoe===false?' · inmune a AOE':''}`;
+  }
   case 'summonturret':{
    const et=comp.effectType||'damage';
    if(et==='heal')return 'Invocación-torreta (curación en área)';
@@ -5339,7 +5373,10 @@ function effectSummaryTag(comp){
   case 'holyshield':return 'Escudo';
   case 'lineshot':return `Línea (perfora, alcance ${comp.range||6})`;
   case 'trap':return 'Trampa';
-  case 'clones':return `Clones x${comp.count||2}`;
+  case 'clones':{
+   const et={damage:'daño',heal:'curación',root:'raíz',buff:'buff',debuff:'debuff'}[comp.effectType]||'daño';
+   return `Clones x${comp.count||2} · ${et}`;
+  }
   case 'linkdamage':return `Cadena x${(comp.jumps??3)+1} (-${comp.falloff??25}%/salto)`;
   case 'invisible':return `Invisibilidad ${comp.turns??2}T${comp.breakOnAttack!==false?' (se rompe al atacar)':''}`;
   case 'ascend':return `Ascensión (${comp.value??150}% coste${comp.resource&&comp.resource!=='any'?` de ${comp.resource==='mana'?'maná':'stamina'}`:''})`;
@@ -5379,11 +5416,11 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
- if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
+ if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:''};
  if(kind==='linkdamage')return {...base,dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,jumps:3,falloff:25,range:4};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
  if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
@@ -5442,10 +5479,25 @@ function effectComponentCardHtml(comp,i){
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
+   <option value="buff" ${effectType==='buff'?'selected':''}>Buff (te da un buff mientras esté viva)</option>
+   <option value="debuff" ${effectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
-  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
+  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
+  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <span class="small">El buff se mantiene mientras la invocación siga viva.</span>`:''}
+  ${effectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap'])}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??2}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <label>Turnos de debuff por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
+  ${['damage','heal'].includes(effectType)?effectDiceFieldsHtml(comp,i):''}
   <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="targetable" ${comp.targetable!==false?'checked':''}> Compañero objeto de ataques (los enemigos pueden elegirlo como objetivo; nunca en el mismo turno en que aparece)</label>
   <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="hitByAoe" ${comp.hitByAoe!==false?'checked':''}> Recibe daño de habilidades de área/masivas enemigas (si se desmarca, sigue siendo vulnerable a ataques normales)</label>
+  <label>Comportamiento <select data-effect-idx="${i}" data-effect-field="stance">
+   <option value="aggressive" ${comp.stance!=='passive'?'selected':''}>Agresivo (ataca si hay enemigos; si no, te sigue)</option>
+   <option value="passive" ${comp.stance==='passive'?'selected':''}>Pasivo (nunca ataca, solo te sigue)</option>
+  </select></label>
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='summonturret'){
@@ -5489,11 +5541,28 @@ function effectComponentCardHtml(comp,i){
   fields=`<p class="small">Deja una trampa invisible en el suelo (en el punto objetivo, o a tus pies si la skill no pide objetivo). Se activa sola en cuanto un enemigo entra en su radio y desaparece tras el golpe o al agotar los turnos.</p>${effectDiceFieldsHtml(comp,i)}<label>Turnos activa antes de desaparecer <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Radio de activación (casillas) <input type="number" min="1" value="${comp.range??1}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  }
  else if(comp.kind==='clones'){
+  const cloneEffectType=comp.effectType||'damage';
   fields=`<label>Nº de clones <input type="number" min="1" max="4" value="${comp.count??2}" data-effect-idx="${i}" data-effect-field="count"></label>
   <label>HP de cada clon <input type="number" min="1" value="${comp.hp??14}" data-effect-idx="${i}" data-effect-field="hp"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
-  ${effectDiceFieldsHtml(comp,i)}
+  <label>Efecto de cada clon <select data-effect-idx="${i}" data-effect-field="effectType">
+   <option value="damage" ${cloneEffectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
+   <option value="heal" ${cloneEffectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
+   <option value="root" ${cloneEffectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
+   <option value="buff" ${cloneEffectType==='buff'?'selected':''}>Buff (te da un buff mientras viva)</option>
+   <option value="debuff" ${cloneEffectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
+  </select></label>
+  ${cloneEffectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
+  ${cloneEffectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <span class="small">Cada clon suma su propio buff mientras viva.</span>`:''}
+  ${cloneEffectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap'])}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??2}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <label>Turnos de debuff por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
+  ${['damage','heal'].includes(cloneEffectType)?effectDiceFieldsHtml(comp,i):''}
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='linkdamage'){
