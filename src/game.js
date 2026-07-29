@@ -3788,13 +3788,15 @@ function applyEffectComponent(id,comp,ctx){
   // Buff-typology effect: while active, changes what a fraction of the
   // player's own skill casts cost (see skillCostMultiplier(), read from
   // useSkill()). comp.value is the resulting % of the normal cost (100 = no
-  // change), not an additive bonus.
+  // change), not an additive bonus. Can also swap the hero's rendered icon
+  // for its own author-picked one (activePlayerIconOverride, read from
+  // heroSprite()), same as 'transform'.
   const turns=comp.turns??(6+Math.floor(lvl/2)),mult=Math.max(0,(comp.value??150)/100);
-  applyBuff(`${id}:ascend`,d.name,turns,{ascendMult:mult,ascendResource:comp.resource||'any'});
+  applyBuff(`${id}:ascend`,d.name,turns,{ascendMult:mult,ascendResource:comp.resource||'any',ascendIcon:comp.iconImage||''});
   return true
  }
  if(comp.kind==='transform'){
-  // Buff-typology effect: swaps the hero's rendered icon (activeTransformIcon,
+  // Buff-typology effect: swaps the hero's rendered icon (activePlayerIconOverride,
   // read from heroSprite()) and applies %-based damage/armor/max-HP changes
   // for the duration, reusing the same buff-multiplier plumbing as 'buff'
   // (total('damage')/total('armor')) and the existing flat maxHp buff slot
@@ -4954,13 +4956,18 @@ function drawPlayerStatusFrames(x,y){
   inset+=7;
  }
 }
-// The 'transform' stackable effect's own author-picked icon, if a
-// transform buff is currently active - takes over the hero's rendered
-// appearance until it expires.
-function activeTransformIcon(){return (game.player?.activeBuffs||[]).find(b=>b.effects?.transformIcon)?.effects?.transformIcon||null}
+// The 'transform' or 'ascend' stackable effect's own author-picked icon, if
+// one is currently active - takes over the hero's rendered appearance until
+// it expires. Transform wins if somehow both are active at once.
+function activePlayerIconOverride(){
+ const buffs=game.player?.activeBuffs||[];
+ return buffs.find(b=>b.effects?.transformIcon)?.effects?.transformIcon
+  ||buffs.find(b=>b.effects?.ascendIcon)?.effects?.ascendIcon
+  ||null;
+}
 function heroSprite(x,y){
- const transformIcon=activeTransformIcon();
- if(transformIcon&&drawCharacterIcon(ctx,transformIcon,x+3,y+3,58,58,2))return;
+ const overrideIcon=activePlayerIconOverride();
+ if(overrideIcon&&drawCharacterIcon(ctx,overrideIcon,x+3,y+3,58,58,2))return;
  const icon=game.player.classIcon||classIconForId(game.player.cls);
  if(icon&&drawCharacterIcon(ctx,icon,x+3,y+3,58,58,2))return;
  const facing=game.player.facing||1,frame=game.turn%4<2?0:1;
@@ -5430,7 +5437,7 @@ function defaultComponentFor(kind){
  if(kind==='cheatdeath')return {...base,turns:5};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
- if(kind==='ascend')return {...base,resource:'any',value:150,turns:6};
+ if(kind==='ascend')return {...base,resource:'any',value:150,turns:6,iconImage:''};
  if(kind==='transform')return {...base,turns:8,damagePct:0,armorPct:0,hpPct:0,allowSkills:true,iconImage:''};
  return base;
 }
@@ -5585,7 +5592,7 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='invisible')fields=`<p class="small">Mientras esté activa, los enemigos no responden en su turno (como el sigilo). Se acaba sola al agotar los turnos, y opcionalmente también en cuanto atacas.</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="breakOnAttack" ${comp.breakOnAttack!==false?'checked':''}> Se rompe al atacar</label>`;
- else if(comp.kind==='ascend')fields=`<p class="small">Mientras dure, cambia lo que cuestan tus propias skills.</p><label>Recurso afectado <select data-effect-idx="${i}" data-effect-field="resource"><option value="any" ${!comp.resource||comp.resource==='any'?'selected':''}>Cualquiera</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label><label>% de coste mientras dure (100 = coste normal, &lt;100 más barato, &gt;100 más caro) <input type="number" min="0" value="${comp.value??150}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??6}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='ascend')fields=`<p class="small">Mientras dure, cambia lo que cuestan tus propias skills y puede sustituir tu icono en pantalla por uno propio.</p><label>Recurso afectado <select data-effect-idx="${i}" data-effect-field="resource"><option value="any" ${!comp.resource||comp.resource==='any'?'selected':''}>Cualquiera</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label><label>% de coste mientras dure (100 = coste normal, &lt;100 más barato, &gt;100 más caro) <input type="number" min="0" value="${comp.value??150}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??6}" data-effect-idx="${i}" data-effect-field="turns"></label>${summonIconRowHtml(comp,i)}`;
  else if(comp.kind==='transform')fields=`<p class="small">Mientras dure, cambia tu icono en pantalla y tus stats en %. Los porcentajes pueden ser negativos.</p><label>Turnos <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>% de daño (+/-) <input type="number" step="1" value="${comp.damagePct??0}" data-effect-idx="${i}" data-effect-field="damagePct"></label><label>% de armadura (+/-) <input type="number" step="1" value="${comp.armorPct??0}" data-effect-idx="${i}" data-effect-field="armorPct"></label><label>% de vida máxima (+/-) <input type="number" step="1" value="${comp.hpPct??0}" data-effect-idx="${i}" data-effect-field="hpPct"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="allowSkills" ${comp.allowSkills!==false?'checked':''}> Permite lanzar otras habilidades mientras dura</label>${summonIconRowHtml(comp,i)}`;
  // Any component targeting 'area' (not just the dedicated 'aoe' kind) needs
  // its own configurable radius - resolveComponentEnemyTargets already reads
