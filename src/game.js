@@ -3359,7 +3359,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3611,6 +3611,21 @@ function applyEffectComponent(id,comp,ctx){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
   for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:1,name:d.name,effectType:'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||''});
+  return true
+ }
+ if(comp.kind==='linkdamage'){
+  const first=ctx.clickedEnemy||ctx.nearest;if(!first||first.hp<=0)return false;
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  const jumps=Math.max(0,comp.jumps??3),falloff=Math.max(0,Math.min(95,comp.falloff??25))/100,jumpRange=Math.max(1,comp.range||4);
+  const hit=new Set([first]);
+  let current=first,mult=1;
+  attack(current,0,{skillId:id,dice:expr,multiplier:comp.multiplier||1});
+  for(let j=0;j<jumps;j++){
+   mult*=1-falloff;
+   const next=game.enemies.filter(e=>e.hp>0&&!hit.has(e)&&gridDistance(current,e)<=jumpRange).sort((a,b)=>gridDistance(current,a)-gridDistance(current,b))[0];
+   if(!next)break;
+   hit.add(next);attack(next,0,{skillId:id,dice:expr,multiplier:(comp.multiplier||1)*mult});current=next;
+  }
   return true
  }
  return false
@@ -4895,6 +4910,7 @@ function effectSummaryTag(comp){
   case 'lineshot':return `Línea (perfora, alcance ${comp.range||6})`;
   case 'trap':return 'Trampa';
   case 'clones':return `Clones x${comp.count||2}`;
+  case 'linkdamage':return `Cadena x${(comp.jumps??3)+1} (-${comp.falloff??25}%/salto)`;
   default:return effectKindLabel(comp.kind);
  }
 }
@@ -4935,6 +4951,7 @@ function defaultComponentFor(kind){
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
  if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
+ if(kind==='linkdamage')return {...base,dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,jumps:3,falloff:25,range:4};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
  if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
  if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execMultiplier:2.5};
@@ -5009,6 +5026,9 @@ function effectComponentCardHtml(comp,i){
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   ${effectDiceFieldsHtml(comp,i)}
   ${summonIconRowHtml(comp,i)}`;
+ }
+ else if(comp.kind==='linkdamage'){
+  fields=`<p class="small">Golpea al enemigo más cercano (o al que hayas seleccionado) y salta a otros enemigos cercanos, perdiendo potencia en cada salto.</p>${effectDiceFieldsHtml(comp,i)}<label>Nº de saltos adicionales <input type="number" min="0" value="${comp.jumps??3}" data-effect-idx="${i}" data-effect-field="jumps"></label><label>Reducción de daño por salto (%) <input type="number" min="0" max="95" value="${comp.falloff??25}" data-effect-idx="${i}" data-effect-field="falloff"></label><label>Alcance de salto (casillas) <input type="number" min="1" value="${comp.range??4}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  }
  else if(comp.kind==='utility'){
   const mode=comp.mode||'reveal';
