@@ -44,6 +44,8 @@ Notes:
 
 `effects` is an **ordered list of independent components**. Each component is applied in order; the skill "succeeds" (consumes cost/cooldown/CD) if at least one component did something.
 
+Exception: any `move` component (dash/teleport, §4.6) always resolves **before every other component**, regardless of where it sits in the array — you don't need to list it first. Once it lands, any following area-style component (`aoe`, or a `dmg`/`dot`/`debuff`/`cc` targeting `area`) is centered on the caster's *new* position, not on the pre-move click. This is what makes a stacked "teleport/dash + damage" skill land next to the enemy first and only then roll its damage.
+
 Common component shape: `{ "kind": "<kind>", "target": "...", ...kind-specific fields }`.
 
 ### 3.1 Shared "dice block" (prefix defaults to `dmg`, some kinds use `dot`)
