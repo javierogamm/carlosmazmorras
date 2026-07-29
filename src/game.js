@@ -3243,10 +3243,10 @@ function companionTurn(){
 // ever draws from game.player/game.companions/game.otherPlayers, so a totem
 // can't be attacked, killed or even noticed by enemy AI. Keep it that way:
 // never give one an hp field or push it into game.companions.
-function addSkillObject(kind,id,x,y,turns=6,power=1,radius=1){
+function addSkillObject(kind,id,x,y,turns=6,power=1,radius=1,extra={}){
  game.skillObjects=game.skillObjects||[];
  const d=skillDefs[id]||{};
- game.skillObjects.push({id:`obj-${Date.now()}-${Math.random()}`,kind,skillId:id,name:d.name||kind,icon:d.icon||'◆',x,y,turns,power,radius});
+ game.skillObjects.push({id:`obj-${Date.now()}-${Math.random()}`,kind,skillId:id,name:d.name||kind,icon:d.icon||'◆',x,y,turns,power,radius,...extra});
  reveal(x,y,Math.max(1,radius));
  log(`${d.name||'Efecto'} deja una referencia visual en el tablero.`,'good')
 }
@@ -3261,8 +3261,13 @@ function tickSkillObjects(){
   }else if(['totem','zone'].includes(o.kind)){
    // One-way pulse: the totem/zone damages nearby enemies, but it has no hp
    // of its own and is never a valid enemy target (see addSkillObject), so
-   // there is no retaliation path back onto it.
-   for(const e of game.enemies.filter(e=>e.hp>0&&gridDistance(e,o)<=Math.max(1,o.radius)))attack(e,0,{skillId:o.skillId,multiplier:.35});
+   // there is no retaliation path back onto it. o.dmgDice/o.dmgDie are only
+   // set for a totem-mode 'summon' stackable effect (see applyEffectComponent)
+   // - it carries its own dice instead of guessing off skillDiceExpr(skillId),
+   // which the legacy hardcoded totems (stormTotem/consecrate/areaDot) still
+   // rely on via the undefined-dice fallback below.
+   const expr=o.dmgDice>0?`${o.dmgDice}d${o.dmgDie||6}`:undefined;
+   for(const e of game.enemies.filter(e=>e.hp>0&&gridDistance(e,o)<=Math.max(1,o.radius)))attack(e,0,{skillId:o.skillId,dice:expr,multiplier:.35});
   }
   o.turns--
  }
@@ -3381,7 +3386,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (criatura o tótem, configurable)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3537,6 +3542,13 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='summon'){
+  if(comp.summonType==='totem'){
+   // Totem-mode invocation: a stationary object with no hp, placed in
+   // game.skillObjects instead of game.companions - see addSkillObject's
+   // comment for why that keeps it invisible/untargetable to enemy AI.
+   addSkillObject('totem',id,ctx.x,ctx.y,Math.max(1,comp.turns??8),1,Math.max(1,comp.range||2),{dmgDice:comp.dmgDice,dmgDie:comp.dmgDie});
+   return true
+  }
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
   summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||''});
   return true
@@ -4923,7 +4935,7 @@ function effectSummaryTag(comp){
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
-  case 'summon':return 'Invocación';
+  case 'summon':return comp.summonType==='totem'?'Invocación (Tótem)':'Invocación (Criatura)';
   case 'summonturret':return 'Invocación-torreta';
   case 'utility':return 'Utilidad';
   case 'hot':return withTarget('HOT');
@@ -4971,7 +4983,7 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
+ if(kind==='summon')return {...base,summonType:'creature',hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,range:2,iconImage:''};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
@@ -5018,17 +5030,30 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='summon'){
-  const effectType=comp.effectType||'damage';
-  fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
-  <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
-  <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
-   <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
-   <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
-   <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
-  </select></label>
-  ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
-  ${summonIconRowHtml(comp,i)}`;
+  // "Tipo" chooses what the invocation actually IS: a Criatura is a normal
+  // hp-bearing companion (moves, can be killed by enemies, like today); a
+  // Tótem is a stationary object with no hp at all - it lives in
+  // game.skillObjects, not game.companions, so enemies can never see it or
+  // target it (see addSkillObject/possibleTargets) - it just pulses damage
+  // in a radius around where it was cast, same as the legacy hardcoded
+  // totem skills (stormTotem, consecrate...).
+  const summonType=comp.summonType||'creature';
+  const typeHtml=`<label>Tipo de invocación <select data-effect-idx="${i}" data-effect-field="summonType"><option value="creature" ${summonType!=='totem'?'selected':''}>Criatura (aliado con vida propia; los enemigos pueden atacarla y matarla)</option><option value="totem" ${summonType==='totem'?'selected':''}>Tótem (objeto inmóvil sin vida; invisible e imposible de atacar para los enemigos)</option></select></label>`;
+  if(summonType==='totem'){
+   fields=`${typeHtml}<p class="small">El tótem se queda quieto donde lo invocas y golpea a todos los enemigos dentro de su radio cada turno. No tiene vida ni puede ser atacado por los enemigos.</p>${effectDiceFieldsHtml(comp,i)}<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Radio de golpeo (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
+  }else{
+   const effectType=comp.effectType||'damage';
+   fields=`${typeHtml}<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
+   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
+   <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
+    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
+    <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
+    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
+   </select></label>
+   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:effectDiceFieldsHtml(comp,i)}
+   ${summonIconRowHtml(comp,i)}`;
+  }
  }
  else if(comp.kind==='summonturret'){
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??16}" data-effect-idx="${i}" data-effect-field="hp"></label>
@@ -5120,7 +5145,7 @@ function renderSkillEffectsList(){
    window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):el.value;
    // these two fields change which sub-fields the card shows, so re-render
    // that one card's layout instead of leaving stale/hidden inputs behind
-   if(field==='effectType'||field==='mode'||field==='target')renderSkillEffectsList();
+   if(field==='effectType'||field==='mode'||field==='target'||field==='summonType')renderSkillEffectsList();
   });
  });
  wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
