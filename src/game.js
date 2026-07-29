@@ -3000,16 +3000,16 @@ function jitterChestTier(desired){
  return desired;
 }
 // Dungeons only ever place chests backed by a real config_chest row - never a
-// generic/procedural one. Picks the nearest configured tier to the (jittered)
-// ideal one for this floor+level (closest at-or-below first, then closest
-// above) so a world with only some tiers configured still uses what exists
-// instead of falling back to anything synthetic. Returns null only when
-// config_chest is completely empty, in which case no chest gets placed at all.
+// generic/procedural one. Picks the nearest configured tier AT OR BELOW the
+// (jittered) ideal one for this floor+level - never above, so an early floor
+// can never hand out a chest whose tier is higher than it should be just
+// because higher tiers happen to be configured and lower ones aren't. Returns
+// null when config_chest has nothing at or below the desired tier (including
+// when it's completely empty), in which case no chest gets placed at all.
 function pickChestDefForFloor(floor,level,totalFloors=20){
  if(!configChests.length)return null;
  const desired=jitterChestTier(chestTierForFloor(floor,level,totalFloors));
  for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
- for(let t=desired+1;t<=5;t++){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  return null;
 }
 // Resolves one loot slot against the chest's own resolved config_chest
@@ -3359,7 +3359,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y te cura)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3379,6 +3379,27 @@ function resolveComponentEnemyTargets(comp,ctx){
   return game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(game.player,e));
  }
  return ctx.clickedEnemy?[ctx.clickedEnemy]:(ctx.nearest?[ctx.nearest]:[]);
+}
+// Piercing line-shot targets: walks a Bresenham-ish line from the caster
+// toward the clicked/nearest enemy (same aim point resolveComponentEnemyTargets
+// uses), collecting EVERY enemy on tiles it crosses up to comp.range, instead
+// of stopping at the first one - that's what makes it a "line" shot rather
+// than a regular ranged hit. Stops early only on a wall.
+function resolveLineEnemyTargets(comp,ctx){
+ const p=game.player,aim=ctx.clickedEnemy||ctx.nearest;
+ const tx=aim?aim.x:ctx.x,ty=aim?aim.y:ctx.y;
+ if(tx==null||ty==null||(tx===p.x&&ty===p.y))return [];
+ const dx=tx-p.x,dy=ty-p.y,steps=Math.max(Math.abs(dx),Math.abs(dy)),sx=dx/steps,sy=dy/steps;
+ const range=Math.max(1,comp.range||6),hits=[];
+ let x=p.x,y=p.y;
+ for(let i=1;i<=range;i++){
+  x+=sx;y+=sy;
+  const gx=Math.round(x),gy=Math.round(y);
+  if(blocked(gx,gy))break;
+  const e=game.enemies.find(en=>en.hp>0&&en.x===gx&&en.y===gy);
+  if(e&&!hits.includes(e))hits.push(e);
+ }
+ return hits;
 }
 // Allies within radius for area heal/hot: companions (AI summons) and other
 // human players (multiplayer) around the cast point - mirrors
@@ -3456,7 +3477,13 @@ function applyEffectComponent(id,comp,ctx){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const power=dicePowerFor(comp,5+lvl*2,p);
   for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
-  healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+  // The target always loses HP via the attack() above (the only pool
+  // enemies have); the resource picker only controls what the CASTER gets
+  // back, independent of the skill's own casting resource.
+  const resource=comp.resource||'hp';
+  if(resource==='mana')p.mana=Math.min(p.maxMana,p.mana+power);
+  else if(resource==='stamina')p.stamina=Math.min(p.maxStamina,p.stamina+power);
+  else healEntity(p,power);
   return true
  }
  if(comp.kind==='aoe'){
@@ -3567,6 +3594,23 @@ function applyEffectComponent(id,comp,ctx){
   const amount=Math.max(1,Math.round(base+contribution));
   p.holyShield=(p.holyShield||0)+amount;
   if(comp.turns)p.holyShieldTurns=Math.max(p.holyShieldTurns||0,comp.turns);
+  return true
+ }
+ if(comp.kind==='lineshot'){
+  const targets=resolveLineEnemyTargets(comp,ctx);if(!targets.length)return false;
+  const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.8});
+  return true
+ }
+ if(comp.kind==='trap'){
+  const power=dicePowerFor(comp,4+lvl*1.5,p);
+  addSkillObject('trap',id,ctx.x,ctx.y,Math.max(1,comp.turns??8),power,Math.max(1,comp.range||1));
+  return true
+ }
+ if(comp.kind==='clones'){
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
+  const count=Math.max(1,Math.min(4,comp.count||2));
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:1,name:d.name,effectType:'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||''});
   return true
  }
  return false
@@ -4835,7 +4879,7 @@ function effectSummaryTag(comp){
   case 'heal':return withTarget('Curación');
   case 'move':return comp.mode==='teleport'?'Teletransporte':'Dash';
   case 'cc':return ({stun:'Aturdir',freeze:'Congelar',silence:'Silenciar',root:'Root'})[comp.type]||'Control';
-  case 'drain':return 'Drenaje';
+  case 'drain':return `Drenaje (${({hp:'Vida',mana:'Maná',stamina:'Stamina'})[comp.resource||'hp']})`;
   case 'aoe':return 'Daño área';
   case 'multihit':return `Multihit x${comp.hits||3}`;
   case 'mark':return 'Marca';
@@ -4848,6 +4892,9 @@ function effectSummaryTag(comp){
   case 'counter':return 'Contraataque';
   case 'cheatdeath':return 'Desafiar muerte';
   case 'holyshield':return 'Escudo';
+  case 'lineshot':return `Línea (perfora, alcance ${comp.range||6})`;
+  case 'trap':return 'Trampa';
+  case 'clones':return `Clones x${comp.count||2}`;
   default:return effectKindLabel(comp.kind);
  }
 }
@@ -4879,12 +4926,15 @@ function defaultComponentFor(kind){
  if(kind==='heal')return {...base,target:'self',dmgDice:2,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='move')return {...base,mode:'dash',range:3};
  if(kind==='cc')return {...base,target:'enemy',type:'stun',turns:2};
- if(kind==='drain')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
+ if(kind==='drain')return {...base,target:'enemy',resource:'hp',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
  if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
+ if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
+ if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
+ if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
  if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
  if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execMultiplier:2.5};
@@ -4913,7 +4963,11 @@ function effectComponentCardHtml(comp,i){
  const targetOpts=effectComponentTargetOptions(comp.kind);
  const targetHtml=targetOpts?`<label>Objetivo <select data-effect-idx="${i}" data-effect-field="target">${targetOpts.map(o=>`<option value="${o.v}" ${comp.target===o.v?'selected':''}>${o.l}</option>`).join('')}</select></label>`:'';
  let fields='';
- if(comp.kind==='dmg'||comp.kind==='drain'||comp.kind==='heal')fields=effectDiceFieldsHtml(comp,i);
+ if(comp.kind==='dmg'||comp.kind==='heal')fields=effectDiceFieldsHtml(comp,i);
+ else if(comp.kind==='drain'){
+  const resource=comp.resource||'hp';
+  fields=`${effectDiceFieldsHtml(comp,i)}<label>Recurso que absorbes <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label><span class="small">El objetivo pierde vida por el golpe; tú ganas el recurso elegido (no hace falta que coincida con el coste de la skill).</span>`;
+ }
  else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
  else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap']:[])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
@@ -4939,6 +4993,20 @@ function effectComponentCardHtml(comp,i){
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Alcance de ataque (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+  ${effectDiceFieldsHtml(comp,i)}
+  ${summonIconRowHtml(comp,i)}`;
+ }
+ else if(comp.kind==='lineshot'){
+  fields=`<p class="small">Dispara en línea recta hacia el enemigo más cercano (o el que hayas seleccionado) y perfora, golpeando a todos los enemigos que encuentre en esa línea hasta el alcance indicado o hasta chocar con un muro.</p>${effectDiceFieldsHtml(comp,i)}<label>Alcance de la línea (casillas) <input type="number" min="1" value="${comp.range??6}" data-effect-idx="${i}" data-effect-field="range"></label>`;
+ }
+ else if(comp.kind==='trap'){
+  fields=`<p class="small">Deja una trampa invisible en el suelo (en el punto objetivo, o a tus pies si la skill no pide objetivo). Se activa sola en cuanto un enemigo entra en su radio y desaparece tras el golpe o al agotar los turnos.</p>${effectDiceFieldsHtml(comp,i)}<label>Turnos activa antes de desaparecer <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Radio de activación (casillas) <input type="number" min="1" value="${comp.range??1}" data-effect-idx="${i}" data-effect-field="range"></label>`;
+ }
+ else if(comp.kind==='clones'){
+  fields=`<label>Nº de clones <input type="number" min="1" max="4" value="${comp.count??2}" data-effect-idx="${i}" data-effect-field="count"></label>
+  <label>HP de cada clon <input type="number" min="1" value="${comp.hp??14}" data-effect-idx="${i}" data-effect-field="hp"></label>
+  <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+  <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   ${effectDiceFieldsHtml(comp,i)}
   ${summonIconRowHtml(comp,i)}`;
  }
