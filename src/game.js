@@ -3866,7 +3866,7 @@ function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDe
 // player sees it live, and multiplayer's actual sendMpAction calls go out
 // spaced the same way, instead of all at once with a separate fake replay
 // tacked on afterward.
-function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activePotions||[]).some(b=>b.effect?.invisible)||game.player.invisibleTurns>0){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
+function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible()){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
  // One decision per call; returns the AP cost (0 = nothing left to do this turn).
@@ -4352,7 +4352,9 @@ function draw(){
  for(const e of game.enemies)if(e.hp>0&&game.seen[e.y]?.[e.x]){const t=e.animT??1,ix=(e.prevX??e.x)+(e.x-(e.prevX??e.x))*t,iy=(e.prevY??e.y)+(e.y-(e.prevY??e.y))*t;let p=sc(ix,iy);enemySprite(p.x,p.y,e)}
  for(const ally of game.companions||[])if(ally.hp>0&&ally.turns>0&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
- const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;heroSprite(hx,hy,pick([0,0]));
+ const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;
+ if(isPlayerInvisible()){ctx.save();ctx.globalAlpha=.45;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
+ drawPlayerStatusFrames(hx,hy);
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
  drawAreaCandidateOverlay();
@@ -4624,6 +4626,26 @@ function drawCharacterIcon(q,iconHex,x,y,w,h,padding=0){
   img.onload=()=>{draw();if(game)draw()};
  }catch(e){}
  return false;
+}
+// Same invisibility check enemyTurn() uses to skip the enemy response:
+// active from either the 'invisible' stackable skill effect or an
+// invisible-type potion.
+function isPlayerInvisible(){return (game.player.activePotions||[]).some(b=>b.effect?.invisible)||game.player.invisibleTurns>0}
+// Concentric 5px square frames drawn around the hero tile, one per active
+// status: shield (blue) innermost, stat buffs (green), invisibility (gray)
+// outermost - stacking them instead of overlapping keeps every active status
+// visible at once instead of just the last one drawn.
+function drawPlayerStatusFrames(x,y){
+ const p=game.player,frames=[];
+ if(p.holyShield>0)frames.push('#4da6ff');
+ if((p.activeBuffs||[]).length)frames.push('#4ddc7a');
+ if(isPlayerInvisible())frames.push('#9a9a9a');
+ let inset=0;
+ for(const color of frames){
+  ctx.strokeStyle=color;ctx.lineWidth=5;
+  ctx.strokeRect(x+2.5+inset,y+2.5+inset,TILE-5-inset*2,TILE-5-inset*2);
+  inset+=7;
+ }
 }
 function heroSprite(x,y){
  const icon=game.player.classIcon||classIconForId(game.player.cls);
