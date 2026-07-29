@@ -3237,6 +3237,12 @@ function companionTurn(){
  }
  game.companions=game.companions.filter(c=>c.hp>0&&c.turns>0);draw()
 }
+// Ground effects (totems, zones, traps, decoys) live in game.skillObjects,
+// never game.companions/game.enemies - deliberately, so they have no hp and
+// can never be picked as a target. enemySingleAction's possibleTargets only
+// ever draws from game.player/game.companions/game.otherPlayers, so a totem
+// can't be attacked, killed or even noticed by enemy AI. Keep it that way:
+// never give one an hp field or push it into game.companions.
 function addSkillObject(kind,id,x,y,turns=6,power=1,radius=1){
  game.skillObjects=game.skillObjects||[];
  const d=skillDefs[id]||{};
@@ -3253,6 +3259,9 @@ function tickSkillObjects(){
   }else if(o.kind==='decoy'){
    o.turns--;continue
   }else if(['totem','zone'].includes(o.kind)){
+   // One-way pulse: the totem/zone damages nearby enemies, but it has no hp
+   // of its own and is never a valid enemy target (see addSkillObject), so
+   // there is no retaliation path back onto it.
    for(const e of game.enemies.filter(e=>e.hp>0&&gridDistance(e,o)<=Math.max(1,o.radius)))attack(e,0,{skillId:o.skillId,multiplier:.35});
   }
   o.turns--
@@ -3796,6 +3805,9 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activ
   if(game.over)return 0;
   if(!game.seen[e.y][e.x])return 0;
   if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)return 0;
+  // Intentionally only player/companions/otherPlayers - totems/zones/traps/
+  // decoys (game.skillObjects) are never added here, so they stay invisible
+  // and untargetable to enemy AI no matter how close an enemy gets.
   const possibleTargets=[game.player,...(game.companions||[]).filter(c=>c.hp>0),...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
   const chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
