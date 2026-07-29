@@ -35,7 +35,7 @@ let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:10,floorPlan:[],apMode:false};
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:125,damageDealtPct:100,lifePct:125,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:10,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff4d4d'}};
@@ -1734,16 +1734,27 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
-   const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
+   const chestDef=pickChestDefForFloor(floor);
    if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
   }
  }
  // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
  const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
  while(chests.length<minChests){
-  const chestDef=pickChestDefForFloor(floor,game?.player?.level,params.floors);
+  const chestDef=pickChestDefForFloor(floor);
   if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
   chests.push({...free(),opened:false,chestDef});
+ }
+ // 1-2 chests per floor are deliberately bumped one tier above the floor's
+ // cap (chestTierForFloor) so a floor doesn't hand out the exact same chest
+ // tier every single time - left untouched if nothing is configured at that
+ // higher tier.
+ if(chests.length){
+  const bumpTier=Math.min(5,chestTierForFloor(floor)+1),bumpCount=Math.min(chests.length,1+(Math.random()<.5?1:0));
+  for(const c of [...chests].sort(()=>Math.random()-.5).slice(0,bumpCount)){
+   const bumpDef=pickChestDefAtTier(bumpTier);
+   if(bumpDef)c.chestDef=bumpDef;
+  }
  }
 
  // --- enemies: budget from the archetype, composition from the room type ---
@@ -2008,7 +2019,7 @@ function resolveFloorEvent(ev,prepared){
  }else if(ev.type==='reward'){
   const count=ev.id==='buriedArmory'?3:2;
   for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6){const row=currentLootProgressionRow(game.floor,game.player.level),pool=['rare','epic','legendary'].filter(r=>lootRarityAllowed(r,row));if(pool.length){item.rarity=pick(pool);item.label=tierDefs[item.rarity]?.label||item.rarity}}addInventoryItem(item);lootToast(item)}
-  if(ev.id==='fairyCache'&&Math.random()<.65)unlockSkillLoot(randomLootableSkill());
+  if(ev.id==='fairyCache'&&Math.random()<.21)unlockSkillLoot(randomLootableSkill());
   if(ev.id==='forgottenShrine'){game.player.hp=game.player.maxHp;game.player.mana=game.player.maxMana;game.player.stamina=game.player.maxStamina}
   if(ev.id==='smugglerLocker')game.player.gold+=40+game.floor*15;
   banner('RECOMPENSA ESPECIAL');log(`${ev.name}: encuentras una recompensa poco común.`,'loot')
@@ -2267,10 +2278,21 @@ function announceFloorArchetype(){
  log(`Objetivo: ${objectiveText(obj)}`,'story');
  if(game.floorArchetype==='superboss')log('Un poder muy superior aguarda. Busca altares y prepárate antes de entrar en su sala.','combat');
 }
-// Highest rarity name unlocked for this floor - used to grant a guaranteed
-// top-tier item when the player reaches a new floor (from floor 2 onward).
+// Rarity of the guaranteed floor-completion item: a fixed floor->tier ladder
+// (unlike the ratio/level-gated progression used for regular loot), so every
+// run hands out the same predictable rarity per floor: 1 común, 2-3
+// infrecuente, 4-7 raro, 8-10 épico, 11-15 legendario, 16+ artefacto.
+const FLOOR_REWARD_TIER_THRESHOLDS=[
+ {upTo:1,rarity:'common'},
+ {upTo:3,rarity:'uncommon'},
+ {upTo:7,rarity:'rare'},
+ {upTo:10,rarity:'epic'},
+ {upTo:15,rarity:'legendary'}
+]; // beyond the last threshold: artifact
 function topRarityNameForFloor(floor){
- return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(floor,currentTotalFloors(),game?.player?.level||1)];
+ const f=Math.max(1,Number(floor)||1);
+ for(const t of FLOOR_REWARD_TIER_THRESHOLDS)if(f<=t.upTo)return t.rarity;
+ return 'artifact';
 }
 // Grants one guaranteed item at the floor's best available rarity and shows
 // a dedicated floor-reward popup. Runs once per floor arrival, floor 2+.
@@ -2461,6 +2483,7 @@ function diceDamageLabel(id){
 function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
 function critChance(){return Math.min(.38,.04+game.player.stats.luck*.015)}
 function attack(e,bonus=0,options={}){
+ if(game.player.invisibleTurns>0&&game.player.invisibleBreaksOnAttack){game.player.invisibleTurns=0;log('La invisibilidad se rompe al atacar.','sys')}
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
  const roll=rollDice(expr);
  const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
@@ -2480,8 +2503,9 @@ function attack(e,bonus=0,options={}){
  if(e.hp<=0)kill(e)
 }
 // Enemy kill loot: once a drop is decided (killLootChance, or always on
-// boss/eventBoss), it's always exactly one of equipment (60%), potion (30%)
-// or skill unlock (10%) - never more than one, never none.
+// boss/eventBoss), it's always exactly one of equipment (64.5%), potion
+// (32.2%) or skill unlock (3.3%, cut to a third of the old 10% share so
+// skills feel rare) - never more than one, never none.
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
@@ -2489,9 +2513,9 @@ function kill(e){
  if(Math.random()<killLootChance||e.boss||e.eventBoss){
   const source=e.eventBoss?'eventBoss':e.boss?'boss':e.elite?'elite':'normal';
   const roll=Math.random();
-  if(roll<.6){
+  if(roll<.645){
    const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'equipment');addInventoryItem(item);lootToast(item);
-  }else if(roll<.9){
+  }else if(roll<.967){
    const item=makeLoot(game.player.level+(e.boss?3:0),source,null,'potion');addInventoryItem(item);lootToast(item);
   }else{
    const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
@@ -2990,38 +3014,41 @@ function craftUpgradeStat(item,affix){
  log(`${item.name}: ${affix.label} sube a +${newValue}.`,'good');
  persistCustomItems();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
-// Chest tier (1-5) climbs from 1 at floor 1 towards 5 over
-// PROGRESSION_REFERENCE_FLOORS floors of depth - paced against that fixed
-// reference rather than the dungeon's own floor count, so a short dungeon
-// (even a single floor) still starts at tier 1 instead of jumping straight to
-// its "last floor" tier; character level is a secondary nudge on top so a
-// stronger character finds slightly better chests early.
-function chestTierForFloor(floor,level,totalFloors=20){
- const depth=((floor||1)-1)/Math.max(1,Math.max(PROGRESSION_REFERENCE_FLOORS,totalFloors||20)-1);
- return Math.max(1,Math.min(5,Math.round(1+depth*4+((level||1)-1)/40)));
-}
-// A whole floor giving out the exact same chest tier every time reads as
-// flat, so each chest jitters a little around the floor's ideal tier
-// instead of all matching it exactly - mostly the ideal tier, sometimes one
-// off, rarely two off.
-const CHEST_TIER_JITTER=[[-2,.05],[-1,.2],[0,.5],[1,.2],[2,.05]];
-function jitterChestTier(desired){
- const r=Math.random();let acc=0;
- for(const [off,w] of CHEST_TIER_JITTER){acc+=w;if(r<=acc)return Math.max(1,Math.min(5,desired+off))}
- return desired;
+// Chest tier (1-5) max for a floor, kept consistent with the same floor
+// thresholds as the guaranteed floor-completion item
+// (FLOOR_REWARD_TIER_THRESHOLDS): común/1 -> tier 1, infrecuente/2-3 -> tier
+// 2, raro/4-7 -> tier 3, épico/8-10 -> tier 4, legendario-y-artefacto/11+ ->
+// tier 5 (the chest scale tops out at 5, so legendary and artifact share it).
+function chestTierForFloor(floor){
+ const f=Math.max(1,Number(floor)||1);
+ if(f<=1)return 1;
+ if(f<=3)return 2;
+ if(f<=7)return 3;
+ if(f<=10)return 4;
+ return 5;
 }
 // Dungeons only ever place chests backed by a real config_chest row - never a
 // generic/procedural one. Picks the nearest configured tier AT OR BELOW the
-// (jittered) ideal one for this floor+level - never above, so an early floor
-// can never hand out a chest whose tier is higher than it should be just
-// because higher tiers happen to be configured and lower ones aren't. Returns
-// null when config_chest has nothing at or below the desired tier (including
-// when it's completely empty), in which case no chest gets placed at all.
-function pickChestDefForFloor(floor,level,totalFloors=20){
+// given one - never above, so an early floor can never hand out a chest
+// whose tier is higher than it should be just because higher tiers happen to
+// be configured and lower ones aren't. Returns null when config_chest has
+// nothing at or below that tier (including when it's completely empty), in
+// which case no chest gets placed at all.
+function pickChestDefAtOrBelowTier(tier){
  if(!configChests.length)return null;
- const desired=jitterChestTier(chestTierForFloor(floor,level,totalFloors));
- for(let t=desired;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ for(let t=tier;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
  return null;
+}
+// Exact-tier pick (no falling back to lower tiers), used to bump a couple of
+// chests per floor one tier above the floor's normal cap - see the bump step
+// in buildFloorPlan(). Returns null if nothing is configured at that tier.
+function pickChestDefAtTier(tier){
+ if(!configChests.length)return null;
+ const matches=configChests.filter(r=>Number(r.chest_json?.tier)===tier);
+ return matches.length?pick(matches).chest_json:null;
+}
+function pickChestDefForFloor(floor){
+ return pickChestDefAtOrBelowTier(chestTierForFloor(floor));
 }
 // Resolves one loot slot against the chest's own resolved config_chest
 // definition (specific items/skills if picked, else random within its
@@ -3105,11 +3132,20 @@ function tickHolyShield(){
  p.holyShieldTurns--;
  if(p.holyShieldTurns<=0){p.holyShield=0;p.holyShieldTurns=0}
 }
+// Ticks down a stackable 'invisible' effect's own turn counter each player
+// turn; attacking it away early (when its breakOnAttack flag is set) happens
+// separately in attack() - this only handles the timer running out on its own.
+function tickPlayerInvisibility(){
+ const p=game.player;if(!(p?.invisibleTurns>0))return;
+ p.invisibleTurns--;
+ if(p.invisibleTurns<=0){p.invisibleTurns=0;p.invisibleBreaksOnAttack=false}
+}
 function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
  const potions=(game.player.activePotions||[]).map(b=>`<span class="effectBadge potion">${b.name}: ${b.turns}T</span>`);
  const shield=game.player.holyShield>0?[`<span class="effectBadge buff">Escudo: ${game.player.holyShield}${game.player.holyShieldTurns>0?` (${game.player.holyShieldTurns}T)`:''}</span>`]:[];
- return[...buffs,...potions,...shield].join('')
+ const invisible=game.player.invisibleTurns>0?[`<span class="effectBadge buff">Invisibilidad: ${game.player.invisibleTurns}T</span>`]:[];
+ return[...buffs,...potions,...shield,...invisible].join('')
 }
 
 
@@ -3372,7 +3408,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)'}[kind]||kind}
 function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
@@ -3549,6 +3585,11 @@ function applyEffectComponent(id,comp,ctx){
   if(mode==='resource'){const res=d.resource||'stamina',max=res==='mana'?'maxMana':'maxStamina';p[res]=Math.min(p[max],p[res]+Math.max(1,comp.value||10));return true}
   return false
  }
+ if(comp.kind==='invisible'){
+  p.invisibleTurns=Math.max(1,comp.turns??2);
+  p.invisibleBreaksOnAttack=comp.breakOnAttack!==false;
+  return true
+ }
  if(comp.kind==='hot'){
   p.hots=p.hots||[];
   const power=dicePowerFor(comp,3+lvl,p),turns=comp.turns??4;
@@ -3702,7 +3743,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -3724,7 +3765,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      // enemyTurn() itself now paces each action with a real delay (PA mode,
      // always on in multiplayer) - each sendMpAction call it makes goes out
@@ -3788,7 +3829,7 @@ function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDe
 // player sees it live, and multiplayer's actual sendMpAction calls go out
 // spaced the same way, instead of all at once with a separate fake replay
 // tacked on afterward.
-function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activePotions||[]).some(b=>b.effect?.invisible)){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
+function enemyTurn(onDone){if(game.over){onDone?.();return}if((game.player.activePotions||[]).some(b=>b.effect?.invisible)||game.player.invisibleTurns>0){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
  // One decision per call; returns the AP cost (0 = nothing left to do this turn).
@@ -4924,6 +4965,7 @@ function effectSummaryTag(comp){
   case 'trap':return 'Trampa';
   case 'clones':return `Clones x${comp.count||2}`;
   case 'linkdamage':return `Cadena x${(comp.jumps??3)+1} (-${comp.falloff??25}%/salto)`;
+  case 'invisible':return `Invisibilidad ${comp.turns??2}T${comp.breakOnAttack!==false?' (se rompe al atacar)':''}`;
   default:return effectKindLabel(comp.kind);
  }
 }
@@ -4972,6 +5014,7 @@ function defaultComponentFor(kind){
  if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
  if(kind==='cheatdeath')return {...base,turns:5};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
+ if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
  return base;
 }
 function effectComponentTargetOptions(kind){
@@ -5059,6 +5102,7 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='counter')fields=`<label>Escudo otorgado <input type="number" min="0" value="${comp.shield??10}" data-effect-idx="${i}" data-effect-field="shield"></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos de ventana (hasta el próximo golpe) <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='invisible')fields=`<p class="small">Mientras esté activa, los enemigos no responden en su turno (como el sigilo). Se acaba sola al agotar los turnos, y opcionalmente también en cuanto atacas.</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label><label><input type="checkbox" data-effect-idx="${i}" data-effect-field="breakOnAttack" ${comp.breakOnAttack!==false?'checked':''}> Se rompe al atacar</label>`;
  // Any component targeting 'area' (not just the dedicated 'aoe' kind) needs
  // its own configurable radius - resolveComponentEnemyTargets already reads
  // comp.range||2 for all of them, this just exposes it in the admin form.
@@ -5104,8 +5148,8 @@ function renderSkillEffectsList(){
  wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
   el.addEventListener('change',()=>{
    const idx=Number(el.dataset.effectIdx),field=el.dataset.effectField;
-   const isNumber=el.type==='number';
-   window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):el.value;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   window.currentSkillEffectsDraft[idx][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
    // these two fields change which sub-fields the card shows, so re-render
    // that one card's layout instead of leaving stale/hidden inputs behind
    if(field==='effectType'||field==='mode'||field==='target')renderSkillEffectsList();
@@ -5410,7 +5454,7 @@ function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageI
 // weapon/potion/skill) + icon + which item rarities it can drop + optionally
 // a hand-picked pool of specific items/skills (empty pool = fully random
 // within the selected item tiers). These replace the generic chests during
-// dungeon generation; the chest TIER actually rolled depends on floor+level
+// dungeon generation; the chest TIER actually rolled depends on the floor
 // (see chestTierForFloor()).
 let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
