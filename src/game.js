@@ -492,14 +492,6 @@ function floorEnemyFamily(){
  return enemyFamilies[forced||pick(keys)]
 }
 
-const themes=[
- {name:'Fortaleza Verde',story:'greenskins',enemies:['goblin','orco','huargo','orcoJinete','orcoKamikaze','chamanGoblin'],boss:'reyOrco'},
- {name:'Criptas Hambrientas',story:'undead',enemies:['ghoul','huargoNocturno','vampiro','momia','liche','licheEnloquecido'],boss:'archiliche'},
- {name:'Foso Mezclado',story:'chaos',enemies:['orco','ghoul','goblin','momia','huargo','vampiro'],boss:'abominacion'},
- {name:'Fundición Carmesí',floorMin:3,tiles:['#5a241c','#7b3528'],enemies:['cultist','slagBeast','fireImp','chainKnight','magmaPriest','ashGolem'],boss:'FurnaceTyrant'},
- {name:'Archivo del Vacío',floorMin:4,tiles:['#19152d','#2d2451'],enemies:['voidClerk','phaseHound','dataWraith','nullMage','quantumGuard','errorSpawn'],boss:'NullArchivist'}
-];
-
 const enemyDefs={
  goblin:{name:'Goblin',hp:8,atk:3,color:'#70aa58',accent:'#ffd55a',shape:'goblin'},
  orco:{name:'Orco',hp:15,atk:5,color:'#527d42',accent:'#c79c67',shape:'orc'},
@@ -1956,7 +1948,6 @@ function loadPrecomputedFloor(){
  updateUI();draw();rollFloorEvent();return true;
 }
 
-function floorTheme(){return themes[Math.min(themes.length-1,Math.floor((game.floor-1)/2))]}
 function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)map[y][x]=0}
 
 
@@ -2073,9 +2064,16 @@ function randomOpenTile(){
  return{x:game.player.x+2,y:game.player.y}
 }
 function spawnEventEnemy(mult=1,boss=false,name='Enemigo del evento'){
- const pos=randomOpenTile(),theme=themes[Math.min(themes.length-1,Math.max(0,game.floor-1))]||themes[0],type=boss?theme.boss:pick(theme.enemies),base=enemyDefs[type]||{name,hp:18,damage:5,xp:8};
- const e=scaleEnemy({...base,type,x:pos.x,y:pos.y,maxHp:base.hp||18,hp:base.hp||18,boss:boss||base.boss});
- e.name=boss?name:e.name;e.maxHp=e.hp=Math.round(e.hp*mult);e.damage=Math.round(e.damage*(boss?1.35:1));game.enemies.push(e);return e
+ // Event enemies (hordas, jefes opcionales, mímico) go through the same
+ // configured enemy-family pipeline as every other enemy in the dungeon, so
+ // they get a proper tier/level-scaled build AND their family's custom icon
+ // instead of falling back to the legacy pre-Supabase themes/enemyDefs
+ // catalog (which has no icon and renders as a generic pixel shape).
+ const pos=randomOpenTile(),family=pickConfiguredFamilyForFloorWithParams(game.floor,worldParams());
+ const e=buildConfiguredEnemy(weightedFamilyEnemy(family,boss,game.floor,worldParams().floors||10),pos,game.floor,boss);
+ e.enemyFamily=family.name;
+ e.name=boss?name:e.name;e.maxHp=e.hp=Math.round(e.hp*mult);e.atk=e.damage=Math.round((e.atk||e.damage)*(boss?1.35:1));
+ game.enemies.push(e);return e
 }
 function resolveFloorEvent(ev,prepared){
  if(ev.resolved)return;ev.resolved=true;
@@ -2316,17 +2314,6 @@ function enemyUseSkill(e,dist,target=game.player){
   }
  }
  return false
-}
-
-function scaleEnemy(e){
- const d=difficultyScale();
- e.maxHp=e.hp=Math.round((e.maxHp||e.hp)*d.hp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT);
- e.damage=Math.max(1,Math.round(e.damage*d.damage));
- e.xp=Math.round((e.xp||5)*d.xp);
- if(!e.boss&&Math.random()<d.eliteChance){
-  e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.55);e.damage=Math.round(e.damage*1.3);e.xp=Math.round(e.xp*1.8);
- }
- return assignEnemySkills(equipEnemy(e));
 }
 
 
@@ -4585,7 +4572,7 @@ function updateObjectiveHud(){
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${floorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
