@@ -4001,10 +4001,21 @@ function applyEffectComponent(id,comp,ctx){
 // Runs every component in def.effects against a shared cast context; a
 // skill "succeeds" (consumes cost/cooldown) if ANY component actually did
 // something, matching the existing used-flag convention.
+// Any 'move' (teleport/dash) component always resolves before every other
+// component, regardless of the order the author placed them in the JSON
+// editor: a stacked teleport/dash + damage skill must land next to the
+// enemy first and only then roll damage. Once a move component lands, ctx.x/
+// ctx.y are synced to the player's actual post-move position, so a
+// following area-style component (aoe, or a dmg/dot/debuff/cc aimed at
+// 'area') centers on the caster's new spot instead of the pre-move click.
 function applySkillEffectsList(id,ctx){
  const list=skillDefs[id]?.effects||[];
+ const ordered=[...list].sort((a,b)=>(a.kind==='move'?0:1)-(b.kind==='move'?0:1));
  let used=false;
- for(const comp of list)if(applyEffectComponent(id,comp,ctx))used=true;
+ for(const comp of ordered){
+  if(applyEffectComponent(id,comp,ctx))used=true;
+  if(comp.kind==='move'){ctx.x=game.player.x;ctx.y=game.player.y}
+ }
  return used
 }
 
