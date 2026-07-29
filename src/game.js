@@ -3273,6 +3273,7 @@ function companionTurn(){
     if(!target)break;
     if(gridDistance(c,target)>c.range){if(!c.stationary)moveCompanionToward(c,target);break}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
+    else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
     else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
    }
    continue
@@ -3590,7 +3591,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
   return true
  }
  if(comp.kind==='utility'){
@@ -4977,6 +4978,8 @@ function effectSummaryTag(comp){
    const et=comp.effectType||'damage';
    if(et==='heal')return 'Invocación-torreta (curación en área)';
    if(et==='buff')return `Invocación-torreta (buff ${STAT_LABELS_ES[comp.stat]||comp.stat||''})`.trim();
+   if(et==='root')return 'Invocación-torreta (raíz)';
+   if(et==='debuff')return `Invocación-torreta (debuff ${STAT_LABELS_ES[comp.stat]||comp.stat||''})`.trim();
    return `Invocación-torreta (daño ${comp.damageMode==='area'?'en área':'al más cercano'})`;
   }
   case 'utility':return 'Utilidad';
@@ -5027,7 +5030,7 @@ function defaultComponentFor(kind){
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
  if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,iconImage:''};
- if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,iconImage:''};
+ if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
  if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,iconImage:''};
@@ -5095,6 +5098,8 @@ function effectComponentCardHtml(comp,i){
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación</option>
    <option value="buff" ${effectType==='buff'?'selected':''}>Buff</option>
+   <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
+   <option value="debuff" ${effectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
   ${effectType==='damage'?`<label>Objetivo del daño <select data-effect-idx="${i}" data-effect-field="damageMode">
     <option value="nearest" ${damageMode!=='area'?'selected':''}>Enemigo más cercano</option>
@@ -5109,6 +5114,13 @@ function effectComponentCardHtml(comp,i){
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
    <span class="small">El buff se mantiene mientras la torreta siga viva.</span>`:''}
+  ${effectType==='root'?`<label>Alcance de detección (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+   <label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
+  ${effectType==='debuff'?`<label>Alcance de detección (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+   <label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat)}</select></label>
+   <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
+   <label>Valor <input type="number" step="0.1" value="${comp.value??2}" data-effect-idx="${i}" data-effect-field="value"></label>
+   <label>Turnos de debuff por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
   ${summonIconRowHtml(comp,i)}`;
  }
  else if(comp.kind==='lineshot'){
