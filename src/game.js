@@ -6576,6 +6576,10 @@ let tstLevel=1;
 let tstStatAlloc={strength:0,vitality:0,agility:0,luck:0,intelligence:0,wisdom:0};
 let tstSkillIds=[];
 let tstFloorArchetype='standard';
+// Default well below 100%: a horda floor at full density is 100+ enemies,
+// which reads as "I can't kill them, they keep coming" for a single tester
+// rather than the intended stress-test - see launchTestCombat().
+let tstEnemyDensity=50;
 let preTestSelectedDungeonWorld; // stashed selectedDungeonWorld while a test run is active, restored on exit
 const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
 
@@ -6689,6 +6693,12 @@ function setupTestingMode(){
  const cmClassic=document.getElementById('testCombatModeClassic'),cmAp=document.getElementById('testCombatModeAp');
  if(cmClassic)cmClassic.onchange=()=>{tstCombatMode='classic'};
  if(cmAp)cmAp.onchange=()=>{tstCombatMode='ap'};
+ const density=document.getElementById('testEnemyDensity'),densityVal=document.getElementById('testEnemyDensityValue');
+ if(density){
+  density.value=tstEnemyDensity;
+  if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`;
+  density.oninput=()=>{tstEnemyDensity=Number(density.value)||50;if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`};
+ }
  document.getElementById('testLaunchBtn').onclick=launchTestCombat;
 }
 function launchTestCombat(){
@@ -6731,7 +6741,11 @@ function launchTestCombat(){
 
  game={
   floor:floorNum,themeIndex:0,turn:0,dungeonWorldId:null,dungeonWorldName:'Modo Testing',
-  worldParams:normalizeWorldParams({floors:totalFloors}),
+  // Explicit 100% baselines - DEFAULT_WORLD_PARAMS otherwise defaults a
+  // dungeon world to +25% enemy life/damage received, which has no business
+  // being on by default for a combat sandbox. enemyCountPct is the one dial
+  // testers actually want to touch (see tstEnemyDensity/testEnemyDensity).
+  worldParams:normalizeWorldParams({floors:totalFloors,damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyLootPct:100,enemyCountPct:tstEnemyDensity}),
   inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,
   testingMode:true,forcedFloorArchetype:tstFloorArchetype,
   player:{
@@ -6752,7 +6766,20 @@ function launchTestCombat(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(tstClass);
- for(let i=0;i<5;i++){const item=makeLoot(tstLevel,'testing');if(item)addInventoryItem(item)}
+ // A naked level-30 character (nothing but the tier-1 starter weapon) hits
+ // like a level-1 one - the level-appropriate loot has to actually be worn,
+ // not just sit in the backpack, or every fight (megabosses especially)
+ // feels unkillable regardless of the archetype/density chosen above.
+ // Reuses the normal loot roller so gear composition matches real drops;
+ // a handful of attempts land on already-filled/duplicate slots or potions,
+ // which just fall back to the backpack instead of being wasted.
+ const gearSlots=slots.filter(s=>s!=='weapon');
+ for(let attempts=0;attempts<80&&gearSlots.some(s=>!game.player.equipment[s]);attempts++){
+  const item=makeLoot(tstLevel,'testing');
+  if(!item)continue;
+  if(item.type==='potion'||item.slot==='weapon'||!gearSlots.includes(item.slot)||game.player.equipment[item.slot]){addInventoryItem(item);continue}
+  game.player.equipment[item.slot]=item;
+ }
  recomputeDerived();
  configScreen.classList.add('hidden');
  app.classList.remove('hidden');
