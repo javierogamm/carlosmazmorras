@@ -1423,18 +1423,41 @@ function processClassSkillChoices(){
  }
  if(!pendingClassSkillRequests.length)return;
  const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier],choices=classSkillChoicesForTier(request.tier);
- if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';processClassSkillChoices();return}
+ // A custom class with no skills configured for this tier leaves nothing to
+ // pick - mark it satisfied and move on instead of leaving the request
+ // stuck forever, but if this WAS the initial character-creation request,
+ // still finish creating the character (save to DB, back to single player)
+ // exactly like the real pick-a-skill path below does. Skipping this was
+ // the "click Crear, screen goes blank, character never saved" bug: no
+ // choices meant the modal never opened, so finishCharacterCreation() (only
+ // ever called from inside that modal's click handler) never ran.
+ if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();processClassSkillChoices();return}
  document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
  document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad del pool real de tu clase para tier ${roman}.`;
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
-  learnSkill(b.dataset.pickSkill);
-  game.player.skillChoicesAwarded[request.level]='chosen';
-  modal.classList.remove('open');updateUI();
-  if(request.initial)finishCharacterCreation();
-  queueMissingClassSkillChoices();
-  processClassSkillChoices();
+  // Everything below (closing the modal, saving to Supabase on the initial
+  // pick) is a chain of synchronous statements - an exception thrown by any
+  // one of them silently aborted the rest, which for the initial pick meant
+  // finishCharacterCreation() never even got called and the click looked
+  // like it did nothing. One real example: updateUI() used to unconditionally
+  // compute the "Zona:" floor theme, which throws with no active floor/
+  // tileset yet (character creation) and no config_floor rows configured -
+  // entirely unrelated to whichever skill happened to be picked (see
+  // updateUI()'s game.floorTileset/game.map guard). Surface any such
+  // exception instead of swallowing it.
+  try{
+   learnSkill(b.dataset.pickSkill);
+   game.player.skillChoicesAwarded[request.level]='chosen';
+   modal.classList.remove('open');updateUI();
+   if(request.initial)finishCharacterCreation();
+   queueMissingClassSkillChoices();
+   processClassSkillChoices();
+  }catch(e){
+   console.error('Fallo al elegir la habilidad de clase:',e);
+   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
+  }
  }))
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
@@ -1443,7 +1466,15 @@ function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
  if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
- const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
+ const race=selectedRace,cls=resolveClassDef(selectedClass);
+ // resolveClassDef returns null for a custom class whose config_class row
+ // hasn't finished loading yet (fetchConfigClasses is async and the class-
+ // choice screen can render before it resolves) - without this guard,
+ // `cls.stats` below throws immediately and silently aborts start() before
+ // `game` is even created, leaving the player stuck on the creation screen
+ // with no feedback at all.
+ if(!cls){alert('La clase todavía se está cargando; espera un segundo e inténtalo de nuevo.');return}
+ const stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0,shards:{}}};
@@ -1452,7 +1483,29 @@ function start(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(selectedClass);
- recomputeDerived();startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
+ recomputeDerived();startOverlay.classList.add('hidden');
+ // A brand new character can never legitimately need the level-up modals -
+ // clear any 'open' class left over from a previous character/session in
+ // this same tab (e.g. a stat-point or skill-choice modal that didn't get
+ // closed), since processClassSkillChoices() silently no-ops while either
+ // is open and that would otherwise strand the player on a blank screen
+ // right after clicking "Crear personaje", with the new character never
+ // reaching finishCharacterCreation()'s DB save.
+ document.getElementById('statPointModal')?.classList.remove('open');
+ document.getElementById('skillChoiceModal')?.classList.remove('open');
+ // Likewise, drop any request left queued from a previous/interrupted
+ // creation attempt in this same tab (pendingClassSkillRequests is a
+ // module-level array, never reset on its own) - a stale non-initial entry
+ // sitting ahead of this character's own request in the queue would get
+ // shifted out and resolved first, so picking a skill would silently do
+ // nothing toward finishing THIS character's creation.
+ pendingClassSkillRequests=[];
+ try{
+  queueClassSkillChoice(1,true);
+ }catch(e){
+  console.error('Fallo al iniciar la elección de habilidad inicial:',e);
+  alert('Error al preparar la elección de habilidad inicial: '+e.message);
+ }
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
@@ -4727,8 +4780,16 @@ function updateObjectiveHud(){
  el.classList.toggle('urgent',urgent);
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
+// The "Zona:" HUD line only renders once a floor actually exists
+// (game.floorTileset from generateFloor()/loadPrecomputedFloor(), or a live
+// game.map) - updateUI() is also called from the class-skill-choice flow
+// during character creation, before any dungeon exists, and
+// currentFloorTheme()/activeFloorTileset() throws in that case if
+// config_floor has no rows yet (by design, see pickFloorTilesetForLevel) -
+// that used to silently abort the rest of the skill-pick handler, including
+// the call that actually saves the new character to Supabase.
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
@@ -6689,11 +6750,24 @@ async function finishCharacterCreation(){
  const score=computeScore(bundle);
  try{
   const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
-  const data=await r.json();
-  if(!r.ok)throw new Error(data.error||'No se pudo guardar el personaje');
-  banner(`PERSONAJE ${bundle.player.name} CREADO`);
+  const data=await r.json().catch(()=>null);
+  // api/user-pj.js forwards Supabase/PostgREST's response verbatim on error,
+  // whose shape is {message, details, hint, code} - not {error} - so reading
+  // only data.error silently swallowed the real reason and always showed the
+  // generic fallback instead. Try every field PostgREST/our own handler
+  // actually uses, in order, before giving up on a real message.
+  if(!r.ok)throw new Error(data?.error||data?.message||data?.details||data?.hint||`HTTP ${r.status}${r.statusText?' '+r.statusText:''}`);
+  // Explicit, blocking confirmation (not just the transient on-canvas banner,
+  // which can get lost across this exact screen transition) that the
+  // character actually made it into Supabase before we tear down `game` and
+  // navigate away - this is the "it looked like it worked but nothing got
+  // created" case made impossible to miss.
+  alert(`Personaje "${bundle.player.name}" creado y guardado correctamente.`);
   refreshCurrentUserProgress();
- }catch(e){alert('Error al guardar el personaje: '+e.message)}
+ }catch(e){
+  console.error('No se pudo guardar el personaje nuevo:',e);
+  alert('Error al guardar el personaje: '+e.message);
+ }
  game=null;
  startOverlay.classList.add('hidden');
  app.classList.add('hidden');
