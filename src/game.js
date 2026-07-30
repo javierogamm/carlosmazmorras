@@ -3428,7 +3428,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
+  ...(custom?{effectType:custom.effectType||'damage',skillId:custom.skillId||'',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3541,6 +3541,11 @@ function companionTurn(){
     if(gridDistance(c,target)>c.range){if(c.stationary)break;moveCompanionToward(c,target);continue}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
+    // 'skill' invocations cast a real, author-picked skillDef instead of a
+    // flat dice attack - same attack()/skillId plumbing a player's own skill
+    // hit uses, so its dice/stat/defense-stat all come from that skill's own
+    // definition. Falls back to the plain dice attack if no skill was picked.
+    else if(c.effectType==='skill'&&c.skillId&&skillDefs[c.skillId]){attack(target,0,{skillId:c.skillId,multiplier:.7});floating(skillDefs[c.skillId].icon||'✦',c.x,c.y,'#d9a8ff')}
     else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
    }
    continue
@@ -3923,15 +3928,15 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion(), companionTurn()).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
   return true
  }
  if(comp.kind==='utility'){
@@ -4025,7 +4030,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -5508,6 +5513,13 @@ function effectComponentTargetOptions(kind){
  if(kind==='hot')return [{v:'self',l:'A ti mismo'},{v:'area',l:'Área (aliados cercanos)'}];
  return null
 }
+// <option> list for picking a real skillId out of skillDefs - shared by any
+// stackable-effect field that needs to name a specific skill (currently the
+// 'skill' summon effectType below).
+function skillPickerOptionsHtml(selectedId){
+ return Object.entries(skillDefs).sort((a,b)=>(a[1].name||a[0]).localeCompare(b[1].name||b[0],'es'))
+  .map(([id,d])=>`<option value="${id}" ${id===selectedId?'selected':''}>${d.icon||'•'} ${d.name}</option>`).join('');
+}
 function effectDiceFieldsHtml(comp,i,prefix='dmg'){
  const f=k=>`${prefix}${k}`,dice=comp[f('Dice')],die=comp[f('Die')],stat=comp[f('Stat')],mode=comp[f('StatMode')],coef=comp[f('StatCoef')];
  return `<label>Nº de dados <input type="number" min="0" value="${dice||0}" data-effect-idx="${i}" data-effect-field="${f('Dice')}"></label>
@@ -5544,11 +5556,14 @@ function effectComponentCardHtml(comp,i){
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
+   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
    <option value="buff" ${effectType==='buff'?'selected':''}>Buff (te da un buff mientras esté viva)</option>
    <option value="debuff" ${effectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
+  ${['damage','skill'].includes(effectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
+  ${effectType==='skill'?`<label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
   ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
@@ -5574,6 +5589,7 @@ function effectComponentCardHtml(comp,i){
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Tipo de torreta <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño</option>
+   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación</option>
    <option value="buff" ${effectType==='buff'?'selected':''}>Buff</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
@@ -5585,6 +5601,8 @@ function effectComponentCardHtml(comp,i){
    </select></label>
    <label>${damageMode==='area'?'Radio de área (casillas)':'Alcance de detección (casillas)'} <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
    ${effectDiceFieldsHtml(comp,i)}`:''}
+  ${effectType==='skill'?`<label>Alcance de detección (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
+   <label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
   ${effectType==='heal'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??3}" data-effect-idx="${i}" data-effect-field="range"></label>
    ${effectDiceFieldsHtml(comp,i)}
    <span class="small">Cura a ti y a tus invocaciones dentro del radio, cada turno que la torreta siga viva.</span>`:''}
@@ -5615,11 +5633,14 @@ function effectComponentCardHtml(comp,i){
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de cada clon <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${cloneEffectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
+   <option value="skill" ${cloneEffectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
    <option value="heal" ${cloneEffectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${cloneEffectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
    <option value="buff" ${cloneEffectType==='buff'?'selected':''}>Buff (te da un buff mientras viva)</option>
    <option value="debuff" ${cloneEffectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
+  ${['damage','skill'].includes(cloneEffectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
+  ${cloneEffectType==='skill'?`<label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
   ${cloneEffectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
   ${cloneEffectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
