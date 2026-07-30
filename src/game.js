@@ -1437,12 +1437,23 @@ function processClassSkillChoices(){
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
-  learnSkill(b.dataset.pickSkill);
-  game.player.skillChoicesAwarded[request.level]='chosen';
-  modal.classList.remove('open');updateUI();
-  if(request.initial)finishCharacterCreation();
-  queueMissingClassSkillChoices();
-  processClassSkillChoices();
+  // Everything below (closing the modal, saving to Supabase on the initial
+  // pick) is a chain of synchronous statements - an exception thrown by any
+  // one of them (a malformed admin-authored skill def is the likeliest
+  // culprit) silently aborts the rest, which for the initial pick meant
+  // finishCharacterCreation() never even got called and the click looked
+  // like it did nothing. Surface it instead of swallowing it.
+  try{
+   learnSkill(b.dataset.pickSkill);
+   game.player.skillChoicesAwarded[request.level]='chosen';
+   modal.classList.remove('open');updateUI();
+   if(request.initial)finishCharacterCreation();
+   queueMissingClassSkillChoices();
+   processClassSkillChoices();
+  }catch(e){
+   console.error('Fallo al elegir la habilidad de clase:',e);
+   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}\n\nRevisa la configuración de esa skill en Configuración → Clases.`);
+  }
  }))
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
@@ -1478,7 +1489,19 @@ function start(){
  // reaching finishCharacterCreation()'s DB save.
  document.getElementById('statPointModal')?.classList.remove('open');
  document.getElementById('skillChoiceModal')?.classList.remove('open');
- queueClassSkillChoice(1,true);
+ // Likewise, drop any request left queued from a previous/interrupted
+ // creation attempt in this same tab (pendingClassSkillRequests is a
+ // module-level array, never reset on its own) - a stale non-initial entry
+ // sitting ahead of this character's own request in the queue would get
+ // shifted out and resolved first, so picking a skill would silently do
+ // nothing toward finishing THIS character's creation.
+ pendingClassSkillRequests=[];
+ try{
+  queueClassSkillChoice(1,true);
+ }catch(e){
+  console.error('Fallo al iniciar la elección de habilidad inicial:',e);
+  alert('Error al preparar la elección de habilidad inicial: '+e.message);
+ }
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
@@ -6715,11 +6738,24 @@ async function finishCharacterCreation(){
  const score=computeScore(bundle);
  try{
   const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
-  const data=await r.json();
-  if(!r.ok)throw new Error(data.error||'No se pudo guardar el personaje');
-  banner(`PERSONAJE ${bundle.player.name} CREADO`);
+  const data=await r.json().catch(()=>null);
+  // api/user-pj.js forwards Supabase/PostgREST's response verbatim on error,
+  // whose shape is {message, details, hint, code} - not {error} - so reading
+  // only data.error silently swallowed the real reason and always showed the
+  // generic fallback instead. Try every field PostgREST/our own handler
+  // actually uses, in order, before giving up on a real message.
+  if(!r.ok)throw new Error(data?.error||data?.message||data?.details||data?.hint||`HTTP ${r.status}${r.statusText?' '+r.statusText:''}`);
+  // Explicit, blocking confirmation (not just the transient on-canvas banner,
+  // which can get lost across this exact screen transition) that the
+  // character actually made it into Supabase before we tear down `game` and
+  // navigate away - this is the "it looked like it worked but nothing got
+  // created" case made impossible to miss.
+  alert(`Personaje "${bundle.player.name}" creado y guardado correctamente.`);
   refreshCurrentUserProgress();
- }catch(e){alert('Error al guardar el personaje: '+e.message)}
+ }catch(e){
+  console.error('No se pudo guardar el personaje nuevo:',e);
+  alert('Error al guardar el personaje: '+e.message);
+ }
  game=null;
  startOverlay.classList.add('hidden');
  app.classList.add('hidden');
