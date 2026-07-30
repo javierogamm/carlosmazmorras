@@ -50,7 +50,7 @@ Common component shape: `{ "kind": "<kind>", "target": "...", ...kind-specific f
 
 ### 3.1 Shared "dice block" (prefix defaults to `dmg`, some kinds use `dot`)
 
-Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Note: `summon`/`summonturret`/`clones` never read `dmgStat`/`dmgStatMode`/`dmgStatCoef` for their companion's attacks (flat dice only), and `trap` computes but then discards its own dice/stat magnitude entirely — see §4.12/§4.23.
+Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Every one of these derives its stat bonus (`dmgStatMode:"add"`) or multiplier (`dmgStatMode:"mult"`) from **its own component's** `dmgStat`/`dmgStatCoef` and the caster's (the player's) live stat value, not from the enclosing skill's top-level fields or a generic guess — leaving `dmgStat` empty ("Automática") falls back to the enclosing skill's `type`/`resource`-based bonus, same as before. `trap` computes but then discards its own dice/stat magnitude entirely — see §4.23.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
@@ -167,7 +167,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 { "kind":"move", "mode":"dash", "range":3 }
 ```
 - `mode:"dash"`: advance up to `range` tiles toward the nearest/clicked enemy, then attack it (multiplier configurable via `multiplier`, default 1).
-- `mode:"teleport"`: blink to the clicked tile (must be free). Forces whole-skill target mode to `area`.
+- `mode:"teleport"`: if the skill also has an `enemy`-targeted component (so the whole cast targets an enemy, clicked or auto-picked), blinks onto a free tile touching that enemy instead of its own occupied tile - i.e. teleport next to it, then whatever component follows (a single `dmg` or an `aoe`) hits from there. With no enemy under the cast (a pure area click), it blinks to the exact clicked tile instead, same as before. Forces whole-skill target mode to `area` only when no other component already forces `enemy`.
 
 ### 4.7 `cc` — Crowd control
 ```json
@@ -206,27 +206,31 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 ### 4.12 `summon` — Mobile ally
 ```json
 {
-  "kind":"summon", "hp":20, "turns":8, "ap":10, "effectType":"damage",
+  "kind":"summon", "hp":20, "turns":8, "ap":10, "effectType":"damage", "range":0,
   "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1,
   "effectTurns":2, "iconImage":"", "targetable":true, "hitByAoe":true, "stance":"aggressive"
 }
 ```
 - `hp`: flat max HP of the summon.
 - `turns`: lifespan in player turns. Ignored entirely when `permanent:true` (see below).
-- `ap`: **every 10 = 1 action per its turn** (so `ap:20` = 2 actions/turn). Rounded via `max(1, round(ap/10))`.
-- `effectType`: one of 5 options, shared with `summonturret`/`clones`:
-  - `"damage"`: melee-range-1 attacks nearest enemy, dice via `dmgDice/dmgDie` as a flat expr, no stat scaling.
-  - `"heal"`: heals the player each action, magnitude = roll of `dmgDice`d`dmgDie`, no stat scaling.
+- `ap`: **every 10 = 1 action per its turn** (so `ap:20` = 2 actions/turn). Rounded via `max(1, round(ap/10))`. Every action is actually spent: it either closes a tile of distance, casts/attacks, or (with nothing left to do) advances on the player — it never stops early and wastes the rest of the turn's actions.
+- `effectType`: one of 6 options, shared with `summonturret`/`clones`:
+  - `"damage"`: attacks the nearest qualifying enemy, dice via `dmgDice/dmgDie`, stat bonus from `dmgStat`/`dmgStatMode`/`dmgStatCoef` (§3.1) applied against **the player's own live stat** — same as every other stat-derived effect in the game, not a flat hit. `range` (below) controls whether it's melee or ranged.
+  - `"skill"`: fires the invocation's **own inline stackable-effects list** at the nearest qualifying enemy each action, instead of a flat dice hit or a reference to an existing skill. Configured via two extra fields:
+    - `skillName` (string, cosmetic only): a name for this ad-hoc "skill", not shown anywhere in-game yet.
+    - `skillEffects`: an array of components, same shape as the top-level `effects[]` (§3) but restricted to the kinds that make sense fired at a single already-engaged target: `dmg`, `dot`, `debuff`, `cc`, `drain`, `mark` (all hit/affect the target), plus `buff`/`heal` (affect the player instead — a companion's "heal" sub-effect heals the player, its "buff" sub-effect buffs the player). Every listed sub-effect fires in the same action (they stack); each one's own `dmgStat`/`dmgStatMode`/`dmgStatCoef` (where applicable) scales off the player's stat, exactly like `damage` above. An empty `skillEffects` falls back to a plain dice hit.
+  - `"heal"`: heals the player each action, magnitude = roll of `dmgDice`d`dmgDie` **plus** the `dmgStat`/`dmgStatMode`/`dmgStatCoef`-derived bonus off the player's stat.
   - `"root"`: applies `root` status to nearest enemy each action, duration = `effectTurns`.
   - `"buff"`: grants the caster a buff (see `stat`/`mode`/`value` below) that is refreshed every action and lasts only while the companion is alive.
   - `"debuff"`: applies a stat debuff to the nearest enemy each action (see `stat`/`mode`/`value`/`effectTurns` below), same mechanics as the top-level `debuff` kind (§4.4).
+- `range` (only read when `effectType` is `"damage"` or `"skill"`, default/`0` = melee): how many tiles away the companion can act from without closing in further. `0` (or omitted) means melee — it must be adjacent, same as before this field existed. Any positive number makes it a ranged attacker/caster that stops advancing once within that distance and fights from there instead of walking all the way up to the target.
 - `stat`/`mode`/`value`: only read when `effectType` is `"buff"` (stat options: `armor`, `damage`, `ap`, plus any §5 core stat) or `"debuff"` (stat options: `damage`, `ap`, plus any §5 core stat) — same semantics as §4.3/§4.4.
-- `effectTurns`: duration of the `root`/`debuff` application per action (default 2); irrelevant for `damage`/`heal`/`buff`.
-- Mobile: walks toward its target if out of range 1 each turn; if there is no living enemy on the floor, follows the player instead of idling (`companionFollowPlayer`).
+- `effectTurns`: duration of the `root`/`debuff` application per action (default 2); irrelevant for `damage`/`skill`/`heal`/`buff`.
+- Targeting/movement priority (shared by `summon`/`summonturret`/`clones`): only enemies within 6 tiles are ever considered a valid target — anything farther is ignored outright instead of being chased across the map. With no such target in range, a mobile companion closes in on the player instead of idling, and **stops burning actions the moment it's already standing next to the player** (`companionFollowPlayer`/`companionApproachOrStop`) rather than creeping forward one tile per turn regardless of how many actions it has left.
 - `iconImage`: optional hex PNG (50x50) replacing the default procedural ally sprite; see §8.
 - `targetable` (bool, default `true`): if `false`, enemies can never pick this companion as an attack target (it can still die to AOE-classed enemy skills unless `hitByAoe` is also `false`). Regardless of this flag, a companion can never be targeted on the very turn it spawns (a built-in one-pass grace period).
 - `hitByAoe` (bool, default `true`): if `false`, the companion is immune specifically to enemy skills whose `classEffect` is `aoe`/`multihit`/`ultimate`/`massive` — it can still be targeted by single-target attacks/skills unless `targetable:false` also blocks that.
-- `stance`: `"aggressive"` (default — fights nearby enemies, follows the player when none are in range) or `"passive"` (never attacks, always just follows the player).
+- `stance`: `"aggressive"` (default — fights nearby enemies, follows the player when none are in range) or `"passive"` (never attacks, always just follows the player and stops next to them).
 - `permanent` (bool, default `false`) — turns this into a **"Compañero"** pet: doesn't expire from `turns`, only one instance exists per source skill (recasting while it's alive does nothing; recasting while it's downed attempts a revive instead of summoning a duplicate). When it dies:
   - The caster is immediately hit with a **-10% penalty to every core stat** (flat debuff, `999999`-turn sentinel, removed only on revive).
   - While alive, it pulls **15% of nearby enemy aggro** toward itself (reselected from targetable companions when an enemy's normal target roll lands on the pet-pull chance).
@@ -242,18 +246,18 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
   "iconImage":""
 }
 ```
-- Same as `summon` (same 5 `effectType` options: `damage`/`heal`/`root`/`buff`/`debuff`, same `stat`/`mode`/`value`/`effectTurns` fields), but **never moves** — idles if no enemy is within `range` instead of approaching. Default `range` 7 (vs 1 for `summon`). Does not support `permanent`/`targetable`/`hitByAoe`/`stance` (always a temporary, non-companion-pet ally).
-- `damageMode` (only read when `effectType:"damage"`): `"nearest"` (default — single-target the closest enemy within `range`) or `"area"` (hits every enemy within `range` tiles of the turret each action instead of just one).
+- Same as `summon` (same 6 `effectType` options: `damage`/`skill`/`heal`/`root`/`buff`/`debuff`, same `stat`/`mode`/`value`/`effectTurns`/`skillName`/`skillEffects` fields), but **never moves** — idles if no enemy is within `range` instead of approaching. Default `range` 7 for `damage`/`skill` (vs melee-only for `summon` unless it sets its own `range`). Does not support `permanent`/`targetable`/`hitByAoe`/`stance` (always a temporary, non-companion-pet ally).
+- `damageMode` (only read when `effectType:"damage"`): `"nearest"` (default — single-target the closest enemy within `range`) or `"area"` (hits every enemy within `range` tiles of the turret each action instead of just one). `"skill"` casts are always single-target nearest, no area mode.
 
 ### 4.14 `clones` — Multiple mobile allies at once
 ```json
 {
-  "kind":"clones", "count":2, "hp":14, "turns":8, "ap":10, "effectType":"damage",
+  "kind":"clones", "count":2, "hp":14, "turns":8, "ap":10, "effectType":"damage", "range":0,
   "dmgDice":1, "dmgDie":6, "dmgStat":"", "dmgStatMode":"add", "dmgStatCoef":1,
   "effectTurns":2, "iconImage":""
 }
 ```
-- Spawns `count` (1-4, default 2) independent mobile allies in one cast, each behaving exactly like a non-permanent `summon` companion — same 5 `effectType` options (`damage`/`heal`/`root`/`buff`/`debuff` with the same `stat`/`mode`/`value`/`effectTurns` fields), same mobility, same `iconImage`. Each clone contributes its own instance of a `buff`/`debuff` independently (they stack, one per living clone).
+- Spawns `count` (1-4, default 2) independent mobile allies in one cast, each behaving exactly like a non-permanent `summon` companion — same 6 `effectType` options (`damage`/`skill`/`heal`/`root`/`buff`/`debuff` with the same `stat`/`mode`/`value`/`effectTurns`/`range`/`skillName`/`skillEffects` fields), same mobility, same `iconImage`. Each clone contributes its own instance of a `buff`/`debuff` independently (they stack, one per living clone).
 - Does not support `permanent`/`targetable`/`hitByAoe`/`stance` — always temporary, always targetable/vulnerable like a plain summon.
 
 ### 4.15 `utility` — Misc self effects
