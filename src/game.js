@@ -1316,6 +1316,11 @@ function setVisibleTiles(value){
 }
 
 function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.player.y){
+ // Testing mode: enemies (regen ticks, lifesteal-on-hit, self-cast shield/
+ // buff spells - any of it, hardcoded or admin-configured) never heal back
+ // up, so damage dealt always nets the target's hp down. Player/companion
+ // healing is untouched - only entities actually in game.enemies are blocked.
+ if(game?.testingMode&&(game.enemies||[]).includes(entity))return 0;
  const max=Number(entity.maxHp)||0,before=Number(entity.hp)||0;
  if(max<=0||amount<=0)return 0;
  entity.hp=Math.min(max,before+Math.max(0,Math.round(amount)));
