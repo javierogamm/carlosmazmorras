@@ -1423,7 +1423,15 @@ function processClassSkillChoices(){
  }
  if(!pendingClassSkillRequests.length)return;
  const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier],choices=classSkillChoicesForTier(request.tier);
- if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';processClassSkillChoices();return}
+ // A custom class with no skills configured for this tier leaves nothing to
+ // pick - mark it satisfied and move on instead of leaving the request
+ // stuck forever, but if this WAS the initial character-creation request,
+ // still finish creating the character (save to DB, back to single player)
+ // exactly like the real pick-a-skill path below does. Skipping this was
+ // the "click Crear, screen goes blank, character never saved" bug: no
+ // choices meant the modal never opened, so finishCharacterCreation() (only
+ // ever called from inside that modal's click handler) never ran.
+ if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();processClassSkillChoices();return}
  document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
  document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad del pool real de tu clase para tier ${roman}.`;
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
@@ -1443,7 +1451,15 @@ function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
  if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
- const race=selectedRace,cls=resolveClassDef(selectedClass),stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
+ const race=selectedRace,cls=resolveClassDef(selectedClass);
+ // resolveClassDef returns null for a custom class whose config_class row
+ // hasn't finished loading yet (fetchConfigClasses is async and the class-
+ // choice screen can render before it resolves) - without this guard,
+ // `cls.stats` below throws immediately and silently aborts start() before
+ // `game` is even created, leaving the player stuck on the creation screen
+ // with no feedback at all.
+ if(!cls){alert('La clase todavía se está cargando; espera un segundo e inténtalo de nuevo.');return}
+ const stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0,shards:{}}};
@@ -1452,7 +1468,17 @@ function start(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(selectedClass);
- recomputeDerived();startOverlay.classList.add('hidden');queueClassSkillChoice(1,true);
+ recomputeDerived();startOverlay.classList.add('hidden');
+ // A brand new character can never legitimately need the level-up modals -
+ // clear any 'open' class left over from a previous character/session in
+ // this same tab (e.g. a stat-point or skill-choice modal that didn't get
+ // closed), since processClassSkillChoices() silently no-ops while either
+ // is open and that would otherwise strand the player on a blank screen
+ // right after clicking "Crear personaje", with the new character never
+ // reaching finishCharacterCreation()'s DB save.
+ document.getElementById('statPointModal')?.classList.remove('open');
+ document.getElementById('skillChoiceModal')?.classList.remove('open');
+ queueClassSkillChoice(1,true);
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
