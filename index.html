@@ -166,7 +166,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -511,6 +511,42 @@
   </div>
   <button class="start" id="saveConfigGatesBtn" type="button">GUARDAR BLOQUEOS</button>
   <div id="configGatesStatus" class="small"></div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabTesting">
+  <p class="small">Personaje y piso 100% temporales para probar combate, skills y archetypes de piso: no se guardan en Supabase y no están sujetos a bloqueos de nivel/puntuación. Sales en cualquier momento con "☰ MENÚ PRINCIPAL".</p>
+  <div class="configLayout">
+   <section class="panel">
+    <h2>1. Personaje</h2>
+    <label>Nombre <input id="testNameInput" maxlength="16" placeholder="Tester" value="Tester"></label>
+    <h3>Raza</h3>
+    <div class="choices raceGrid" id="testRaceChoices"></div>
+    <h3>Modo de habilidades</h3>
+    <div class="skillModeChoice">
+     <label><input type="radio" name="testSkillMode" id="testSkillModeHardcode" value="hardcode" checked> Hardcode <span class="small">Las 16 clases y skills clásicas.</span></label>
+     <label><input type="radio" name="testSkillMode" id="testSkillModeAdvanced" value="advanced"> Advanced Classes <span class="small">Solo clases creadas en Clases (BDD).</span></label>
+    </div>
+    <h3>Modo de combate</h3>
+    <div class="skillModeChoice">
+     <label><input type="radio" name="testCombatMode" id="testCombatModeClassic" value="classic" checked> Clásico <span class="small">Una acción por turno.</span></label>
+     <label><input type="radio" name="testCombatMode" id="testCombatModeAp" value="ap"> Puntos de Acción (PA)</label>
+    </div>
+    <h3>Clase</h3>
+    <div class="classGrid" id="testClassChoices"></div>
+   </section>
+   <section class="panel">
+    <h2>2. Nivel, stats y habilidades</h2>
+    <label>Nivel <input id="testLevelInput" type="number" min="1" max="100" value="1"></label>
+    <div id="testStatsPanel" class="configStatsHelp"></div>
+    <h3>Habilidades de clase disponibles a este nivel</h3>
+    <p class="small" id="testSkillsInfo"></p>
+    <div id="testSkillChoices" class="configItemsList"></div>
+    <h2>3. Piso de prueba</h2>
+    <label>Tipo de piso <select id="testFloorArchetype"></select></label>
+    <p class="small" id="testFloorArchetypeDesc"></p>
+    <button class="start" id="testLaunchBtn" type="button">LANZAR PRUEBA DE COMBATE</button>
+    <div id="testStatus" class="small"></div>
+   </section>
+  </div>
  </div>
  <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
 </div>
