@@ -1719,12 +1719,16 @@ function buildMegabossFloorPlan(floor,params){
 // generator, so archetypes/rooms behave identically in single and multiplayer.
 // Assumes `game` is set with at least {floor,player,worldParams}.
 function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
+ // Testing mode (see launchTestCombat()) can force a specific archetype,
+ // including the megaboss special case, bypassing minFloor/cooldown gating
+ // entirely so any floor type can be tried out regardless of level/floor.
+ if(game?.forcedFloorArchetype==='megaboss')return buildMegabossFloorPlan(floor,params);
  // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
  // 33% chance on every floor that's a multiple of 3, regardless of recency/
  // cooldown or the other archetypes' weights.
- if(floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
+ if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
- const archId=pickFloorArchetype(floor,total,recent);
+ const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
  const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
  const tier=expectedTierForFloor(floor,total);
  const L=arch.layout,E=arch.enemies,R=arch.rewards;
@@ -4334,7 +4338,17 @@ async function mpCheckpoint(opts={}){
  await mpPersistTurnState({advance:false,includeOtherPlayers:true,checkpoint:true,...opts});
 }
 
-function permanentDeath(){const p=game.player;game.over=true;finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)}
+function permanentDeath(){
+ const p=game.player;game.over=true;
+ if(game.testingMode){
+  storyTitle.textContent='PRUEBA TERMINADA';
+  storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'El personaje de prueba'} ha caído.</b></p><div class="gameOverStats"><div><span class="small">Nivel de prueba</span><b>${p.level}</b></div><div><span class="small">Piso</span><b>${game.floor}</b></div></div><p class="small">Modo testing: no se ha guardado nada en la base de datos.</p><div class="startActions"><button id="testingBackAfterDeath">Volver al modo testing</button></div></div>`;
+  storyOverlay.classList.remove('hidden');
+  setTimeout(()=>document.getElementById('testingBackAfterDeath')?.addEventListener('click',()=>{storyOverlay.classList.add('hidden');goToMainMenu()}),0);
+  return;
+ }
+ finalizeCharacterDeath();try{localStorage.clear()}catch(e){}storyTitle.textContent='GAME OVER';storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Nivel de mazmorra</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: la partida se ha eliminado y no puede continuar.</p><div class="startActions"><button id="restartAfterDeath">Crear nuevo personaje</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('restartAfterDeath')?.addEventListener('click',()=>location.reload()),0)
+}
 // onDone is called once every enemy has finished acting. In AP mode (always
 // on in multiplayer, optional in single player) each individual action is
 // paced with a real setTimeout gap instead of resolving the whole phase in
@@ -5514,6 +5528,7 @@ async function fetchConfigClasses(){
   // (renderClassChoices only re-fetches while configClassesLoaded is false)
   configClassesLoaded=true;configClassesFetchInFlight=null;
   renderClassChoices();
+  renderTestClassChoices();
   if(configGatesLoaded)renderConfigGatesLists();
  })();
  return configClassesFetchInFlight;
@@ -6541,6 +6556,210 @@ function setupConfigGatesMode(){
  renderConfigGatesLists();
  document.getElementById('saveConfigGatesBtn').onclick=saveConfigGates;
 }
+
+// ============================================================================
+// TESTING MODE - admin-only combat sandbox reachable from Configuración >
+// Modo Testing. Spins up a throwaway character (race/class/level/stats/
+// skills) and drops it straight into a chosen floor archetype so combat,
+// skills and floor generation can be tried out. Nothing here is persisted:
+// the resulting `game` never gets a pjId/dungeonStatusId, so every
+// persistence call in the normal game loop (all gated on those ids, see
+// persistTurnState/persistShards/finalizeCharacterDeath) silently no-ops.
+// Race/class gates (gateUnlocked) are bypassed entirely rather than reused,
+// since testing must work regardless of the admin account's own progress.
+// ============================================================================
+let tstRace=Object.keys(raceDefs)[0];
+let tstClass=null;
+let tstSkillMode='hardcode';
+let tstCombatMode='classic';
+let tstLevel=1;
+let tstStatAlloc={strength:0,vitality:0,agility:0,luck:0,intelligence:0,wisdom:0};
+let tstSkillIds=[];
+let tstFloorArchetype='standard';
+let preTestSelectedDungeonWorld; // stashed selectedDungeonWorld while a test run is active, restored on exit
+const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
+
+function testStatPointsTotal(level){return Math.max(0,Math.round(level)-1)}
+function testMilestoneBonus(level){return Math.floor(Math.max(1,Math.round(level))/10)}
+function testStatPointsSpent(){return Object.values(tstStatAlloc).reduce((a,b)=>a+b,0)}
+// Mirrors classSkillIdsForLevelReward()'s maxTier rule (tier II unlocks at
+// the first reward level, III once level-up rewards reach level 10+).
+function testMaxSkillTierForLevel(level){return level>=10?3:level>=3?2:1}
+function testMaxSkillPicks(level){return 1+[...LEVEL_UP_RANDOM_SKILL_LEVELS].filter(l=>l<=level).length}
+function classSkillIdsForTierOf(classId,tier){const roman=['','I','II','III'][tier];return (classSkillTrees[classId]?.[roman]||[]).filter(id=>skillDefs[id])}
+function testEligibleSkillIds(){
+ const max=testMaxSkillTierForLevel(tstLevel),ids=[];
+ for(let t=1;t<=max;t++)ids.push(...classSkillIdsForTierOf(tstClass,t));
+ return ids;
+}
+function clampTestStatAlloc(){
+ const total=testStatPointsTotal(tstLevel),keys=Object.keys(TEST_STAT_LABELS);
+ let spent=testStatPointsSpent();
+ while(spent>total){
+  const k=keys.filter(k=>tstStatAlloc[k]>0).sort((a,b)=>tstStatAlloc[b]-tstStatAlloc[a])[0];
+  if(!k)break;
+  tstStatAlloc[k]--;spent--;
+ }
+}
+function renderTestRaceChoices(){
+ const root=document.getElementById('testRaceChoices');if(!root)return;
+ const ids=Object.keys(raceDefs);
+ if(!ids.includes(tstRace))tstRace=ids[0];
+ root.innerHTML=ids.map(id=>{
+  const r=raceDefs[id];
+  return `<div class="choice ${id===tstRace?'selected':''}" data-test-race="${id}"><div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p></div></div>`;
+ }).join('');
+ root.querySelectorAll('[data-test-race]').forEach(el=>el.onclick=()=>{tstRace=el.dataset.testRace;renderTestRaceChoices()});
+}
+function testClassIds(){return classIdsForSkillMode(tstSkillMode)}
+function renderTestClassChoices(){
+ const root=document.getElementById('testClassChoices');if(!root)return;
+ const ids=testClassIds();
+ if(!ids.length){
+  root.innerHTML='<p class="small">No hay clases Advanced configuradas todavía. Créalas en la pestaña Clases, o vuelve a Hardcode.</p>';
+  tstClass=null;renderTestStatsPanel();renderTestSkillChoices();return;
+ }
+ if(!tstClass||!ids.includes(tstClass))tstClass=ids[0];
+ root.innerHTML=ids.map(id=>{
+  const c=resolveClassDef(id);
+  return `<div class="classCard ${id===tstClass?'selected':''}" data-test-class="${id}"><canvas width="64" height="64" data-test-class-preview="${id}"></canvas><div class="classCopy"><b>${c.name}</b><span class="small">${c.desc}</span><div class="classStats">FUE ${c.stats.strength} · VIT ${c.stats.vitality} · AGI ${c.stats.agility} · SUE ${c.stats.luck} · INT ${c.stats.intelligence} · SAB ${c.stats.wisdom}</div></div></div>`;
+ }).join('');
+ root.querySelectorAll('[data-test-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.testClassPreview));
+ root.querySelectorAll('[data-test-class]').forEach(el=>el.onclick=()=>{tstClass=el.dataset.testClass;tstSkillIds=[];renderTestClassChoices()});
+ renderTestStatsPanel();renderTestSkillChoices();
+}
+function renderTestStatsPanel(){
+ const root=document.getElementById('testStatsPanel');if(!root)return;
+ if(!tstClass){root.innerHTML='';return}
+ const cls=resolveClassDef(tstClass);if(!cls){root.innerHTML='';return}
+ clampTestStatAlloc();
+ const total=testStatPointsTotal(tstLevel),spent=testStatPointsSpent(),remaining=total-spent,milestone=testMilestoneBonus(tstLevel);
+ root.innerHTML=`<p><b>Puntos de nivel por asignar: ${remaining}/${total}</b><br><span class="small">Incluye +${milestone} automático a cada stat por hitos de nivel (cada 10 niveles), ya sumado abajo.</span></p>`+
+  Object.entries(TEST_STAT_LABELS).map(([k,label])=>{
+   const base=cls.stats[k]||0,final=base+milestone+(tstStatAlloc[k]||0);
+   return `<div class="statBonusButton"><span><b>${label}: ${final}</b><span>${statDescriptions[k]||''}</span></span><div class="testStatBtns"><button type="button" data-test-stat-minus="${k}" ${tstStatAlloc[k]?'':'disabled'}>-</button><button type="button" data-test-stat-plus="${k}" ${remaining>0?'':'disabled'}>+</button></div></div>`;
+  }).join('');
+ root.querySelectorAll('[data-test-stat-plus]').forEach(b=>b.onclick=()=>{const k=b.dataset.testStatPlus;if(testStatPointsSpent()>=testStatPointsTotal(tstLevel))return;tstStatAlloc[k]=(tstStatAlloc[k]||0)+1;renderTestStatsPanel()});
+ root.querySelectorAll('[data-test-stat-minus]').forEach(b=>b.onclick=()=>{const k=b.dataset.testStatMinus;if(!tstStatAlloc[k])return;tstStatAlloc[k]--;renderTestStatsPanel()});
+}
+function renderTestSkillChoices(){
+ const root=document.getElementById('testSkillChoices'),info=document.getElementById('testSkillsInfo');
+ if(!root)return;
+ if(!tstClass){root.innerHTML='';if(info)info.textContent='';return}
+ const eligible=testEligibleSkillIds();
+ const cap=Math.min(testMaxSkillPicks(tstLevel),eligible.length);
+ tstSkillIds=tstSkillIds.filter(id=>eligible.includes(id)).slice(0,cap);
+ if(info)info.textContent=`Nivel ${tstLevel}: puedes seleccionar hasta ${cap} habilidad(es) de clase (hasta tier ${['','I','II','III'][testMaxSkillTierForLevel(tstLevel)]}). Las 4 primeras marcadas quedan equipadas (${Math.min(tstSkillIds.length,4)}/4 equipadas).`;
+ root.innerHTML=eligible.map(id=>{
+  const s=skillDefs[id];if(!s)return '';
+  const idx=tstSkillIds.indexOf(id),checked=idx>=0,roman=['','I','II','III'][s.tier]||'?';
+  return `<label class="configItem testSkillItem"><input type="checkbox" data-test-skill="${id}" ${checked?'checked':''}><div><b>${s.icon||''} ${s.name}</b> <span class="tierBadge">TIER ${roman}</span>${checked&&idx<4?' <span class="small">(equipada)</span>':''}<p class="small">${s.desc||''}</p></div></label>`;
+ }).join('')||'<p class="small">Esta clase no tiene árbol de habilidades configurado.</p>';
+ root.querySelectorAll('[data-test-skill]').forEach(cb=>cb.onchange=()=>{
+  const id=cb.dataset.testSkill;
+  if(cb.checked){
+   if(tstSkillIds.length>=cap){cb.checked=false;alert(`Nivel ${tstLevel} solo permite conocer ${cap} habilidad(es) de clase.`);return}
+   tstSkillIds.push(id);
+  }else tstSkillIds=tstSkillIds.filter(x=>x!==id);
+  renderTestSkillChoices();
+ });
+}
+function renderTestFloorArchetypeDesc(){
+ const p=document.getElementById('testFloorArchetypeDesc');if(!p)return;
+ if(tstFloorArchetype==='megaboss'){p.textContent='Pasillo estrecho hacia una cámara fija con un megajefe reforzado (nivel = tu nivel +2 a +4).';return}
+ const a=FLOOR_ARCHETYPES[tstFloorArchetype];p.textContent=a?a.desc:'';
+}
+function renderTestFloorArchetypes(){
+ const sel=document.getElementById('testFloorArchetype');if(!sel)return;
+ const ids=Object.keys(FLOOR_ARCHETYPES);
+ sel.innerHTML=ids.map(id=>`<option value="${id}">${FLOOR_ARCHETYPES[id].label}</option>`).join('')+'<option value="megaboss">Cámara del megajefe (fija)</option>';
+ sel.value=tstFloorArchetype;
+ sel.onchange=()=>{tstFloorArchetype=sel.value;renderTestFloorArchetypeDesc()};
+ renderTestFloorArchetypeDesc();
+}
+function setupTestingMode(){
+ renderTestRaceChoices();
+ renderTestClassChoices();
+ renderTestFloorArchetypes();
+ const lvl=document.getElementById('testLevelInput');
+ if(lvl)lvl.onchange=()=>{tstLevel=Math.max(1,Math.min(LEVEL_CAP,Math.round(Number(lvl.value)||1)));lvl.value=tstLevel;renderTestStatsPanel();renderTestSkillChoices()};
+ const skHard=document.getElementById('testSkillModeHardcode'),skAdv=document.getElementById('testSkillModeAdvanced');
+ if(skHard)skHard.onchange=()=>{tstSkillMode='hardcode';tstClass=null;renderTestClassChoices()};
+ if(skAdv)skAdv.onchange=()=>{tstSkillMode='advanced';tstClass=null;renderTestClassChoices()};
+ const cmClassic=document.getElementById('testCombatModeClassic'),cmAp=document.getElementById('testCombatModeAp');
+ if(cmClassic)cmClassic.onchange=()=>{tstCombatMode='classic'};
+ if(cmAp)cmAp.onchange=()=>{tstCombatMode='ap'};
+ document.getElementById('testLaunchBtn').onclick=launchTestCombat;
+}
+function launchTestCombat(){
+ const status=document.getElementById('testStatus');
+ if(!tstClass){if(status)status.textContent='Selecciona una clase válida antes de lanzar la prueba.';return}
+ const cls=resolveClassDef(tstClass);
+ if(!cls){if(status)status.textContent='La clase todavía se está cargando; espera un segundo e inténtalo de nuevo.';return}
+ if(testStatPointsSpent()<testStatPointsTotal(tstLevel)){if(status)status.textContent=`Aún te quedan ${testStatPointsTotal(tstLevel)-testStatPointsSpent()} punto(s) de stat por asignar.`;return}
+ if(!tstSkillIds.length&&testEligibleSkillIds().length){if(status)status.textContent='Elige al menos una habilidad antes de lanzar la prueba.';return}
+ if(status)status.textContent='';
+
+ const milestone=testMilestoneBonus(tstLevel),stats={...cls.stats};
+ for(const k of Object.keys(TEST_STAT_LABELS))stats[k]=(stats[k]||0)+milestone+(tstStatAlloc[k]||0);
+
+ let maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
+ let maxStamina=45+stats.strength*4+stats.agility*2;
+ let maxMana=30+stats.wisdom*5+stats.intelligence*3;
+ let baseDamage=2+stats.strength,baseArmor=4+Math.floor(stats.vitality/2);
+ // Approximates the real per-level grantXp() loop using the final (already
+ // allocated) stats throughout - order-independent and close enough for a
+ // sandbox character built to already be at `tstLevel`.
+ for(let l=2;l<=tstLevel;l++){
+  const g=levelGrowth(l);
+  maxHp+=g.hp+stats.vitality;
+  maxStamina+=g.stamina+Math.floor(stats.strength/3);
+  maxMana+=g.mana+Math.floor((stats.wisdom*2+stats.intelligence)/3);
+  baseDamage+=g.damage;baseArmor+=g.armor;
+ }
+
+ const equipment=Object.fromEntries(slots.map(s=>[s,null]));
+ equipment.weapon=makeStarterWeapon(tstClass);
+
+ const arch=tstFloorArchetype==='megaboss'?null:(FLOOR_ARCHETYPES[tstFloorArchetype]||FLOOR_ARCHETYPES.standard);
+ const minFloor=tstFloorArchetype==='megaboss'?3:(arch?.minFloor||1);
+ const floorNum=Math.max(minFloor,Math.min(80,tstLevel));
+ const totalFloors=Math.max(20,floorNum+10);
+
+ preTestSelectedDungeonWorld=selectedDungeonWorld;
+ selectedDungeonWorld=null; // otherwise generateFloor() could load a precomputed floor from a previously chosen real dungeon world
+
+ game={
+  floor:floorNum,themeIndex:0,turn:0,dungeonWorldId:null,dungeonWorldName:'Modo Testing',
+  worldParams:normalizeWorldParams({floors:totalFloors}),
+  inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,
+  testingMode:true,forcedFloorArchetype:tstFloorArchetype,
+  player:{
+   name:(document.getElementById('testNameInput')?.value||'Tester').trim()||'Tester',
+   race:tstRace,cls:tstClass,className:cls.name,classIcon:classIconForId(tstClass),
+   skillMode:tstSkillMode,combatMode:tstCombatMode,
+   level:tstLevel,xp:0,nextXp:tstLevel<LEVEL_CAP?xpNeededForLevel(tstLevel):0,
+   hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,
+   baseDamage,baseArmor,gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,
+   stats,equipment,knownSkills:[...tstSkillIds],
+   skillProgress:Object.fromEntries(tstSkillIds.map(id=>[id,{level:1,xp:0,uses:0}])),
+   skillChoicesAwarded:{1:'complete'},equippedSkills:[0,1,2,3].map(i=>tstSkillIds[i]||null),
+   cooldowns:{},debuff:0,shards:{},unspentStatPoints:0,pendingLevelUpRewards:[]
+  }
+ };
+ const rb=raceDefs[tstRace]?.bonuses||{};
+ game.player.raceName=raceDefs[tstRace]?.name||tstRace;
+ game.player.raceBonuses={...rb};
+ if(rb.armor)game.player.baseArmor+=rb.armor;
+ addStarterPotions(tstClass);
+ for(let i=0;i<5;i++){const item=makeLoot(tstLevel,'testing');if(item)addInventoryItem(item)}
+ recomputeDerived();
+ configScreen.classList.add('hidden');
+ app.classList.remove('hidden');
+ generateFloor();
+ banner(`MODO TESTING · ${game.player.name} NV.${tstLevel} · ${(arch?arch.label:'Cámara del megajefe').toUpperCase()}`);
+ log('Modo testing: personaje temporal, sin persistencia ni bloqueos de nivel/puntuación.','sys');
+}
 // Same custom-icon lookup as drawWorldObjectIcon but paints onto an arbitrary
 // UI canvas (lock badges on locked race/class cards) and falls back to a
 // plain glyph instead of the default game sprite when no icon is configured.
@@ -6579,7 +6798,7 @@ function drawShardTierIconToCanvas(canvas,tier){
  }
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
 function setupClassConfigMode(){
@@ -7035,13 +7254,22 @@ function logoutMultiSession(){
 }
 const MAIN_MENU_SCREEN_IDS=['app','singlePlayerOverlay','multiplayerOverlay','mpLobbyOverlay','configScreen','scoresScreen','dungeonOverlay','dungeonPreviewOverlay','startOverlay','storyOverlay'];
 function goToMainMenu(){
- if(game&&!confirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
+ // Nothing to lose in testing mode (never persisted) - skip the confirm and
+ // drop straight back into Configuración > Modo Testing for fast iteration.
+ const wasTesting=!!game?.testingMode;
+ if(game&&!wasTesting&&!confirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
  if(game?.multiplayer){logoutMultiSession();mpFlushCheckpointBeacon();cleanupMultiplayerRuntime()}
  if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
  if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
  if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
  game=null;
  for(const id of MAIN_MENU_SCREEN_IDS)document.getElementById(id)?.classList.add('hidden');
+ if(wasTesting){
+  if(preTestSelectedDungeonWorld!==undefined){selectedDungeonWorld=preTestSelectedDungeonWorld;preTestSelectedDungeonWorld=undefined}
+  enterConfig();
+  document.querySelector('[data-config-tab="testing"]')?.click();
+  return;
+ }
  landingOverlay.classList.remove('hidden');
  mainMenuActions?.classList.remove('hidden');
  loginForm?.classList.add('hidden');
@@ -8670,7 +8898,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
 
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigGatesMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigGatesMode();setupTestingMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
