@@ -2344,6 +2344,16 @@ function assignEnemySkills(e){
  if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
  return e
 }
+// Which enemy skill effects legitimately restore hp. Any type:'utility' or
+// classEffect 'shield'/'buff' skill used to grant the caster an incidental
+// ~90% self-heal on cast regardless of what it actually did (see the old
+// version of enemyUseSkill below) - a boss whose random 3-skill kit landed
+// even one non-healing utility skill (armor buff, taunt, crit buff, ...)
+// could out-heal a fight indefinitely. Now only a real heal/hot/drain effect
+// can put hp back on an enemy, same rule in every game (testing or not).
+const ENEMY_INSTANT_HEAL_EFFECTS=new Set(['heal','healShield','cleanseHeal','bigHeal','rewind']);
+const ENEMY_HOT_HEAL_EFFECTS=new Set(['regenHeal','survivalHeal','oakBuff']);
+const ENEMY_DRAIN_EFFECTS=new Set(['drain','holyLeech']);
 function enemyUseSkill(e,dist,target=game.player){
  if(!e.skills?.length)return false;
  for(const id of e.skills){
@@ -2357,16 +2367,29 @@ function enemyUseSkill(e,dist,target=game.player){
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
   if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
    const mult=e.boss?1.35:e.elite?1.15:1,statMod=skillStatModifier(id,e),amount=Math.max(2,Math.round(((e.atk||e.damage||4)+statMod)*mult*(s.tier?1+s.tier*.12:1)));
-   if(s.classEffect==='heal'&&['clerigo','chaman'].includes(enemyClassOf(e))){
+   if(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)){
+    const isHot=ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect);
     const ally=game.enemies.filter(o=>o!==e&&o.hp>0&&o.hp<o.maxHp&&Math.abs(o.x-e.x)+Math.abs(o.y-e.y)<=4).sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp)[0];
     const beneficiary=ally||e;
-    if(game.multiplayer)sendMpAction('enemy_heal',{enemyId:e.eid,targetType:'enemy',targetId:beneficiary.eid,visualAmount:Math.round(amount*.9)});
-    healEntity(beneficiary,Math.round(amount*.9),beneficiary.x,beneficiary.y);floating('✚',beneficiary.x,beneficiary.y,'#8dffa8');
+    const healNow=Math.round(amount*(isHot?.5:.9));
+    if(game.multiplayer)sendMpAction('enemy_heal',{enemyId:e.eid,targetType:'enemy',targetId:beneficiary.eid,visualAmount:healNow});
+    healEntity(beneficiary,healNow,beneficiary.x,beneficiary.y);floating('✚',beneficiary.x,beneficiary.y,'#8dffa8');
+    if(isHot){beneficiary.statuses=beneficiary.statuses||[];beneficiary.statuses.push({type:'regen',turns:3,power:Math.max(1,Math.round(amount*.15))})}
     log(`${e.name} usa ${s.name} y cura a ${beneficiary===e?'sí mismo':beneficiary.name}.`,'combat');
    }
-   else if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},icon:'✦'});healEntity(e,Math.round(amount*.9),e.x,e.y);floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name} y se refuerza.`,'combat')}
-   else if(target===game.player){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},icon:s.icon||'✦'});damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);floating(s.icon||'✦',e.x,e.y,'#e68cff')}
-   else{const ref=mpEntityRef(target);if(game.multiplayer&&ref)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:target.x,y:target.y},targetType:ref.type,targetId:ref.id,visualAmount:amount,icon:s.icon||'✦'});target.hp-=amount;floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')}
+   else if(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},icon:'✦'});floating('✦',e.x,e.y,'#76e0ff');log(`${e.name} usa ${s.name}.`,'combat')}
+   else if(target===game.player){
+    if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},icon:s.icon||'✦'});
+    damagePlayer(amount,inferSkillDefenseStat(id),`${e.name} usa ${s.name}`);
+    if(ENEMY_DRAIN_EFFECTS.has(s.classEffect))healEntity(e,Math.round(amount*(s.classEffect==='holyLeech'?.25:.4)),e.x,e.y);
+    floating(s.icon||'✦',e.x,e.y,'#e68cff')
+   }
+   else{
+    const ref=mpEntityRef(target);if(game.multiplayer&&ref)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:target.x,y:target.y},targetType:ref.type,targetId:ref.id,visualAmount:amount,icon:s.icon||'✦'});
+    target.hp-=amount;
+    if(ENEMY_DRAIN_EFFECTS.has(s.classEffect))healEntity(e,Math.round(amount*(s.classEffect==='holyLeech'?.25:.4)),e.x,e.y);
+    floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')
+   }
    e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
   }
  }
@@ -3458,6 +3481,10 @@ function tickEnemyStatuses(){
     if(s.type==='decayDot')s.power=Math.max(1,s.power-1);
     if(e.hp<=0){kill(e);break}
    }
+   // regen: the hot half of regenHeal/survivalHeal/oakBuff (see
+   // ENEMY_HOT_HEAL_EFFECTS in enemyUseSkill) - genuine heal-over-time, not
+   // the old blanket self-heal every utility/buff skill used to grant.
+   if(s.type==='regen')healEntity(e,Math.max(1,Math.round(s.power)),e.x,e.y);
    s.turns--;
    if(s.turns<=0&&s.type==='doomCountdown'&&e.hp>0){const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d68cff');if(e.hp<=0){kill(e);break}}
    if(s.turns<=0&&s.type==='statDebuff'){
@@ -6576,6 +6603,10 @@ let tstLevel=1;
 let tstStatAlloc={strength:0,vitality:0,agility:0,luck:0,intelligence:0,wisdom:0};
 let tstSkillIds=[];
 let tstFloorArchetype='standard';
+// Default well below 100%: a horda floor at full density is 100+ enemies,
+// which reads as "I can't kill them, they keep coming" for a single tester
+// rather than the intended stress-test - see launchTestCombat().
+let tstEnemyDensity=50;
 let preTestSelectedDungeonWorld; // stashed selectedDungeonWorld while a test run is active, restored on exit
 const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
 
@@ -6689,6 +6720,12 @@ function setupTestingMode(){
  const cmClassic=document.getElementById('testCombatModeClassic'),cmAp=document.getElementById('testCombatModeAp');
  if(cmClassic)cmClassic.onchange=()=>{tstCombatMode='classic'};
  if(cmAp)cmAp.onchange=()=>{tstCombatMode='ap'};
+ const density=document.getElementById('testEnemyDensity'),densityVal=document.getElementById('testEnemyDensityValue');
+ if(density){
+  density.value=tstEnemyDensity;
+  if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`;
+  density.oninput=()=>{tstEnemyDensity=Number(density.value)||50;if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`};
+ }
  document.getElementById('testLaunchBtn').onclick=launchTestCombat;
 }
 function launchTestCombat(){
@@ -6731,7 +6768,11 @@ function launchTestCombat(){
 
  game={
   floor:floorNum,themeIndex:0,turn:0,dungeonWorldId:null,dungeonWorldName:'Modo Testing',
-  worldParams:normalizeWorldParams({floors:totalFloors}),
+  // Explicit 100% baselines - DEFAULT_WORLD_PARAMS otherwise defaults a
+  // dungeon world to +25% enemy life/damage received, which has no business
+  // being on by default for a combat sandbox. enemyCountPct is the one dial
+  // testers actually want to touch (see tstEnemyDensity/testEnemyDensity).
+  worldParams:normalizeWorldParams({floors:totalFloors,damageReceivedPct:100,damageDealtPct:100,lifePct:100,xpReceivedPct:100,enemyLootPct:100,enemyCountPct:tstEnemyDensity}),
   inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,
   testingMode:true,forcedFloorArchetype:tstFloorArchetype,
   player:{
@@ -6752,7 +6793,20 @@ function launchTestCombat(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(tstClass);
- for(let i=0;i<5;i++){const item=makeLoot(tstLevel,'testing');if(item)addInventoryItem(item)}
+ // A naked level-30 character (nothing but the tier-1 starter weapon) hits
+ // like a level-1 one - the level-appropriate loot has to actually be worn,
+ // not just sit in the backpack, or every fight (megabosses especially)
+ // feels unkillable regardless of the archetype/density chosen above.
+ // Reuses the normal loot roller so gear composition matches real drops;
+ // a handful of attempts land on already-filled/duplicate slots or potions,
+ // which just fall back to the backpack instead of being wasted.
+ const gearSlots=slots.filter(s=>s!=='weapon');
+ for(let attempts=0;attempts<80&&gearSlots.some(s=>!game.player.equipment[s]);attempts++){
+  const item=makeLoot(tstLevel,'testing');
+  if(!item)continue;
+  if(item.type==='potion'||item.slot==='weapon'||!gearSlots.includes(item.slot)||game.player.equipment[item.slot]){addInventoryItem(item);continue}
+  game.player.equipment[item.slot]=item;
+ }
  recomputeDerived();
  configScreen.classList.add('hidden');
  app.classList.remove('hidden');
