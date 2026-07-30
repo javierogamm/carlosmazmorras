@@ -1439,10 +1439,14 @@ function processClassSkillChoices(){
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
   // Everything below (closing the modal, saving to Supabase on the initial
   // pick) is a chain of synchronous statements - an exception thrown by any
-  // one of them (a malformed admin-authored skill def is the likeliest
-  // culprit) silently aborts the rest, which for the initial pick meant
+  // one of them silently aborted the rest, which for the initial pick meant
   // finishCharacterCreation() never even got called and the click looked
-  // like it did nothing. Surface it instead of swallowing it.
+  // like it did nothing. One real example: updateUI() used to unconditionally
+  // compute the "Zona:" floor theme, which throws with no active floor/
+  // tileset yet (character creation) and no config_floor rows configured -
+  // entirely unrelated to whichever skill happened to be picked (see
+  // updateUI()'s game.floorTileset/game.map guard). Surface any such
+  // exception instead of swallowing it.
   try{
    learnSkill(b.dataset.pickSkill);
    game.player.skillChoicesAwarded[request.level]='chosen';
@@ -1452,7 +1456,7 @@ function processClassSkillChoices(){
    processClassSkillChoices();
   }catch(e){
    console.error('Fallo al elegir la habilidad de clase:',e);
-   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}\n\nRevisa la configuración de esa skill en Configuración → Clases.`);
+   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
   }
  }))
 }
@@ -4776,8 +4780,16 @@ function updateObjectiveHud(){
  el.classList.toggle('urgent',urgent);
  el.innerHTML=`${label} · <b>${objectiveText(obj)}</b>`;
 }
+// The "Zona:" HUD line only renders once a floor actually exists
+// (game.floorTileset from generateFloor()/loadPrecomputedFloor(), or a live
+// game.map) - updateUI() is also called from the class-skill-choice flow
+// during character creation, before any dungeon exists, and
+// currentFloorTheme()/activeFloorTileset() throws in that case if
+// config_floor has no rows yet (by design, see pickFloorTilesetForLevel) -
+// that used to silently abort the rest of the skill-pick handler, including
+// the call that actually saves the new character to Supabase.
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
