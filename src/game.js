@@ -2549,16 +2549,23 @@ function skillDiceExpr(id){
 }
 function damageStatForType(type,resource){if(type==='magic'||resource==='mana')return'intelligence';if(type==='physical'||resource==='stamina')return'strength';return'luck'}
 function actorStatDamageBonus(actor,type='physical',resource='stamina'){const st=actor?.derived?.finalStats||actor?.stats||{};const primary=damageStatForType(type,resource),secondary=primary==='intelligence'?'wisdom':primary==='strength'?'agility':'wisdom';return Math.floor(((st[primary]||0)*2+(st[secondary]||0))/3)}
-function skillStatModifier(id,actor=game.player){
- const d=skillDefs[id]||{};
+// Generalized over any object carrying dmgStat/dmgStatMode/dmgStatCoef (plus
+// type/resource for the no-stat-chosen "Automática" fallback) - a full
+// skillDefs entry, a single composable-effect component, or a companion/
+// turret/clone object (they all use the same field names) - so the flat
+// stat-derived bonus/multiplier isn't only reachable through a skillId.
+function statModifierFor(defLike,actor=game.player){
+ const d=defLike||{};
  if(d.dmgStat&&d.dmgStatMode!=='mult')return Math.round(statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??1));
  return actorStatDamageBonus(actor,d.type,d.resource)
 }
-function skillStatMultiplier(id,actor=game.player){
- const d=skillDefs[id]||{};
+function statMultiplierFor(defLike,actor=game.player){
+ const d=defLike||{};
  if(d.dmgStat&&d.dmgStatMode==='mult')return 1+statValueFor(actor,d.dmgStat)*(d.dmgStatCoef??.02);
  return 1
 }
+function skillStatModifier(id,actor=game.player){return statModifierFor(skillDefs[id],actor)}
+function skillStatMultiplier(id,actor=game.player){return statMultiplierFor(skillDefs[id],actor)}
 // Per-tick DOT power, generalized over any object carrying dotDice/dotDie/
 // dotStat/dotStatMode/dotStatCoef - a full skillDefs entry (legacy single-
 // effect skills) or a single effect component (composable skills). Rolls
@@ -2588,6 +2595,18 @@ function dicePowerFor(defLike,fallback,actor=game.player){
  }
  return fallback
 }
+// Same dice+stat formula as dicePowerFor, but rolling a companion/turret/
+// clone's already-built `atk` dice expression directly instead of separate
+// dmgDice/dmgDie fields (the invocation only stores the merged expression),
+// while still reading its own dmgStat/dmgStatMode/dmgStatCoef for the stat
+// contribution - used for the 'heal' effectType, which never goes through
+// attack() so it needs this combined outside of it.
+function companionDicePower(c,actor=game.player){
+ const roll=rollDice(c.atk||'1d4').total;
+ const statVal=c.dmgStat?statValueFor(actor,c.dmgStat):0;
+ const contribution=c.dmgStatMode==='mult'?roll*(statVal*(c.dmgStatCoef??.02)):statVal*(c.dmgStatCoef??1);
+ return Math.max(1,Math.round(roll+contribution))
+}
 // Unified "scalar power" used by self-cast classEffect skills (ranged/dash/
 // aoe/multihit/ultimate/execute/massive pass it as attack()'s flat bonus;
 // heal/shield use it directly as their magnitude) so every one of those
@@ -2615,8 +2634,13 @@ function attack(e,bonus=0,options={}){
  if(game.player.invisibleTurns>0&&game.player.invisibleBreaksOnAttack){game.player.invisibleTurns=0;log('La invisibilidad se rompe al atacar.','sys')}
  const skillId=options.skillId||null,expr=options.dice||skillDiceExpr(skillId)||baseAttackDice();
  const roll=rollDice(expr);
- const statMod=skillId?skillStatModifier(skillId):Math.max(0,Math.floor(total('damage')*.45));
- const statMultFactor=skillId?skillStatMultiplier(skillId):1;
+ // statDefLike lets a caller override where the stat-derived bonus/multiplier
+ // comes from (a composable effect component's own dmgStat/dmgStatMode/
+ // dmgStatCoef, or a companion/turret/clone's) instead of it always being
+ // read off skillDefs[skillId] - see statModifierFor/statMultiplierFor.
+ const statSource=options.statDefLike||(skillId?skillDefs[skillId]:null);
+ const statMod=statSource?statModifierFor(statSource):Math.max(0,Math.floor(total('damage')*.45));
+ const statMultFactor=statSource?statMultiplierFor(statSource):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
  const markMult=1+((e.statuses||[]).find(s=>s.type==='mark'&&s.turns>0)?.power||0);
  let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult));
@@ -3428,7 +3452,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillId:custom.skillId||'',actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3450,6 +3474,51 @@ function moveCompanionToward(c,target){
 function companionFollowPlayer(c){
  if(c.stationary)return;
  if(gridDistance(c,game.player)>1)moveCompanionToward(c,game.player);
+}
+// Runs one component of a 'skill'-typed invocation's own inline effects list
+// (see subEffectsListHtml/COMPANION_SKILL_EFFECT_KINDS) against a single
+// target - a small, single-target-only sibling of applyEffectComponent (no
+// ctx/area/self-cast machinery needed here, since a companion's own "skill"
+// always just fires at the one enemy it's already engaging). Each sub still
+// scales off the player's own stat via statDefLike/dicePowerFor, same as
+// every other stat-derived effect in the game.
+function applyCompanionSkillEffect(sub,target){
+ const p=game.player;
+ if(sub.kind==='dmg'){
+  const expr=sub.dmgDice>0?`${sub.dmgDice}d${sub.dmgDie||6}`:undefined;
+  attack(target,0,{dice:expr,multiplier:sub.multiplier||1,statDefLike:sub});
+  return true
+ }
+ if(sub.kind==='heal'){healEntity(p,dicePowerFor(sub,8,p));return true}
+ if(sub.kind==='dot'){
+  attack(target,0,{multiplier:.7,statDefLike:sub});
+  addEnemyStatus(target,sub.flavor||'dot',sub.turns??4,dotPowerFor(sub,2));
+  return true
+ }
+ if(sub.kind==='debuff'){
+  attack(target,0,{multiplier:.7,statDefLike:sub});
+  if(sub.stat)applyEnemyStatDebuff(target,sub.stat,sub.mode||'add',sub.value??2,sub.turns??3);
+  return true
+ }
+ if(sub.kind==='cc'){
+  attack(target,0,{multiplier:.75,statDefLike:sub});
+  addEnemyStatus(target,sub.type||'stun',sub.turns??2,0);
+  return true
+ }
+ if(sub.kind==='drain'){
+  attack(target,0,{multiplier:.8,statDefLike:sub});
+  const power=dicePowerFor(sub,3,p);
+  if(sub.resource==='mana')p.mana=Math.min(p.maxMana,p.mana+power);
+  else if(sub.resource==='stamina')p.stamina=Math.min(p.maxStamina,p.stamina+power);
+  else healEntity(p,power);
+  return true
+ }
+ if(sub.kind==='mark'){addEnemyStatus(target,'mark',sub.turns??4,(sub.value??25)/100);return true}
+ if(sub.kind==='buff'){
+  if(sub.stat)applyBuff(`companionSkillBuff:${sub.stat}`,'Habilidad de invocación',sub.turns??6,{[sub.stat]:{mode:sub.mode||'add',value:sub.value??5}});
+  return true
+ }
+ return false
 }
 // Permanent companions (the 'summon' effect's "Compañero permanente" mode)
 // never expire by turns and never get removed from game.companions on
@@ -3507,7 +3576,7 @@ function companionTurn(){
     // of the turn's PA doing nothing.
     if(c.stance==='passive'){if(companionApproachOrStop(c))break;continue}
     if(c.stationary&&c.effectType==='heal'){
-     const power=Math.max(1,rollDice(c.atk).total),radius=c.range||3;
+     const power=companionDicePower(c),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
      for(const a of allies)healEntity(a,power,a.x,a.y);
      floating('✚',c.x,c.y,'#8dffa8');continue
@@ -3527,10 +3596,10 @@ function companionTurn(){
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
      const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
      if(!targets.length)continue;
-     for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55});
+     for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
-    if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
+    if(c.effectType==='heal'){healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
     // Combat priority: only enemies within COMPANION_ENGAGE_RADIUS are ever
     // considered - anything farther is ignored outright rather than pulling
     // the companion off across the map. With no such target, fall back to
@@ -3541,12 +3610,14 @@ function companionTurn(){
     if(gridDistance(c,target)>c.range){if(c.stationary)break;moveCompanionToward(c,target);continue}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
-    // 'skill' invocations cast a real, author-picked skillDef instead of a
-    // flat dice attack - same attack()/skillId plumbing a player's own skill
-    // hit uses, so its dice/stat/defense-stat all come from that skill's own
-    // definition. Falls back to the plain dice attack if no skill was picked.
-    else if(c.effectType==='skill'&&c.skillId&&skillDefs[c.skillId]){attack(target,0,{skillId:c.skillId,multiplier:.7});floating(skillDefs[c.skillId].icon||'✦',c.x,c.y,'#d9a8ff')}
-    else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
+    // 'skill' invocations run their own inline stackable-effects list
+    // (author-built via subEffectsListHtml, not a reference to an existing
+    // skillDefs entry) against the target instead of a flat dice attack -
+    // every configured sub-effect fires, same "stack as many as you want"
+    // idea as a real skill's effects[]. Falls back to the plain dice attack
+    // if nothing was configured yet.
+    else if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target);floating('✦',c.x,c.y,'#d9a8ff')}
+    else{attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
    }
    continue
   }
@@ -3785,6 +3856,13 @@ function resolveComponentAllyTargets(comp,ctx){
 }
 function applyEffectComponent(id,comp,ctx){
  const d=skillDefs[id],p=game.player,lvl=skillLevel(id);
+ // Merges the enclosing skill's own top-level fields (type/resource, used
+ // only for the "Automática" no-stat-chosen fallback) with this specific
+ // component's own dmgStat/dmgStatMode/dmgStatCoef, so an enemy-facing hit
+ // below scales off the stat actually configured on the component instead of
+ // silently falling back to skillDefs[id]'s unrelated top-level dmgStat (or
+ // the wrong bonus entirely, since most composable skills leave that unset).
+ const statDefLike={...(d||{}),...comp};
  if(comp.kind==='dmg'){
   if(comp.target==='self'){
    const power=dicePowerFor(comp,8+lvl*2,p);
@@ -3793,7 +3871,7 @@ function applyEffectComponent(id,comp,ctx){
   }
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||(comp.target==='area'?.85:1)});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||(comp.target==='area'?.85:1),statDefLike});
   return true
  }
  if(comp.kind==='dot'){
@@ -3896,7 +3974,7 @@ function applyEffectComponent(id,comp,ctx){
   const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(p,e));
   if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.85});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.85,statDefLike});
   return true
  }
  if(comp.kind==='multihit'){
@@ -3908,7 +3986,7 @@ function applyEffectComponent(id,comp,ctx){
   // (chest loot toasts, mp action replay) rather than a synchronous loop.
   for(let i=0;i<hits;i++)setTimeout(()=>{
    if(target.hp<=0)return;
-   attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6});
+   attack(target,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.6,statDefLike});
    draw();updateUI();
   },i*500);
   return true
@@ -3928,15 +4006,15 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion(), companionTurn()).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
   return true
  }
  if(comp.kind==='utility'){
@@ -3981,7 +4059,7 @@ function applyEffectComponent(id,comp,ctx){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const threshold=(comp.threshold??35)/100,execMult=comp.execMultiplier??2.5;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1)});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1),statDefLike});
   return true
  }
  if(comp.kind==='pullroot'){
@@ -4019,7 +4097,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='lineshot'){
   const targets=resolveLineEnemyTargets(comp,ctx);if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.8});
+  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||.8,statDefLike});
   return true
  }
  if(comp.kind==='trap'){
@@ -4030,7 +4108,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillId:comp.skillId||'',name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -4039,12 +4117,12 @@ function applyEffectComponent(id,comp,ctx){
   const jumps=Math.max(0,comp.jumps??3),falloff=Math.max(0,Math.min(95,comp.falloff??25))/100,jumpRange=Math.max(1,comp.range||4);
   const hit=new Set([first]);
   let current=first,mult=1;
-  attack(current,0,{skillId:id,dice:expr,multiplier:comp.multiplier||1});
+  attack(current,0,{skillId:id,dice:expr,multiplier:comp.multiplier||1,statDefLike});
   for(let j=0;j<jumps;j++){
    mult*=1-falloff;
    const next=game.enemies.filter(e=>e.hp>0&&!hit.has(e)&&gridDistance(current,e)<=jumpRange).sort((a,b)=>gridDistance(current,a)-gridDistance(current,b))[0];
    if(!next)break;
-   hit.add(next);attack(next,0,{skillId:id,dice:expr,multiplier:(comp.multiplier||1)*mult});current=next;
+   hit.add(next);attack(next,0,{skillId:id,dice:expr,multiplier:(comp.multiplier||1)*mult,statDefLike});current=next;
   }
   return true
  }
@@ -5513,12 +5591,57 @@ function effectComponentTargetOptions(kind){
  if(kind==='hot')return [{v:'self',l:'A ti mismo'},{v:'area',l:'Área (aliados cercanos)'}];
  return null
 }
-// <option> list for picking a real skillId out of skillDefs - shared by any
-// stackable-effect field that needs to name a specific skill (currently the
-// 'skill' summon effectType below).
-function skillPickerOptionsHtml(selectedId){
- return Object.entries(skillDefs).sort((a,b)=>(a[1].name||a[0]).localeCompare(b[1].name||b[0],'es'))
-  .map(([id,d])=>`<option value="${id}" ${id===selectedId?'selected':''}>${d.icon||'•'} ${d.name}</option>`).join('');
+// The 'skill' summon effectType doesn't reference an existing skillDefs
+// entry - it carries its own tiny stackable-effects list (skillName +
+// skillEffects[]), authored inline the same way the main skill's own
+// `effects` are, just restricted to the kinds that make sense as something
+// an autonomous companion fires at a single target it's already fighting
+// (no move/summon/self-only-utility kinds - those don't apply to an
+// invocation's own sub-skill).
+const COMPANION_SKILL_EFFECT_KINDS=['dmg','dot','debuff','cc','buff','heal','drain','mark'];
+// Same dice-block markup as effectDiceFieldsHtml, but addressed with
+// data-sub-parent/data-sub-idx/data-sub-field instead of data-effect-idx/
+// data-effect-field, so its change events route to a component's own
+// nested `skillEffects[j]` (see renderSkillEffectsList's sub-effect wiring)
+// instead of colliding with the top-level effects-list handler.
+function subEffectDiceFieldsHtml(comp,pIdx,j,prefix='dmg'){
+ const f=k=>`${prefix}${k}`,dice=comp[f('Dice')],die=comp[f('Die')],stat=comp[f('Stat')],mode=comp[f('StatMode')],coef=comp[f('StatCoef')];
+ const attr=field=>`data-sub-parent="${pIdx}" data-sub-idx="${j}" data-sub-field="${field}"`;
+ return `<label>Nº de dados <input type="number" min="0" value="${dice||0}" ${attr(f('Dice'))}></label>
+ <label>Dado <select ${attr(f('Die'))}>${[4,6,8,10,12,20].map(n=>`<option value="${n}" ${Number(die)===n?'selected':''}>d${n}</option>`).join('')}</select></label>
+ <label>Stat <select ${attr(f('Stat'))}><option value="">Automática</option>${statOptionsHtml(stat)}</select></label>
+ <label>Modo <select ${attr(f('StatMode'))}><option value="add" ${mode!=='mult'?'selected':''}>Sumatorio</option><option value="mult" ${mode==='mult'?'selected':''}>Multiplicador</option></select></label>
+ <label>Coeficiente <input type="number" step="0.1" value="${coef??1}" ${attr(f('StatCoef'))}></label>`;
+}
+function subEffectFieldsHtml(comp,pIdx,j){
+ const attr=field=>`data-sub-parent="${pIdx}" data-sub-idx="${j}" data-sub-field="${field}"`;
+ if(comp.kind==='dmg'||comp.kind==='heal')return subEffectDiceFieldsHtml(comp,pIdx,j);
+ if(comp.kind==='drain'){
+  const resource=comp.resource||'hp';
+  return `${subEffectDiceFieldsHtml(comp,pIdx,j)}<label>Recurso que absorbe la invocación <select ${attr('resource')}><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label>`;
+ }
+ if(comp.kind==='dot')return `${subEffectDiceFieldsHtml(comp,pIdx,j,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" ${attr('turns')}></label>`;
+ if(comp.kind==='buff'||comp.kind==='debuff')return `<label>Stat <select ${attr('stat')}>${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage']:['damage'])}</select></label><label>Modo <select ${attr('mode')}><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" ${attr('value')}></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" ${attr('turns')}></label>`;
+ if(comp.kind==='cc')return `<label>Tipo <select ${attr('type')}><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" ${attr('turns')}></label>`;
+ if(comp.kind==='mark')return `<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" ${attr('value')}></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" ${attr('turns')}></label>`;
+ return '';
+}
+function subEffectCardHtml(comp,pIdx,j){
+ return `<details class="effectCard" open><summary class="effectCardHead"><b>${j+1}. ${effectKindLabel(comp.kind)}</b><button type="button" data-remove-sub-effect data-sub-parent="${pIdx}" data-sub-idx="${j}">Quitar</button></summary><div class="configForm">${subEffectFieldsHtml(comp,pIdx,j)}</div></details>`;
+}
+// Inline mini stackable-effects editor rendered inside a summon/summonturret/
+// clones card whenever its effectType is "skill" - just a name plus its own
+// effects[] built from COMPANION_SKILL_EFFECT_KINDS, not a picker referencing
+// an existing skillDefs entry.
+function subEffectsListHtml(parentComp,pIdx){
+ const list=parentComp.skillEffects||[];
+ const kindOptions=COMPANION_SKILL_EFFECT_KINDS.map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');
+ return `<div class="configForm subEffectsWrap" style="grid-column:1/-1">
+  <label style="grid-column:1/-1">Nombre de la habilidad <input type="text" value="${parentComp.skillName||''}" placeholder="Ej: Zarpazo" data-effect-idx="${pIdx}" data-effect-field="skillName"></label>
+  <div class="effectsList" style="grid-column:1/-1">${list.map((c,j)=>subEffectCardHtml(c,pIdx,j)).join('')||'<p class="small">Sin efectos añadidos todavía a esta habilidad.</p>'}</div>
+  <label>Añadir efecto <select data-sub-add-kind data-sub-parent="${pIdx}">${kindOptions}</select></label>
+  <button type="button" data-add-sub-effect="${pIdx}">Añadir efecto a la habilidad</button>
+ </div>`;
 }
 function effectDiceFieldsHtml(comp,i,prefix='dmg'){
  const f=k=>`${prefix}${k}`,dice=comp[f('Dice')],die=comp[f('Die')],stat=comp[f('Stat')],mode=comp[f('StatMode')],coef=comp[f('StatCoef')];
@@ -5556,14 +5679,14 @@ function effectComponentCardHtml(comp,i){
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
-   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
+   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (habilidad propia configurable, efectos apilables)</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
    <option value="buff" ${effectType==='buff'?'selected':''}>Buff (te da un buff mientras esté viva)</option>
    <option value="debuff" ${effectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
   ${['damage','skill'].includes(effectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
-  ${effectType==='skill'?`<label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
+  ${effectType==='skill'?subEffectsListHtml(comp,i):''}
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
   ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
@@ -5589,7 +5712,7 @@ function effectComponentCardHtml(comp,i){
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Tipo de torreta <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño</option>
-   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
+   <option value="skill" ${effectType==='skill'?'selected':''}>Skill (habilidad propia configurable, efectos apilables)</option>
    <option value="heal" ${effectType==='heal'?'selected':''}>Curación</option>
    <option value="buff" ${effectType==='buff'?'selected':''}>Buff</option>
    <option value="root" ${effectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
@@ -5602,7 +5725,7 @@ function effectComponentCardHtml(comp,i){
    <label>${damageMode==='area'?'Radio de área (casillas)':'Alcance de detección (casillas)'} <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
    ${effectDiceFieldsHtml(comp,i)}`:''}
   ${effectType==='skill'?`<label>Alcance de detección (casillas) <input type="number" min="1" value="${comp.range??7}" data-effect-idx="${i}" data-effect-field="range"></label>
-   <label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
+   ${subEffectsListHtml(comp,i)}`:''}
   ${effectType==='heal'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??3}" data-effect-idx="${i}" data-effect-field="range"></label>
    ${effectDiceFieldsHtml(comp,i)}
    <span class="small">Cura a ti y a tus invocaciones dentro del radio, cada turno que la torreta siga viva.</span>`:''}
@@ -5633,14 +5756,14 @@ function effectComponentCardHtml(comp,i){
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de cada clon <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${cloneEffectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
-   <option value="skill" ${cloneEffectType==='skill'?'selected':''}>Skill (lanza una habilidad elegida contra el enemigo más cercano)</option>
+   <option value="skill" ${cloneEffectType==='skill'?'selected':''}>Skill (habilidad propia configurable, efectos apilables)</option>
    <option value="heal" ${cloneEffectType==='heal'?'selected':''}>Curación (te cura cada acción)</option>
    <option value="root" ${cloneEffectType==='root'?'selected':''}>Raíz (enraíza al enemigo más cercano)</option>
    <option value="buff" ${cloneEffectType==='buff'?'selected':''}>Buff (te da un buff mientras viva)</option>
    <option value="debuff" ${cloneEffectType==='debuff'?'selected':''}>Debuff (empeora al enemigo más cercano)</option>
   </select></label>
   ${['damage','skill'].includes(cloneEffectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
-  ${cloneEffectType==='skill'?`<label>Habilidad a lanzar <select data-effect-idx="${i}" data-effect-field="skillId"><option value="">- Elige una habilidad -</option>${skillPickerOptionsHtml(comp.skillId)}</select></label>`:''}
+  ${cloneEffectType==='skill'?subEffectsListHtml(comp,i):''}
   ${cloneEffectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
   ${cloneEffectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
@@ -5730,6 +5853,35 @@ function renderSkillEffectsList(){
  wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   window.currentSkillEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderSkillEffectsList();
+ }));
+ // Nested mini stackable-effects list for a 'skill'-typed summon/turret/
+ // clone (see subEffectsListHtml) - addressed by data-sub-parent/data-sub-idx
+ // instead of data-effect-idx so it never collides with the top-level
+ // effects-list handlers above, even though both live in the same DOM tree.
+ wrap.querySelectorAll('[data-sub-field]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const pIdx=Number(el.dataset.subParent),j=Number(el.dataset.subIdx),field=el.dataset.subField;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   const parent=window.currentSkillEffectsDraft[pIdx];if(!parent)return;
+   parent.skillEffects=parent.skillEffects||[];
+   parent.skillEffects[j][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
+  });
+ });
+ wrap.querySelectorAll('[data-remove-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.subParent),j=Number(btn.dataset.subIdx);
+  window.currentSkillEffectsDraft[pIdx]?.skillEffects?.splice(j,1);
+  renderSkillEffectsList();
+ }));
+ wrap.querySelectorAll('[data-add-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.addSubEffect);
+  const picker=wrap.querySelector(`[data-sub-add-kind][data-sub-parent="${pIdx}"]`);
+  const kind=picker?.value||'dmg';
+  const parent=window.currentSkillEffectsDraft[pIdx];if(!parent)return;
+  parent.skillEffects=parent.skillEffects||[];
+  parent.skillEffects.push(defaultComponentFor(kind));
+  renderSkillEffectsList();
  }));
  wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
