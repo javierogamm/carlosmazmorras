@@ -167,7 +167,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 { "kind":"move", "mode":"dash", "range":3 }
 ```
 - `mode:"dash"`: advance up to `range` tiles toward the nearest/clicked enemy, then attack it (multiplier configurable via `multiplier`, default 1).
-- `mode:"teleport"`: blink to the clicked tile (must be free). Forces whole-skill target mode to `area`.
+- `mode:"teleport"`: if the skill also has an `enemy`-targeted component (so the whole cast targets an enemy, clicked or auto-picked), blinks onto a free tile touching that enemy instead of its own occupied tile - i.e. teleport next to it, then whatever component follows (a single `dmg` or an `aoe`) hits from there. With no enemy under the cast (a pure area click), it blinks to the exact clicked tile instead, same as before. Forces whole-skill target mode to `area` only when no other component already forces `enemy`.
 
 ### 4.7 `cc` — Crowd control
 ```json

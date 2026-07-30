@@ -3455,6 +3455,22 @@ function companionFollowPlayer(c){
 // never expire by turns and never get removed from game.companions on
 // death - they sit "downed" on their tile (see companionSprite/move()) until
 // revived (reviveCompanion), instead of vanishing like a regular summon.
+// Enemies farther than this from a given companion are ignored entirely for
+// targeting purposes - a companion never chases something outside its
+// effective engagement range, it falls back to closing in on the player
+// instead (see companionApproachOrStop).
+const COMPANION_ENGAGE_RADIUS=6;
+// Shared "no valid enemy to fight" fallback, spent as one action: close the
+// gap to the player by a single tile, or - if already standing next to the
+// player, or physically unable to move (stationary turrets) - report back
+// that there's nothing left to do, so the calling loop stops burning the
+// rest of this companion's PA on a turn with no target instead of creeping
+// forward one tile per turn regardless of how many actions it has.
+function companionApproachOrStop(c){
+ if(c.stationary||gridDistance(c,game.player)<=1)return true;
+ moveCompanionToward(c,game.player);
+ return false
+}
 function companionTurn(){
  game.companions=game.companions||[];
  for(const c of [...game.companions]){
@@ -3486,8 +3502,10 @@ function companionTurn(){
    // exactly as before.
    for(let n=0;n<(c.actionsPerTurn||1);n++){
     // Passive stance: never fights, just stays near the player - checked
-    // before any of the combat branches below.
-    if(c.stance==='passive'){companionFollowPlayer(c);break}
+    // before any of the combat branches below. Every action either closes a
+    // tile of distance or, once adjacent, stops - it doesn't burn the rest
+    // of the turn's PA doing nothing.
+    if(c.stance==='passive'){if(companionApproachOrStop(c))break;continue}
     if(c.stationary&&c.effectType==='heal'){
      const power=Math.max(1,rollDice(c.atk).total),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
@@ -3499,10 +3517,11 @@ function companionTurn(){
     // while the companion is alive, so it reads as "permanent while your
     // companion lives" and fades on its own within a couple of turns of it
     // dying or expiring. A mobile buff companion has no reason to chase
-    // enemies, so it just stays near the player instead.
+    // enemies, so it just stays near the player instead (stopping once
+    // adjacent rather than idling through its remaining PA).
     if(c.effectType==='buff'){
      if(c.buffStat)applyBuff(`companionBuff:${c.id}`,c.name,3,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
-     if(!c.stationary)companionFollowPlayer(c);
+     if(!c.stationary&&companionApproachOrStop(c))break;
      continue
     }
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
@@ -3512,9 +3531,14 @@ function companionTurn(){
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
     if(c.effectType==='heal'){healEntity(game.player,Math.max(1,rollDice(c.atk).total));floating('✚',c.x,c.y,'#8dffa8');continue}
-    const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-    if(!target){companionFollowPlayer(c);break}
-    if(gridDistance(c,target)>c.range){if(!c.stationary)moveCompanionToward(c,target);break}
+    // Combat priority: only enemies within COMPANION_ENGAGE_RADIUS are ever
+    // considered - anything farther is ignored outright rather than pulling
+    // the companion off across the map. With no such target, fall back to
+    // closing in on the player (and stop the turn once adjacent) instead of
+    // standing still.
+    const target=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
+    if(!target){if(companionApproachOrStop(c))break;continue}
+    if(gridDistance(c,target)>c.range){if(c.stationary)break;moveCompanionToward(c,target);continue}
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
     else{attack(target,0,{dice:c.atk,multiplier:.65});floating('◆',c.x,c.y,'#9ee6c0')}
@@ -3523,12 +3547,12 @@ function companionTurn(){
   }
   if(c.kind==='healer'){
    healEntity(game.player,Math.max(3,Math.round(c.power*2)));
-   const nearby=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
+   const nearby=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
    if(nearby&&gridDistance(c,nearby)<=c.range)attack(nearby,0,{dice:c.atk,multiplier:.45});
    continue
   }
   if(c.stance==='passive'){companionFollowPlayer(c);continue}
-  const target=enemies.sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
+  const target=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
   if(!target){companionFollowPlayer(c);continue}
   const dist=gridDistance(c,target);
   if(dist<=c.range){
@@ -3577,6 +3601,18 @@ function tickSkillObjects(){
 function teleportPlayerTo(x,y){
  if(blocked(x,y)||game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))return false;
  game.player.x=x;game.player.y=y;anim.heroX=anim.targetX=x;anim.heroY=anim.targetY=y;reveal(x,y);return true
+}
+// Free tile touching `target` (8 directions, diagonals included) closest to
+// the player's current spot - used to land an enemy-targeted teleport "next
+// to" its target instead of requiring the enemy's own (always-occupied)
+// tile to be free.
+function openTileAdjacentTo(target){
+ const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+ const options=dirs.map(([dx,dy])=>({x:target.x+dx,y:target.y+dy}))
+  .filter(pos=>!blocked(pos.x,pos.y)&&!isSafeCell(pos.x,pos.y)&&!game.enemies.some(e=>e.hp>0&&e.x===pos.x&&e.y===pos.y)&&!(game.companions||[]).some(c=>c.hp>0&&c.x===pos.x&&c.y===pos.y));
+ if(!options.length)return null;
+ options.sort((a,b)=>gridDistance(game.player,a)-gridDistance(game.player,b));
+ return options[0];
 }
 
 // Applies a stat buff to the caster using the shared buffStat/buffStatMode/
@@ -3814,7 +3850,18 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='move'){
   const range=Math.max(1,comp.range||3);
-  if(comp.mode==='teleport'){if(blocked(ctx.x,ctx.y)||game.enemies.some(e=>e.hp>0&&e.x===ctx.x&&e.y===ctx.y))return false;return teleportPlayerTo(ctx.x,ctx.y)}
+  if(comp.mode==='teleport'){
+   // Enemy-targeted cast (clicked an enemy, or auto-picked the nearest one
+   // in the self-cast flow): the enemy's own tile is always occupied, so
+   // blink onto a free tile touching it instead of requiring the exact
+   // clicked cell to be free - this is what makes a stacked teleport+damage
+   // skill behave like "teleport next to the enemy and hit it". A pure
+   // area-targeted cast (no enemy under the cursor) keeps porting to the
+   // exact clicked tile, unchanged.
+   if(ctx.clickedEnemy){const spot=openTileAdjacentTo(ctx.clickedEnemy);if(!spot)return false;return teleportPlayerTo(spot.x,spot.y)}
+   if(blocked(ctx.x,ctx.y)||game.enemies.some(e=>e.hp>0&&e.x===ctx.x&&e.y===ctx.y))return false;
+   return teleportPlayerTo(ctx.x,ctx.y)
+  }
   const dashTarget=ctx.clickedEnemy||ctx.nearest;if(!dashTarget)return false;
   const dx=Math.sign(dashTarget.x-p.x),dy=Math.sign(dashTarget.y-p.y);
   for(let i=0;i<range;i++){const nx=p.x+dx,ny=p.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==dashTarget&&e.x===nx&&e.y===ny)||(dashTarget.x===nx&&dashTarget.y===ny))break;p.x=nx;p.y=ny}
@@ -4024,6 +4071,11 @@ function applySkillEffectsList(id,ctx){
 // apMode). A turn is a pool of points: attack/skill 10, move 5. The turn only
 // passes via the PASAR TURNO button; enemies get their own pool (20 + AGI).
 const AP_COSTS={move:5,attack:10,skill:10};
+// Flat PA bonus on top of an enemy's normal agility-based pool: megaboss
+// and boss get a fixed edge over regular enemies, and elites get half that,
+// so tougher fights consistently get more actions per turn instead of just
+// more raw stats.
+function enemyBonusAp(e){return e.megaboss?15:e.boss?10:e.elite?5:0}
 // Per-skill AP variance on top of the flat 10 baseline: quick utility/mobility
 // costs a bit less, wide-hitting or execute/ultimate payoffs cost a bit more.
 // Keyed by classEffect so it covers both the 12 shared class-skill tags and
@@ -4161,7 +4213,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
  const enemySingleAction=e=>{
   if(game.over)return 0;
   if(!game.seen[e.y][e.x])return 0;
-  if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&Math.abs(e.x-game.player.x)+Math.abs(e.y-game.player.y)>1)return 0;
+  if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&gridDistance(e,game.player)>1)return 0;
   // A companion is only ever a valid target if its own "objeto de ataques"
   // toggle allows it (targetable!==false) and it wasn't summoned this same
   // turn (spawnTurn grace - see summonCompanion) - otherwise a pet could get
@@ -4174,7 +4226,11 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   // the time, regardless of who was actually nearest.
   const pet=targetableCompanions.find(c=>c.permanent);
   if(pet&&pet!==chosen&&Math.random()<.15)chosen=pet;
-  const dist=Math.abs(e.x-chosen.x)+Math.abs(e.y-chosen.y);
+  // Chebyshev (max-axis) distance, not Manhattan: a diagonal neighbor is
+  // exactly as adjacent as an orthogonal one, matching gridDistance() and
+  // every other range/adjacency check in the game, so enemies can attack
+  // (and be attacked at) diagonally instead of only up/down/left/right.
+  const dist=gridDistance(e,chosen);
   const chosenRef=game.multiplayer?mpEntityRef(chosen):null;
   if(enemyUseSkill(e,dist,chosen))return AP_COSTS.skill;
   const w=e.weapon,wRanged=w&&w.kind!=='melee'&&(w.rangeMax||1)>1;
@@ -4192,7 +4248,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(wRanged&&dist===1&&Math.random()<.5){
    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-.5);
    let stepped=false;
-   for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(Math.abs(nx-chosen.x)+Math.abs(ny-chosen.y)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});stepped=true;break}}
+   for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(gridDistance({x:nx,y:ny},chosen)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});stepped=true;break}}
    if(stepped)return AP_COSTS.move;
   }
   if(dist===1&&chosen!==game.player){
@@ -4213,29 +4269,35 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
  };
  if(!apModeOn()){
   // classic mode: exactly one action per enemy, resolved synchronously
-  // (unchanged from before - no pacing requested for this mode). A megaboss
-  // gets its "+25% PA" here as a 25% chance at an extra action right after
-  // the first, averaging out to 1.25 actions/turn.
+  // (unchanged from before - no pacing requested for this mode). Bosses/
+  // megabosses/elites don't have a real AP pool to spend here, so their flat
+  // PA bonus (enemyBonusAp) is translated into extra guaranteed/likely
+  // actions instead: every full 10 bonus AP (one attack's worth) is a
+  // guaranteed extra action, and a remaining 5 is a 50% chance at one more
+  // (megaboss +15 => 1 guaranteed + 50% chance of a 2nd; boss +10 => 1
+  // guaranteed; elite +5 => 50% chance of one).
   for(const e of [...game.enemies]){
    if(game.over)break;
    if(e.hp<=0)continue;
    enemySingleAction(e);
-   if(e.megaboss&&e.hp>0&&!game.over&&Math.random()<.25)enemySingleAction(e);
+   const bonusAp=enemyBonusAp(e),guaranteed=Math.floor(bonusAp/10),chance=(bonusAp%10)/10;
+   for(let i=0;i<guaranteed&&e.hp>0&&!game.over;i++)enemySingleAction(e);
+   if(chance>0&&e.hp>0&&!game.over&&Math.random()<chance)enemySingleAction(e);
   }
   finishEnemyTurn();
   return;
  }
  // AP mode: each enemy keeps acting (in order) until its pool runs out, one
  // action at a time, with a real delay between actions so the whole phase
- // doesn't resolve in a single synchronous burst. A megaboss's pool is +25%
- // ("+25% PA").
+ // doesn't resolve in a single synchronous burst. Bosses/megabosses/elites
+ // get a flat PA bonus on top of the normal agility-based pool (enemyBonusAp).
  const queue=[...game.enemies];
  const stepEnemy=(idx)=>{
   if(game.over){finishEnemyTurn();return}
   if(idx>=queue.length){finishEnemyTurn();return}
   const e=queue[idx];
   if(e.hp<=0){stepEnemy(idx+1);return}
-  let ap=Math.round((20+Math.ceil(e.stats?.agility||0))*(e.megaboss?1.25:1)*(e.apDebuffMult??1));
+  let ap=Math.round((20+Math.ceil(e.stats?.agility||0)+enemyBonusAp(e))*(e.apDebuffMult??1));
   const stepAction=()=>{
    if(game.over){finishEnemyTurn();return}
    if(ap<=0||e.hp<=0||!game.enemies.includes(e)){stepEnemy(idx+1);return}
