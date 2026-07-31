@@ -126,14 +126,16 @@ function applyOffhandGuarantee(item){
  }
  return item;
 }
-// A weapon-slot dagger can also be equipped in the offhand slot (dual
-// wielding two real daggers) via equipItemAsOffhand() - same name/weaponType
-// detection convention as detectOffhandKind(), but restricted to actual
-// weapon-slot items instead of procedural offhand accessories.
-function isDaggerWeapon(item){
+// A weapon-slot dagger or claws weapon can also be equipped in the offhand
+// slot (dual wielding two light weapons) via equipItemAsOffhand() - same
+// name/weaponType detection convention as detectOffhandKind(), but
+// restricted to actual weapon-slot items instead of procedural offhand
+// accessories.
+const DUAL_WIELD_WEAPON_TYPES=new Set(['Dagas','Garras']);
+function isDualWieldWeapon(item){
  if(!item||item.slot!=='weapon')return false;
- if(item.weaponType)return item.weaponType==='Dagas';
- return /daga/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+ if(item.weaponType)return DUAL_WIELD_WEAPON_TYPES.has(item.weaponType);
+ return /daga|garra/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
 }
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
@@ -662,8 +664,8 @@ const weaponRows=[
  {category:'Armas míticas ciberpunk',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:8,legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Cañón del corazón azul', 'Guadaña del vacío violeta', 'Espada de plasma imperial', 'Hoja del reactor carmesí', 'Estrella de energía criónica', 'Rifle del arcángel mecánico', 'Hacha del señor de las máquinas', 'Lanza de fotones', 'Bastón de singularidad violeta', 'Núcleo del apocalipsis mecánico']}
 ];
 const weaponCategories=weaponRows.map(r=>r.category);
-const configWeaponTypes=['Espadas','Dagas','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Látigos','Drones','Granadas','Artefactos'];
-const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía'};
+const configWeaponTypes=['Espadas','Dagas','Garras','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Látigos','Drones','Granadas','Artefactos'];
+const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Garras:'Armas ciberpunk de neón',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía'};
 const weaponTypeRanges={Varitas:{min:1,max:4},Arcos:{min:2,max:5},Ballestas:{min:1,max:4},Pistolas:{min:1,max:3},Rifles:{min:2,max:5},Escopetas:{min:1,max:2}};
 const weaponCategoryStats=Object.fromEntries(weaponRows.flatMap(r=>[r.category,...r.legacy].map(c=>[c,r.stat])));
 function weaponRowForCategory(category){return Math.max(0,weaponRows.findIndex(r=>r.category===category||r.legacy.includes(category)))}
@@ -1236,6 +1238,46 @@ const configImageCache={};function configIconImage(src){if(!configImageCache[src
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
+// Shared procedural item builder used by both random loot (makeLoot below)
+// and the testing-mode gear generator (makeTestGearItem): builds a full item
+// for an explicit slot+rarity, optionally forcing the weapon's type
+// (weaponTypeOverride, e.g. 'Dagas'/'Garras'/'Lanzas' - normal loot instead
+// picks a random flavor category via weaponCategoryForLoot, which never
+// guarantees any particular weaponType) or the offhand's kind
+// (offhandKindOverride: 'shield'/'wand'/'dagger').
+function buildProceduralItem(slot,rar,level,weaponTypeOverride=null,offhandKindOverride=null){
+ const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
+ const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
+ const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
+ const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
+ const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
+ const weaponType=slot==='weapon'?(weaponTypeOverride||null):null;
+ const weaponCategory=slot==='weapon'?(weaponType?(configWeaponTypeCategories[weaponType]||weaponCategories[0]):weaponCategoryForLoot(rar)):null;
+ const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
+ const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
+ const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
+ const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
+ const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
+ const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
+ // Offhand loot rolls one of 3 kinds - mostly shields, sometimes a wand or a
+ // dagger held in the left hand alongside the main-hand weapon.
+ const offhandKind=slot==='offhand'?(offhandKindOverride||pick(['shield','shield','shield','wand','dagger'])):null;
+ const offhandNameCategory=offhandKind==='wand'?configWeaponTypeCategories.Varitas:offhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
+ const offhandName=offhandNameCategory?weaponNameForCategory(offhandNameCategory,weaponPowerColumn(itemLevel,rar,score)):null;
+ return applyOffhandGuarantee({
+  id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
+  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
+  theme:themed?.theme||'fantasy',offhandKind,
+  weaponType,weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
+  armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
+  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
+  defenseStat:slot==='weapon'?(WEAPON_TYPE_STAT[weaponType]||weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
+  rangeMin:slot==='weapon'?weaponRangeBounds({weaponType,weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).min:null,
+  rangeMax:slot==='weapon'?weaponRangeBounds({weaponType,weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).max:null,
+  affixes,passives,effects,
+  desc:`Nivel ${itemLevel} · Poder ${score}`
+ });
+}
 function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  if(forceRarityName){
   // Used only by the guaranteed floor-completion reward (grantFloorRewardPopup):
@@ -1253,35 +1295,37 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){con
   const configured=makeConfiguredLoot(level);if(configured)return configured;
  }
  const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level)):weightedRarity(level);
- const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
- const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
- const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
- const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
- const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
- const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
- const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
- const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
- const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
- const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
- const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- // Offhand loot rolls one of 3 kinds - mostly shields, sometimes a wand or a
- // dagger held in the left hand alongside the main-hand weapon.
- const offhandKind=slot==='offhand'?pick(['shield','shield','shield','wand','dagger']):null;
- const offhandNameCategory=offhandKind==='wand'?configWeaponTypeCategories.Varitas:offhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
- const offhandName=offhandNameCategory?weaponNameForCategory(offhandNameCategory,weaponPowerColumn(itemLevel,rar,score)):null;
- return applyOffhandGuarantee({
-  id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
-  theme:themed?.theme||'fantasy',offhandKind,
-  weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
-  armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
-  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
-  defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
-  rangeMin:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).min:null,
-  rangeMax:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).max:null,
-  affixes,passives,effects,
-  desc:`Nivel ${itemLevel} · Poder ${score}`
+ return buildProceduralItem(slot,rar,level);
+}
+// Testing-mode gear generator (see launchTestCombat): builds exactly one
+// item for an explicit slot at an explicit, tester-chosen rarity - prefers a
+// real admin-configured item matching that slot/rarity (and weapon
+// type/offhand kind, when given) so testing gear looks like production
+// content whenever one exists, otherwise falls back to the same procedural
+// builder normal loot uses. Never rolls a random slot/rarity, so calling it
+// once per slot can never produce the duplicate pile-up a retry loop would.
+// Testing gear only ever comes from real config_items rows (Configuración >
+// Items) - never the procedural generator makeLoot() falls back to. That
+// generator's weapon "category" is a flavor-name table with no reliable
+// weaponType, so an admin verifying their own catalogue (does every slot,
+// every weapon type, actually have items configured?) needs testing mode to
+// surface exactly what's really in the database, gaps included, instead of
+// silently papering over a missing slot/type with a made-up item. Returns
+// null when nothing configured matches - the caller just skips it.
+function makeTestGearItem(slot,rarityName,level,{weaponType=null,offhandKind=null}={}){
+ const rar=rarities.find(r=>r.name===rarityName)||rarities[0];
+ if(!configItems.length)return null;
+ const matches=configItems.filter(row=>{
+  const j=row.item_json||row;
+  if((j.rarity||row.tier||'common')!==rar.name)return false;
+  if((j.slot||row.slot||'')!==slot)return false;
+  if(j.type==='potion')return false;
+  if(slot==='weapon'&&weaponType&&(j.weaponType||row.weaponType)!==weaponType)return false;
+  if(slot==='offhand'&&offhandKind&&(j.offhandKind||detectOffhandKind(j))!==offhandKind)return false;
+  return true;
  });
+ if(!matches.length)return null;
+ return configuredItemFromRow(pick(matches),currentLootProgressionRow(game?.floor||1,level),level);
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
@@ -2536,7 +2580,7 @@ const DEFENSE_STAT_LABELS={
 // flavor-name regex below so "basic attack" stat is deterministic by weapon
 // type rather than dependent on whatever flavor name it happened to roll:
 // daggers/claws/rifles/pistols use agility, shotguns use strength.
-const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
+const WEAPON_TYPE_STAT={Dagas:'agility',Garras:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
 function inferWeaponDefenseStat(item){
  if(item?.weaponType&&WEAPON_TYPE_STAT[item.weaponType])return WEAPON_TYPE_STAT[item.weaponType];
  const text=`${item?.name||''} ${item?.iconShape||''} ${item?.theme||''}`.toLowerCase();
@@ -4781,7 +4825,7 @@ function equipItem(id){
 // own item.slot==='weapon' (so unequipping and re-equipping normally still
 // sends it back to the weapon slot), only the equipment dict key differs.
 function equipItemAsOffhand(id){
- const item=game.inventory.find(i=>i.id===id);if(!item||!isDaggerWeapon(item))return;
+ const item=game.inventory.find(i=>i.id===id);if(!item||!isDualWieldWeapon(item))return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
  learnItemSkills(item);
  const old=game.player.equipment.offhand;if(old)game.inventory.push(old);
@@ -4833,7 +4877,7 @@ function updateUI(){
  if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
- inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
+ inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}${isDualWieldWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">🤚</button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  const potionsEl=document.getElementById('potions');
  if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">No llevas pociones.</p>';
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
@@ -6607,6 +6651,7 @@ let tstFloorArchetype='standard';
 // which reads as "I can't kill them, they keep coming" for a single tester
 // rather than the intended stress-test - see launchTestCombat().
 let tstEnemyDensity=50;
+let tstGearTier='rare';
 let preTestSelectedDungeonWorld; // stashed selectedDungeonWorld while a test run is active, restored on exit
 const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
 
@@ -6726,6 +6771,12 @@ function setupTestingMode(){
   if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`;
   density.oninput=()=>{tstEnemyDensity=Number(density.value)||50;if(densityVal)densityVal.textContent=`${tstEnemyDensity}%`};
  }
+ const gearTier=document.getElementById('testGearTier');
+ if(gearTier){
+  if(!gearTier.options.length)gearTier.innerHTML=rarities.map(r=>`<option value="${r.name}">${r.label}</option>`).join('');
+  gearTier.value=tstGearTier;
+  gearTier.onchange=()=>{tstGearTier=gearTier.value||'rare'};
+ }
  document.getElementById('testLaunchBtn').onclick=launchTestCombat;
 }
 function launchTestCombat(){
@@ -6793,19 +6844,43 @@ function launchTestCombat(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(tstClass);
- // A naked level-30 character (nothing but the tier-1 starter weapon) hits
- // like a level-1 one - the level-appropriate loot has to actually be worn,
- // not just sit in the backpack, or every fight (megabosses especially)
- // feels unkillable regardless of the archetype/density chosen above.
- // Reuses the normal loot roller so gear composition matches real drops;
- // a handful of attempts land on already-filled/duplicate slots or potions,
- // which just fall back to the backpack instead of being wasted.
- const gearSlots=slots.filter(s=>s!=='weapon');
- for(let attempts=0;attempts<80&&gearSlots.some(s=>!game.player.equipment[s]);attempts++){
-  const item=makeLoot(tstLevel,'testing');
-  if(!item)continue;
-  if(item.type==='potion'||item.slot==='weapon'||!gearSlots.includes(item.slot)||game.player.equipment[item.slot]){addInventoryItem(item);continue}
-  game.player.equipment[item.slot]=item;
+ // Testing gear is exclusively real config_items content (Configuración >
+ // Items) - makeTestGearItem() never falls back to a procedural item, so a
+ // slot/weapon type with nothing configured for the chosen tier just
+ // contributes nothing (reported below) instead of a made-up placeholder.
+ // 3 items per slot, and the weapon slot specifically broken down into 3
+ // items per weapon type (Dagas, Garras, Lanzas, ...) so testing doubles as
+ // a coverage check of the admin's own catalogue. The starter weapon set
+ // earlier stays as the only non-configured fallback, so the character is
+ // never left completely unarmed if nothing configured matches at all.
+ let gearFound=0,gearAttempts=0,weaponEquipped=false,offhandEquipped=false;
+ for(const wt of configWeaponTypes){
+  for(let i=0;i<3;i++){
+   gearAttempts++;
+   const item=makeTestGearItem('weapon',tstGearTier,tstLevel,{weaponType:wt});
+   if(!item)continue;
+   gearFound++;
+   if(!weaponEquipped){game.player.equipment.weapon=item;weaponEquipped=true}else addInventoryItem(item);
+  }
+ }
+ for(const ok of ['shield','wand','dagger']){
+  for(let i=0;i<3;i++){
+   gearAttempts++;
+   const item=makeTestGearItem('offhand',tstGearTier,tstLevel,{offhandKind:ok});
+   if(!item)continue;
+   gearFound++;
+   if(!offhandEquipped){game.player.equipment.offhand=item;offhandEquipped=true}else addInventoryItem(item);
+  }
+ }
+ for(const s of slots.filter(s=>!['weapon','offhand'].includes(s))){
+  let equipped=false;
+  for(let i=0;i<3;i++){
+   gearAttempts++;
+   const item=makeTestGearItem(s,tstGearTier,tstLevel);
+   if(!item)continue;
+   gearFound++;
+   if(!equipped){game.player.equipment[s]=item;equipped=true}else addInventoryItem(item);
+  }
  }
  recomputeDerived();
  configScreen.classList.add('hidden');
@@ -6813,6 +6888,7 @@ function launchTestCombat(){
  generateFloor();
  banner(`MODO TESTING · ${game.player.name} NV.${tstLevel} · ${(arch?arch.label:'Cámara del megajefe').toUpperCase()}`);
  log('Modo testing: personaje temporal, sin persistencia ni bloqueos de nivel/puntuación.','sys');
+ log(`Equipo de prueba: ${gearFound}/${gearAttempts} objetos encontrados en config_items al tier ${rarities.find(r=>r.name===tstGearTier)?.label||tstGearTier} (los huecos son slots/tipos de arma sin objetos configurados a ese tier).`,'sys');
 }
 // Same custom-icon lookup as drawWorldObjectIcon but paints onto an arbitrary
 // UI canvas (lock badges on locked race/class cards) and falls back to a
