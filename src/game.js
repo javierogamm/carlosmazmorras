@@ -6726,7 +6726,7 @@ function assetPreviewDims(cols,rows){
 function listConfigAssets(){
  return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>{
   const {cols,rows}=parseTilesNumber(r.tiles_number);
-  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows)};
+  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
  });
 }
 async function fetchConfigWorldObjects(){
@@ -6781,9 +6781,18 @@ function setupConfigWorldObjectsMode(){
 function renderConfigAssetsList(){
  const root=document.getElementById('configAssetsList');if(!root)return;
  const assets=listConfigAssets();
- root.innerHTML=assets.length?assets.map(a=>`<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`).join(''):'<p class="small">Todavía no hay assets creados.</p>';
+ root.innerHTML=assets.length?assets.map(a=>`<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles${a.ambiente?` · ${a.ambiente}`:''}</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`).join(''):'<p class="small">Todavía no hay assets creados.</p>';
  root.querySelectorAll('[data-edit-asset]').forEach(b=>b.onclick=()=>loadAssetForEdit(b.dataset.editAsset));
  root.querySelectorAll('[data-delete-asset]').forEach(b=>b.onclick=()=>deleteConfigAsset(b.dataset.deleteAsset));
+ renderConfigAssetAmbienteOptions(assets);
+}
+// Datalist of every distinct ambiente already used across saved assets, so
+// the field behaves as free text (type anything) with existing values
+// offered as suggestions instead of a closed dropdown.
+function renderConfigAssetAmbienteOptions(assets=listConfigAssets()){
+ const list=document.getElementById('configAssetAmbienteList');if(!list)return;
+ const values=[...new Set(assets.map(a=>a.ambiente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+ list.innerHTML=values.map(v=>`<option value="${v}">`).join('');
 }
 // Grid overlay letting the admin mark, per tile of the asset's cols x rows
 // footprint, whether it's walkable or blocks movement (players and
@@ -6830,6 +6839,7 @@ function resetConfigAssetForm(){
  document.getElementById('configAssetName').value='';
  document.getElementById('configAssetCols').value='1';
  document.getElementById('configAssetRows').value='1';
+ document.getElementById('configAssetAmbiente').value='';
  window.currentConfigAssetIconHex='';
  window.currentConfigAssetMask=null;
  renderConfigIconPreview('','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(1,1));
@@ -6843,6 +6853,7 @@ function loadAssetForEdit(objectKey){
  document.getElementById('configAssetName').value=asset.name;
  document.getElementById('configAssetCols').value=asset.cols;
  document.getElementById('configAssetRows').value=asset.rows;
+ document.getElementById('configAssetAmbiente').value=asset.ambiente||'';
  window.currentConfigAssetIconHex=asset.icon||'';
  window.currentConfigAssetMask=asset.mask;
  renderConfigIconPreview(asset.icon||'','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(asset.cols,asset.rows));
@@ -6885,10 +6896,11 @@ function setupConfigAssetsMode(){
   const {cols,rows}=currentAssetGridDims();
   const tilesNumber=`${cols};${rows}`;
   const tilesMask=serializeAssetMask(ensureConfigAssetMask(cols,rows));
+  const ambiente=document.getElementById('configAssetAmbiente').value.trim();
   const objectKey=window.editingAssetKey;
   st.textContent='Guardando asset...';
   try{
-   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,icon:window.currentConfigAssetIconHex||''};
+   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,ambiente,icon:window.currentConfigAssetIconHex||''};
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
