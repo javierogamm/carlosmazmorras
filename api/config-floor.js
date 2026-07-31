@@ -26,14 +26,14 @@ const ASSET_KEY_PREFIX='asset_';
 
 async function handleWorldObjects(req,res,url,key){
  if(req.method==='GET'){
-  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=id,object_key,icon,name,tiles_number&order=object_key.asc`,{headers:headers(key)});
+  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=id,object_key,icon,name,tiles_number,tiles_mask&order=object_key.asc`,{headers:headers(key)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(data);
  }
  if(req.method==='POST'){
   const objectKey=`${ASSET_KEY_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
-  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1'};
+  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1',tiles_mask:req.body?.tiles_mask||''};
   const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
@@ -45,6 +45,7 @@ async function handleWorldObjects(req,res,url,key){
   const row={object_key:objectKey,icon:req.body?.icon??''};
   if(req.body?.name!==undefined)row.name=req.body.name;
   if(req.body?.tiles_number!==undefined)row.tiles_number=req.body.tiles_number;
+  if(req.body?.tiles_mask!==undefined)row.tiles_mask=req.body.tiles_mask;
   const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?on_conflict=object_key`,{method:'POST',headers:{...headers(key),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);

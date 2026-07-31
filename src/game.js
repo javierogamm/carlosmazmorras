@@ -1895,10 +1895,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
      const px=ox+dx,py=oy+dy;
      if(px<r.x+1||px>r.x+r.w-2||py<r.y+1||py>r.y+r.h-2){ok=false;break}
      if(map[py]?.[px]!==0||occ.has(key(px,py))||safeCellKeys.has(key(px,py))||(px===r.cx&&py===r.cy)||(px===spawn.cx&&py===spawn.cy)||(px===stairs.x&&py===stairs.y)){ok=false;break}
-     cellsCovered.push({x:px,y:py});
+     cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
     }
     if(!ok)continue;
-    for(const c of cellsCovered){map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
+    for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
     assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
     break;
    }
@@ -6389,7 +6389,7 @@ function renderConfigStatsHelp(){const root=document.getElementById('configStats
 function renderConfigSkillSelect(){const sel=document.getElementById('configSkills'),pot=document.getElementById('configPotionSkill');if(!sel)return;const html=Object.entries(skillDefs).sort((a,b)=>(a[1].name||a[0]).localeCompare(b[1].name||b[0],'es')).map(([id,d])=>`<option value="${id}">${d.icon||'•'} ${d.name} · ${tierDefs[d.rarity]?.label||d.rarity||'Común'}</option>`).join('');sel.innerHTML=html;if(pot)pot.innerHTML=html}
 function setConfigSkillSelection(ids=[]){const set=new Set(ids);document.querySelectorAll('#configSkills option').forEach(o=>o.selected=set.has(o.value))}
 function addIconSilhouetteBorder(canvas,size=2,color=[0,0,0,255]){const q=canvas.getContext('2d'),w=canvas.width,h=canvas.height,orig=document.createElement('canvas');orig.width=w;orig.height=h;orig.getContext('2d').drawImage(canvas,0,0);const src=q.getImageData(0,0,w,h),border=q.createImageData(w,h),r=Math.max(1,Math.round(size));for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(src.data[i+3]>8)continue;let near=false;for(let dy=-r;dy<=r&&!near;dy++)for(let dx=-r;dx<=r;dx++){if(dx*dx+dy*dy>r*r)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;if(src.data[(ny*w+nx)*4+3]>8){near=true;break}}if(near){border.data[i]=color[0];border.data[i+1]=color[1];border.data[i+2]=color[2];border.data[i+3]=color[3]}}q.putImageData(border,0,0);q.drawImage(orig,0,0);return canvas}
-function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile')){const preview=document.getElementById(previewId);if(!preview)return;const c=preview.getContext('2d');c.clearRect(0,0,50,50);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(img,0,0,50,50);if(withBorder)addIconSilhouetteBorder(out,2);c.clearRect(0,0,50,50);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
+function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile'),dims={w:50,h:50}){const preview=document.getElementById(previewId);if(!preview)return;preview.width=dims.w;preview.height=dims.h;const c=preview.getContext('2d');c.clearRect(0,0,dims.w,dims.h);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=dims.w;out.height=dims.h;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,dims.w,dims.h);o.drawImage(img,0,0,dims.w,dims.h);if(withBorder)addIconSilhouetteBorder(out,2);c.clearRect(0,0,dims.w,dims.h);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
 function resetConfigForm(){window.editingConfigItemId=null;configItemType.value='equipment';configNombre.value='';configTier.value='common';configSlot.value='weapon';configIlvl.value='1';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=false;configPotionEffect.value='heal';configPotionResource.value='hp';configPotionValueMode.value='percent';configPotionAmount.value='25';configPotionTurns.value='6';configPotionStat.value='strength';configPotionStatAmount.value='1';configWeaponCategory.value=configWeaponTypes[0];configDamageDice.value='1d6';if(configRangeMin)configRangeMin.value='1';if(configRangeMax)configRangeMax.value='1';configStats.value='';window.currentConfigIconHex='';setConfigSkillSelection([]);configIconStatus.textContent='Sin icono';renderConfigIconPreview('');configStatus.textContent='Nuevo objeto.';configSlot.dispatchEvent(new Event('change'))}
 function loadConfigItemForEdit(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;const item=row.item_json||row;window.editingConfigItemId=row.id;configNombre.value=item.name||row.nombre||'';configTier.value=item.rarity||row.tier||'common';configItemType.value=item.type==='potion'?'potion':'equipment';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=!!item.hidden;configSlot.value=item.slot==='consumable'?'trinket1':(item.slot||row.slot||'trinket1');configIlvl.value=item.itemLevel||row.ilvl||1;configDamageDice.value=item.damageDice||'1d6';configWeaponCategory.value=item.weaponType||item.weaponCategory||configWeaponTypes[0];const bounds=weaponRangeBounds(item);if(configRangeMin)configRangeMin.value=bounds.min;if(configRangeMax)configRangeMax.value=bounds.max;configStats.value=item.stats||row.stats||'';window.currentConfigIconHex=item.icon||row.icon||'';setConfigSkillSelection(item.skillIds||[]);if(item.type==='potion'){configPotionEffect.value=item.potionEffectType||'heal';configPotionTurns.value=item.duration||6;const e=item.effect||{},resource=['hp','mana','stamina'].find(r=>e[`${r}Pct`]||e[`${r}Flat`]||e.healPct||e.regenPct)||'hp';configPotionResource.value=resource;configPotionValueMode.value=e[`${resource}Flat`]?'flat':'percent';configPotionAmount.value=e[`${resource}Flat`]||Math.round((e[`${resource}Pct`]||e.healPct||e.regenPct||0)*100)||25;const statEntry=Object.entries(e.stats||{})[0];if(statEntry){configPotionStat.value=statEntry[0];configPotionStatAmount.value=statEntry[1]}configPotionSkill.value=e.skillId||configPotionSkill.value;togglePotionEffectFields();}renderConfigIconPreview(window.currentConfigIconHex);configIconStatus.textContent=window.currentConfigIconHex?'Icono cargado desde objeto guardado.':'Sin icono';configSlot.dispatchEvent(new Event('change'));configStatus.textContent=`Editando #${row.id}: ${configNombre.value||'Sin nombre'}`}
 async function duplicateConfigItem(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Objeto'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configStatus.textContent='Objeto duplicado.'}catch(e){configStatus.textContent=e.message}}
@@ -6699,8 +6699,35 @@ function parseTilesNumber(tn){
  const rows=Math.max(1,Math.min(ROWS,parseInt(parts[1],10)||1));
  return {cols,rows};
 }
+// Per-cell collision mask for an asset's cols x rows footprint, stored as
+// rows joined by ';' and cells joined by ',' (1=blocked, 0=walkable). Missing/
+// short rows or cells default to blocked (1), so assets saved before this
+// mask existed keep behaving as a fully solid footprint.
+function parseTilesMask(tm,cols,rows){
+ const rowsArr=String(tm||'').split(';');
+ const mask=[];
+ for(let y=0;y<rows;y++){
+  const cellsStr=rowsArr[y]?rowsArr[y].split(','):[];
+  const row=[];
+  for(let x=0;x<cols;x++)row.push(cellsStr[x]===undefined?true:cellsStr[x]==='1');
+  mask.push(row);
+ }
+ return mask;
+}
+function serializeAssetMask(mask){return (mask||[]).map(row=>row.map(b=>b?1:0).join(',')).join(';')}
+// Small stored-icon preview size: same w:h ratio as cols:rows, capped to 50px
+// on the longer side (matches setupImageIconEditor's outSize() for assets).
+function assetPreviewDims(cols,rows){
+ const ratio=Math.max(cols,1)/Math.max(rows,1);
+ let w=50,h=Math.round(50/ratio);
+ if(h>50){h=50;w=Math.round(50*ratio)}
+ return {w:Math.max(1,w),h:Math.max(1,h)};
+}
 function listConfigAssets(){
- return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>({key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',...parseTilesNumber(r.tiles_number)}));
+ return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>{
+  const {cols,rows}=parseTilesNumber(r.tiles_number);
+  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows)};
+ });
 }
 async function fetchConfigWorldObjects(){
  try{
@@ -6758,13 +6785,55 @@ function renderConfigAssetsList(){
  root.querySelectorAll('[data-edit-asset]').forEach(b=>b.onclick=()=>loadAssetForEdit(b.dataset.editAsset));
  root.querySelectorAll('[data-delete-asset]').forEach(b=>b.onclick=()=>deleteConfigAsset(b.dataset.deleteAsset));
 }
+// Grid overlay letting the admin mark, per tile of the asset's cols x rows
+// footprint, whether it's walkable or blocks movement (players and
+// monsters alike - the mask is consumed as-is by placeRoomAssets/
+// buildFloorPlan, there's no separate PJ-vs-monster distinction).
+function currentAssetGridDims(){
+ const cols=Math.max(1,Math.min(ROWS,parseInt(document.getElementById('configAssetCols').value,10)||1));
+ const rows=Math.max(1,Math.min(ROWS,parseInt(document.getElementById('configAssetRows').value,10)||1));
+ return {cols,rows};
+}
+function ensureConfigAssetMask(cols,rows){
+ const old=window.currentConfigAssetMask||[];
+ const mask=[];
+ for(let y=0;y<rows;y++){
+  const row=[];
+  for(let x=0;x<cols;x++)row.push(old[y]?.[x]!==undefined?old[y][x]:true);
+  mask.push(row);
+ }
+ window.currentConfigAssetMask=mask;
+ return mask;
+}
+function renderConfigAssetGrid(){
+ const canvas=document.getElementById('configAssetGridCanvas');if(!canvas)return;
+ const {cols,rows}=currentAssetGridDims();
+ const mask=ensureConfigAssetMask(cols,rows);
+ // Real in-game size: exactly cols x rows tiles at TILE px each, so the
+ // preview shows precisely how large/how it'll look on the dungeon grid.
+ canvas.width=cols*TILE;canvas.height=rows*TILE;
+ const g=canvas.getContext('2d');g.imageSmoothingEnabled=false;
+ g.clearRect(0,0,canvas.width,canvas.height);
+ const preview=document.getElementById('configAssetIconPreview');
+ if(preview)g.drawImage(preview,0,0,canvas.width,canvas.height);
+ const cw=canvas.width/cols,ch=canvas.height/rows;
+ for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+  g.fillStyle=mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
+  g.fillRect(x*cw,y*ch,cw,ch);
+  g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=1;g.strokeRect(x*cw+.5,y*ch+.5,cw-1,ch-1);
+ }
+ const hint=document.getElementById('configAssetGridHint');
+ if(hint)hint.textContent=`${cols}x${rows} tiles. Rojo = bloqueado, verde = transitable (PJ y monstruos). Clic en una casilla para alternar.`;
+}
 function resetConfigAssetForm(){
  window.editingAssetKey=null;
  document.getElementById('configAssetName').value='';
  document.getElementById('configAssetCols').value='1';
  document.getElementById('configAssetRows').value='1';
  window.currentConfigAssetIconHex='';
- renderConfigIconPreview('','configAssetIconPreview','configAssetIconStatus');
+ window.currentConfigAssetMask=null;
+ renderConfigIconPreview('','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(1,1));
+ renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent='Nuevo asset (aún no guardado).';
  document.getElementById('configAssetStatus').textContent='';
 }
@@ -6775,7 +6844,9 @@ function loadAssetForEdit(objectKey){
  document.getElementById('configAssetCols').value=asset.cols;
  document.getElementById('configAssetRows').value=asset.rows;
  window.currentConfigAssetIconHex=asset.icon||'';
- renderConfigIconPreview(asset.icon||'','configAssetIconPreview','configAssetIconStatus');
+ window.currentConfigAssetMask=asset.mask;
+ renderConfigIconPreview(asset.icon||'','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(asset.cols,asset.rows));
+ renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent=`Editando: ${asset.name}`;
  document.getElementById('configAssetStatus').textContent='';
 }
@@ -6792,19 +6863,32 @@ async function deleteConfigAsset(objectKey){
  }catch(e){if(st)st.textContent=e.message}
 }
 function setupConfigAssetsMode(){
- setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset'});
+ const assetIconEditor=setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset',onSave:renderConfigAssetGrid,aspect:()=>{const {cols,rows}=currentAssetGridDims();return{w:cols,h:rows}}});
  renderConfigAssetsList();
+ renderConfigAssetGrid();
+ const onGridSizeChange=()=>{assetIconEditor?.reclamp?.();renderConfigAssetGrid()};
+ document.getElementById('configAssetCols').oninput=onGridSizeChange;
+ document.getElementById('configAssetRows').oninput=onGridSizeChange;
+ const gridCanvas=document.getElementById('configAssetGridCanvas');
+ if(gridCanvas)gridCanvas.onclick=e=>{
+  const {cols,rows}=currentAssetGridDims();
+  const b=gridCanvas.getBoundingClientRect();
+  const cx=Math.floor((e.clientX-b.left)*gridCanvas.width/b.width/(gridCanvas.width/cols));
+  const cy=Math.floor((e.clientY-b.top)*gridCanvas.height/b.height/(gridCanvas.height/rows));
+  const mask=ensureConfigAssetMask(cols,rows);
+  if(mask[cy]?.[cx]!==undefined){mask[cy][cx]=!mask[cy][cx];renderConfigAssetGrid()}
+ };
  document.getElementById('saveConfigAssetBtn').onclick=async()=>{
   const st=document.getElementById('configAssetStatus');
   const name=document.getElementById('configAssetName').value.trim();
   if(!name){st.textContent='Ponle un nombre al asset.';return}
-  const cols=Math.max(1,parseInt(document.getElementById('configAssetCols').value,10)||1);
-  const rows=Math.max(1,parseInt(document.getElementById('configAssetRows').value,10)||1);
+  const {cols,rows}=currentAssetGridDims();
   const tilesNumber=`${cols};${rows}`;
+  const tilesMask=serializeAssetMask(ensureConfigAssetMask(cols,rows));
   const objectKey=window.editingAssetKey;
   st.textContent='Guardando asset...';
   try{
-   const body={name,tiles_number:tilesNumber,icon:window.currentConfigAssetIconHex||''};
+   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,icon:window.currentConfigAssetIconHex||''};
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
@@ -7182,7 +7266,55 @@ function drawShardTierIconToCanvas(canvas,tier){
 }
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
-function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true}){const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);if(!imgInput||!crop)return null;let source=null,rect=null,drag=null,eraser=false;function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}function clampRect(r){const size=Math.max(1,Math.min(Math.round(r.w),crop.width,crop.height));return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-size))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-size))),w:size,h:size}}function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}function saveIcon(){if(!source||!rect)return;const out=document.createElement('canvas');out.width=out.height=50;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,50,50);o.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,50,50);if(outline)addIconSilhouetteBorder(out,2);const pc=preview.getContext('2d');pc.clearRect(0,0,50,50);pc.drawImage(out,0,0);fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} 50x50 desde x:${rect.x}, y:${rect.y}, lado:${rect.w}`})}function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}function updateDrag(e){if(!source||!drag)return;const p=pointerPos(e);if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});else{const size=Math.max(1,Math.min(Math.abs(p.x-drag.origin.x),Math.abs(p.y-drag.origin.y)));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-size:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-size:drag.origin.y,w:size,h:size})}drawCrop();saveIcon()}imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);rect=clampRect({x:0,y:0,w:Math.min(50,crop.width,crop.height),h:Math.min(50,crop.width,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};if(zoom)zoom.oninput=canvasZoom;if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};canvasZoom();return{drawCrop,saveIcon}}
+function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1}}){
+ const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
+ if(!imgInput||!crop)return null;
+ let source=null,rect=null,drag=null,eraser=false;
+ // Output/preview pixel size, proportioned to aspect's w:h ratio (cols:rows
+ // for assets) and capped so the longer side is 50px - the fixed square size
+ // every other icon in this game used before assets needed a non-square shape.
+ function outSize(){const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);let w=50,h=Math.round(50/ratio);if(h>50){h=50;w=Math.round(50*ratio)}return{w:Math.max(1,w),h:Math.max(1,h)}}
+ function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}
+ function clampRect(r){
+  const o=outSize(),ratio=o.w/o.h;
+  let w=Math.max(1,Math.round(r.w)),h=Math.max(1,Math.round(w/ratio));
+  if(w>crop.width||h>crop.height){
+   if(crop.width/ratio<=crop.height){w=crop.width;h=Math.max(1,Math.round(crop.width/ratio))}
+   else{h=crop.height;w=Math.max(1,Math.round(crop.height*ratio))}
+  }
+  return{x:Math.max(0,Math.min(Math.round(r.x),Math.max(0,crop.width-w))),y:Math.max(0,Math.min(Math.round(r.y),Math.max(0,crop.height-h))),w,h};
+ }
+ function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}
+ function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}
+ function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}
+ function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}
+ function saveIcon(){
+  if(!source||!rect)return;
+  const o=outSize();
+  const out=document.createElement('canvas');out.width=o.w;out.height=o.h;
+  const oc=out.getContext('2d');oc.imageSmoothingEnabled=false;oc.clearRect(0,0,o.w,o.h);oc.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,o.w,o.h);
+  if(outline)addIconSilhouetteBorder(out,2);
+  preview.width=o.w;preview.height=o.h;
+  const pc=preview.getContext('2d');pc.clearRect(0,0,o.w,o.h);pc.drawImage(out,0,0);
+  fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} ${o.w}x${o.h} desde x:${rect.x}, y:${rect.y}`;if(onSave)onSave()})
+ }
+ function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}
+ function updateDrag(e){
+  if(!source||!drag)return;
+  const p=pointerPos(e);
+  if(drag.mode==='move')rect=clampRect({x:p.x-drag.dx,y:p.y-drag.dy,w:drag.start.w,h:drag.start.h});
+  else{const o=outSize(),ratio=o.w/o.h,dx=Math.max(1,Math.abs(p.x-drag.origin.x)),dh=Math.max(1,Math.round(dx/ratio));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-dx:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-dh:drag.origin.y,w:dx,h:dh})}
+  drawCrop();saveIcon()
+ }
+ imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);const o=outSize();rect=clampRect({x:0,y:0,w:Math.min(o.w,crop.width),h:Math.min(o.h,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};
+ crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};
+ crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};
+ crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};
+ if(zoom)zoom.oninput=canvasZoom;
+ if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};
+ canvasZoom();
+ return{drawCrop,saveIcon,reclamp:()=>{if(rect){rect=clampRect(rect);drawCrop();saveIcon()}}}
+}
 function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
  if(!editor)return;
