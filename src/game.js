@@ -2479,7 +2479,11 @@ function updateRestButton(){
  else{btn.textContent='ESPERAR';btn.disabled=false;delete btn.dataset.rest}
 }
 
-function generateFloor(){if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+// A pet's pending order (see resolveCompanionCommand) references a live
+// enemy object from the current floor - stale once the floor changes, so
+// every companion goes back to just following instead of chasing a ghost.
+function clearCompanionOrders(){for(const c of game?.companions||[])c.orderTarget=null}
+function generateFloor(){clearCompanionOrders();if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  busy=false;
  const params=worldParams();
  const populationScale=1+Math.min(1.2,((game.player?.level||1)-1)*.012);
@@ -3576,7 +3580,12 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive'}:{})
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
+   // Permanent companion (pet) command cost - what the player pays each time
+   // they order it to act via issueCompanionCommand(), separate from
+   // whatever the original summon itself cost. orderTarget starts empty:
+   // the pet just follows until commanded (see companionTurn()).
+   commandResource:custom.commandResource==='stamina'?'stamina':'mana',commandCost:Math.max(0,custom.commandCost??0),orderTarget:null}:{})
  });
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
 }
@@ -3664,9 +3673,84 @@ function companionApproachOrStop(c){
  moveCompanionToward(c,game.player);
  return false
 }
+// ============================================================================
+// PERMANENT COMPANION COMMANDS - a permanent pet (comp.permanent from the
+// 'summon' effects-list component) no longer fights on its own: it just
+// follows the player (companionFollowPlayer) and is immune to all damage
+// (see the hp-refill guard at the top of companionTurn()'s loop). Once it's
+// alive, its own summon skill slot is repurposed as a command instead
+// (issueCompanionCommand, wired from useSkill()): attack/skill commands let
+// the player pick a target, and the pet then chases and resolves it on its
+// own over however many turns it takes to close the distance, with no
+// further input needed. Heal fires immediately with no target to pick,
+// mirroring the old effectType==='heal' autonomous behavior. None of this
+// costs the player's own AP or the skill's cooldown - only a configurable
+// resource cost (c.commandResource/c.commandCost) charged per command.
+// ============================================================================
+function permanentCompanionForSkill(id){return (game.companions||[]).find(c=>c.sourceSkillId===id&&c.permanent&&c.hp>0)}
+function companionCommandKind(c){return c.effectType==='heal'?'heal':c.effectType==='damage'?'attack':'skill'}
+function companionCommandLabel(c){const k=companionCommandKind(c);return k==='heal'?'Curar':k==='attack'?'Atacar':'Habilidad'}
+function companionCommandIcon(c){const k=companionCommandKind(c);return k==='heal'?'✚':k==='attack'?'◆':'✦'}
+// Renders the mobileSkillbar slot for a skill whose pet is already out: no
+// cooldown, no player AP, and the pet's own commandCost/commandResource
+// instead of the original summon skill's cost.
+function companionCommandButtonHtml(c,i){
+ const label=companionCommandLabel(c),icon=companionCommandIcon(c),resource=c.commandResource||'mana',cost=c.commandCost||0;
+ const disabled=busy||(cost>0&&game.player[resource]<cost);
+ const detail=`Ordenar a ${c.name}: ${label}${cost>0?` · ${cost} ${resource==='mana'?'maná':'stamina'}`:''} · no gasta PA`;
+ return `<button class="mobileSkill companionCommand" ${disabled?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${icon}</span><span class="skillText"><b>${label}</b>${cost>0?`<span class="costTag">${cost}${resource==='mana'?'✦':'⚡'}</span>`:''}</span></button>`;
+}
+function payCompanionCommandCost(c){
+ const resource=c.commandResource||'mana',cost=c.commandCost||0;
+ if(cost<=0)return true;
+ if(game.player[resource]<cost){log(`Necesitas ${cost} ${resource==='mana'?'de maná':'de stamina'} para ordenar a ${c.name}.`,'sys');return false}
+ game.player[resource]-=cost;return true
+}
+// Resolves a pet's pending order the instant it's already in range (used
+// both right after issuing a fresh order and every subsequent turn from
+// companionTurn()) - clears the order once it fires so the pet goes back to
+// just following until commanded again.
+function executeCompanionOrder(c){
+ const target=c.orderTarget;
+ if(!target||target.hp<=0){c.orderTarget=null;return}
+ if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target);floating('✦',c.x,c.y,'#d9a8ff')}
+ else{attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
+ c.orderTarget=null;
+}
+// Entry point from useSkill(): the skill slot that originally summoned this
+// pet is now its command button. Heal has no target to pick and resolves
+// right away; attack/skill open normal enemy-targeting (resolveCompanionCommand
+// on click) so the player picks exactly who the pet goes after.
+function issueCompanionCommand(c){
+ const kind=companionCommandKind(c);
+ if(kind==='heal'){
+  if(!payCompanionCommandCost(c))return;
+  healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');
+  log(`Ordenas a ${c.name} que te cure.`,'good');updateUI();draw();
+  return;
+ }
+ beginTargeting({kind:'companionCommand',companionId:c.id,mode:'enemy',range:24,minRange:0});
+}
+function resolveCompanionCommand(companionId,x,y){
+ const c=(game.companions||[]).find(o=>o.id===companionId&&o.hp>0);
+ if(!c){cancelTargeting('Tu compañero ya no está disponible.');return}
+ if(!game.seen?.[y]?.[x]){log('No puedes ordenar un ataque fuera de tu visión.','sys');return}
+ const enemy=enemyAtCell(x,y);
+ if(!enemy){log('Debes seleccionar un enemigo.','sys');return}
+ if(!payCompanionCommandCost(c))return;
+ c.orderTarget=enemy;
+ cancelTargeting('');
+ log(`Ordenas a ${c.name} que ataque a ${enemy.name}.`,'good');
+ if(gridDistance(c,enemy)<=c.range)executeCompanionOrder(c);
+ updateUI();draw();
+}
 function companionTurn(){
  game.companions=game.companions||[];
  for(const c of [...game.companions]){
+  // Permanent pets are fully invulnerable now - topped up every tick instead
+  // of hunting down every possible damage source, so the "downed" branch
+  // right below this never actually triggers for them anymore.
+  if(c.permanent&&c.effectType&&c.hp<c.maxHp)c.hp=c.maxHp;
   if(c.permanent&&c.hp<=0){
    if(!c.deathHandled){
     c.deathHandled=true;
@@ -3685,6 +3769,21 @@ function companionTurn(){
   if(c.hp<=0||c.turns<=0)continue;
   tickEntityHots(c);
   const enemies=game.enemies.filter(e=>e.hp>0);
+  // Permanent pets never fight on their own: with no pending order they just
+  // follow the player (companionFollowPlayer), and with one (set by
+  // issueCompanionCommand/resolveCompanionCommand when the player picks a
+  // target) they close the distance turn after turn - no more input needed -
+  // until they're finally in range, fire once, and go back to following.
+  if(c.permanent&&c.effectType){
+   if(c.orderTarget&&c.orderTarget.hp>0){
+    if(gridDistance(c,c.orderTarget)<=c.range)executeCompanionOrder(c);
+    else moveCompanionToward(c,c.orderTarget);
+   }else{
+    c.orderTarget=null;
+    companionFollowPlayer(c);
+   }
+   continue;
+  }
   if(c.effectType){
    // custom summon from a stackable 'summon'/'summonturret' effect
    // component: runs actionsPerTurn independent actions instead of the
@@ -4127,13 +4226,15 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='summon'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
   if(comp.permanent){
-   // Permanent companion (pet): only one instance per skill - recasting it
-   // while the pet is already up does nothing; recasting while it's downed
-   // attempts a revive instead of summoning a second one (see
-   // reviveCompanion(), companionTurn()).
+   // Permanent companion (pet): only one instance per skill. This branch
+   // only ever runs for the FIRST cast - useSkill() intercepts every
+   // subsequent press of this same skill straight into
+   // issueCompanionCommand() while the pet is alive, so it never reaches
+   // here again (and, being invulnerable now, it shouldn't go down either -
+   // reviveCompanion() stays only as a safety net).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
    return true
   }
   summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
@@ -4449,14 +4550,11 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   // toggle allows it (targetable!==false) and it wasn't summoned this same
   // turn (spawnTurn grace - see summonCompanion) - otherwise a pet could get
   // picked off the instant it appears, before it's had a turn of its own.
-  const targetableCompanions=(game.companions||[]).filter(c=>c.hp>0&&c.targetable!==false&&game.turn-(c.spawnTurn??0)>1);
+  // Permanent pets (c.permanent && c.effectType) are excluded outright: they
+  // only follow now and are invulnerable, so enemies never consider them.
+  const targetableCompanions=(game.companions||[]).filter(c=>c.hp>0&&c.targetable!==false&&game.turn-(c.spawnTurn??0)>1&&!(c.permanent&&c.effectType));
   const possibleTargets=[game.player,...targetableCompanions,...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
   let chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
-  // Permanent companions ("Compañero" pets) pull 15% of enemy aggro: a
-  // living, targetable one redirects this specific action onto it 15% of
-  // the time, regardless of who was actually nearest.
-  const pet=targetableCompanions.find(c=>c.permanent);
-  if(pet&&pet!==chosen&&Math.random()<.15)chosen=pet;
   // Chebyshev (max-axis) distance, not Manhattan: a diagonal neighbor is
   // exactly as adjacent as an orthogonal one, matching gridDistance() and
   // every other range/adjacency check in the game, so enemies can attack
@@ -4617,7 +4715,7 @@ function beginTargeting(action){
  pendingTargetAction=action;pendingAreaCandidate=null;pendingAreaHover=null;updateUI();document.getElementById('waitBtn')?.classList.add('hidden');document.getElementById('cancelTargetBtn')?.classList.remove('hidden');document.getElementById('confirmTargetBtn')?.classList.add('hidden');
  document.getElementById('gameStage')?.classList.add('targeting');
  const hint=document.getElementById('targetHint');
- if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=action.mode==='area'?`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`:action.mode==='ally'?`Selecciona un aliado o a ti mismo · alcance ${rangeText} · ESC para cancelar`:`Selecciona un enemigo · alcance ${rangeText} · ESC para cancelar`;hint.classList.remove('hidden')}
+ if(hint){const rangeText=action.minRange&&action.minRange!==action.range?`${action.minRange}-${action.range}`:action.range;hint.textContent=action.kind==='companionCommand'?'Selecciona el enemigo para tu compañero · ESC para cancelar':action.mode==='area'?`Selecciona el centro del área · alcance ${rangeText} · ESC para cancelar`:action.mode==='ally'?`Selecciona un aliado o a ti mismo · alcance ${rangeText} · ESC para cancelar`:`Selecciona un enemigo · alcance ${rangeText} · ESC para cancelar`;hint.classList.remove('hidden')}
  closeInspect()
 }
 function cancelTargeting(message='Apuntado cancelado.'){
@@ -4720,7 +4818,14 @@ function resolveBasicAttack(x,y){
 }
 
 function useSkill(slot){
- if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}
+ if(!game||busy||game.over)return;const id=game.player.equippedSkills[slot];if(!id)return;
+ // A skill that already has a live permanent pet out is no longer "cast" at
+ // all - it's that pet's command button instead (see the PERMANENT COMPANION
+ // COMMANDS block above companionTurn()). No cooldown, no resource cost
+ // beyond the pet's own configured commandCost, no player AP spent.
+ const activeCompanion=permanentCompanionForSkill(id);
+ if(activeCompanion){issueCompanionCommand(activeCompanion);return}
+ const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
  if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
@@ -4898,7 +5003,13 @@ function updateUI(){
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
  // detail moves into the title tooltip instead of stacking extra lines.
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{if(!id)return'';const d=skillDefs[id],cd=p.cooldowns[id]||0,cost=effectiveSkillCost(d),detail=`${d.name} · ${cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;return`<button class="mobileSkill" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`}).join('');
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{
+  if(!id)return'';
+  const activeCompanion=permanentCompanionForSkill(id);
+  if(activeCompanion)return companionCommandButtonHtml(activeCompanion,i);
+  const d=skillDefs[id],cd=p.cooldowns[id]||0,cost=effectiveSkillCost(d),detail=`${d.name} · ${cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;
+  return`<button class="mobileSkill" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`
+ }).join('');
  setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
@@ -5747,7 +5858,7 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
+ if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,commandResource:'mana',commandCost:0,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
  if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
  if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
@@ -5852,12 +5963,15 @@ function effectComponentCardHtml(comp,i){
   const effectType=comp.effectType||'damage',permanent=!!comp.permanent;
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
   <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="permanent" ${permanent?'checked':''}> Compañero permanente (para clases con mascota - no expira por turnos)</label>
-  ${!permanent?`<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>`:`<div class="configForm">
+  ${!permanent?`<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
+  <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>`:`<div class="configForm">
+   <label>Recurso de uso del compañero <select data-effect-idx="${i}" data-effect-field="commandResource"><option value="mana" ${(!comp.commandResource||comp.commandResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.commandResource==='stamina'?'selected':''}>Stamina</option></select></label>
+   <label>Coste de uso del compañero <input type="number" min="0" value="${comp.commandCost??0}" data-effect-idx="${i}" data-effect-field="commandCost"></label>
+   <p class="small">Un compañero permanente ya no lucha por su cuenta: solo te sigue y es invulnerable. Mientras esté vivo, su misma skill se convierte en el botón para ordenarle atacar/curar/usar su habilidad (sin gastar tu PA); este es el coste de recurso que pagas cada vez que le das esa orden.</p>
    <label>Recurso para revivirlo <select data-effect-idx="${i}" data-effect-field="reviveResource"><option value="hp" ${(!comp.reviveResource||comp.reviveResource==='hp')?'selected':''}>Vida (HP)</option><option value="stamina" ${comp.reviveResource==='stamina'?'selected':''}>Stamina</option><option value="mana" ${comp.reviveResource==='mana'?'selected':''}>Maná</option></select></label>
    <label>Cantidad para revivirlo <input type="number" min="1" value="${comp.reviveAmount??20}" data-effect-idx="${i}" data-effect-field="reviveAmount"></label>
-   <p class="small">Si muere, te aplica un debilitamiento del 10% en todas tus stats hasta que camines sobre él y pagues el coste para revivirlo (vuelve con 50% de su vida). Mientras esté vivo, atrae un 15% del agro de los enemigos cercanos.</p>
+   <p class="small">Estos dos últimos campos ya no deberían llegar a usarse (el compañero es invulnerable), pero se mantienen como red de seguridad.</p>
   </div>`}
-  <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de la invocación <select data-effect-idx="${i}" data-effect-field="effectType">
    <option value="damage" ${effectType==='damage'?'selected':''}>Daño (ataca al enemigo más cercano)</option>
    <option value="skill" ${effectType==='skill'?'selected':''}>Skill (habilidad propia configurable, efectos apilables)</option>
@@ -9136,6 +9250,7 @@ document.getElementById('game').addEventListener('click',ev=>{
    draw();
    return;
   }
+  if(pendingTargetAction.kind==='companionCommand'){resolveCompanionCommand(pendingTargetAction.companionId,gx,gy);return}
   if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,gx,gy);
   else resolveBasicAttack(gx,gy);
   return
