@@ -8600,7 +8600,11 @@ function mpOnRemoteTurn(sessionId,p){
  const expected=String((game.turnOrder||[])[game.activePlayerIndex||0]??'');
  if(expected&&String(p.author)!==expected){mpRequestResync('author');return} // not the active player
  game.mpSeq=seq;
- mpApplyLiveTurn(p);
+ // mpApplyLiveTurn() already guarantees the turn pointer/myTurn update even if
+ // its own internal merge throws (see its comment); this catch is only a
+ // last-resort net so a truly unexpected throw still results in an ack
+ // instead of leaving the sender resending into a client that never replies.
+ try{mpApplyLiveTurn(p)}catch(e){mpReportError('applyLiveTurn:outer',e,{seq})}
  mpTelemetryMark(eventId,'appliedAt');
  mpSend('ack',{seq,by:String(game.pjId)});
  mpTelemetryMark(eventId,'renderedAt');
@@ -8636,39 +8640,51 @@ function mpApplyLiveTurn(p){
  game.mpEnemyPhaseRemote=false;
  game.mpFloorTransitioning=false;
  game.turn=p.turn??game.turn;
- for(const [pid,pos] of Object.entries(p.players||{})){
-  if(String(pid)===String(game.pjId)){
-   // only the enemy-phase resolver (nextIdx 0) is authoritative over my hp
-   if(Number(p.nextIdx)===0&&typeof pos.hp==='number'&&pos.hp<game.player.hp){floating(`-${game.player.hp-pos.hp}`,game.player.x,game.player.y,'#ff8888');game.player.hp=Math.max(0,pos.hp)}
-   continue;
-  }
-  const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(pid));
-  if(!rp)continue;
-  if(rp.x!==pos.x||rp.y!==pos.y){
-   if(Math.abs(rp.x-pos.x)+Math.abs(rp.y-pos.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
-   rp.x=pos.x;rp.y=pos.y;
-  }
-  rp.facing=pos.facing||rp.facing;
-  if(typeof pos.hp==='number')rp.hp=pos.hp;
-  if(typeof pos.maxHp==='number')rp.maxHp=pos.maxHp;
- }
- mpApplyEnemyWire(p.enemies);
- for(const [x,y] of p.doorsOpen||[]){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
- for(const [x,y] of p.chestsOpened||[]){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
- if(Array.isArray(p.keysLeft))game.keys=(game.keys||[]).filter(k=>p.keysLeft.some(([x,y])=>x===k.x&&y===k.y));
- for(const [x,y,sprung] of p.trapsHit||[]){const t=(game.traps||[]).find(t=>t.x===x&&t.y===y);if(t){t.revealed=true;if(sprung)t.sprung=true}}
- for(const [x,y] of p.altarsUsed||[]){const a=(game.altars||[]).find(a=>a.x===x&&a.y===y);if(a)a.used=true}
- if(p.objective)game.objective=p.objective;
- for(const ev of p.events||[]){
-  if(!ev?.m)continue;
-  game.mpRecentEvents=game.mpRecentEvents||[];
-  if(game.mpRecentEvents.includes(ev.m))continue;
-  log(ev.m,ev.c||'combat');
-  game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>12)game.mpRecentEvents.shift();
- }
+ // The caller already bumped game.mpSeq to this commit's seq before calling
+ // us, so this transition will never be re-delivered (a later commit with
+ // seq<=mpSeq is dropped as a duplicate). If anything below throws (bad/
+ // unexpected wire data, a render hiccup...) the turn must still change
+ // hands - otherwise the other client is stuck waiting forever with no way
+ // to recover. So the turn pointer is set unconditionally up front, and the
+ // rest of the merge (secondary: enemies/doors/chests/traps/events/redraw)
+ // is best-effort in its own try/finally.
  game.activePlayerIndex=Number(p.nextIdx)||0;
- if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;recomputeDerived();updateUI();draw();mpHandleDefeatWhileWaiting();return}
+ let defeated=false;
+ try{
+  for(const [pid,pos] of Object.entries(p.players||{})){
+   if(String(pid)===String(game.pjId)){
+    // only the enemy-phase resolver (nextIdx 0) is authoritative over my hp
+    if(Number(p.nextIdx)===0&&typeof pos.hp==='number'&&pos.hp<game.player.hp){floating(`-${game.player.hp-pos.hp}`,game.player.x,game.player.y,'#ff8888');game.player.hp=Math.max(0,pos.hp)}
+    continue;
+   }
+   const rp=(game.otherPlayers||[]).find(r=>String(r.pjId)===String(pid));
+   if(!rp)continue;
+   if(rp.x!==pos.x||rp.y!==pos.y){
+    if(Math.abs(rp.x-pos.x)+Math.abs(rp.y-pos.y)<=3){rp.prevX=rp.x;rp.prevY=rp.y;rp.animT=0;requestAnimationFrame(mpAnimateRemote)}
+    rp.x=pos.x;rp.y=pos.y;
+   }
+   rp.facing=pos.facing||rp.facing;
+   if(typeof pos.hp==='number')rp.hp=pos.hp;
+   if(typeof pos.maxHp==='number')rp.maxHp=pos.maxHp;
+  }
+  mpApplyEnemyWire(p.enemies);
+  for(const [x,y] of p.doorsOpen||[]){const d=(game.doors||[]).find(d=>d.x===x&&d.y===y);if(d)d.open=true}
+  for(const [x,y] of p.chestsOpened||[]){const c=(game.chests||[]).find(c=>c.x===x&&c.y===y);if(c)c.opened=true}
+  if(Array.isArray(p.keysLeft))game.keys=(game.keys||[]).filter(k=>p.keysLeft.some(([x,y])=>x===k.x&&y===k.y));
+  for(const [x,y,sprung] of p.trapsHit||[]){const t=(game.traps||[]).find(t=>t.x===x&&t.y===y);if(t){t.revealed=true;if(sprung)t.sprung=true}}
+  for(const [x,y] of p.altarsUsed||[]){const a=(game.altars||[]).find(a=>a.x===x&&a.y===y);if(a)a.used=true}
+  if(p.objective)game.objective=p.objective;
+  for(const ev of p.events||[]){
+   if(!ev?.m)continue;
+   game.mpRecentEvents=game.mpRecentEvents||[];
+   if(game.mpRecentEvents.includes(ev.m))continue;
+   log(ev.m,ev.c||'combat');
+   game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>12)game.mpRecentEvents.shift();
+  }
+  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;defeated=true}
+ }catch(e){mpReportError('applyLiveTurn',e,{seq:p.seq})}
  recomputeDerived();
+ if(defeated){updateUI();draw();mpHandleDefeatWhileWaiting();return}
  mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex])===String(game.pjId));
  updateUI();draw();
  mpReplayTurnActions(p);
@@ -9249,54 +9265,63 @@ function mpApplyRemoteState(st){
   game.turn=st.turn??game.turn;
   if(stSeq>localSeq){game.mpSeq=stSeq;mpPruneActionQueuesUpTo(stSeq);game.mpEnemyPhaseRemote=false}
  }
- game.sessionFloors=st.floors||game.sessionFloors;
- const remoteFloor=st.currentFloor||1;
- const overlay=st.floors?.[String(remoteFloor)];
- const myPos=st.players?.[String(game.pjId)];
- if(remoteFloor!==game.floor){
-  // another player descended: the whole party moves to the new floor, and any
-  // visual actions still queued for the old floor must never be replayed here
-  mpResetActionQueues();
-  game.floor=remoteFloor;
-  game.floorEventRolled=true;
-  game.mpFloorTransitioning=false;
-  if(overlay&&overlay.map)applyFloorSnapshot(overlay);
-  else loadPrecomputedFloor();
-  const pos=(myPos&&(myPos.floor||remoteFloor)===remoteFloor)?myPos:(selectedDungeonWorld?.world_json?.floors?.[remoteFloor-1]?.spawn||{x:game.player.x,y:game.player.y});
-  game.player.x=pos.x;game.player.y=pos.y;
-  anim.heroX=anim.targetX=pos.x;anim.heroY=anim.targetY=pos.y;anim.t=1;
-  reveal(pos.x,pos.y);
-  banner(`PISO ${game.floor}`);
- }else if(overlay&&!game.myTurn){
-  game.enemies=overlay.enemies||game.enemies;
-  game.chests=overlay.chests||game.chests;
-  game.doors=overlay.doors||game.doors;
-  game.keys=overlay.keys||game.keys;
-  game.companions=overlay.companions||game.companions;
-  game.skillObjects=overlay.skillObjects||game.skillObjects;
-  game.traps=overlay.traps||game.traps;
-  game.altars=overlay.altars||game.altars;
-  if(overlay.objective)game.objective=overlay.objective;
-  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
-  if(overlay.seen&&overlay.seen.length){
-   const remoteSeen=decodeSeen(overlay.seen);
-   for(let y=0;y<remoteSeen.length;y++)for(let x=0;x<remoteSeen[y].length;x++)if(remoteSeen[y][x]&&game.seen[y])game.seen[y][x]=true;
+ // The caller (mpPollGameState) already bumped game.mpLastRev to this
+ // checkpoint's rev before calling us, so a state that fails to apply here
+ // would otherwise never be retried and the turn pointer (already updated
+ // above) would never actually reach the player - stuck waiting forever.
+ // The secondary merge (floor/enemies/doors/chests/HP diff/events/replay) is
+ // therefore best-effort in its own try/catch so it can never prevent the
+ // turn/redraw below from happening.
+ try{
+  game.sessionFloors=st.floors||game.sessionFloors;
+  const remoteFloor=st.currentFloor||1;
+  const overlay=st.floors?.[String(remoteFloor)];
+  const myPos=st.players?.[String(game.pjId)];
+  if(remoteFloor!==game.floor){
+   // another player descended: the whole party moves to the new floor, and any
+   // visual actions still queued for the old floor must never be replayed here
+   mpResetActionQueues();
+   game.floor=remoteFloor;
+   game.floorEventRolled=true;
+   game.mpFloorTransitioning=false;
+   if(overlay&&overlay.map)applyFloorSnapshot(overlay);
+   else loadPrecomputedFloor();
+   const pos=(myPos&&(myPos.floor||remoteFloor)===remoteFloor)?myPos:(selectedDungeonWorld?.world_json?.floors?.[remoteFloor-1]?.spawn||{x:game.player.x,y:game.player.y});
+   game.player.x=pos.x;game.player.y=pos.y;
+   anim.heroX=anim.targetX=pos.x;anim.heroY=anim.targetY=pos.y;anim.t=1;
+   reveal(pos.x,pos.y);
+   banner(`PISO ${game.floor}`);
+  }else if(overlay&&!game.myTurn){
+   game.enemies=overlay.enemies||game.enemies;
+   game.chests=overlay.chests||game.chests;
+   game.doors=overlay.doors||game.doors;
+   game.keys=overlay.keys||game.keys;
+   game.companions=overlay.companions||game.companions;
+   game.skillObjects=overlay.skillObjects||game.skillObjects;
+   game.traps=overlay.traps||game.traps;
+   game.altars=overlay.altars||game.altars;
+   if(overlay.objective)game.objective=overlay.objective;
+   game.boss=(game.enemies||[]).find(e=>e.boss)||null;
+   if(overlay.seen&&overlay.seen.length){
+    const remoteSeen=decodeSeen(overlay.seen);
+    for(let y=0;y<remoteSeen.length;y++)for(let x=0;x<remoteSeen[y].length;x++)if(remoteSeen[y][x]&&game.seen[y])game.seen[y][x]=true;
+   }
   }
- }
- mpSyncOtherPlayers(st);
- if(myPos&&typeof myPos.hp==='number'&&!game.myTurn){
-  if(myPos.hp<=0&&game.player.hp>0){game.player.hp=0;game.over=true;updateUI();draw();mpHandleDefeatWhileWaiting();return}
-  if(myPos.hp>0&&myPos.hp!==game.player.hp){
-   const diff=myPos.hp-game.player.hp;
-   game.player.hp=Math.min(game.player.maxHp,myPos.hp);
-   if(diff<0)floating(`${diff}`,game.player.x,game.player.y,'#ff8888');
+  mpSyncOtherPlayers(st);
+  if(myPos&&typeof myPos.hp==='number'&&!game.myTurn){
+   if(myPos.hp<=0&&game.player.hp>0){game.player.hp=0;game.over=true;updateUI();draw();mpHandleDefeatWhileWaiting();return}
+   if(myPos.hp>0&&myPos.hp!==game.player.hp){
+    const diff=myPos.hp-game.player.hp;
+    game.player.hp=Math.min(game.player.maxHp,myPos.hp);
+    if(diff<0)floating(`${diff}`,game.player.x,game.player.y,'#ff8888');
+   }
   }
- }
- // replay combat events authored by the active client
- for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
- // fallback (non-Realtime) path: replay the recorded action sequence too,
- // since this checkpoint is the only way this client ever sees the turn
- if(turnAuthoritative&&remoteFloor===game.floor&&st.actions?.length)mpReplayTurnActions(st,{skipFinalSnap:true});
+  // replay combat events authored by the active client
+  for(const ev of st.events||[])if((ev.i||0)>(game.mpLastEvSeq||0)){if(!(game.mpRecentEvents||[]).includes(ev.m))log(ev.m,ev.c||'combat');game.mpLastEvSeq=ev.i}
+  // fallback (non-Realtime) path: replay the recorded action sequence too,
+  // since this checkpoint is the only way this client ever sees the turn
+  if(turnAuthoritative&&remoteFloor===game.floor&&st.actions?.length)mpReplayTurnActions(st,{skipFinalSnap:true});
+ }catch(e){mpReportError('applyRemoteState',e,{rev:st.rev})}
  if(turnAuthoritative){
   const amIActive=String((game.turnOrder||[])[game.activePlayerIndex||0])===String(game.pjId);
   mpSetMyTurn(amIActive);
