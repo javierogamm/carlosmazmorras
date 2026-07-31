@@ -968,15 +968,20 @@ function readWorldParamsForm(){const floors=Number(document.getElementById('worl
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
 function floorTilesetForWorldPlan(floor,params){const id=worldPlanEntry(params,floor)?.floorId;if(!id)return null;return normalizedSupabaseFloors().find(f=>String(f.dbId||f.id||f.name)===String(id))||null}
-// Assets to scatter across this floor's rooms: if the floor plan pins an
-// ambiente and at least one saved asset actually carries it, restrict the
-// pool to that ambiente (mirrors pickConfiguredFamilyForFloorWithParams's
-// pin-with-fallback pattern); otherwise every asset is eligible, same as
-// before this feature existed.
+// Assets to scatter across this floor's rooms. If the floor plan pins an
+// ambiente and at least one saved asset actually carries it, use that
+// (mirrors pickConfiguredFamilyForFloorWithParams's pin-with-fallback
+// pattern). Otherwise the floor gets one random ambiente from whatever
+// ambientes exist, so a single floor reads as one coherent theme instead of
+// mixing every asset from every ambiente together. Only if nothing is
+// tagged with an ambiente at all does every asset become eligible.
 function assetDefsForFloor(floor,params){
  const all=listConfigAssets();
+ if(!all.length)return all;
  const wanted=worldPlanEntry(params,floor)?.ambiente;
  if(wanted){const filtered=all.filter(a=>(a.ambiente||'').toLowerCase()===wanted.toLowerCase());if(filtered.length)return filtered}
+ const ambientes=[...new Set(all.map(a=>a.ambiente).filter(Boolean))];
+ if(ambientes.length){const chosen=pick(ambientes),filtered=all.filter(a=>a.ambiente===chosen);if(filtered.length)return filtered}
  return all;
 }
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies(),ambientes=[...new Set(listConfigAssets().map(a=>a.ambiente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||'',ambiente:row.querySelector('[data-world-ambiente-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',randomAmbienteOption='<option value="">Cualquiera</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join(''),ambienteOptions=randomAmbienteOption+ambientes.map(a=>`<option value="${a}">${a}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label><label>Ambiente<select data-world-ambiente-select>${ambienteOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]'),amb=row.querySelector('[data-world-ambiente-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value='';if(o.ambiente&&[...amb.options].some(x=>x.value===o.ambiente))amb.value=o.ambiente;else amb.value=''});}
@@ -1775,11 +1780,23 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const L=arch.layout,E=arch.enemies,R=arch.rewards;
  const map=Array.from({length:ROWS},()=>Array(COLS).fill(1)),rooms=[];
 
+ // This floor's decoration-asset pool is picked once, up front - a single
+ // ambiente (pinned via the world's floor plan, or a random one so every
+ // floor reads as one coherent theme instead of a mix of everything) - and
+ // reused both to size rooms below and to actually place assets further
+ // down, so the two stages never disagree on which assets this floor has.
+ const floorAssetDefs=assetDefsForFloor(floor,params);
+ const floorMaxAssetSpan=floorAssetDefs.length?Math.max(...floorAssetDefs.map(a=>Math.max(a.cols,a.rows))):0;
+ // The archetype's own room-size ceiling still wins when it's already big
+ // enough; only stretched when this floor's ambiente needs more room than
+ // that to ever fit (so most floors/room types are unaffected).
+ const layoutSizeMax=Math.min(COLS-6,Math.max(L.size[1],floorMaxAssetSpan+2));
+
  // --- rooms: count/size come from the archetype, shape from the room type ---
  const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
  for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
   const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
-  const lo=Math.max(3,Math.min(T.size[0],L.size[1])),hi=Math.max(lo,Math.min(T.size[1],L.size[1]));
+  const lo=Math.max(3,Math.min(T.size[0],layoutSizeMax)),hi=Math.max(lo,Math.min(T.size[1],layoutSizeMax));
   let w=randBetween(lo,hi),h=randBetween(lo,hi);
   // shape variety: some rooms are markedly rectangular
   if(Math.random()<.35){if(Math.random()<.5)w=Math.max(3,Math.round(w*1.6));else h=Math.max(3,Math.round(h*1.6))}
@@ -1889,12 +1906,19 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // Scattered like the pillars/cover above: solid, multi-tile obstacles placed
  // inside a room's interior (border ring stays clear so no room gets sealed),
  // only in rooms strictly bigger than the asset's own tiles_number footprint.
+ // Every candidate cell is required to already be a carved floor tile
+ // (map[py][px]===0) before an asset can claim it, so assets only ever land
+ // on floor - never on a wall, a pillar, or another asset/entity's tile.
  const assetPlacements=[];
- const assetDefs=assetDefsForFloor(floor,params);
+ const assetDefs=floorAssetDefs;
  if(assetDefs.length){
-  const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y));
+  const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
+  // Hard cap so a floor never gets carpeted with decoration: a handful of
+  // rooms at most, scaling gently with how many rooms the floor even has.
+  const maxAssets=Math.min(6,1+Math.floor(rooms.length/5));
   for(const r of assetRoomPool){
-   if(Math.random()>=.35)continue; // not every eligible room gets one
+   if(assetPlacements.length>=maxAssets)break;
+   if(Math.random()>=.25)continue; // not every eligible room gets one
    const fitting=assetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
    if(!fitting.length)continue;
    const def=pick(fitting);
