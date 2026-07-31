@@ -4979,14 +4979,16 @@ function drawSkillObjectGroundOverlay(sc){
  for(const o of game.skillObjects||[]){
   if(!['totem','zone'].includes(o.kind)||(o.radius||0)<=1)continue;
   const color=o.kind==='totem'?'#9f7bff':'#64e0a0';
+  ctx.save();ctx.lineWidth=2;
   for(let dy=-o.radius;dy<=o.radius;dy++)for(let dx=-o.radius;dx<=o.radius;dx++){
    if(Math.max(Math.abs(dx),Math.abs(dy))>o.radius)continue;
    const x=o.x+dx,y=o.y+dy;
    if(!game.seen?.[y]?.[x])continue;
    const p=sc(x,y);
-   ctx.fillStyle=color+'17';ctx.fillRect(p.x,p.y,TILE,TILE);
-   ctx.strokeStyle=color+'38';ctx.strokeRect(p.x+.5,p.y+.5,TILE-1,TILE-1);
+   ctx.fillStyle=color+'40';ctx.fillRect(p.x,p.y,TILE,TILE);
+   ctx.strokeStyle=color+'90';ctx.strokeRect(p.x+1,p.y+1,TILE-2,TILE-2);
   }
+  ctx.restore();
  }
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
