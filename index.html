@@ -480,21 +480,54 @@
   </div>
  </div>
  <div class="configTabPanel hidden" id="configTabWorldObjects">
-  <div class="configLayout">
-   <section class="panel">
-    <h2>Icono del objeto seleccionado</h2>
-    <p class="small">Elige un objeto de la lista de la derecha y sube/recorta su icono. Sin icono = sprite por defecto del juego.</p>
-    <p class="small" id="configWorldObjectSelected">Ningún objeto seleccionado.</p>
-    <label>Imagen <input type="file" id="configWorldObjectImageInput" accept="image/*"></label>
-    <div class="cropTools"><label>Zoom imagen <input type="range" id="configWorldObjectCropZoom" min="25" max="400" value="100"></label><button type="button" id="configWorldObjectMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configWorldObjectMagicTolerance" min="0" max="160" value="38"></label></div>
-    <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final a 50x50 px.</div></div>
-    <div class="configPreview"><canvas id="configWorldObjectIconPreview" width="50" height="50"></canvas><span id="configWorldObjectIconStatus" class="small">Sin icono</span></div>
-    <button class="start" id="saveConfigWorldObjectBtn" type="button">GUARDAR ICONO</button>
-    <button id="rollbackConfigWorldObjectBtn" type="button">QUITAR ICONO (sprite por defecto)</button>
-    <div id="configWorldObjectStatus" class="small"></div>
-   </section>
-   <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
-  </div>
+  <details class="configSlotGroup" open>
+   <summary><span>Objetos del mundo (iconos fijos)</span></summary>
+   <div class="configLayout">
+    <section class="panel">
+     <h2>Icono del objeto seleccionado</h2>
+     <p class="small">Elige un objeto de la lista de la derecha y sube/recorta su icono. Sin icono = sprite por defecto del juego.</p>
+     <p class="small" id="configWorldObjectSelected">Ningún objeto seleccionado.</p>
+     <label>Imagen <input type="file" id="configWorldObjectImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configWorldObjectCropZoom" min="25" max="400" value="100"></label><button type="button" id="configWorldObjectMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configWorldObjectMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final a 50x50 px.</div></div>
+     <div class="configPreview"><canvas id="configWorldObjectIconPreview" width="50" height="50"></canvas><span id="configWorldObjectIconStatus" class="small">Sin icono</span></div>
+     <button class="start" id="saveConfigWorldObjectBtn" type="button">GUARDAR ICONO</button>
+     <button id="rollbackConfigWorldObjectBtn" type="button">QUITAR ICONO (sprite por defecto)</button>
+     <div id="configWorldObjectStatus" class="small"></div>
+    </section>
+    <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
+   </div>
+  </details>
+  <details class="configSlotGroup">
+   <summary><span>Assets de decoración</span></summary>
+   <div class="configLayout">
+    <section class="panel">
+     <h2 id="configAssetSelected">Nuevo asset (aún no guardado).</h2>
+     <div class="configForm">
+      <label>Nombre <input id="configAssetName" maxlength="80" placeholder="Estatua, fuente, jaula..."></label>
+      <label>Columnas que ocupa <input type="number" id="configAssetCols" min="1" max="49" value="1"></label>
+      <label>Filas que ocupa <input type="number" id="configAssetRows" min="1" max="49" value="1"></label>
+      <label>Ambiente/familia <input id="configAssetAmbiente" list="configAssetAmbienteList" maxlength="60" placeholder="Bosque, mazmorra, cripta..."><datalist id="configAssetAmbienteList"></datalist></label>
+     </div>
+     <label>Imagen <input type="file" id="configAssetImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configAssetCropZoom" min="25" max="400" value="100"></label><button type="button" id="configAssetMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configAssetMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configAssetCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono guardado (proporción columnas:filas).</div></div>
+     <div class="configPreview"><canvas id="configAssetIconPreview" width="50" height="50"></canvas><span id="configAssetIconStatus" class="small">Sin icono</span></div>
+     <button class="start" id="saveConfigAssetBtn" type="button">GUARDAR ASSET</button>
+     <button id="newConfigAssetBtn" type="button">NUEVO ASSET</button>
+     <div id="configAssetStatus" class="small"></div>
+    </section>
+    <section class="panel">
+     <h2>Vista previa a tamaño real</h2>
+     <p class="small" id="configAssetGridHint">Ajusta columnas/filas y haz clic en las casillas para marcarlas transitables o bloqueadas.</p>
+     <div class="cropWrap"><canvas id="configAssetGridCanvas" width="64" height="64"></canvas></div>
+     <hr>
+     <h2>Assets guardados</h2>
+     <p class="small">Se reparten automáticamente por algunas salas al generar mazmorras, siempre que la sala sea más grande que el asset.</p>
+     <div id="configAssetsList" class="configItemsList"></div>
+    </section>
+   </div>
+  </details>
  </div>
  <div class="configTabPanel hidden" id="configTabGates">
   <div class="configLayout">
