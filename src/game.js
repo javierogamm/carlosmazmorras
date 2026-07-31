@@ -6778,10 +6778,18 @@ function setupConfigWorldObjectsMode(){
  };
 }
 // ---- Decoration assets (config_world_object, object_key prefix asset_) ----
+function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
 function renderConfigAssetsList(){
  const root=document.getElementById('configAssetsList');if(!root)return;
  const assets=listConfigAssets();
- root.innerHTML=assets.length?assets.map(a=>`<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles${a.ambiente?` · ${a.ambiente}`:''}</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`).join(''):'<p class="small">Todavía no hay assets creados.</p>';
+ if(!assets.length){root.innerHTML='<p class="small">Todavía no hay assets creados.</p>'}
+ else{
+  const grouped=assets.reduce((acc,a)=>{const key=a.ambiente||'Sin ambiente';(acc[key]??=[]).push(a);return acc},{});
+  const orderedKeys=Object.keys(grouped).sort((a,b)=>a==='Sin ambiente'?1:b==='Sin ambiente'?-1:a.localeCompare(b,'es'));
+  // Collapsed by default (unlike other config accordions): with many
+  // ambientes the saved-assets panel would otherwise open fully expanded.
+  root.innerHTML=orderedKeys.map(key=>`<details class="configSlotGroup"><summary><span>${key}</span><b>${grouped[key].length}</b></summary><div class="configSlotItems">${grouped[key].map(renderConfigAssetRow).join('')}</div></details>`).join('');
+ }
  root.querySelectorAll('[data-edit-asset]').forEach(b=>b.onclick=()=>loadAssetForEdit(b.dataset.editAsset));
  root.querySelectorAll('[data-delete-asset]').forEach(b=>b.onclick=()=>deleteConfigAsset(b.dataset.deleteAsset));
  renderConfigAssetAmbienteOptions(assets);
