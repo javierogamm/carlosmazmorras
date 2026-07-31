@@ -495,6 +495,26 @@
    </section>
    <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
   </div>
+  <hr>
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Nuevo asset de decoración</h2>
+    <p class="small" id="configAssetSelected">Nuevo asset (aún no guardado).</p>
+    <div class="configForm">
+     <label>Nombre <input id="configAssetName" maxlength="80" placeholder="Estatua, fuente, jaula..."></label>
+     <label>Columnas que ocupa <input type="number" id="configAssetCols" min="1" max="49" value="1"></label>
+     <label>Filas que ocupa <input type="number" id="configAssetRows" min="1" max="49" value="1"></label>
+    </div>
+    <label>Imagen <input type="file" id="configAssetImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configAssetCropZoom" min="25" max="400" value="100"></label><button type="button" id="configAssetMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configAssetMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configAssetCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final a 50x50 px (se escalará al tamaño en tiles del asset).</div></div>
+    <div class="configPreview"><canvas id="configAssetIconPreview" width="50" height="50"></canvas><span id="configAssetIconStatus" class="small">Sin icono</span></div>
+    <button class="start" id="saveConfigAssetBtn" type="button">GUARDAR ASSET</button>
+    <button id="newConfigAssetBtn" type="button">NUEVO ASSET</button>
+    <div id="configAssetStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Assets guardados</h2><p class="small">Se reparten automáticamente por algunas salas al generar mazmorras, siempre que la sala sea más grande que el asset.</p><div id="configAssetsList" class="configItemsList"></div></section>
+  </div>
  </div>
  <div class="configTabPanel hidden" id="configTabGates">
   <div class="configLayout">
