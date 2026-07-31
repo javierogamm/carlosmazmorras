@@ -585,6 +585,18 @@ function skillRange(id){
  return 1;
 }
 function isRangedSkill(id){return skillDefs[id]?.type!=='utility'&&skillRange(id)>1}
+// Totem-placing skills (stormTotem/freezeTotem) keep whatever damage/cast
+// range their own definition declares for other purposes, but the tile
+// you're allowed to actually DROP the totem on is capped to a fixed,
+// tactical placement range instead - regardless of how far the skill can
+// otherwise reach.
+const TOTEM_PLACEMENT_EFFECTS=new Set(['stormTotem','freezeTotem']);
+const TOTEM_PLACEMENT_RANGE=2;
+function effectiveSkillRange(id){
+ const d=skillDefs[id];
+ if(d&&TOTEM_PLACEMENT_EFFECTS.has(d.classEffect))return TOTEM_PLACEMENT_RANGE;
+ return skillRange(id);
+}
 function lineOfSightClear(from,to){
  if(!game?.map)return false;
  let x0=from.x,y0=from.y,x1=to.x,y1=to.y;
@@ -877,10 +889,20 @@ const legendaryEffects=[
  {id:'collector',name:'Coleccionista Patológico',desc:'Cada objeto equipado de rareza distinta otorga +3% a todas las estadísticas.'}
 ];
 function activeLootLuck(){return (game?.player?.activePotions||[]).reduce((s,p)=>s+(Number(p.effect?.lootLuck)||0),0)}
-function weightedRarity(level){
+function weightedRarity(level,minRarityName=null){
  const luck=game?.player?.derived?.finalStats?.luck??game?.player?.stats?.luck??0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
  const bonus=(level-1)*.18+(luck+activeLootLuck())*.14+(game?.player?.derived?.rarityFind||0)*.18+(game?.rewardRarityBonus||0)*.55;
- const adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
+ let adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
+ // A guaranteed-minimum source (elite kills) still rolls above the floor
+ // instead of collapsing onto a single fixed rarity - reweight up to the
+ // minimum rather than just filtering it in isolation. Falls back to the
+ // single highest rarity the floor's own progression cap allows if that cap
+ // sits entirely below the requested minimum (very early floor).
+ if(minRarityName){
+  const minIdx=LOOT_RARITY_ORDER.indexOf(minRarityName);
+  const above=adjusted.filter(r=>LOOT_RARITY_ORDER.indexOf(r.name)>=minIdx);
+  adjusted=above.length?above:[adjusted[adjusted.length-1]].filter(Boolean);
+ }
  let total=adjusted.reduce((s,r)=>s+r.w,0),roll=Math.random()*total;
  for(const r of adjusted){roll-=r.w;if(roll<=0)return r}
  return adjusted[0]||rarities[0];
@@ -1224,7 +1246,15 @@ function configWeaponKind(item){
  if(/arco|ballesta|pistola|rifle|fusil|carabina|escopeta/.test(text)||(Number(item.rangeMax)||1)>1)return 'ranged';
  return 'melee';
 }
-function makeConfiguredLoot(level){if(!configItems.length)return null;const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1),eligible=configItems.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));if(!eligible.length)return null;
+function makeConfiguredLoot(level,minRarityName=null){if(!configItems.length)return null;const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);let eligible=configItems.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));if(!eligible.length)return null;
+ // Same guaranteed-minimum reasoning as weightedRarity()'s minRarityName -
+ // falls back to the unrestricted eligible pool if nothing configured meets
+ // the minimum, rather than returning no item at all.
+ if(minRarityName){
+  const minIdx=LOOT_RARITY_ORDER.indexOf(minRarityName);
+  const above=eligible.filter(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common')>=minIdx);
+  if(above.length)eligible=above;
+ }
  // prefer items whose base ilvl fits the floor's loot band
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
@@ -1236,7 +1266,7 @@ const configImageCache={};function configIconImage(src){if(!configImageCache[src
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
-function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
  if(forceRarityName){
   // Used only by the guaranteed floor-completion reward (grantFloorRewardPopup):
   // it must always be real equipment, never a configured potion (which could
@@ -1250,9 +1280,9 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){con
    if(matches.length)return configuredItemFromRow(pick(matches),lootRow,level);
   }
  } else {
-  const configured=makeConfiguredLoot(level);if(configured)return configured;
+  const configured=makeConfiguredLoot(level,minRarityName);if(configured)return configured;
  }
- const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level)):weightedRarity(level);
+ const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level,minRarityName)):weightedRarity(level,minRarityName);
  const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
  const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
  const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
@@ -2738,8 +2768,8 @@ function attack(e,bonus=0,options={}){
 // Guaranteed boss-kill rarity by floor - always real equipment (forceRarityName
 // on makeLoot never resolves to a potion or a skill-teaching item, see
 // makeLoot's forceRarityName branch).
+// A boss never drops below 'rare', regardless of how early the floor is.
 function bossGuaranteedRarityForFloor(floor){
- if(floor<=4)return'uncommon';
  if(floor<=8)return'rare';
  if(floor<=12)return'epic';
  if(floor<=16)return'legendary';
@@ -2748,8 +2778,8 @@ function bossGuaranteedRarityForFloor(floor){
 // Megaboss floors only ever land on floor%3===0 (see buildMegabossFloorPlan),
 // so this is keyed directly off that fixed progression rather than a general
 // floor formula.
+// A megaboss never drops below 'epic', regardless of how early the floor is.
 function megabossGuaranteedDrops(floor){
- if(floor<6)return{count:1,rarity:'rare'};
  if(floor<9)return{count:2,rarity:'epic'};
  if(floor<12)return{count:1,rarity:'legendary'};
  return{count:1+Math.floor((floor-12)/3),rarity:'artifact'};
@@ -2773,7 +2803,9 @@ function kill(e){
   const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
   const roll=Math.random();
   if(roll<.645){
-   const item=makeLoot(game.player.level,source,null,'equipment');addInventoryItem(item);lootToast(item);
+   // Elites never drop below 'uncommon', same guaranteed-floor idea as
+   // bosses (rare) and megabosses (epic) above.
+   const item=makeLoot(game.player.level,source,null,'equipment',e.elite?'uncommon':null);addInventoryItem(item);lootToast(item);
   }else if(roll<.967){
    const item=makeLoot(game.player.level,source,null,'potion');addInventoryItem(item);lootToast(item);
   }else{
@@ -3360,9 +3392,17 @@ function chestLootItem(c){
   const row=configItems.find(r=>String(r.id)===String(pickedId));
   if(row)return configuredItemFromRow(row,lootRow,game.player.level);
  }
+ // The chest's own configured itemTiers is an upper bound the admin picked
+ // for that chest tier, but never a substitute for the floor's own hard
+ // progression cap (lootRow.allowedRarities, see PROGRESSION_REFERENCE_FLOORS) -
+ // without also checking that here, a short dungeon (few total floors) could
+ // still hand out floor-1 chests with rare+ items just because the chest
+ // tier's own itemTiers allowed it, regardless of how many floors the
+ // dungeon actually has.
  const pool=configItems.filter(r=>{
   const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
   if(!(def.itemTiers||['common']).includes(rarity))return false;
+  if(!lootRarityAllowed(rarity,lootRow))return false;
   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
  });
  if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
@@ -3846,7 +3886,10 @@ function applyCreativeClassEffect(id,target,x,y){
  if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',d.debuffTurns??2,0,'Confuso');return true}
  if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyCreativeBuff(id,d,lvl,{armor:.12,damage:.08},3+Math.floor(lvl/3));if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
  if(['trap','rootZone'].includes(effect)){addSkillObject('trap',id,x,y,d.dotTurns??(6+lvl),dotPowerFor(d,1+lvl*.2),1);return true}
- if(['consecrate','stormTotem','areaDot'].includes(effect)){addSkillObject(effect==='stormTotem'?'totem':'zone',id,x,y,d.dotTurns??(4+Math.floor(lvl/2)),dotPowerFor(d,1+lvl*.15),2);return true}
+ // freezeTotem previously had no handler at all here (fell through to a
+ // plain area attack, or a no-op with nothing in range) despite being a
+ // real, admin-visible totem effect - now a proper totem like stormTotem.
+ if(['consecrate','stormTotem','freezeTotem','areaDot'].includes(effect)){addSkillObject(['stormTotem','freezeTotem'].includes(effect)?'totem':'zone',id,x,y,d.dotTurns??(4+Math.floor(lvl/2)),dotPowerFor(d,1+lvl*.15),2);return true}
  if(['summon','summonTurret','summonHealer','summonTank','summonScanner','summonElite','multiSummon','clones','clone'].includes(effect)){
   const kind=effect.includes('Turret')?'turret':effect.includes('Healer')?'healer':effect.includes('Tank')?'tank':effect.includes('clone')?'clone':(id==='necromancer_t1_2'||d.classId==='necromancer')?'skeleton':d.classId==='shaman'?'wolf':'companion';
   const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,d.buffTurns??(7+lvl),1+lvl*.18);return true
@@ -4383,6 +4426,17 @@ function permanentDeath(){
 // player sees it live, and multiplayer's actual sendMpAction calls go out
 // spaced the same way, instead of all at once with a separate fake replay
 // tacked on afterward.
+// Enemies far enough from the player to be practically irrelevant this turn
+// are "dormant": enemyTurn() skips them outright instead of running their AI
+// (target pick, distance/status checks, possible move) every single turn -
+// on a floor with a lot of enemies (a horda archetype especially) that
+// per-turn cost was the actual slowdown, not just wasted work, since almost
+// none of it could ever change anything for an enemy this far away anyway.
+// Single player only: multiplayer keeps one shared/authoritative enemy
+// snapshot for the whole party, so culling by distance to just this client's
+// character would leave enemies near a teammate frozen for everyone.
+const DORMANT_ENEMY_RANGE=10;
+function isEnemyDormant(e){return !game.multiplayer&&gridDistance(e,game.player)>DORMANT_ENEMY_RANGE}
 function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible()){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
@@ -4456,6 +4510,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   for(const e of [...game.enemies]){
    if(game.over)break;
    if(e.hp<=0)continue;
+   if(isEnemyDormant(e))continue;
    enemySingleAction(e);
    const bonusAp=enemyBonusAp(e),guaranteed=Math.floor(bonusAp/10),chance=(bonusAp%10)/10;
    for(let i=0;i<guaranteed&&e.hp>0&&!game.over;i++)enemySingleAction(e);
@@ -4473,7 +4528,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(game.over){finishEnemyTurn();return}
   if(idx>=queue.length){finishEnemyTurn();return}
   const e=queue[idx];
-  if(e.hp<=0){stepEnemy(idx+1);return}
+  if(e.hp<=0||isEnemyDormant(e)){stepEnemy(idx+1);return}
   let ap=Math.round((20+Math.ceil(e.stats?.agility||0)+enemyBonusAp(e))*(e.apDebuffMult??1));
   const stepAction=()=>{
    if(game.over){finishEnemyTurn();return}
@@ -4598,7 +4653,7 @@ function validateTargetCell(x,y,range,minRange=1){const dist=gridDistance(game.p
 function targetedSkillDamage(id){const d=skillDefs[id],lvl=skillLevel(id),stat=d.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3;return Math.round((5+lvl*2+stat)*skillPowerMultiplier(id))}
 function resolveTargetedSkill(slot,x,y){
  const id=game.player.equippedSkills[slot],d=skillDefs[id];if(!id||!d)return false;
- const range=skillRange(id)||1,mode0=skillTargetMode(id);
+ const range=effectiveSkillRange(id)||1,mode0=skillTargetMode(id);
  if(!validateTargetCell(x,y,range,mode0==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
@@ -4669,7 +4724,7 @@ function useSkill(slot){
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
  if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
- const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:skillRange(id),minRange:targetMode==='ally'?0:1});return}
+ const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:effectiveSkillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  if(hasEffectsList(id)){
   // All-self composable skill (skillTargetMode already returned null, so
@@ -4894,7 +4949,7 @@ function drawSafeRoomOverlay(sc){
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26')}
- const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);
+ const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
  for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
@@ -4912,6 +4967,27 @@ function draw(){
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
  drawAreaCandidateOverlay();
+}
+// Persistent area effects (totems/zones with radius > 1, e.g. stormTotem's
+// lightning field or consecrate's healing ground) used to only render a
+// bold marker on their own single anchor tile - the actual affected area
+// (tickSkillObjects() hits every enemy within gridDistance<=radius) was
+// otherwise invisible. Paints a subtle, low-alpha tint across every seen
+// tile the effect actually covers, drawn early (with the floor) so the
+// bold anchor icon from skillObjectSprite still reads as the focal point.
+function drawSkillObjectGroundOverlay(sc){
+ for(const o of game.skillObjects||[]){
+  if(!['totem','zone'].includes(o.kind)||(o.radius||0)<=1)continue;
+  const color=o.kind==='totem'?'#9f7bff':'#64e0a0';
+  for(let dy=-o.radius;dy<=o.radius;dy++)for(let dx=-o.radius;dx<=o.radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))>o.radius)continue;
+   const x=o.x+dx,y=o.y+dy;
+   if(!game.seen?.[y]?.[x])continue;
+   const p=sc(x,y);
+   ctx.fillStyle=color+'17';ctx.fillRect(p.x,p.y,TILE,TILE);
+   ctx.strokeStyle=color+'38';ctx.strokeRect(p.x+.5,p.y+.5,TILE-1,TILE-1);
+  }
+ }
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
 function skillObjectSprite(x,y,o){
