@@ -126,9 +126,14 @@ La función `attack()` calcula:
 
 ```text
 tirada = roll(dado)
-statMod básico = max(0, floor(total('damage') * 0.45))
+armaStat = inferWeaponDefenseStat(armaEquipada)   // strength/vitality/agility/luck/intelligence/wisdom, según categoría/tipo del arma
+statMod básico = max(0, floor(total('damage') * 0.3) + weaponStatDamageBonus(jugador, armaStat))
 raw = round((tirada + statMod + bonus * 0.35) * multiplier * nextSkillMultiplier * activeBuffDamageMultiplier * damageDealtMultiplier)
 ```
+
+`weaponStatDamageBonus(actor, stat)` es `floor((stat*2 + statSecundaria) / 3)`, con la stat secundaria emparejada así: `strength↔agility`, `vitality→strength`, `intelligence↔wisdom`, `luck→wisdom`. Es decir, el arma equipada determina qué stat del jugador bonifica su propio daño (una daga/rifle escala con Agilidad, un bastón con Inteligencia, etc.), no solo qué defensa del enemigo se pone a prueba (ver 6.1). `total('damage')` sigue aportando una parte menor (afijos con `stat==='damage'`, crecimiento de nivel).
+
+`armaStat` es también el `defenseStat` usado en el punto 6.1 (misma stat decide ambas cosas: cuánto bonifica el golpe y contra qué defensa del enemigo golpea).
 
 Después se resuelve defensa del enemigo y crítico.
 
@@ -260,7 +265,7 @@ El daño nunca baja de 1 si el multiplicador no es 0.
 
 ### 6.1 Stat defensiva atacada
 
-- Armas: se infiere por texto/tipo. Proyectiles y dagas suelen atacar Agilidad; bastones/orbes/grimorios Inteligencia; reliquias/sagrado Sabiduría; martillos/mazas/hachas/yunque Vitalidad; resto Fuerza.
+- Armas (`inferWeaponDefenseStat`): prioriza el `defenseStat` ya grabado en el item (calculado al crearlo desde `WEAPON_TYPE_STAT`/`weaponCategoryStats` según su tipo/categoría real); si el item no lo trae, cae a `WEAPON_TYPE_STAT` por tipo de arma, luego a `weaponCategoryStats` por categoría, y solo como último recurso a un regex sobre el nombre/tema (proyectiles y dagas → Agilidad; bastones/orbes/grimorios → Inteligencia; reliquias/sagrado → Sabiduría; martillos/mazas/hachas/yunque → Vitalidad; resto → Fuerza). Esta misma stat es la que bonifica el daño de salida del jugador (ver 4.4).
 - Skills: puede venir en `defenseStat`; si no se infiere por palabras clave. Caos usa Suerte; miedo/alma/sagrado/sombra usa Sabiduría; arcano/mana/fuego/hielo/rayo usa Inteligencia; veneno/ácido/terremoto/explosión usa Vitalidad; proyectil/trampa/embestida/execute usa Agilidad; fallback Fuerza.
 
 ### 6.2 Bonus defensivo enemigo
@@ -323,6 +328,26 @@ Los enemigos tienen dos campos compatibles:
 
 - `damage`: campo usado por enemigos legacy y escalado.
 - `atk`: campo usado por algunos enemigos configurados o familias antiguas; si no existe `atk`, se usa `damage`.
+
+### 9.0 Arma por arquetipo y ataque normal (`equipEnemy`/`enemyNormalAttackDamage`)
+
+Todo enemigo se resuelve a un arquetipo (`enemyClassOf`: rogue, warrior, tanque, arquero, francotirador, caster, invocador, clerigo, chaman) y `ENEMY_CLASS_GEAR[arquetipo]` le da tanto el tipo de arma (`kind`/`cats`/`types`) como la stat que bonifica su ataque (`stat`: agilidad para rogue/arquero/francotirador, fuerza para warrior, vitalidad para tanque, inteligencia para caster/invocador, sabiduría para clerigo/chaman) — el mismo rol que `armaStat` cumple para el jugador en 4.4.
+
+`equipEnemy()` calcula primero el objetivo de daño medio igual que antes (`avgTarget = baseAtk + dmgBonus`, con `baseAtk` ya escalado por nivel/piso/tier/boss y `dmgBonus` por rareza del arma), y lo descompone en:
+
+```text
+dado = item.damageDice del arma real, o por rareza: común 1d4, infrecuente 1d6, raro 1d8, épico 1d10, legendario 2d6, artefacto 2d8
+statMod = round(enemigo.stats[stat] * 1.4)
+residual = max(0, round(avgTarget - promedio(dado) - statMod))
+```
+
+`enemyNormalAttackDamage(enemigo)`, usada en cada ataque normal (`enemyTurn`), tira el dado real cada turno:
+
+```text
+golpe = max(1, round(roll(dado) + statMod + residual))
+```
+
+El promedio de `golpe` a lo largo de muchos turnos coincide con el `avgTarget` de antes (mismo balance de piso/nivel/rareza que ya existía), pero ahora cada golpe individual varía por la tirada de dado — igual que el ataque del jugador — y el `statMod` reacciona a `enemigo.stats` en vez de quedar congelado al generar el enemigo.
 
 ### 9.1 Enemigos legacy generados por tema
 

@@ -2310,16 +2310,20 @@ function enemySkillPool(e){
 // quality scales with level/floor rarity. Ranged classes shoot from distance,
 // magic classes cast, support classes heal allies. Weapon data is plain JSON
 // so it persists through world JSON, session snapshots and broadcasts.
+// `stat` is the archetype's offensive stat: same role as a player weapon's
+// defenseStat (inferWeaponDefenseStat) but for the enemy's own core stats,
+// matching the bias normalizeEnemyCoreStats already gives each archetype -
+// used by enemyStatModifier() to bonus the enemy's normal-attack roll.
 const ENEMY_CLASS_GEAR={
- rogue:{kind:'melee',cats:['Armas blancas steampunk básicas','Espadas eléctricas iniciales'],label:'Pícaro'},
- warrior:{kind:'melee',cats:['Armas pesadas steampunk','Armas de latón refinadas'],label:'Guerrero'},
- tanque:{kind:'melee',cats:['Armas eléctricas pesadas','Artillería steampunk'],label:'Tanque'},
- arquero:{kind:'ranged',types:['Arcos','Ballestas','Pistolas','Escopetas'],label:'Arquero'},
- francotirador:{kind:'ranged',types:['Rifles','Ballestas'],label:'Francotirador'},
- caster:{kind:'magic',types:['Varitas'],label:'Mago'},
- invocador:{kind:'magic',types:['Varitas'],label:'Invocador'},
- clerigo:{kind:'magic',types:['Varitas'],label:'Clérigo'},
- chaman:{kind:'magic',types:['Varitas'],label:'Chamán'}
+ rogue:{kind:'melee',cats:['Armas blancas steampunk básicas','Espadas eléctricas iniciales'],label:'Pícaro',stat:'agility'},
+ warrior:{kind:'melee',cats:['Armas pesadas steampunk','Armas de latón refinadas'],label:'Guerrero',stat:'strength'},
+ tanque:{kind:'melee',cats:['Armas eléctricas pesadas','Artillería steampunk'],label:'Tanque',stat:'vitality'},
+ arquero:{kind:'ranged',types:['Arcos','Ballestas','Pistolas','Escopetas'],label:'Arquero',stat:'agility'},
+ francotirador:{kind:'ranged',types:['Rifles','Ballestas'],label:'Francotirador',stat:'agility'},
+ caster:{kind:'magic',types:['Varitas'],label:'Mago',stat:'intelligence'},
+ invocador:{kind:'magic',types:['Varitas'],label:'Invocador',stat:'intelligence'},
+ clerigo:{kind:'magic',types:['Varitas'],label:'Clérigo',stat:'wisdom'},
+ chaman:{kind:'magic',types:['Varitas'],label:'Chamán',stat:'wisdom'}
 };
 const ENEMY_WEAPON_BASENAMES={Arcos:'Arco',Ballestas:'Ballesta',Pistolas:'Pistola',Rifles:'Rifle',Escopetas:'Escopeta',Varitas:'Varita'};
 const ENEMY_WEAPON_QUALITY=['de chatarra','de caza','de guerra','de élite','de leyenda','de mito'];
@@ -2372,6 +2376,21 @@ function enemyClassOf(e){
  if(/golem|tanque|guardian|coloso|troll|ogro/.test(t))return 'tanque';
  return 'warrior';
 }
+// Weapon damage dice by rarity for enemy normal attacks, same idea as a
+// player weapon's damageDice - a real config_items weapon's own damageDice
+// still wins (see equipEnemy) so this is only the synthetic/fallback table.
+const ENEMY_ATTACK_DICE_BY_RARITY=['1d4','1d6','1d8','1d10','2d6','2d8'];
+function diceAverage(expr){const d=parseDice(expr);return d.count*(d.sides+1)/2+d.bonus}
+const ENEMY_STAT_DMG_COEF=1.4;
+// Enemy-side counterpart to weaponStatDamageBonus(): bonuses the archetype's
+// associated stat (ENEMY_CLASS_GEAR[cls].stat) off the enemy's own core
+// stats, so a rogue swings harder with more Agilidad, a mage with more
+// Inteligencia, etc. - instead of every archetype's normal attack ignoring
+// e.stats entirely.
+function enemyStatModifier(e,cls){
+ const stat=ENEMY_CLASS_GEAR[cls||e.enemyClass||enemyClassOf(e)]?.stat||'strength';
+ return Math.round((e.stats?.[stat]||0)*ENEMY_STAT_DMG_COEF);
+}
 function equipEnemy(e,floor=game?.floor||1){
  if(e.weapon)return e;
  const cls=enemyClassOf(e),gear=ENEMY_CLASS_GEAR[cls];
@@ -2393,8 +2412,18 @@ function equipEnemy(e,floor=game?.floor||1){
   const rangeMin=gear.kind==='melee'?1:(Number(w.item.rangeMin)||preset?.min||1);
   const rangeMax=gear.kind==='melee'?1:(Number(w.item.rangeMax)||preset?.max||4);
   const dmgBonus=Math.max(1,Math.round(baseAtk*(.12+rIdx*.05)));
-  e.weapon={name:w.item.name||w.row.nombre||'Arma',kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,rarity,label:w.item.label||tierDefs[rarity]?.label||rarity,itemId:w.row.id};
-  e.atk=baseAtk+dmgBonus;e.damage=e.atk;
+  // avgTarget (baseAtk+dmgBonus, unchanged from before) is the enemy's fully
+  // level/tier/rarity-scaled intended average hit. It's decomposed into a
+  // weapon dice roll + a live stat modifier (enemyStatModifier, reacts to
+  // e.stats same as the player's weaponStatDamageBonus) + a flat residual
+  // that absorbs the rest, so the average hit is unchanged but individual
+  // hits now vary turn to turn instead of always landing on the same number.
+  const avgTarget=baseAtk+dmgBonus;
+  const dice=w.item.damageDice||ENEMY_ATTACK_DICE_BY_RARITY[rIdx]||'1d6';
+  const statMod=enemyStatModifier(e,cls);
+  const atkResidual=Math.max(0,Math.round(avgTarget-diceAverage(dice)-statMod));
+  e.weapon={name:w.item.name||w.row.nombre||'Arma',kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,dice,atkResidual,rarity,label:w.item.label||tierDefs[rarity]?.label||rarity,itemId:w.row.id};
+  e.atk=avgTarget;e.damage=e.atk;
   if(cls==='tanque')e.armor=(e.armor||0)+1+Math.floor(lvl/6);
   return e;
  }
@@ -2410,8 +2439,12 @@ function equipEnemy(e,floor=game?.floor||1){
   name=`${ENEMY_WEAPON_BASENAMES[t]||t} ${ENEMY_WEAPON_QUALITY[rarIdx]||ENEMY_WEAPON_QUALITY[0]}`;
  }
  const dmgBonus=Math.max(1,Math.round(baseAtk*(.12+rarIdx*.05)));
- e.weapon={name,kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,rarity:rar.name,label:rar.label};
- e.atk=baseAtk+dmgBonus;e.damage=e.atk;
+ const avgTarget=baseAtk+dmgBonus;
+ const dice=ENEMY_ATTACK_DICE_BY_RARITY[rarIdx]||'1d6';
+ const statMod=enemyStatModifier(e,cls);
+ const atkResidual=Math.max(0,Math.round(avgTarget-diceAverage(dice)-statMod));
+ e.weapon={name,kind:gear.kind,rangeMin,rangeMax,dmg:dmgBonus,dice,atkResidual,rarity:rar.name,label:rar.label};
+ e.atk=avgTarget;e.damage=e.atk;
  if(cls==='tanque')e.armor=(e.armor||0)+1+Math.floor(lvl/6);
  return e;
 }
@@ -2638,7 +2671,14 @@ const DEFENSE_STAT_LABELS={
 // daggers/claws/rifles/pistols use agility, shotguns use strength.
 const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
 function inferWeaponDefenseStat(item){
+ // Trust the stat already resolved onto the item (configuredItemFromRow sets
+ // it from WEAPON_TYPE_STAT/weaponCategoryStats at creation time) before
+ // falling back to recomputing it - otherwise a flavor name that doesn't
+ // match any keyword below (most of weaponRows' names) silently loses its
+ // category's real stat and defaults to 'strength'.
+ if(item?.defenseStat)return item.defenseStat;
  if(item?.weaponType&&WEAPON_TYPE_STAT[item.weaponType])return WEAPON_TYPE_STAT[item.weaponType];
+ if(item?.weaponCategory&&weaponCategoryStats[item.weaponCategory])return weaponCategoryStats[item.weaponCategory];
  const text=`${item?.name||''} ${item?.iconShape||''} ${item?.theme||''}`.toLowerCase();
  if(/(arco|ballesta|rifle|pistola|fusil|rail|bláster|blaster|cañón|canon|daga|dagger|spear|lanza|garra|claw)/.test(text))return'agility';
  if(/(bastón|baston|staff|orbe|orb|grimorio|book|rúnic|runic|mágic|magic)/.test(text))return'intelligence';
@@ -2716,6 +2756,15 @@ function baseAttackDice(){
  return'1d6'
 }
 function statValueFor(actor,statKey){const st=actor?.derived?.finalStats||actor?.stats||{};return st[statKey]||0}
+// Secondary stat paired with each weapon-associated stat for the basic
+// attack's stat bonus below - same 2:1 primary/secondary blend as
+// actorStatDamageBonus (used by skills), just keyed by the full 6-stat set
+// instead of only the physical/magic split.
+const WEAPON_STAT_SECONDARY={strength:'agility',agility:'strength',vitality:'strength',intelligence:'wisdom',wisdom:'intelligence',luck:'wisdom'};
+function weaponStatDamageBonus(actor,stat){
+ const secondary=WEAPON_STAT_SECONDARY[stat]||'strength';
+ return Math.floor((statValueFor(actor,stat)*2+statValueFor(actor,secondary))/3);
+}
 function skillDiceExpr(id){
  const d=skillDefs[id]||{},tier=d.tier||({common:1,uncommon:1,rare:2,epic:3,legendary:3}[d.rarity]||1);
  if(d.dmgDice>0)return `${d.dmgDice}d${d.dmgDie||6}`;
@@ -2819,9 +2868,16 @@ function attack(e,bonus=0,options={}){
  // dmgStatCoef, or a companion/turret/clone's) instead of it always being
  // read off skillDefs[skillId] - see statModifierFor/statMultiplierFor.
  const statSource=options.statDefLike||(skillId?skillDefs[skillId]:null);
- const statMod=statSource?statModifierFor(statSource):Math.max(0,Math.floor(total('damage')*.45));
+ // Basic attack (no skill): the stat bonus is driven by the equipped
+ // weapon's own associated stat (weaponCategoryStats/WEAPON_TYPE_STAT via
+ // inferWeaponDefenseStat) rather than always Fuerza - a dagger/rifle
+ // bonuses off Agilidad, a staff off Inteligencia, etc. total('damage')
+ // still contributes (gear with the 'damage' affix, HUD "Daño" stat) but
+ // at reduced weight now that the weapon-stat term carries most of it.
+ const weaponStat=skillId?null:inferWeaponDefenseStat(equippedWeapon());
+ const statMod=statSource?statModifierFor(statSource):Math.max(0,Math.floor(total('damage')*.3)+weaponStatDamageBonus(game.player,weaponStat||'strength'));
  const statMultFactor=statSource?statMultiplierFor(statSource):1;
- const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):inferWeaponDefenseStat(equippedWeapon()));
+ const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):weaponStat);
  const markMult=1+((e.statuses||[]).find(s=>s.type==='mark'&&s.turns>0)?.power||0);
  let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
@@ -4604,6 +4660,17 @@ function permanentDeath(){
 // character would leave enemies near a teammate frozen for everyone.
 const DORMANT_ENEMY_RANGE=10;
 function isEnemyDormant(e){return !game.multiplayer&&gridDistance(e,game.player)>DORMANT_ENEMY_RANGE}
+// Enemy normal-attack damage: mirrors the player's attack() - roll the
+// equipped weapon's dice, add a live stat modifier off the enemy's own
+// stats (enemyStatModifier), plus the flat residual equipEnemy baked in so
+// the average hit stays at the same level/tier/rarity-tuned value as
+// before, just with real per-turn variance instead of a frozen number.
+function enemyNormalAttackDamage(e){
+ const w=e.weapon;
+ if(!w)return Math.max(1,Math.round(e.atk||e.damage||4));
+ const roll=rollDice(w.dice||'1d4').total,statMod=enemyStatModifier(e);
+ return Math.max(1,Math.round(roll+statMod+(w.atkResidual||0)));
+}
 function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible()){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
@@ -4631,7 +4698,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   const w=e.weapon,wRanged=w&&w.kind!=='melee'&&(w.rangeMax||1)>1;
   // shoot/cast with the equipped ranged weapon
   if(wRanged&&dist>1&&dist<=w.rangeMax&&hasLineOfSight(e,chosen)&&Math.random()<.85){
-   const dmg=Math.max(1,Math.round(e.atk||e.damage||4));
+   const dmg=enemyNormalAttackDamage(e);
    if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:chosen===game.player?dmg:Math.round(dmg*.9),result:w.kind==='magic'?'spell':'ranged'});
    rangedTracer(e.x,e.y,chosen.x,chosen.y,w.kind==='magic'?'#be82ff':'#ffd27a');
    floating(w.kind==='magic'?'✦':'➶',e.x,e.y,w.kind==='magic'?'#be82ff':'#ffd27a');
@@ -4647,10 +4714,11 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
    if(stepped)return AP_COSTS.move;
   }
   if(dist===1&&chosen!==game.player){
-   if(game.multiplayer&&chosenRef){const dmgv=Math.max(1,Math.round(e.atk||e.damage||4));sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:dmgv})}
-   const dmg=Math.max(1,Math.round(e.atk||e.damage||4));chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');return AP_COSTS.attack
+   const dmg=enemyNormalAttackDamage(e);
+   if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:dmg});
+   chosen.hp-=dmg;floating(`-${dmg}`,chosen.x,chosen.y,'#ff8888');log(`${e.name} golpea a ${chosen.name} por ${dmg}.`,'combat');return AP_COSTS.attack
   }
-  if(dist===1){if(e.type==='orcoKamikaze'){if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:e.atk+5,result:'explode'});floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);return AP_COSTS.attack}if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0))});damagePlayer(Math.max(1,e.atk-(game.player.debuff||0)-(e.weakened||0)),/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);return AP_COSTS.attack}
+  if(dist===1){if(e.type==='orcoKamikaze'){if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:e.atk+5,result:'explode'});floating('¡BOOM!',e.x,e.y,'#ff8b4f');damagePlayer(e.atk+5,'vitality',`${e.name} explota`);e.hp=0;kill(e);return AP_COSTS.attack}const dmg=Math.max(1,enemyNormalAttackDamage(e)-(game.player.debuff||0)-(e.weakened||0));if(game.multiplayer&&chosenRef)sendMpAction('enemy_attack',{enemyId:e.eid,targetType:chosenRef.type,targetId:chosenRef.id,visualAmount:dmg});damagePlayer(dmg,/wolf|hound|goblin|vamp/i.test(e.type)?'agility':'vitality',`${e.name} ataca`);if(e.type==='vampiro')healEntity(e,3,e.x,e.y);return AP_COSTS.attack}
   if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},targetType:'player',targetId:String(game.pjId),visualAmount:e.atk,icon:'✦'});damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');return AP_COSTS.attack}
   // shooters hold position while target is in range and sight
   if(wRanged&&dist<=w.rangeMax&&hasLineOfSight(e,chosen))return 0;
