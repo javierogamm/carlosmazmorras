@@ -1304,21 +1304,28 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null){con
 // content whenever one exists, otherwise falls back to the same procedural
 // builder normal loot uses. Never rolls a random slot/rarity, so calling it
 // once per slot can never produce the duplicate pile-up a retry loop would.
+// Testing gear only ever comes from real config_items rows (Configuración >
+// Items) - never the procedural generator makeLoot() falls back to. That
+// generator's weapon "category" is a flavor-name table with no reliable
+// weaponType, so an admin verifying their own catalogue (does every slot,
+// every weapon type, actually have items configured?) needs testing mode to
+// surface exactly what's really in the database, gaps included, instead of
+// silently papering over a missing slot/type with a made-up item. Returns
+// null when nothing configured matches - the caller just skips it.
 function makeTestGearItem(slot,rarityName,level,{weaponType=null,offhandKind=null}={}){
  const rar=rarities.find(r=>r.name===rarityName)||rarities[0];
- if(configItems.length){
-  const matches=configItems.filter(row=>{
-   const j=row.item_json||row;
-   if((j.rarity||row.tier||'common')!==rar.name)return false;
-   if((j.slot||row.slot||'')!==slot)return false;
-   if(j.type==='potion')return false;
-   if(slot==='weapon'&&weaponType&&(j.weaponType||row.weaponType)!==weaponType)return false;
-   if(slot==='offhand'&&offhandKind&&(j.offhandKind||detectOffhandKind(j))!==offhandKind)return false;
-   return true;
-  });
-  if(matches.length)return configuredItemFromRow(pick(matches),currentLootProgressionRow(game?.floor||1,level),level);
- }
- return buildProceduralItem(slot,rar,level,weaponType,offhandKind);
+ if(!configItems.length)return null;
+ const matches=configItems.filter(row=>{
+  const j=row.item_json||row;
+  if((j.rarity||row.tier||'common')!==rar.name)return false;
+  if((j.slot||row.slot||'')!==slot)return false;
+  if(j.type==='potion')return false;
+  if(slot==='weapon'&&weaponType&&(j.weaponType||row.weaponType)!==weaponType)return false;
+  if(slot==='offhand'&&offhandKind&&(j.offhandKind||detectOffhandKind(j))!==offhandKind)return false;
+  return true;
+ });
+ if(!matches.length)return null;
+ return configuredItemFromRow(pick(matches),currentLootProgressionRow(game?.floor||1,level),level);
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
@@ -6837,32 +6844,42 @@ function launchTestCombat(){
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(tstClass);
- // A naked level-30 character (nothing but the tier-1 starter weapon) hits
- // like a level-1 one - the level-appropriate loot has to actually be worn,
- // not just sit in the backpack, or every fight (megabosses especially)
- // feels unkillable regardless of the archetype/density chosen above.
- // Generates exactly 3 items per slot at the tester-chosen tier (no random
- // retry loop, so no duplicate pile-up) and equips the first of each; the
- // other two go to the backpack to compare. The weapon and offhand sets are
- // built from explicit type/kind lists instead of a random weaponCategory
- // roll, so the slots that a pure random pick can starve for a long time
- // (daggers, claws, polearms, and a wand/dagger offhand) are guaranteed on
- // every single test run.
- const WEAPON_TYPE_SET=['Dagas','Garras','Lanzas'];
- const OFFHAND_KIND_SET=['shield','wand','dagger'];
- for(const [i,wt] of WEAPON_TYPE_SET.entries()){
-  const item=makeTestGearItem('weapon',tstGearTier,tstLevel,{weaponType:wt});
-  if(item){if(i===0)game.player.equipment.weapon=item;else addInventoryItem(item)}
+ // Testing gear is exclusively real config_items content (Configuración >
+ // Items) - makeTestGearItem() never falls back to a procedural item, so a
+ // slot/weapon type with nothing configured for the chosen tier just
+ // contributes nothing (reported below) instead of a made-up placeholder.
+ // 3 items per slot, and the weapon slot specifically broken down into 3
+ // items per weapon type (Dagas, Garras, Lanzas, ...) so testing doubles as
+ // a coverage check of the admin's own catalogue. The starter weapon set
+ // earlier stays as the only non-configured fallback, so the character is
+ // never left completely unarmed if nothing configured matches at all.
+ let gearFound=0,gearAttempts=0,weaponEquipped=false,offhandEquipped=false;
+ for(const wt of configWeaponTypes){
+  for(let i=0;i<3;i++){
+   gearAttempts++;
+   const item=makeTestGearItem('weapon',tstGearTier,tstLevel,{weaponType:wt});
+   if(!item)continue;
+   gearFound++;
+   if(!weaponEquipped){game.player.equipment.weapon=item;weaponEquipped=true}else addInventoryItem(item);
+  }
  }
- for(const [i,ok] of OFFHAND_KIND_SET.entries()){
-  const item=makeTestGearItem('offhand',tstGearTier,tstLevel,{offhandKind:ok});
-  if(item){if(i===0)game.player.equipment.offhand=item;else addInventoryItem(item)}
+ for(const ok of ['shield','wand','dagger']){
+  for(let i=0;i<3;i++){
+   gearAttempts++;
+   const item=makeTestGearItem('offhand',tstGearTier,tstLevel,{offhandKind:ok});
+   if(!item)continue;
+   gearFound++;
+   if(!offhandEquipped){game.player.equipment.offhand=item;offhandEquipped=true}else addInventoryItem(item);
+  }
  }
  for(const s of slots.filter(s=>!['weapon','offhand'].includes(s))){
+  let equipped=false;
   for(let i=0;i<3;i++){
+   gearAttempts++;
    const item=makeTestGearItem(s,tstGearTier,tstLevel);
    if(!item)continue;
-   if(i===0)game.player.equipment[s]=item;else addInventoryItem(item);
+   gearFound++;
+   if(!equipped){game.player.equipment[s]=item;equipped=true}else addInventoryItem(item);
   }
  }
  recomputeDerived();
@@ -6871,6 +6888,7 @@ function launchTestCombat(){
  generateFloor();
  banner(`MODO TESTING · ${game.player.name} NV.${tstLevel} · ${(arch?arch.label:'Cámara del megajefe').toUpperCase()}`);
  log('Modo testing: personaje temporal, sin persistencia ni bloqueos de nivel/puntuación.','sys');
+ log(`Equipo de prueba: ${gearFound}/${gearAttempts} objetos encontrados en config_items al tier ${rarities.find(r=>r.name===tstGearTier)?.label||tstGearTier} (los huecos son slots/tipos de arma sin objetos configurados a ese tier).`,'sys');
 }
 // Same custom-icon lookup as drawWorldObjectIcon but paints onto an arbitrary
 // UI canvas (lock badges on locked race/class cards) and falls back to a

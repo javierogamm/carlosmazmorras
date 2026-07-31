@@ -546,7 +546,7 @@
     <label>Densidad de enemigos <input id="testEnemyDensity" type="range" min="25" max="150" value="50" step="5"><span id="testEnemyDensityValue">50%</span></label>
     <p class="small">100% es la densidad normal de ese tipo de piso (una horda puede rondar el centenar de enemigos); bájala para poder despejar el piso de prueba sin que se sienta interminable.</p>
     <label>Tier del equipo de prueba <select id="testGearTier"></select></label>
-    <p class="small">Se generan 3 objetos de este tier para cada slot de equipo (armas: dagas, garras y lanzas; mano secundaria: escudo, varita y daga), el primero de cada uno se equipa y el resto va a la mochila para comparar.</p>
+    <p class="small">Solo usa objetos ya configurados en Configuración → Items a ese tier: 3 por cada slot de equipo, y en armas 3 por cada tipo (dagas, garras, espadas, lanzas...). El primero de cada uno se equipa y el resto va a la mochila para comparar; si un slot o tipo de arma no tiene nada configurado a ese tier, simplemente no se genera nada para él (lo verás en el log al entrar).</p>
     <button class="start" id="testLaunchBtn" type="button">LANZAR PRUEBA DE COMBATE</button>
     <div id="testStatus" class="small"></div>
    </section>
