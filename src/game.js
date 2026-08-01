@@ -60,9 +60,6 @@ const classDefs={
  beastGuardian:{name:'Guardián Bestial Aumentado',desc:'Vincula su mente a criaturas con implantes cibernéticos.',stats:{strength:3,vitality:4,agility:3,luck:1,intelligence:1,wisdom:3},skills:['smash','charge'],resourceBias:'stamina'}
 };
 
-const itemTypes={equipment:'Equipo',potion:'Poción'};
-const potionEffectLabels={heal:'Cura',regen:'Regeneración',stamina:'Recuperación stamina',mana:'Recuperación maná',temporaryStats:'Incremento temporal de stats',permanentStats:'Incremento permanente de stats',learnSkill:'Aprender habilidad',teleportSafe:'Teletransporte a sala segura',teleportStairs:'Teletransporte a escalera de piso',invulnerable:'Invulnerabilidad',invisible:'Invisibilidad'};
-const potionStatKeys=['strength','vitality','agility','luck','intelligence','wisdom'];
 const slots=['weapon','offhand','head','chest','hands','legs','boots','neck','ring1','ring2','trinket1','trinket2'];
 const slotNames={weapon:'Arma',offhand:'Mano secundaria',head:'Cabeza',chest:'Pecho',hands:'Manos',legs:'Piernas',boots:'Botas',neck:'Cuello',ring1:'Anillo I',ring2:'Anillo II',trinket1:'Trinket I',trinket2:'Trinket II'};
 const itemBases={
@@ -888,10 +885,12 @@ const legendaryEffects=[
  {id:'echo',name:'Eco de Firmware',desc:'10% de repetir gratuitamente una habilidad usada.'},
  {id:'collector',name:'Coleccionista Patológico',desc:'Cada objeto equipado de rareza distinta otorga +3% a todas las estadísticas.'}
 ];
-function activeLootLuck(){return (game?.player?.activePotions||[]).reduce((s,p)=>s+(Number(p.effect?.lootLuck)||0),0)}
 function weightedRarity(level,minRarityName=null){
+ // A 'buff' potion/skill effect targeting stat 'luck' already lands here via
+ // finalStats (recomputeDerived merges every active buff's stat deltas in),
+ // so it needs no separate loot-luck side-channel of its own anymore.
  const luck=game?.player?.derived?.finalStats?.luck??game?.player?.stats?.luck??0,row=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);
- const bonus=(level-1)*.18+(luck+activeLootLuck())*.14+(game?.player?.derived?.rarityFind||0)*.18+(game?.rewardRarityBonus||0)*.55;
+ const bonus=(level-1)*.18+luck*.14+(game?.player?.derived?.rarityFind||0)*.18+(game?.rewardRarityBonus||0)*.55;
  let adjusted=rarities.filter(r=>lootRarityAllowed(r.name,row)).map((r,i)=>({...r,w:Math.max(.2,(row.rarityWeights?.[r.name]??r.weight)*(1+(i-1)*bonus/55))}));
  // A guaranteed-minimum source (elite kills) still rolls above the floor
  // instead of collapsing onto a single fixed rarity - reweight up to the
@@ -936,21 +935,44 @@ function buildEffects(rarity){
  if(Math.random()<rarity.effects)out.push({...pick(legendaryEffects)});
  return out;
 }
-function potionResourceLabel(resource){return {hp:'HP',mana:'maná',stamina:'stamina'}[resource]||resource}
-function describePotionValue(e,resource){const pct=e[`${resource}Pct`],flat=e[`${resource}Flat`];if(pct)return `${Math.round(pct*100)}%`;if(flat)return `${flat}`;return ''}
-function describePotionEffect(item){
- const e=item?.potionEffect||item?.effect||{},type=item?.potionEffectType||item?.potionId||item?.kind;if(item?.type!=='potion')return '';
- const parts=[];
- for(const resource of ['hp','mana','stamina']){let value=describePotionValue(e,resource);if(resource==='hp'&&!value&&e.healPct)value=`${Math.round(e.healPct*100)}%`;if(resource==='hp'&&!value&&e.regenPct)value=`${Math.round(e.regenPct*100)}%`;if(value)parts.push(`${type==='regen'?'Regenera':'Recupera'} ${value} ${potionResourceLabel(resource)}${type==='regen'?'/turno':''}`)}
- const stats=e.stats||{};const statText=Object.entries(stats).filter(([,v])=>Number(v)).map(([k,v])=>`${v>0?'+':''}${v} ${DEFENSE_STAT_LABELS[k]||k}`).join(', ');if(statText)parts.push(statText);
- if(e.skillId)parts.push(`Aprende ${skillDefs[e.skillId]?.name||e.skillId}`);if(e.invulnerable)parts.push('Invulnerabilidad');if(e.invisible)parts.push('Invisibilidad');if(type==='teleportSafe')parts.push('Teletransporte a sala segura');if(type==='teleportStairs')parts.push('Teletransporte a escalera');if(item.duration)parts.push(`${item.duration} turnos`);return parts.join(' · ')
+// Potions now carry the exact same composable `effects[]` list as skills
+// (see effectSourceDef/applySkillEffectsList) instead of a bespoke
+// potionEffectType/effect shape - described here the same way the class
+// editor's skill summary table describes a skill's effects (effectSummaryTag),
+// plus a note on whether using it needs a target (thrown) or is instant (drunk).
+function describePotionEffects(item){
+ const list=item?.effects||[];
+ if(item?.type!=='potion'||!list.length)return '';
+ const parts=list.map(c=>effectSummaryTag(c));
+ const mode=effectsListTargetModeFor(list);
+ if(mode)parts.push(mode==='enemy'?'se lanza a un enemigo':mode==='area'?'se lanza a un área':'se usa en un aliado');
+ return parts.join(' · ')
+}
+// Configured equipment (config_items) reuses item.effects for the same
+// composable list as skills/potions (kind-tagged components) instead of the
+// procedurally-generated legendary-flavor {name,desc} shape from buildEffects
+// - the two never coexist on one item, so a shape check (comp.kind) tells
+// them apart. Trigger text mirrors the passive/proc/active split from
+// PASSIVE_EQUIPMENT_SLOTS/EQUIPMENT_ACTIVE_SLOTS/maybeProcWeaponEffects.
+function describeEquipmentEffects(item){
+ const list=Array.isArray(item?.effects)?item.effects:[];
+ if(!list.length||!list[0]?.kind)return '';
+ const parts=list.map(c=>effectSummaryTag(c));
+ let trigger='pasivo mientras esté equipado';
+ if(item.slot==='weapon')trigger=`${Math.max(0,Math.min(100,Number(item.procChance)||0))}% de posibilidad al golpear`;
+ else if(EQUIPMENT_ACTIVE_SLOTS.has(item.slot))trigger=`activable · enfriamiento ${Math.max(0,Number(item.cooldown)||0)} turnos`;
+ return `${parts.join(' · ')} (${trigger})`;
 }
 function describeItem(item){item.defenseStat=item.defenseStat||inferWeaponDefenseStat(item);
  const lines=[];
- if(item.type==='potion')lines.push(`<span class="effectLine">☥ ${describePotionEffect(item)||item.desc||'Poción'}</span>`);
+ if(item.type==='potion')lines.push(`<span class="effectLine">☥ ${describePotionEffects(item)||item.desc||'Poción'}</span>`);
  if(item.flavor)lines.push(`<span class="small">${item.flavor}</span>`);if(item.skillIds?.length)lines.push(`<span class="effectLine">✦ Habilidades: ${item.skillIds.map(id=>skillDefs[id]?.name||id).join(', ')}</span>`);if(item.slot==='weapon'&&item.damageDice)lines.push(`<span class="affixLine">Daño arma: ${item.damageDice}</span>`);for(const a of item.affixes||[])lines.push(`<span class="affixLine">+${a.value}${a.percent?'%':''} ${a.label}</span>`);
  for(const p of item.passives||[])lines.push(`<span class="passiveLine">◆ ${p.name}: ${p.desc} (${p.value}${p.percent?'%':''})</span>`);
- for(const e of item.effects||[])lines.push(`<span class="effectLine">✦ ${e.name}: ${e.desc}</span>`);
+ if(item.type!=='potion'){
+  const eq=describeEquipmentEffects(item);
+  if(eq)lines.push(`<span class="effectLine">✦ ${eq}</span>`);
+  else for(const e of item.effects||[])lines.push(`<span class="effectLine">✦ ${e.name}: ${e.desc}</span>`);
+ }
  return lines.join('');
 }
 function vitalityHpBonus(vitality){return Math.max(0,Math.floor(Number(vitality||0)*2))}
@@ -1033,14 +1055,14 @@ function effectiveSkillCost(def){return Math.max(0,Math.round(def.cost*skillCost
 function skillsBlockedByTransform(){return (game.player?.activeBuffs||[]).some(b=>b.effects?.blockSkills)}
 function recomputeDerived(){
  const p=game.player,base={...p.stats};
- const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{},pp=p.permanentPotionStats||{};
- for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){if(rb[k])base[k]=(base[k]||0)+rb[k];if(pp[k])base[k]=(base[k]||0)+pp[k]}
+ const rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{};
+ for(const k of ['strength','vitality','agility','luck','intelligence','wisdom']){if(rb[k])base[k]=(base[k]||0)+rb[k]}
  // staminaRegen/manaRegen have NO flat baseline and no stat scaling - regen
  // only comes from the off-hand item's affix (staminaRegen/manaRegen only
  // ever roll on slot 'offhand' now, see secondaryAffixes), race passives,
- // active buffs (added below via activeBuffFlatBonus) and potions (added
- // further down from p.activePotions).
- const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0)+(pp.maxHp||0),maxStamina:45+base.strength*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.wisdom*5+base.intelligence*3+(rb.maxMana||0),
+ // and active buffs (added below via activeBuffFlatBonus - potion-driven
+ // regen is just another 'buff' effect now, same as a skill's).
+ const d={damage:p.baseDamage,armor:p.baseArmor+(rb.armor||0),maxHp:30+base.vitality*3+vitalityHpBonus(base.vitality)+(rb.maxHp||0),maxStamina:45+base.strength*4+base.agility*2+(rb.maxStamina||0),maxMana:30+base.wisdom*5+base.intelligence*3+(rb.maxMana||0),
  critChance:5+base.luck*.6+(rb.critChance||0),critDamage:150,dodge:base.agility*.45+(rb.dodge||0),physicalPower:rb.physicalPower||0,magicPower:rb.magicPower||0,staminaRegen:rb.staminaRegen||0,manaRegen:rb.manaRegen||0,rarityFind:rb.rarityFind||0};
  const allStats={...base};
  for(const item of Object.values(p.equipment||{})){
@@ -1051,7 +1073,6 @@ function recomputeDerived(){
   }
   for(const pa of item.passives||[])d[pa.stat]=(d[pa.stat]||0)+pa.value;
  }
- for(const pot of p.activePotions||[]){for(const [k,v] of Object.entries(pot.effect?.stats||{}))if(k in allStats)allStats[k]+=Number(v)||0}
  // Buff-type skills can target any of the 6 core stats directly (buffStat)
  // instead of always touching damage/armor - applied here, before the
  // damage/armor/hp/stamina/mana deltas below are derived from allStats.
@@ -1079,8 +1100,6 @@ function recomputeDerived(){
  // Block chance otherwise only comes from an equipped shield's affix (folded
  // in above via the equipment-affix loop) - a buff stacks a flat bonus on
  // top of that, read at block-roll time from p.derived.blockChance.
- d.blockChance=(d.blockChance||0)+activeBuffFlatBonus('blockChance');
- for(const pot of p.activePotions||[]){const e=pot.effect||{};if(e.armorMult)d.armor=Math.round(d.armor*(1+e.armorMult));if(e.vision)d.vision=(d.vision||p.vision||0)+(Number(e.vision)||0);if(e.staminaRegen)d.staminaRegen+=Number(e.staminaRegen)||0;if(e.manaRegen)d.manaRegen+=Number(e.manaRegen)||0}
  d.finalStats=allStats;
  p.derived=d;
  p.maxHp=d.maxHp;p.maxStamina=d.maxStamina;p.maxMana=d.maxMana;
@@ -1088,24 +1107,27 @@ function recomputeDerived(){
 }
 
 
+// Built-in potion pool used whenever no admin-configured potions exist -
+// same composable `effects[]` schema/engine as skills now (see
+// effectSourceDef/applySkillEffectsList), so a couple of these are thrown,
+// single-use weapons (an enemy/area-targeting component) instead of always
+// being drunk on the self - see usePotion/resolveTargetedPotion.
 const potionDefs=[
- {id:'minorHealing',name:'Poción de curación menor',tier:'common',kind:'instant',desc:'Recupera 25% de vida.',effect:{healPct:.25}},
- {id:'greaterHealing',name:'Poción de curación superior',tier:'rare',kind:'instant',desc:'Recupera 55% de vida.',effect:{healPct:.55}},
- {id:'manaDraught',name:'Breve de maná',tier:'uncommon',kind:'instant',desc:'Recupera 45% de maná.',effect:{manaPct:.45}},
- {id:'staminaTonic',name:'Tónico del corredor',tier:'uncommon',kind:'instant',desc:'Recupera 50% de stamina.',effect:{staminaPct:.50}},
- {id:'berserkerElixir',name:'Elixir del berserker',tier:'rare',kind:'temporary',duration:12,desc:'+20% de daño durante 12 turnos.',effect:{damageMult:.20}},
- {id:'ironSkin',name:'Poción de piel de hierro',tier:'rare',kind:'temporary',duration:12,desc:'+25% de armadura durante 12 turnos.',effect:{armorMult:.25}},
- {id:'nightSight',name:'Licor de visión nocturna',tier:'uncommon',kind:'temporary',duration:18,desc:'+3 al radio de visión durante 18 turnos.',effect:{vision:3}},
- {id:'fortuneShot',name:'Chupito de fortuna',tier:'epic',kind:'temporary',duration:15,desc:'+20 de Suerte efectiva para botín durante 15 turnos.',effect:{lootLuck:20}},
- {id:'giantBlood',name:'Sangre de gigante',tier:'legendary',kind:'permanent',desc:'+2 Fuerza permanente.',effect:{strength:2}},
- {id:'sageTears',name:'Lágrimas del sabio',tier:'legendary',kind:'permanent',desc:'+2 Inteligencia permanente.',effect:{intelligence:2}},
- {id:'dragonHeart',name:'Corazón de dragón licuado',tier:'legendary',kind:'permanent',desc:'+10 de vida máxima permanente.',effect:{maxHp:10}},
- {id:'shadowEssence',name:'Esencia de sombra',tier:'legendary',kind:'permanent',desc:'+2 Agilidad permanente.',effect:{agility:2}}
+ {id:'minorHealing',name:'Poción de curación menor',tier:'common',desc:'Cura una pequeña cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:2,dmgDie:8,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1}]},
+ {id:'greaterHealing',name:'Poción de curación superior',tier:'rare',desc:'Cura una gran cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:4,dmgDie:10,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1.5}]},
+ {id:'manaDraught',name:'Breve de maná',tier:'uncommon',desc:'Restaura maná.',effects:[{kind:'utility',mode:'resource',resource:'mana',value:35}]},
+ {id:'staminaTonic',name:'Tónico del corredor',tier:'uncommon',desc:'Restaura stamina.',effects:[{kind:'utility',mode:'resource',resource:'stamina',value:35}]},
+ {id:'berserkerElixir',name:'Elixir del berserker',tier:'rare',desc:'Más daño durante varios turnos.',effects:[{kind:'buff',target:'self',stat:'damage',mode:'mult',value:1.2,turns:12}]},
+ {id:'ironSkin',name:'Poción de piel de hierro',tier:'rare',desc:'Más armadura durante varios turnos.',effects:[{kind:'buff',target:'self',stat:'armor',mode:'mult',value:1.25,turns:12}]},
+ {id:'giantElixir',name:'Elixir de gigante',tier:'legendary',desc:'Gran bonus de Fuerza muy duradero.',effects:[{kind:'buff',target:'self',stat:'strength',mode:'add',value:4,turns:500}]},
+ {id:'sageElixir',name:'Elixir del sabio',tier:'legendary',desc:'Gran bonus de Inteligencia muy duradero.',effects:[{kind:'buff',target:'self',stat:'intelligence',mode:'add',value:4,turns:500}]},
+ {id:'firebomb',name:'Bomba incendiaria',tier:'rare',range:5,desc:'Arma arrojadiza: explota en área y quema.',effects:[{kind:'aoe',dmgDice:2,dmgDie:8,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,range:2},{kind:'dot',target:'area',dotDice:1,dotDie:6,dotStat:'intelligence',dotStatMode:'add',dotStatCoef:.4,turns:4,flavor:'burn',range:2}]},
+ {id:'weakeningVial',name:'Vial debilitante',tier:'uncommon',range:5,desc:'Arma arrojadiza: debilita al enemigo.',effects:[{kind:'debuff',target:'enemy',stat:'damage',mode:'add',value:3,turns:4}]}
 ];
 const STARTER_HEALING_POTION_ID='109';
-const STARTER_HEALING_POTION_TEMPLATE={id:STARTER_HEALING_POTION_ID,type:'potion',slot:'consumable',rarity:'common',label:skillRarities.common?.label||'Común',name:'Pocion de curacion comun #109',desc:'Recupera 25% de vida.',potionId:'commonHealing109',kind:'instant',duration:0,effect:{healPct:.25},iconShape:'vial',itemLevel:1,score:8,quantity:1};
-function cloneStarterHealingPotion(){return {...STARTER_HEALING_POTION_TEMPLATE,id:STARTER_HEALING_POTION_ID,effect:{...STARTER_HEALING_POTION_TEMPLATE.effect},quantity:1}}
-function potionStackKey(item){return [item.type,item.potionId||'',item.name||'',item.rarity||'',item.kind||'',item.duration||0,JSON.stringify(item.effect||item.potionEffect||{})].join('|')}
+const STARTER_HEALING_POTION_TEMPLATE={id:STARTER_HEALING_POTION_ID,type:'potion',slot:'consumable',rarity:'common',label:skillRarities.common?.label||'Común',name:'Pocion de curacion comun #109',desc:'Cura una pequeña cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:2,dmgDie:8,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1}],range:0,iconShape:'vial',itemLevel:1,score:8,quantity:1};
+function cloneStarterHealingPotion(){return {...STARTER_HEALING_POTION_TEMPLATE,id:STARTER_HEALING_POTION_ID,effects:JSON.parse(JSON.stringify(STARTER_HEALING_POTION_TEMPLATE.effects)),quantity:1}}
+function potionStackKey(item){return [item.type,item.name||'',item.rarity||'',JSON.stringify(item.effects||[])].join('|')}
 function addInventoryItem(item){
  if(!game?.inventory||!item)return item;
  if(item.type==='potion'){
@@ -1145,32 +1167,115 @@ function makePotion(quality=1){
  let total=potionDefs.reduce((s,p)=>s+potionRarityWeight(p.tier,quality),0),roll=Math.random()*total;
  let def=potionDefs[0];
  for(const p of potionDefs){roll-=potionRarityWeight(p.tier,quality);if(roll<=0){def=p;break}}
- return{id:crypto.randomUUID(),type:'potion',slot:'consumable',rarity:def.tier,label:skillRarities[def.tier]?.label||def.tier,name:def.name,desc:def.desc,potionId:def.id,kind:def.kind,duration:def.duration||0,effect:{...def.effect},iconShape:'vial',itemLevel:Math.max(1,Math.round(quality)),quantity:1}
+ const itemLevel=Math.max(1,Math.round(quality));
+ return{id:crypto.randomUUID(),type:'potion',slot:'consumable',rarity:def.tier,label:skillRarities[def.tier]?.label||def.tier,name:def.name,desc:def.desc,effects:JSON.parse(JSON.stringify(def.effects)),range:def.range||0,iconShape:'vial',itemLevel,score:itemLevel*8,quantity:1}
 }
 function nearestSafeRoom(){return [...(game.safeRooms||[])].sort((a,b)=>gridDistance(game.player,{x:a.cx,y:a.cy})-gridDistance(game.player,{x:b.cx,y:b.cy}))[0]}
-function usePotion(id){
- const item=typeof id==='string'?game.inventory.find(i=>i.id===id):id;if(!item)return;
- if(typeof id==='string'&&isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de usarlo.','sys');return}
- const p=game.player,eff=item.effect||item.potionEffect||{};let message='';
- if(item.kind==='instant'){
-  const bh=p.hp,bm=p.mana,bs=p.stamina,parts=[];
-  if(eff.healPct||eff.hpPct)healEntity(p,Math.round(p.maxHp*(eff.healPct||eff.hpPct)));if(eff.hpFlat)healEntity(p,eff.hpFlat);
-  if(eff.manaPct)p.mana=Math.min(p.maxMana,p.mana+Math.round(p.maxMana*eff.manaPct));if(eff.manaFlat)p.mana=Math.min(p.maxMana,p.mana+Number(eff.manaFlat));
-  if(eff.staminaPct)p.stamina=Math.min(p.maxStamina,p.stamina+Math.round(p.maxStamina*eff.staminaPct));if(eff.staminaFlat)p.stamina=Math.min(p.maxStamina,p.stamina+Number(eff.staminaFlat));
-  if(item.potionEffectType==='teleportSafe'){const r=nearestSafeRoom();if(r&&teleportPlayerTo(r.cx,r.cy))parts.push('teletransporte a sala segura')}
-  if(item.potionEffectType==='teleportStairs'&&game.stairs&&teleportPlayerTo(game.stairs.x,game.stairs.y))parts.push('teletransporte a escalera');
-  if(p.hp>bh)parts.push(`+${p.hp-bh} vida`);if(p.mana>bm)parts.push(`+${p.mana-bm} maná`);if(p.stamina>bs)parts.push(`+${p.stamina-bs} stamina`);
-  message=parts.join(', ')||'Sin efecto: recursos completos.'
- }else if(item.kind==='temporary'){
-  p.activePotions=p.activePotions||[];p.activePotions.push({name:item.name,turns:item.duration,effect:{...eff}});message=`Efecto temporal durante ${item.duration} turnos: ${item.desc||describePotionEffect(item)}`
- }else{
-  p.permanentPotionStats=p.permanentPotionStats||{};if(eff.skillId)learnSkill(eff.skillId);for(const [k,v] of Object.entries(eff.stats||eff))if(potionStatKeys.includes(k)||k==='maxHp')p.permanentPotionStats[k]=(p.permanentPotionStats[k]||0)+Number(v||0);message=`Mejora permanente: ${item.desc||describePotionEffect(item)}`
- }
- if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(i=>i.id!==item.id);recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name}: ${message}`,'loot');storyTitle.textContent='POCIÓN UTILIZADA';storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${message}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;storyOverlay.classList.remove('hidden');setTimeout(()=>document.getElementById('closePotionMessage')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0)
+// ---- External effects casting: reuses the exact same composable-effects
+// engine as skills (effectSourceDef/applyEffectComponent/applySkillEffectsList)
+// for anything that isn't a real skillDefs entry - potions, weapon on-hit
+// procs, and active trinket/ring items all register themselves in
+// activeExternalCast for the duration of the call, so the identical enemy/
+// area/self dispatch a skill goes through also decides whether THIS source
+// needs a target or applies instantly - see effectsListTargetModeFor. `id`
+// must be unique per source (see potionCastId and the weapon-proc/
+// equipment-active id helpers near their own call sites).
+function itemEffectsLevel(item){return Math.max(1,Number(item?.itemLevel)||potionTierLevel(item?.rarity)||1)}
+function beginExternalEffectsCast(id,item){activeExternalCast={id,name:item.name,effects:item.effects||[],level:itemEffectsLevel(item)};return id}
+function endExternalEffectsCast(){activeExternalCast=null}
+function potionCastId(item){return `potion:${item.id}`}
+function beginPotionCast(item){return beginExternalEffectsCast(potionCastId(item),item)}
+function endPotionCast(){endExternalEffectsCast()}
+function finishPotionUse(item){
+ if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(i=>i.id!==item.id);
+ recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name} usada.`,'loot');
+ storyTitle.textContent='POCIÓN UTILIZADA';
+ storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${describePotionEffects(item)||item.desc||''}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;
+ storyOverlay.classList.remove('hidden');
+ setTimeout(()=>document.getElementById('closePotionMessage')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
 }
-function tickPotionEffects(){
- const p=game.player;if(!p?.activePotions)return;
- for(const e of p.activePotions){const eff=e.effect||{};if(eff.regenPct||eff.hpPct)healEntity(p,Math.round(p.maxHp*(eff.regenPct||eff.hpPct)));if(eff.hpFlat)healEntity(p,eff.hpFlat);if(eff.manaPct)p.mana=Math.min(p.maxMana,p.mana+Math.round(p.maxMana*eff.manaPct));if(eff.manaFlat)p.mana=Math.min(p.maxMana,p.mana+Number(eff.manaFlat));if(eff.staminaPct)p.stamina=Math.min(p.maxStamina,p.stamina+Math.round(p.maxStamina*eff.staminaPct));if(eff.staminaFlat)p.stamina=Math.min(p.maxStamina,p.stamina+Number(eff.staminaFlat));e.turns--}p.activePotions=p.activePotions.filter(e=>e.turns>0);recomputeDerived()
+// All-self effects (heal/buff/hot/utility/etc, same as a self-cast skill)
+// resolve instantly on click, exactly like today; any component targeting
+// an enemy/area/ally makes the potion a thrown, single-use weapon instead -
+// begins targeting just like a skill, see resolveTargetedPotion below.
+function usePotion(id){
+ if(!game||busy||game.over)return;
+ const item=game.inventory.find(i=>i.id===id);if(!item)return;
+ if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de usarlo.','sys');return}
+ if(!Array.isArray(item.effects)||!item.effects.length){log('Esta poción no tiene ningún efecto configurado.','sys');return}
+ const mode=effectsListTargetModeFor(item.effects);
+ if(mode==='enemy'||mode==='area'||mode==='ally'){
+  beginTargeting({kind:'potion',potionId:item.id,mode,range:Math.max(1,Number(item.range)||5),minRange:mode==='ally'?0:1});
+  return;
+ }
+ const castId=beginPotionCast(item);
+ const visible=visibleEnemiesInRange(8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
+ const used=applySkillEffectsList(castId,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
+ endPotionCast();
+ if(!used){log('La poción no tuvo ningún efecto.','sys');return}
+ finishPotionUse(item);
+}
+// Confirmed target click for a thrown potion (mirrors resolveTargetedSkill).
+function resolveTargetedPotion(potionId,x,y){
+ const item=game.inventory.find(i=>i.id===potionId);if(!item)return false;
+ const mode=effectsListTargetModeFor(item.effects||[]),range=Math.max(1,Number(item.range)||5);
+ if(!validateTargetCell(x,y,range,mode==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
+ const clickedEnemy=enemyAtCell(x,y);
+ if(mode==='enemy'&&!clickedEnemy){log('Debes seleccionar un enemigo.','sys');return false}
+ const clickedAlly=!clickedEnemy&&game.multiplayer?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
+ const castId=beginPotionCast(item);
+ const used=applySkillEffectsList(castId,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
+ endPotionCast();
+ if(!used){if(mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');return false}
+ finishPotionUse(item);
+ cancelTargeting('');
+ return true;
+}
+// Trinket/ring "activables": same effects[] engine and targeting flow as a
+// thrown potion, but the item stays equipped (never consumed) and is gated
+// by a per-slot cooldown (game.player.equipmentCooldowns) instead - see
+// finishEquipmentActiveUse. Only EQUIPMENT_ACTIVE_SLOTS items can be used
+// this way; weapons proc on hit (maybeProcWeaponEffects) and the rest of the
+// gear slots are passive (syncEquipmentSlotPassive).
+function useEquipmentActive(slot){
+ if(!game||busy||game.over)return;
+ if(!EQUIPMENT_ACTIVE_SLOTS.has(slot))return;
+ const item=game.player.equipment?.[slot];if(!item)return;
+ if(!Array.isArray(item.effects)||!item.effects.length){log('Este objeto no tiene ningún efecto configurado.','sys');return}
+ const cd=game.player.equipmentCooldowns||(game.player.equipmentCooldowns={});
+ if(cd[slot]>0){log('Ese objeto está en enfriamiento.','sys');return}
+ const mode=effectsListTargetModeFor(item.effects);
+ if(mode==='enemy'||mode==='area'||mode==='ally'){
+  beginTargeting({kind:'equipment',equipSlot:slot,mode,range:Math.max(1,Number(item.range)||5),minRange:mode==='ally'?0:1});
+  return;
+ }
+ const castId=beginExternalEffectsCast(`equip:${slot}`,item);
+ const visible=visibleEnemiesInRange(8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
+ const used=applySkillEffectsList(castId,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
+ endExternalEffectsCast();
+ if(!used){log('El objeto no tuvo ningún efecto.','sys');return}
+ finishEquipmentActiveUse(slot,item);
+}
+// Confirmed target click for an activated trinket/ring (mirrors resolveTargetedPotion).
+function resolveTargetedEquipmentActive(slot,x,y){
+ const item=game.player.equipment?.[slot];if(!item)return false;
+ const mode=effectsListTargetModeFor(item.effects||[]),range=Math.max(1,Number(item.range)||5);
+ if(!validateTargetCell(x,y,range,mode==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
+ const clickedEnemy=enemyAtCell(x,y);
+ if(mode==='enemy'&&!clickedEnemy){log('Debes seleccionar un enemigo.','sys');return false}
+ const clickedAlly=!clickedEnemy&&game.multiplayer?(game.otherPlayers||[]).find(p=>p.hp>0&&p.x===x&&p.y===y):null;
+ const castId=beginExternalEffectsCast(`equip:${slot}`,item);
+ const used=applySkillEffectsList(castId,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
+ endExternalEffectsCast();
+ if(!used){if(mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');return false}
+ finishEquipmentActiveUse(slot,item);
+ cancelTargeting('');
+ return true;
+}
+function finishEquipmentActiveUse(slot,item){
+ const cd=game.player.equipmentCooldowns||(game.player.equipmentCooldowns={});
+ cd[slot]=Math.max(1,Number(item.cooldown)||1);
+ recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name} activado.`,'loot');
 }
 
 const themedItemCatalog={"fantasy": [{"id": "fantasy_00_00", "theme": "fantasy", "slot": "weapon", "name": "Espada del Zorro Tuerto", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_00_01", "theme": "fantasy", "slot": "weapon", "name": "Espada de la Taberna Hundida", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_00_02", "theme": "fantasy", "slot": "weapon", "name": "Espada del Rey Mendigo", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_00_03", "theme": "fantasy", "slot": "weapon", "name": "Espada de la Luna Vieja", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_00_04", "theme": "fantasy", "slot": "weapon", "name": "Espada del Bosque Burlón", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_01_00", "theme": "fantasy", "slot": "weapon", "name": "Hacha de la Luna Vieja", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_01_01", "theme": "fantasy", "slot": "weapon", "name": "Hacha del Bosque Burlón", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_01_02", "theme": "fantasy", "slot": "weapon", "name": "Hacha de las Siete Deudas", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_01_03", "theme": "fantasy", "slot": "weapon", "name": "Hacha del Gremio Roto", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_01_04", "theme": "fantasy", "slot": "weapon", "name": "Hacha del Dragón Dormido", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_02_00", "theme": "fantasy", "slot": "weapon", "name": "Maza del Gremio Roto", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_02_01", "theme": "fantasy", "slot": "weapon", "name": "Maza del Dragón Dormido", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_02_02", "theme": "fantasy", "slot": "weapon", "name": "Maza del Bardo Embustero", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_02_03", "theme": "fantasy", "slot": "weapon", "name": "Maza de la Reina Ladrona", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_02_04", "theme": "fantasy", "slot": "weapon", "name": "Maza del Puente Negro", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_03_00", "theme": "fantasy", "slot": "weapon", "name": "Lanza de la Reina Ladrona", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_03_01", "theme": "fantasy", "slot": "weapon", "name": "Lanza del Puente Negro", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_03_02", "theme": "fantasy", "slot": "weapon", "name": "Lanza de la Posada Roja", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_03_03", "theme": "fantasy", "slot": "weapon", "name": "Lanza del Cuervo Risueño", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_03_04", "theme": "fantasy", "slot": "weapon", "name": "Lanza del Último Brindis", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_04_00", "theme": "fantasy", "slot": "weapon", "name": "Daga del Cuervo Risueño", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_04_01", "theme": "fantasy", "slot": "weapon", "name": "Daga del Último Brindis", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_04_02", "theme": "fantasy", "slot": "weapon", "name": "Daga del Caballero Descalzo", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_04_03", "theme": "fantasy", "slot": "weapon", "name": "Daga de la Bruja del Camino", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_04_04", "theme": "fantasy", "slot": "weapon", "name": "Daga del Mercado Nocturno", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_05_00", "theme": "fantasy", "slot": "offhand", "name": "Escudo de la Bruja del Camino", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_05_01", "theme": "fantasy", "slot": "offhand", "name": "Escudo del Mercado Nocturno", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_05_02", "theme": "fantasy", "slot": "offhand", "name": "Escudo del Ogro Cortés", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_05_03", "theme": "fantasy", "slot": "offhand", "name": "Escudo del Enano Sin Mapa", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_05_04", "theme": "fantasy", "slot": "offhand", "name": "Escudo de la Espada Prestada", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_06_00", "theme": "fantasy", "slot": "offhand", "name": "Grimorio del Enano Sin Mapa", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_06_01", "theme": "fantasy", "slot": "offhand", "name": "Grimorio de la Espada Prestada", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_06_02", "theme": "fantasy", "slot": "offhand", "name": "Grimorio del Zorro Tuerto", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_06_03", "theme": "fantasy", "slot": "offhand", "name": "Grimorio de la Taberna Hundida", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_06_04", "theme": "fantasy", "slot": "offhand", "name": "Grimorio del Rey Mendigo", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_07_00", "theme": "fantasy", "slot": "head", "name": "Yelmo de la Taberna Hundida", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_07_01", "theme": "fantasy", "slot": "head", "name": "Yelmo del Rey Mendigo", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_07_02", "theme": "fantasy", "slot": "head", "name": "Yelmo de la Luna Vieja", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_07_03", "theme": "fantasy", "slot": "head", "name": "Yelmo del Bosque Burlón", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_07_04", "theme": "fantasy", "slot": "head", "name": "Yelmo de las Siete Deudas", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_08_00", "theme": "fantasy", "slot": "head", "name": "Capucha del Bosque Burlón", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_08_01", "theme": "fantasy", "slot": "head", "name": "Capucha de las Siete Deudas", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_08_02", "theme": "fantasy", "slot": "head", "name": "Capucha del Gremio Roto", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_08_03", "theme": "fantasy", "slot": "head", "name": "Capucha del Dragón Dormido", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_08_04", "theme": "fantasy", "slot": "head", "name": "Capucha del Bardo Embustero", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_09_00", "theme": "fantasy", "slot": "chest", "name": "Coraza del Dragón Dormido", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_09_01", "theme": "fantasy", "slot": "chest", "name": "Coraza del Bardo Embustero", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_09_02", "theme": "fantasy", "slot": "chest", "name": "Coraza de la Reina Ladrona", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_09_03", "theme": "fantasy", "slot": "chest", "name": "Coraza del Puente Negro", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_09_04", "theme": "fantasy", "slot": "chest", "name": "Coraza de la Posada Roja", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_10_00", "theme": "fantasy", "slot": "chest", "name": "Jubón del Puente Negro", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_10_01", "theme": "fantasy", "slot": "chest", "name": "Jubón de la Posada Roja", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_10_02", "theme": "fantasy", "slot": "chest", "name": "Jubón del Cuervo Risueño", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_10_03", "theme": "fantasy", "slot": "chest", "name": "Jubón del Último Brindis", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_10_04", "theme": "fantasy", "slot": "chest", "name": "Jubón del Caballero Descalzo", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_11_00", "theme": "fantasy", "slot": "hands", "name": "Guanteletes del Último Brindis", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_11_01", "theme": "fantasy", "slot": "hands", "name": "Guanteletes del Caballero Descalzo", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_11_02", "theme": "fantasy", "slot": "hands", "name": "Guanteletes de la Bruja del Camino", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_11_03", "theme": "fantasy", "slot": "hands", "name": "Guanteletes del Mercado Nocturno", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_11_04", "theme": "fantasy", "slot": "hands", "name": "Guanteletes del Ogro Cortés", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_12_00", "theme": "fantasy", "slot": "hands", "name": "Guantes del Mercado Nocturno", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_12_01", "theme": "fantasy", "slot": "hands", "name": "Guantes del Ogro Cortés", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_12_02", "theme": "fantasy", "slot": "hands", "name": "Guantes del Enano Sin Mapa", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_12_03", "theme": "fantasy", "slot": "hands", "name": "Guantes de la Espada Prestada", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_12_04", "theme": "fantasy", "slot": "hands", "name": "Guantes del Zorro Tuerto", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_13_00", "theme": "fantasy", "slot": "legs", "name": "Grebas de la Espada Prestada", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_13_01", "theme": "fantasy", "slot": "legs", "name": "Grebas del Zorro Tuerto", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_13_02", "theme": "fantasy", "slot": "legs", "name": "Grebas de la Taberna Hundida", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_13_03", "theme": "fantasy", "slot": "legs", "name": "Grebas del Rey Mendigo", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_13_04", "theme": "fantasy", "slot": "legs", "name": "Grebas de la Luna Vieja", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_14_00", "theme": "fantasy", "slot": "boots", "name": "Botas del Rey Mendigo", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_14_01", "theme": "fantasy", "slot": "boots", "name": "Botas de la Luna Vieja", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_14_02", "theme": "fantasy", "slot": "boots", "name": "Botas del Bosque Burlón", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_14_03", "theme": "fantasy", "slot": "boots", "name": "Botas de las Siete Deudas", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_14_04", "theme": "fantasy", "slot": "boots", "name": "Botas del Gremio Roto", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_15_00", "theme": "fantasy", "slot": "ring1", "name": "Anillo de las Siete Deudas", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_15_01", "theme": "fantasy", "slot": "ring1", "name": "Anillo del Gremio Roto", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_15_02", "theme": "fantasy", "slot": "ring1", "name": "Anillo del Dragón Dormido", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_15_03", "theme": "fantasy", "slot": "ring1", "name": "Anillo del Bardo Embustero", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_15_04", "theme": "fantasy", "slot": "ring1", "name": "Anillo de la Reina Ladrona", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_16_00", "theme": "fantasy", "slot": "ring2", "name": "Sello del Bardo Embustero", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_16_01", "theme": "fantasy", "slot": "ring2", "name": "Sello de la Reina Ladrona", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_16_02", "theme": "fantasy", "slot": "ring2", "name": "Sello del Puente Negro", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_16_03", "theme": "fantasy", "slot": "ring2", "name": "Sello de la Posada Roja", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_16_04", "theme": "fantasy", "slot": "ring2", "name": "Sello del Cuervo Risueño", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_17_00", "theme": "fantasy", "slot": "neck", "name": "Amuleto de la Posada Roja", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_17_01", "theme": "fantasy", "slot": "neck", "name": "Amuleto del Cuervo Risueño", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_17_02", "theme": "fantasy", "slot": "neck", "name": "Amuleto del Último Brindis", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_17_03", "theme": "fantasy", "slot": "neck", "name": "Amuleto del Caballero Descalzo", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_17_04", "theme": "fantasy", "slot": "neck", "name": "Amuleto de la Bruja del Camino", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_18_00", "theme": "fantasy", "slot": "trinket1", "name": "Talismán del Caballero Descalzo", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}, {"id": "fantasy_18_01", "theme": "fantasy", "slot": "trinket1", "name": "Talismán de la Bruja del Camino", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_18_02", "theme": "fantasy", "slot": "trinket1", "name": "Talismán del Mercado Nocturno", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_18_03", "theme": "fantasy", "slot": "trinket1", "name": "Talismán del Ogro Cortés", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_18_04", "theme": "fantasy", "slot": "trinket1", "name": "Talismán del Enano Sin Mapa", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_19_00", "theme": "fantasy", "slot": "trinket2", "name": "Moneda del Ogro Cortés", "flavor": "Perfecto para héroes, villanos y gente que aún no ha decidido."}, {"id": "fantasy_19_01", "theme": "fantasy", "slot": "trinket2", "name": "Moneda del Enano Sin Mapa", "flavor": "Parece valioso. Eso suele significar que alguien vendrá a reclamarlo."}, {"id": "fantasy_19_02", "theme": "fantasy", "slot": "trinket2", "name": "Moneda de la Espada Prestada", "flavor": "Huele a cuero, humo y decisiones cuestionables."}, {"id": "fantasy_19_03", "theme": "fantasy", "slot": "trinket2", "name": "Moneda del Zorro Tuerto", "flavor": "Tiene una muesca por cada dueño anterior. Son demasiadas."}, {"id": "fantasy_19_04", "theme": "fantasy", "slot": "trinket2", "name": "Moneda de la Taberna Hundida", "flavor": "Un mercader juraría que es auténtico. Un mercader mentiría."}], "cyberpunk": [{"id": "cyberpunk_00_00", "theme": "cyberpunk", "slot": "weapon", "name": "Katana Monoátomo Neón", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_00_01", "theme": "cyberpunk", "slot": "weapon", "name": "Katana Monoátomo de Cromo", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_00_02", "theme": "cyberpunk", "slot": "weapon", "name": "Katana Monoátomo de Medianoche", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_00_03", "theme": "cyberpunk", "slot": "weapon", "name": "Katana Monoátomo de la Zona Muerta", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_00_04", "theme": "cyberpunk", "slot": "weapon", "name": "Katana Monoátomo de Circuito Rojo", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_01_00", "theme": "cyberpunk", "slot": "weapon", "name": "Pistola de Riel de la Zona Muerta", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_01_01", "theme": "cyberpunk", "slot": "weapon", "name": "Pistola de Riel de Circuito Rojo", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_01_02", "theme": "cyberpunk", "slot": "weapon", "name": "Pistola de Riel de Pulso Azul", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_01_03", "theme": "cyberpunk", "slot": "weapon", "name": "Pistola de Riel del Subnivel", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_01_04", "theme": "cyberpunk", "slot": "weapon", "name": "Pistola de Riel de Callejón 9", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_02_00", "theme": "cyberpunk", "slot": "weapon", "name": "Rifle Smart del Subnivel", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_02_01", "theme": "cyberpunk", "slot": "weapon", "name": "Rifle Smart de Callejón 9", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_02_02", "theme": "cyberpunk", "slot": "weapon", "name": "Rifle Smart de Firewall Negro", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_02_03", "theme": "cyberpunk", "slot": "weapon", "name": "Rifle Smart de Memoria Fantasma", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_02_04", "theme": "cyberpunk", "slot": "weapon", "name": "Rifle Smart de Protocolo Roto", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_03_00", "theme": "cyberpunk", "slot": "weapon", "name": "Cuchilla Térmica de Memoria Fantasma", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_03_01", "theme": "cyberpunk", "slot": "weapon", "name": "Cuchilla Térmica de Protocolo Roto", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_03_02", "theme": "cyberpunk", "slot": "weapon", "name": "Cuchilla Térmica de la Megatorre", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_03_03", "theme": "cyberpunk", "slot": "weapon", "name": "Cuchilla Térmica de Datos Sangrientos", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_03_04", "theme": "cyberpunk", "slot": "weapon", "name": "Cuchilla Térmica de Núcleo Frío", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_04_00", "theme": "cyberpunk", "slot": "weapon", "name": "Martillo Servo de Datos Sangrientos", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_04_01", "theme": "cyberpunk", "slot": "weapon", "name": "Martillo Servo de Núcleo Frío", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_04_02", "theme": "cyberpunk", "slot": "weapon", "name": "Martillo Servo de la Red Profunda", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_04_03", "theme": "cyberpunk", "slot": "weapon", "name": "Martillo Servo de Contrabando", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_04_04", "theme": "cyberpunk", "slot": "weapon", "name": "Martillo Servo de Grafeno", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_05_00", "theme": "cyberpunk", "slot": "offhand", "name": "Escudo Cinético de Contrabando", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_05_01", "theme": "cyberpunk", "slot": "offhand", "name": "Escudo Cinético de Grafeno", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_05_02", "theme": "cyberpunk", "slot": "offhand", "name": "Escudo Cinético de Sobrecarga", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_05_03", "theme": "cyberpunk", "slot": "offhand", "name": "Escudo Cinético de la Banda Cero", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_05_04", "theme": "cyberpunk", "slot": "offhand", "name": "Escudo Cinético de Horizonte Sintético", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_06_00", "theme": "cyberpunk", "slot": "offhand", "name": "Dron de Apoyo de la Banda Cero", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_06_01", "theme": "cyberpunk", "slot": "offhand", "name": "Dron de Apoyo de Horizonte Sintético", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_06_02", "theme": "cyberpunk", "slot": "offhand", "name": "Dron de Apoyo Neón", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_06_03", "theme": "cyberpunk", "slot": "offhand", "name": "Dron de Apoyo de Cromo", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_06_04", "theme": "cyberpunk", "slot": "offhand", "name": "Dron de Apoyo de Medianoche", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_07_00", "theme": "cyberpunk", "slot": "head", "name": "Visor Táctico de Cromo", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_07_01", "theme": "cyberpunk", "slot": "head", "name": "Visor Táctico de Medianoche", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_07_02", "theme": "cyberpunk", "slot": "head", "name": "Visor Táctico de la Zona Muerta", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_07_03", "theme": "cyberpunk", "slot": "head", "name": "Visor Táctico de Circuito Rojo", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_07_04", "theme": "cyberpunk", "slot": "head", "name": "Visor Táctico de Pulso Azul", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_08_00", "theme": "cyberpunk", "slot": "head", "name": "Máscara Neural de Circuito Rojo", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_08_01", "theme": "cyberpunk", "slot": "head", "name": "Máscara Neural de Pulso Azul", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_08_02", "theme": "cyberpunk", "slot": "head", "name": "Máscara Neural del Subnivel", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_08_03", "theme": "cyberpunk", "slot": "head", "name": "Máscara Neural de Callejón 9", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_08_04", "theme": "cyberpunk", "slot": "head", "name": "Máscara Neural de Firewall Negro", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_09_00", "theme": "cyberpunk", "slot": "chest", "name": "Chaqueta Blindada de Callejón 9", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_09_01", "theme": "cyberpunk", "slot": "chest", "name": "Chaqueta Blindada de Firewall Negro", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_09_02", "theme": "cyberpunk", "slot": "chest", "name": "Chaqueta Blindada de Memoria Fantasma", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_09_03", "theme": "cyberpunk", "slot": "chest", "name": "Chaqueta Blindada de Protocolo Roto", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_09_04", "theme": "cyberpunk", "slot": "chest", "name": "Chaqueta Blindada de la Megatorre", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_10_00", "theme": "cyberpunk", "slot": "chest", "name": "Exotraje de Protocolo Roto", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_10_01", "theme": "cyberpunk", "slot": "chest", "name": "Exotraje de la Megatorre", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_10_02", "theme": "cyberpunk", "slot": "chest", "name": "Exotraje de Datos Sangrientos", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_10_03", "theme": "cyberpunk", "slot": "chest", "name": "Exotraje de Núcleo Frío", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_10_04", "theme": "cyberpunk", "slot": "chest", "name": "Exotraje de la Red Profunda", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_11_00", "theme": "cyberpunk", "slot": "hands", "name": "Guantes Hápticos de Núcleo Frío", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_11_01", "theme": "cyberpunk", "slot": "hands", "name": "Guantes Hápticos de la Red Profunda", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_11_02", "theme": "cyberpunk", "slot": "hands", "name": "Guantes Hápticos de Contrabando", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_11_03", "theme": "cyberpunk", "slot": "hands", "name": "Guantes Hápticos de Grafeno", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_11_04", "theme": "cyberpunk", "slot": "hands", "name": "Guantes Hápticos de Sobrecarga", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_12_00", "theme": "cyberpunk", "slot": "hands", "name": "Garras de Cromo de Grafeno", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_12_01", "theme": "cyberpunk", "slot": "hands", "name": "Garras de Cromo de Sobrecarga", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_12_02", "theme": "cyberpunk", "slot": "hands", "name": "Garras de Cromo de la Banda Cero", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_12_03", "theme": "cyberpunk", "slot": "hands", "name": "Garras de Cromo de Horizonte Sintético", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_12_04", "theme": "cyberpunk", "slot": "hands", "name": "Garras de Cromo Neón", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_13_00", "theme": "cyberpunk", "slot": "legs", "name": "Módulos Tendinosos de Horizonte Sintético", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_13_01", "theme": "cyberpunk", "slot": "legs", "name": "Módulos Tendinosos Neón", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_13_02", "theme": "cyberpunk", "slot": "legs", "name": "Módulos Tendinosos de Cromo", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_13_03", "theme": "cyberpunk", "slot": "legs", "name": "Módulos Tendinosos de Medianoche", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_13_04", "theme": "cyberpunk", "slot": "legs", "name": "Módulos Tendinosos de la Zona Muerta", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_14_00", "theme": "cyberpunk", "slot": "boots", "name": "Botas Magnéticas de Medianoche", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_14_01", "theme": "cyberpunk", "slot": "boots", "name": "Botas Magnéticas de la Zona Muerta", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_14_02", "theme": "cyberpunk", "slot": "boots", "name": "Botas Magnéticas de Circuito Rojo", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_14_03", "theme": "cyberpunk", "slot": "boots", "name": "Botas Magnéticas de Pulso Azul", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_14_04", "theme": "cyberpunk", "slot": "boots", "name": "Botas Magnéticas del Subnivel", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_15_00", "theme": "cyberpunk", "slot": "ring1", "name": "Anillo de Datos de Pulso Azul", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_15_01", "theme": "cyberpunk", "slot": "ring1", "name": "Anillo de Datos del Subnivel", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_15_02", "theme": "cyberpunk", "slot": "ring1", "name": "Anillo de Datos de Callejón 9", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_15_03", "theme": "cyberpunk", "slot": "ring1", "name": "Anillo de Datos de Firewall Negro", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_15_04", "theme": "cyberpunk", "slot": "ring1", "name": "Anillo de Datos de Memoria Fantasma", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_16_00", "theme": "cyberpunk", "slot": "ring2", "name": "Sello Biométrico de Firewall Negro", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_16_01", "theme": "cyberpunk", "slot": "ring2", "name": "Sello Biométrico de Memoria Fantasma", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_16_02", "theme": "cyberpunk", "slot": "ring2", "name": "Sello Biométrico de Protocolo Roto", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_16_03", "theme": "cyberpunk", "slot": "ring2", "name": "Sello Biométrico de la Megatorre", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_16_04", "theme": "cyberpunk", "slot": "ring2", "name": "Sello Biométrico de Datos Sangrientos", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_17_00", "theme": "cyberpunk", "slot": "neck", "name": "Nodo Neural de la Megatorre", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_17_01", "theme": "cyberpunk", "slot": "neck", "name": "Nodo Neural de Datos Sangrientos", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_17_02", "theme": "cyberpunk", "slot": "neck", "name": "Nodo Neural de Núcleo Frío", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_17_03", "theme": "cyberpunk", "slot": "neck", "name": "Nodo Neural de la Red Profunda", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_17_04", "theme": "cyberpunk", "slot": "neck", "name": "Nodo Neural de Contrabando", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_18_00", "theme": "cyberpunk", "slot": "trinket1", "name": "Chip Ilegal de la Red Profunda", "flavor": "Tiene tres modos: seguro, letal y corporativo."}, {"id": "cyberpunk_18_01", "theme": "cyberpunk", "slot": "trinket1", "name": "Chip Ilegal de Contrabando", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_18_02", "theme": "cyberpunk", "slot": "trinket1", "name": "Chip Ilegal de Grafeno", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_18_03", "theme": "cyberpunk", "slot": "trinket1", "name": "Chip Ilegal de Sobrecarga", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_18_04", "theme": "cyberpunk", "slot": "trinket1", "name": "Chip Ilegal de la Banda Cero", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_19_00", "theme": "cyberpunk", "slot": "trinket2", "name": "Llave Cuántica de Sobrecarga", "flavor": "La luz roja no es decorativa."}, {"id": "cyberpunk_19_01", "theme": "cyberpunk", "slot": "trinket2", "name": "Llave Cuántica de la Banda Cero", "flavor": "La garantía fue anulada antes de que saliera de fábrica."}, {"id": "cyberpunk_19_02", "theme": "cyberpunk", "slot": "trinket2", "name": "Llave Cuántica de Horizonte Sintético", "flavor": "Emite un zumbido caro y probablemente ilegal."}, {"id": "cyberpunk_19_03", "theme": "cyberpunk", "slot": "trinket2", "name": "Llave Cuántica Neón", "flavor": "El número de serie ha sido borrado con mucho entusiasmo."}, {"id": "cyberpunk_19_04", "theme": "cyberpunk", "slot": "trinket2", "name": "Llave Cuántica de Cromo", "flavor": "Tiene tres modos: seguro, letal y corporativo."}], "middleearth": [{"id": "middleearth_00_00", "theme": "middleearth", "slot": "weapon", "name": "Espada Élfica de los Reinos del Oeste", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_00_01", "theme": "middleearth", "slot": "weapon", "name": "Espada Élfica de la Montaña Solitaria", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_00_02", "theme": "middleearth", "slot": "weapon", "name": "Espada Élfica del Bosque Dorado", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_00_03", "theme": "middleearth", "slot": "weapon", "name": "Espada Élfica de las Tierras Pardas", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_00_04", "theme": "middleearth", "slot": "weapon", "name": "Espada Élfica de los Puertos Grises", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_01_00", "theme": "middleearth", "slot": "weapon", "name": "Hacha Enana de las Tierras Pardas", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_01_01", "theme": "middleearth", "slot": "weapon", "name": "Hacha Enana de los Puertos Grises", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_01_02", "theme": "middleearth", "slot": "weapon", "name": "Hacha Enana de la Marca de los Jinetes", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_01_03", "theme": "middleearth", "slot": "weapon", "name": "Hacha Enana del Valle Secreto", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_01_04", "theme": "middleearth", "slot": "weapon", "name": "Hacha Enana de las Minas Profundas", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_02_00", "theme": "middleearth", "slot": "weapon", "name": "Arco Largo del Valle Secreto", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_02_01", "theme": "middleearth", "slot": "weapon", "name": "Arco Largo de las Minas Profundas", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_02_02", "theme": "middleearth", "slot": "weapon", "name": "Arco Largo del Reino Bajo la Montaña", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_02_03", "theme": "middleearth", "slot": "weapon", "name": "Arco Largo de la Torre Blanca", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_02_04", "theme": "middleearth", "slot": "weapon", "name": "Arco Largo del Bosque Negro", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_03_00", "theme": "middleearth", "slot": "weapon", "name": "Lanza de Jinete de la Torre Blanca", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_03_01", "theme": "middleearth", "slot": "weapon", "name": "Lanza de Jinete del Bosque Negro", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_03_02", "theme": "middleearth", "slot": "weapon", "name": "Lanza de Jinete de los Senderos Muertos", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_03_03", "theme": "middleearth", "slot": "weapon", "name": "Lanza de Jinete de la Colina Verde", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_03_04", "theme": "middleearth", "slot": "weapon", "name": "Lanza de Jinete de la Estrella de la Tarde", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_04_00", "theme": "middleearth", "slot": "weapon", "name": "Daga de Montaraz de la Colina Verde", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_04_01", "theme": "middleearth", "slot": "weapon", "name": "Daga de Montaraz de la Estrella de la Tarde", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_04_02", "theme": "middleearth", "slot": "weapon", "name": "Daga de Montaraz del Norte Perdido", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_04_03", "theme": "middleearth", "slot": "weapon", "name": "Daga de Montaraz de los Guardianes del Árbol", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_04_04", "theme": "middleearth", "slot": "weapon", "name": "Daga de Montaraz del Río Grande", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_05_00", "theme": "middleearth", "slot": "offhand", "name": "Escudo del Árbol Blanco de los Guardianes del Árbol", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_05_01", "theme": "middleearth", "slot": "offhand", "name": "Escudo del Árbol Blanco del Río Grande", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_05_02", "theme": "middleearth", "slot": "offhand", "name": "Escudo del Árbol Blanco de la Sombra Antigua", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_05_03", "theme": "middleearth", "slot": "offhand", "name": "Escudo del Árbol Blanco de la Última Alianza", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_05_04", "theme": "middleearth", "slot": "offhand", "name": "Escudo del Árbol Blanco de las Águilas", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_06_00", "theme": "middleearth", "slot": "offhand", "name": "Libro de Runas de la Última Alianza", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_06_01", "theme": "middleearth", "slot": "offhand", "name": "Libro de Runas de las Águilas", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_06_02", "theme": "middleearth", "slot": "offhand", "name": "Libro de Runas de los Reinos del Oeste", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_06_03", "theme": "middleearth", "slot": "offhand", "name": "Libro de Runas de la Montaña Solitaria", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_06_04", "theme": "middleearth", "slot": "offhand", "name": "Libro de Runas del Bosque Dorado", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_07_00", "theme": "middleearth", "slot": "head", "name": "Yelmo Alado de la Montaña Solitaria", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_07_01", "theme": "middleearth", "slot": "head", "name": "Yelmo Alado del Bosque Dorado", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_07_02", "theme": "middleearth", "slot": "head", "name": "Yelmo Alado de las Tierras Pardas", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_07_03", "theme": "middleearth", "slot": "head", "name": "Yelmo Alado de los Puertos Grises", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_07_04", "theme": "middleearth", "slot": "head", "name": "Yelmo Alado de la Marca de los Jinetes", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_08_00", "theme": "middleearth", "slot": "head", "name": "Capucha de Montaraz de los Puertos Grises", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_08_01", "theme": "middleearth", "slot": "head", "name": "Capucha de Montaraz de la Marca de los Jinetes", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_08_02", "theme": "middleearth", "slot": "head", "name": "Capucha de Montaraz del Valle Secreto", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_08_03", "theme": "middleearth", "slot": "head", "name": "Capucha de Montaraz de las Minas Profundas", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_08_04", "theme": "middleearth", "slot": "head", "name": "Capucha de Montaraz del Reino Bajo la Montaña", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_09_00", "theme": "middleearth", "slot": "chest", "name": "Cota de Mithril de las Minas Profundas", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_09_01", "theme": "middleearth", "slot": "chest", "name": "Cota de Mithril del Reino Bajo la Montaña", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_09_02", "theme": "middleearth", "slot": "chest", "name": "Cota de Mithril de la Torre Blanca", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_09_03", "theme": "middleearth", "slot": "chest", "name": "Cota de Mithril del Bosque Negro", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_09_04", "theme": "middleearth", "slot": "chest", "name": "Cota de Mithril de los Senderos Muertos", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_10_00", "theme": "middleearth", "slot": "chest", "name": "Manto Élfico del Bosque Negro", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_10_01", "theme": "middleearth", "slot": "chest", "name": "Manto Élfico de los Senderos Muertos", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_10_02", "theme": "middleearth", "slot": "chest", "name": "Manto Élfico de la Colina Verde", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_10_03", "theme": "middleearth", "slot": "chest", "name": "Manto Élfico de la Estrella de la Tarde", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_10_04", "theme": "middleearth", "slot": "chest", "name": "Manto Élfico del Norte Perdido", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_11_00", "theme": "middleearth", "slot": "hands", "name": "Guanteletes de Númenor de la Estrella de la Tarde", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_11_01", "theme": "middleearth", "slot": "hands", "name": "Guanteletes de Númenor del Norte Perdido", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_11_02", "theme": "middleearth", "slot": "hands", "name": "Guanteletes de Númenor de los Guardianes del Árbol", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_11_03", "theme": "middleearth", "slot": "hands", "name": "Guanteletes de Númenor del Río Grande", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_11_04", "theme": "middleearth", "slot": "hands", "name": "Guanteletes de Númenor de la Sombra Antigua", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_12_00", "theme": "middleearth", "slot": "hands", "name": "Guantes del Bosque del Río Grande", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_12_01", "theme": "middleearth", "slot": "hands", "name": "Guantes del Bosque de la Sombra Antigua", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_12_02", "theme": "middleearth", "slot": "hands", "name": "Guantes del Bosque de la Última Alianza", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_12_03", "theme": "middleearth", "slot": "hands", "name": "Guantes del Bosque de las Águilas", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_12_04", "theme": "middleearth", "slot": "hands", "name": "Guantes del Bosque de los Reinos del Oeste", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_13_00", "theme": "middleearth", "slot": "legs", "name": "Grebas de Gondor de las Águilas", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_13_01", "theme": "middleearth", "slot": "legs", "name": "Grebas de Gondor de los Reinos del Oeste", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_13_02", "theme": "middleearth", "slot": "legs", "name": "Grebas de Gondor de la Montaña Solitaria", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_13_03", "theme": "middleearth", "slot": "legs", "name": "Grebas de Gondor del Bosque Dorado", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_13_04", "theme": "middleearth", "slot": "legs", "name": "Grebas de Gondor de las Tierras Pardas", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_14_00", "theme": "middleearth", "slot": "boots", "name": "Botas de Caminante del Bosque Dorado", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_14_01", "theme": "middleearth", "slot": "boots", "name": "Botas de Caminante de las Tierras Pardas", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_14_02", "theme": "middleearth", "slot": "boots", "name": "Botas de Caminante de los Puertos Grises", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_14_03", "theme": "middleearth", "slot": "boots", "name": "Botas de Caminante de la Marca de los Jinetes", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_14_04", "theme": "middleearth", "slot": "boots", "name": "Botas de Caminante del Valle Secreto", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_15_00", "theme": "middleearth", "slot": "ring1", "name": "Anillo Menor de la Marca de los Jinetes", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_15_01", "theme": "middleearth", "slot": "ring1", "name": "Anillo Menor del Valle Secreto", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_15_02", "theme": "middleearth", "slot": "ring1", "name": "Anillo Menor de las Minas Profundas", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_15_03", "theme": "middleearth", "slot": "ring1", "name": "Anillo Menor del Reino Bajo la Montaña", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_15_04", "theme": "middleearth", "slot": "ring1", "name": "Anillo Menor de la Torre Blanca", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_16_00", "theme": "middleearth", "slot": "ring2", "name": "Sello de la Casa Real del Reino Bajo la Montaña", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_16_01", "theme": "middleearth", "slot": "ring2", "name": "Sello de la Casa Real de la Torre Blanca", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_16_02", "theme": "middleearth", "slot": "ring2", "name": "Sello de la Casa Real del Bosque Negro", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_16_03", "theme": "middleearth", "slot": "ring2", "name": "Sello de la Casa Real de los Senderos Muertos", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_16_04", "theme": "middleearth", "slot": "ring2", "name": "Sello de la Casa Real de la Colina Verde", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_17_00", "theme": "middleearth", "slot": "neck", "name": "Broche de Hoja de los Senderos Muertos", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_17_01", "theme": "middleearth", "slot": "neck", "name": "Broche de Hoja de la Colina Verde", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_17_02", "theme": "middleearth", "slot": "neck", "name": "Broche de Hoja de la Estrella de la Tarde", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_17_03", "theme": "middleearth", "slot": "neck", "name": "Broche de Hoja del Norte Perdido", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_17_04", "theme": "middleearth", "slot": "neck", "name": "Broche de Hoja de los Guardianes del Árbol", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_18_00", "theme": "middleearth", "slot": "trinket1", "name": "Fragmento de Palantír del Norte Perdido", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}, {"id": "middleearth_18_01", "theme": "middleearth", "slot": "trinket1", "name": "Fragmento de Palantír de los Guardianes del Árbol", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_18_02", "theme": "middleearth", "slot": "trinket1", "name": "Fragmento de Palantír del Río Grande", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_18_03", "theme": "middleearth", "slot": "trinket1", "name": "Fragmento de Palantír de la Sombra Antigua", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_18_04", "theme": "middleearth", "slot": "trinket1", "name": "Fragmento de Palantír de la Última Alianza", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_19_00", "theme": "middleearth", "slot": "trinket2", "name": "Cuerno de Guerra de la Sombra Antigua", "flavor": "Conserva el eco de caminos largos bajo estrellas frías."}, {"id": "middleearth_19_01", "theme": "middleearth", "slot": "trinket2", "name": "Cuerno de Guerra de la Última Alianza", "flavor": "Forjado en una era antigua, cuando las canciones duraban más que las guerras."}, {"id": "middleearth_19_02", "theme": "middleearth", "slot": "trinket2", "name": "Cuerno de Guerra de las Águilas", "flavor": "Lleva runas que hablan de valor, viaje y una cena que nunca llegó."}, {"id": "middleearth_19_03", "theme": "middleearth", "slot": "trinket2", "name": "Cuerno de Guerra de los Reinos del Oeste", "flavor": "Los sabios lo reconocerían. Los orcos también."}, {"id": "middleearth_19_04", "theme": "middleearth", "slot": "trinket2", "name": "Cuerno de Guerra de la Montaña Solitaria", "flavor": "Parece hecho para un rey, pero cabe perfectamente en tu mochila."}]};
@@ -1255,7 +1360,7 @@ function makeStarterWeapon(classId){
  };
 }
 
-function normalizeConfiguredPotion(item,row={}){if((item.type||row.type)!=='potion')return item;item.type='potion';item.slot='consumable';item.iconShape=item.iconShape||'vial';item.kind=item.kind||(['permanentStats','learnSkill'].includes(item.potionEffectType)?'permanent':['heal','stamina','mana','teleportSafe','teleportStairs'].includes(item.potionEffectType)?'instant':'temporary');item.duration=Number(item.duration)||Number(item.turns)||0;item.effect=item.effect||item.potionEffect||{};item.desc=item.desc||describePotionEffect(item);return item}
+function normalizeConfiguredPotion(item,row={}){if((item.type||row.type)!=='potion')return item;item.type='potion';item.slot='consumable';item.iconShape=item.iconShape||'vial';item.effects=Array.isArray(item.effects)?item.effects:[];item.range=Number(item.range)||0;item.desc=item.desc||describePotionEffects(item);return item}
 function configWeaponKind(item){
  const text=`${item.weaponType||''} ${item.weaponCategory||''} ${item.name||item.nombre||''}`.toLowerCase();
  if(/varita/.test(text))return 'magic';
@@ -1523,13 +1628,13 @@ function start(){
  const stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},debuff:0,shards:{}}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
  if(rb.armor)game.player.baseArmor+=rb.armor;
  addStarterPotions(selectedClass);
- recomputeDerived();startOverlay.classList.add('hidden');
+ syncAllEquipmentPassives();recomputeDerived();startOverlay.classList.add('hidden');
  // A brand new character can never legitimately need the level-up modals -
  // clear any 'open' class left over from a previous character/session in
  // this same tab (e.g. a stat-point or skill-choice modal that didn't get
@@ -1674,6 +1779,21 @@ const FLOOR_ARCHETYPES={
   enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4,creator:2}
+ },
+ // Built by buildCityFloorPlan, not the shared room/corridor carving loop:
+ // an open district with no walled rooms, just building-sized (2x2+) assets
+ // laid out in a loose grid (with jitter/skips for asymmetry) plus 1x1 props
+ // scattered between them. `layout`/`roomWeights` below are still used - just
+ // for the unwalled bookkeeping "zones" (chests/traps/altars/enemies/safe
+ // spots) rather than for carving actual walls.
+ city:{
+  label:'Piso ciudad', minFloor:4, cooldown:5, objective:'stairs',
+  desc:'Un distrito abierto sin salas: edificios distribuidos en manzanas, con callejones y objetos pequeños entre ellos.',
+  weight:(f)=>f<4?0:14,
+  layout:{rooms:[16,16], size:[6,11], corridors:'open', loops:0, pillars:0},
+  enemies:{density:.85, elite:1, tierBias:0, bossOnEven:true},
+  rewards:{chests:1.1, rarity:1},
+  roomWeights:{filler:26,combat:22,guardpost:12,vault:8,shrine:8,creator:6,hub:8,eliteden:6,traproom:4}
  }
 };
 
@@ -1761,6 +1881,281 @@ function buildMegabossFloorPlan(floor,params){
   themeName:floorTileset.name,floorTileset,announce:true
  };
 }
+
+// City floor: no walled rooms - just an open district. Large (2x2+) building
+// assets go down in a loose grid (row-by-row jitter + random skips break the
+// checkerboard look into something asymmetric), then small 1x1 props fill the
+// gaps between them. Under the hood a handful of unwalled "zones" still carry
+// a room type (see rooms below) so the existing chest/trap/altar/enemy/safe-
+// room systems - all keyed off ROOM_TYPES - keep working exactly as on any
+// other floor; the player just never sees a wall separating them.
+function buildCityFloorPlan(floor,params,{populationScale=1}={}){
+ const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
+ const arch=FLOOR_ARCHETYPES.city,E=arch.enemies,R=arch.rewards;
+ const map=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+ for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)map[y][x]=0;
+ const occ=new Set();
+
+ // --- buildings (2x2+) on a loose grid, then 1x1 props in the gaps ---
+ const floorAssetDefs=assetDefsForFloor(floor,params);
+ const bigAssetDefs=floorAssetDefs.filter(a=>a.cols>=2&&a.rows>=2);
+ const smallAssetDefs=floorAssetDefs.filter(a=>a.cols===1&&a.rows===1);
+ const assetPlacements=[];
+ // Shared placement attempt: places `def` with its top-left at (ox,oy) if
+ // every covered cell is in-bounds and unclaimed; mirrors the mask-aware
+ // blocking rule used by the walled archetypes' own asset placement.
+ const tryPlaceAssetAt=(def,ox,oy)=>{
+  const cellsCovered=[];
+  for(let dy=0;dy<def.rows;dy++)for(let dx=0;dx<def.cols;dx++){
+   const px=ox+dx,py=oy+dy;
+   if(px<1||px>=COLS-1||py<1||py>=ROWS-1||occ.has(key(px,py)))return false;
+   cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
+  }
+  for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
+  assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
+  return true;
+ };
+ const margin=5;
+ if(bigAssetDefs.length){
+  const span=Math.max(...bigAssetDefs.map(a=>Math.max(a.cols,a.rows))),cell=span+2;
+  for(let gy=margin;gy+span<ROWS-margin;gy+=cell){
+   const rowShift=rng(3)-1; // a different left/right bias per row of blocks
+   for(let gx=margin;gx+span<COLS-margin;gx+=cell){
+    if(Math.random()<.22)continue; // gaps: plazas/lots between blocks, breaks the pure grid
+    const def=pick(bigAssetDefs);
+    const ox=Math.max(1,Math.min(COLS-def.cols-1,gx+rowShift+rng(3)-1));
+    const oy=Math.max(1,Math.min(ROWS-def.rows-1,gy+rng(3)-1));
+    tryPlaceAssetAt(def,ox,oy);
+   }
+  }
+ }
+ if(smallAssetDefs.length){
+  const target=Math.max(10,Math.round(assetPlacements.length*1.5));
+  let placed=0,guard=0;
+  while(placed<target&&guard<800){
+   guard++;
+   const x=1+rng(COLS-2),y=1+rng(ROWS-2);
+   if(map[y][x]!==0)continue;
+   if(tryPlaceAssetAt(pick(smallAssetDefs),x,y))placed++;
+  }
+ }
+
+ // --- unwalled zones: a 7x7 grid tiling the whole map, each tagged with a
+ // room type purely for bookkeeping (chests/traps/altars/enemies/safe spots).
+ // Sized close to a normal room (~6x6, same ballpark as ROOM_TYPES.size) on
+ // purpose - a coarser grid would turn "safe room" zones into a huge chunk of
+ // the map being enemy-free. No carve(), no corridors - the map is already
+ // open floor everywhere except the buildings placed above. ---
+ const gridN=7,zoneW=Math.floor((COLS-2)/gridN),zoneH=Math.floor((ROWS-2)/gridN);
+ const rooms=[];
+ for(let gy=0;gy<gridN;gy++)for(let gx=0;gx<gridN;gx++){
+  const x=1+gx*zoneW,y=1+gy*zoneH;
+  const w=gx===gridN-1?COLS-1-x:zoneW,h=gy===gridN-1?ROWS-1-y:zoneH;
+  const typeId=weightedRoomType(arch.roomWeights);
+  rooms.push({x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId});
+ }
+
+ // Every floor needs at least 2 Creator's Room zones, same rule as the walled archetypes.
+ {
+  const spawnZone=rooms[0];
+  const distFromSpawn=r=>Math.abs(r.cx-spawnZone.cx)+Math.abs(r.cy-spawnZone.cy);
+  const nonSpawn=rooms.filter(r=>r!==spawnZone);
+  if(nonSpawn.length)[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0].type='creator';
+  // spawnZone itself is excluded from this count even if the initial random
+  // grid roll happened to tag it 'creator' - it always gets reset to
+  // 'filler' below once spawn is finalized, so counting it here would let
+  // that reset silently drop the floor back to just 1 real creator zone.
+  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnZone);
+  while(creatorRooms.length<2){
+   const candidates=rooms.filter(r=>r!==spawnZone&&r.type!=='creator');
+   if(!candidates.length)break;
+   const r=pick(candidates);r.type='creator';creatorRooms.push(r);
+  }
+ }
+
+ // A zone's center can land inside a building; snap spawn/stairs to the
+ // nearest actually-open tile so the player never starts (or has to reach) a wall.
+ const nearestOpenCell=(cx,cy)=>{
+  if(map[cy]?.[cx]===0)return{x:cx,y:cy};
+  for(let radius=1;radius<Math.max(ROWS,COLS);radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+   const x=cx+dx,y=cy+dy;
+   if(x<1||y<1||x>=COLS-1||y>=ROWS-1||map[y][x]!==0)continue;
+   return{x,y};
+  }
+  return{x:cx,y:cy};
+ };
+ const spawnZone=rooms[0];
+ const spawnPos=nearestOpenCell(spawnZone.cx,spawnZone.cy);
+ spawnZone.cx=spawnPos.x;spawnZone.cy=spawnPos.y;spawnZone.type='filler';
+ const distanceFromSpawn=r=>Math.abs(r.cx-spawnZone.cx)+Math.abs(r.cy-spawnZone.cy);
+ const distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
+ const stairRoom=distantRooms[0]||rooms.at(-1);
+ const stairPos=nearestOpenCell(stairRoom.cx,stairRoom.cy);
+ stairRoom.cx=stairPos.x;stairRoom.cy=stairPos.y;
+ const bossRoom=stairRoom;
+ const stairs={x:stairRoom.cx,y:stairRoom.cy};
+
+ // The open layout has no guaranteed corridor spine like the walled
+ // archetypes - flood-fill from spawn and, on the rare chance the buildings
+ // sealed off the stairs, carve a straight rescue path through.
+ const reachable=floodFillOpen(map,spawnZone.cx,spawnZone.cy);
+ if(!reachable.has(key(stairs.x,stairs.y))){
+  let x=spawnZone.cx,y=spawnZone.cy;
+  while(x!==stairs.x){map[y][x]=0;x+=Math.sign(stairs.x-x)}
+  while(y!==stairs.y){map[y][x]=0;y+=Math.sign(stairs.y-y)}
+ }
+
+ const occSpawnStairs=new Set([key(spawnZone.cx,spawnZone.cy),key(stairs.x,stairs.y)]);
+ occSpawnStairs.forEach(k=>occ.add(k));
+
+ const safeRoomCount=2+rng(3);
+ const excludedRooms=new Set([spawnZone,stairRoom,bossRoom]);
+ const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&distanceFromSpawn(r)>8).sort(()=>Math.random()-.5).slice(0,safeRoomCount).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
+ const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
+ safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
+
+ const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
+ if(!cells.length)return null;
+ // Random sampling from the static `cells` snapshot, with a bounded retry -
+ // but `cells` was taken before assets/etc. reserved further tiles into
+ // `occ`, so on a tight floor (few rooms, several assets) most of it can be
+ // stale by the time this runs. Falls back to an exhaustive scan of what's
+ // actually still free rather than giving up and returning an occupied cell;
+ // under genuine full-floor saturation (an extreme enemy count on a small
+ // archetype), the last-resort fallback still only ever returns a tile the
+ // map itself considers walkable (map===0) - it may end up sharing a tile
+ // with another entity, but it is never placed inside a wall.
+ const free=()=>{
+  let p,guard=0;
+  do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);
+  if(occ.has(key(p.x,p.y))){
+   const available=cells.filter(c=>!occ.has(key(c.x,c.y)));
+   if(available.length)p=pick(available);
+   else{
+    const stillWalkable=cells.filter(c=>map[c.y][c.x]===0);
+    if(stillWalkable.length)p=pick(stillWalkable);
+   }
+  }
+  occ.add(key(p.x,p.y));
+  return{...p};
+ };
+ const freeIn=r=>{
+  for(let i=0;i<40;i++){
+   const x=r.x+rng(Math.max(1,r.w)),y=r.y+rng(Math.max(1,r.h));
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return free();
+ };
+ const edgeIn=r=>{
+  for(let i=0;i<40;i++){
+   const onX=Math.random()<.5;
+   const x=onX?(Math.random()<.5?r.x:r.x+r.w-1):r.x+rng(Math.max(1,r.w));
+   const y=onX?r.y+rng(Math.max(1,r.h)):(Math.random()<.5?r.y:r.y+r.h-1);
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return freeIn(r);
+ };
+
+ // Guarantee: at least a handful of zones (up to 3) end up with a 2x2+
+ // building even if the grid pass above happened to skip them all - same
+ // "never all 1x1 clutter by bad luck" rule as the walled archetypes.
+ if(bigAssetDefs.length){
+  const minBig=Math.min(3,rooms.length);
+  const bigCount=()=>assetPlacements.filter(a=>a.cols>=2&&a.rows>=2).length;
+  const pool=[...rooms].filter(r=>r!==spawnZone&&r!==stairRoom).sort(()=>Math.random()-.5);
+  for(const r of pool){
+   if(bigCount()>=minBig)break;
+   const fitting=bigAssetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+   if(!fitting.length)continue;
+   const def=pick(fitting);
+   for(let tries=0;tries<20;tries++){
+    const ox=r.x+1+rng(Math.max(1,r.w-2)),oy=r.y+1+rng(Math.max(1,r.h-2));
+    if(tryPlaceAssetAt(def,ox,oy))break;
+   }
+  }
+ }
+
+ // --- traps, altars, chests: same per-zone-type rules as the walled archetypes ---
+ const traps=[],altars=[],chests=[];
+ for(const r of rooms){
+  const T=ROOM_TYPES[r.type]||ROOM_TYPES.filler;
+  if(safeRooms.some(s=>s.x===r.x&&s.y===r.y))continue;
+  if(T.traps&&Math.random()<T.traps){
+   const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
+   for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
+  }
+  if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
+  const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
+  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
+   const chestDef=pickChestDefForFloor(floor);
+   if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
+  }
+ }
+ const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
+ while(chests.length<minChests){
+  const chestDef=pickChestDefForFloor(floor);
+  if(!chestDef)break;
+  chests.push({...free(),opened:false,chestDef});
+ }
+ if(chests.length){
+  const bumpTier=Math.min(5,chestTierForFloor(floor)+1),bumpCount=Math.min(chests.length,1+(Math.random()<.5?1:0));
+  for(const c of [...chests].sort(()=>Math.random()-.5).slice(0,bumpCount)){
+   const bumpDef=pickChestDefAtTier(bumpTier);
+   if(bumpDef)c.chestDef=bumpDef;
+  }
+ }
+
+ // --- enemies: same budget/composition rules as the walled archetypes ---
+ const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
+ const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
+ const combatRooms=rooms.filter(r=>r!==spawnZone&&(ROOM_TYPES[r.type]?.enemies?.[1]||0)>0);
+ let placed=0;
+ for(const r of combatRooms){
+  if(placed>=baseCount)break;
+  const T=ROOM_TYPES[r.type];
+  const n=randBetween(T.enemies[0],T.enemies[1]);
+  for(let i=0;i<n&&placed<baseCount;i++){
+   const pos=T.place==='edges'?edgeIn(r):freeIn(r);
+   const wantElite=Math.random()<Math.min(.85,.05*(E.elite||1)*(T.elite?6:1));
+   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),pos,floor,false);
+   e.enemyFamily=family.name;e.roomType=r.type;
+   if(T.tier||E.tierBias){
+    const bump=(T.tier||0)+(E.tierBias||0);
+    if(bump>0){e.maxHp=e.hp=Math.round(e.hp*(1+.22*bump));e.atk=e.damage=Math.round((e.atk||e.damage||4)*(1+.15*bump));e.xp=Math.round((e.xp||8)*(1+.2*bump))}
+    else if(bump<0){e.maxHp=e.hp=Math.max(4,Math.round(e.hp*.75));e.atk=e.damage=Math.max(1,Math.round((e.atk||e.damage||4)*.8))}
+   }
+   if(wantElite&&!e.boss){e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.5);e.atk=e.damage=Math.round((e.atk||e.damage||4)*1.28);e.xp=Math.round((e.xp||8)*1.8);assignEnemySkills(e)}
+   enemies.push(e);placed++;
+  }
+ }
+ while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+
+ // --- boss: same bossOnEven rule as the standard archetype ---
+ let boss=null;
+ if(E.bossOnEven){
+  const bossCount=floor%2===0?1:(Math.random()<.08?1:0);
+  for(let bi=0;bi<bossCount;bi++){
+   const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),{x:bossRoom.cx,y:bossRoom.cy},floor,true);
+   b.enemyFamily=family.name;
+   enemies.push(b);if(!boss)boss=b;
+  }
+ }
+
+ const objective=buildFloorObjective('city',floor,total);
+ if(objective.type==='bossKill'&&!boss)objective.type='stairs';
+ const event=Math.random()<=.12?{id:pick(eventDefs).id}:null;
+ const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
+
+ return {
+  floor,map,rooms,safeRooms,spawn:{x:spawnZone.cx,y:spawnZone.cy},stairs,doors:[],keys:[],chests,traps,altars,event,assets:assetPlacements,
+  enemies,boss,family,archetype:'city',archetypeLabel:arch.label,archetypeDesc:arch.desc,
+  objective,tierExpected:expectedTierForFloor(floor,total),rewardRarityBonus:R.rarity||0,
+  enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
+  themeName:floorTileset.name,floorTileset,announce:!!arch.announce
+ };
+}
+
 // Shared floor builder used by both the pre-generated world JSON and the live
 // generator, so archetypes/rooms behave identically in single and multiplayer.
 // Assumes `game` is set with at least {floor,player,worldParams}.
@@ -1775,6 +2170,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
+ // City floors have no walled rooms at all (open district of building assets),
+ // so they can't go through the shared room/corridor carving below - built by
+ // its own dedicated generator instead, same pattern as buildMegabossFloorPlan.
+ if(archId==='city')return buildCityFloorPlan(floor,params,{populationScale});
  const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
  const tier=expectedTierForFloor(floor,total);
  const L=arch.layout,E=arch.enemies,R=arch.rewards;
@@ -1793,6 +2192,15 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const layoutSizeMax=Math.min(COLS-6,Math.max(L.size[1],floorMaxAssetSpan+2));
 
  // --- rooms: count/size come from the archetype, shape from the room type ---
+ // Every generation rolls a fresh mirror axis (vertical/horizontal/point) and,
+ // for most placed rooms, also tries to carve their mirrored twin - so floors
+ // read as deliberately symmetric layouts (a different symmetry each time,
+ // never forced to repeat) instead of pure noise. Corridors/loops/pillars/
+ // enemies/loot placed afterwards stay randomized, so the symmetry is
+ // structural (room shapes/positions) without making every floor feel identical.
+ const symmetryMode=pick(SYMMETRY_MODES);
+ const overlapsRoom=(x,y,w,h)=>rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y);
+ const roomInBounds=(x,y,w,h)=>x>=1&&y>=1&&x+w<=COLS-1&&y+h<=ROWS-1;
  const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
  for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
   const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
@@ -1802,9 +2210,16 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(Math.random()<.35){if(Math.random()<.5)w=Math.max(3,Math.round(w*1.6));else h=Math.max(3,Math.round(h*1.6))}
   w=Math.min(w,COLS-4);h=Math.min(h,ROWS-4);
   const x=1+rng(Math.max(1,COLS-w-2)),y=1+rng(Math.max(1,ROWS-h-2));
-  if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;
-  rooms.push({x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId});
-  carve(map,rooms[rooms.length-1]);
+  if(overlapsRoom(x,y,w,h))continue;
+  const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId};
+  rooms.push(room);carve(map,room);
+  if(rooms.length<targetRooms&&Math.random()<ROOM_MIRROR_CHANCE){
+   const m=mirrorRect(room,symmetryMode);
+   if(roomInBounds(m.x,m.y,m.w,m.h)&&!overlapsRoom(m.x,m.y,m.w,m.h)){
+    const twin={x:m.x,y:m.y,w:m.w,h:m.h,cx:m.x+Math.floor(m.w/2),cy:m.y+Math.floor(m.h/2),type:typeId};
+    rooms.push(twin);carve(map,twin);
+   }
+  }
  }
  if(!rooms.length)return null;
 
@@ -1821,7 +2236,11 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
    nearest.type='creator';
   }
-  const creatorRooms=rooms.filter(r=>r.type==='creator');
+  // spawnRoom itself is excluded from this count even if it happened to roll
+  // 'creator' at random above - it always gets reset to 'filler' once spawn
+  // is finalized further down, so counting it here would let that reset
+  // silently drop the floor back to just 1 real creator room.
+  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
   while(creatorRooms.length<2){
    const candidates=rooms.filter(r=>r!==spawnRoom&&r.type!=='creator'&&r.type!=='bossarena');
    if(!candidates.length)break;
@@ -1884,7 +2303,29 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const occ=new Set([key(spawn.cx,spawn.cy),key(stairs.x,stairs.y)]);safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
  const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
  if(!cells.length)return null;
- const free=()=>{let p,guard=0;do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);occ.add(key(p.x,p.y));return{...p}};
+ // Random sampling from the static `cells` snapshot, with a bounded retry -
+ // but `cells` was taken before assets/etc. reserved further tiles into
+ // `occ`, so on a tight floor (few rooms, several assets) most of it can be
+ // stale by the time this runs. Falls back to an exhaustive scan of what's
+ // actually still free rather than giving up and returning an occupied cell;
+ // under genuine full-floor saturation (an extreme enemy count on a small
+ // archetype), the last-resort fallback still only ever returns a tile the
+ // map itself considers walkable (map===0) - it may end up sharing a tile
+ // with another entity, but it is never placed inside a wall.
+ const free=()=>{
+  let p,guard=0;
+  do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);
+  if(occ.has(key(p.x,p.y))){
+   const available=cells.filter(c=>!occ.has(key(c.x,c.y)));
+   if(available.length)p=pick(available);
+   else{
+    const stillWalkable=cells.filter(c=>map[c.y][c.x]===0);
+    if(stillWalkable.length)p=pick(stillWalkable);
+   }
+  }
+  occ.add(key(p.x,p.y));
+  return{...p};
+ };
  const freeIn=r=>{
   for(let i=0;i<40;i++){
    const x=r.x+rng(Math.max(1,r.w)),y=r.y+rng(Math.max(1,r.h));
@@ -1911,6 +2352,39 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // on floor - never on a wall, a pillar, or another asset/entity's tile.
  const assetPlacements=[];
  const assetDefs=floorAssetDefs;
+ // Shared placement attempt: enumerates every offset where `def` fits inside
+ // room `r`'s interior (rather than randomly sampling offsets and retrying -
+ // for a room whose interior is only barely bigger than the asset, the room's
+ // own centre tile can sit on *every* randomly-reachable offset, making a
+ // fit that genuinely exists impossible to ever roll into) and picks randomly
+ // among the valid ones. Honours the same floor/occupancy/safe-room/landmark-
+ // tile rules everywhere an asset gets placed on this floor (the scattershot
+ // pass below and the size-guarantee pass after it).
+ // avoidCenter defaults on (keeps the room's centre tile - the usual walking
+ // line/line-of-sight anchor - clear); the size-guarantee pass below retries
+ // with it off as a last resort, since for a room whose interior is only
+ // barely bigger than the asset, every valid-bounds offset can end up
+ // covering the centre, which would otherwise make a genuine fit unreachable.
+ const tryPlaceAsset=(r,def,avoidCenter=true)=>{
+  const minOx=r.x+1,maxOx=r.x+r.w-2-def.cols+1,minOy=r.y+1,maxOy=r.y+r.h-2-def.rows+1;
+  if(maxOx<minOx||maxOy<minOy)return false;
+  const candidates=[];
+  for(let oy=minOy;oy<=maxOy;oy++)for(let ox=minOx;ox<=maxOx;ox++){
+   const cellsCovered=[];
+   let ok=true;
+   for(let dy=0;dy<def.rows&&ok;dy++)for(let dx=0;dx<def.cols&&ok;dx++){
+    const px=ox+dx,py=oy+dy;
+    if(map[py]?.[px]!==0||occ.has(key(px,py))||safeCellKeys.has(key(px,py))||(avoidCenter&&px===r.cx&&py===r.cy)||(px===spawn.cx&&py===spawn.cy)||(px===stairs.x&&py===stairs.y)){ok=false;break}
+    cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
+   }
+   if(ok)candidates.push({ox,oy,cellsCovered});
+  }
+  if(!candidates.length)return false;
+  const choice=pick(candidates);
+  for(const c of choice.cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
+  assetPlacements.push({key:def.key,name:def.name,x:choice.ox,y:choice.oy,cols:def.cols,rows:def.rows});
+  return true;
+ };
  if(assetDefs.length){
   const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
   // Hard cap so a floor never gets carpeted with decoration: a handful of
@@ -1921,21 +2395,23 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    if(Math.random()>=.25)continue; // not every eligible room gets one
    const fitting=assetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
    if(!fitting.length)continue;
-   const def=pick(fitting);
-   for(let tries=0;tries<30;tries++){
-    const ox=r.x+1+rng(Math.max(1,r.w-2)),oy=r.y+1+rng(Math.max(1,r.h-2));
-    const cellsCovered=[];
-    let ok=true;
-    for(let dy=0;dy<def.rows&&ok;dy++)for(let dx=0;dx<def.cols&&ok;dx++){
-     const px=ox+dx,py=oy+dy;
-     if(px<r.x+1||px>r.x+r.w-2||py<r.y+1||py>r.y+r.h-2){ok=false;break}
-     if(map[py]?.[px]!==0||occ.has(key(px,py))||safeCellKeys.has(key(px,py))||(px===r.cx&&py===r.cy)||(px===spawn.cx&&py===spawn.cy)||(px===stairs.x&&py===stairs.y)){ok=false;break}
-     cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
-    }
-    if(!ok)continue;
-    for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
-    assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
-    break;
+   tryPlaceAsset(r,pick(fitting));
+  }
+  // Guarantee: any floor with at least one 2x2-or-larger asset defined always
+  // lands that size in at least a handful of rooms (up to 3, or fewer on a
+  // very small floor), regardless of how the ~25%-per-room roll above landed -
+  // a floor should never read as "all 1x1 clutter" just by bad luck.
+  const bigAssetDefs=assetDefs.filter(a=>a.cols>=2&&a.rows>=2);
+  if(bigAssetDefs.length){
+   const minBigAssetRooms=Math.min(3,rooms.length);
+   const bigAssetCount=()=>assetPlacements.filter(a=>a.cols>=2&&a.rows>=2).length;
+   const bigAssetPool=[...rooms].filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
+   for(const r of bigAssetPool){
+    if(bigAssetCount()>=minBigAssetRooms)break;
+    const fitting=bigAssetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+    if(!fitting.length)continue;
+    const def=pick(fitting);
+    if(!tryPlaceAsset(r,def))tryPlaceAsset(r,def,false);
    }
   }
  }
@@ -2011,8 +2487,26 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
 
  // --- bosses ---
  let boss=null;const bosses=[];
+ // Boss spawn positions are always "a room's centre tile" (bossRoom, a
+ // bossRush arena, a distant room for bossOnEven's extra "Campeón" bosses) -
+ // usually kept clear of decoration, but the asset size-guarantee above can,
+ // as a last resort, place an asset on top of a room's own centre. Snap to
+ // the nearest genuinely free tile instead of trusting the centre blindly,
+ // and reserve it so two bosses in the same multi-boss floor can't stack.
+ const nearestFreeCellForBoss=(cx,cy)=>{
+  if(map[cy]?.[cx]===0&&!occ.has(key(cx,cy)))return{x:cx,y:cy};
+  for(let radius=1;radius<Math.max(ROWS,COLS);radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+   const x=cx+dx,y=cy+dy;
+   if(x<1||y<1||x>=COLS-1||y>=ROWS-1||map[y][x]!==0||occ.has(key(x,y)))continue;
+   return{x,y};
+  }
+  return{x:cx,y:cy};
+ };
  const mkBoss=(pos,label,tierBonus)=>{
-  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),pos,floor,true);
+  const resolvedPos=nearestFreeCellForBoss(pos.x,pos.y);
+  occ.add(key(resolvedPos.x,resolvedPos.y));
+  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),resolvedPos,floor,true);
   b.enemyFamily=family.name;
   if(tierBonus>0){
    b.maxHp=b.hp=Math.round(b.hp*(1+.45*tierBonus));
@@ -2102,6 +2596,38 @@ function loadPrecomputedFloor(){
 }
 
 function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)map[y][x]=0}
+
+// Room symmetry: mirrors a {x,y,w,h} rect across the map's vertical axis
+// (left<->right), horizontal axis (top<->bottom), or both at once (180°
+// point symmetry) - used to grow a randomly-placed room into a symmetric
+// twin. A new axis is rolled per floor (see buildFloorPlan/buildCityFloorPlan)
+// so symmetry is always present but never the same shape twice.
+const SYMMETRY_MODES=['vertical','horizontal','point'];
+const ROOM_MIRROR_CHANCE=.62;
+function mirrorRect(r,mode){
+ const mx=COLS-r.w-r.x,my=ROWS-r.h-r.y;
+ if(mode==='vertical')return{x:mx,y:r.y,w:r.w,h:r.h};
+ if(mode==='horizontal')return{x:r.x,y:my,w:r.w,h:r.h};
+ return{x:mx,y:my,w:r.w,h:r.h};
+}
+// Flood-fill of every map===0 cell reachable from (sx,sy), used by
+// buildCityFloorPlan to guarantee the stairs are actually reachable from
+// spawn (the open-plan city layout has no guaranteed corridor spine like the
+// walled archetypes do).
+function floodFillOpen(map,sx,sy){
+ const seenSet=new Set([key(sx,sy)]),stack=[[sx,sy]];
+ while(stack.length){
+  const[x,y]=stack.pop();
+  for(const[dx,dy] of[[1,0],[-1,0],[0,1],[0,-1]]){
+   const nx=x+dx,ny=y+dy;
+   if(nx<1||ny<1||nx>=COLS-1||ny>=ROWS-1)continue;
+   const k=key(nx,ny);
+   if(seenSet.has(k)||map[ny][nx]!==0)continue;
+   seenSet.add(k);stack.push([nx,ny]);
+  }
+ }
+ return seenSet;
+}
 
 
 const eventStats=['strength','vitality','agility','luck','intelligence','wisdom'];
@@ -2846,7 +3372,7 @@ function resolveSkillPower(id,actor=game.player){
  return Math.round(dicePowerFor(d,fallback,actor)*power)
 }
 function activeBuffDamageMultiplier(){
- return activeBuffMultFactor('damage')*(game.player.activePotions||[]).reduce((m,b)=>m*(1+((b.effect?.damageMult||0))),1)
+ return activeBuffMultFactor('damage')
 }
 function diceDamageLabel(id){
  const expr=skillDiceExpr(id),d=skillDefs[id]||{};
@@ -2889,6 +3415,7 @@ function attack(e,bonus=0,options={}){
  if(Math.max(Math.abs(origin.x-e.x),Math.abs(origin.y-e.y))>1)rangedTracer(origin.x,origin.y,e.x,e.y,crit?'#ffd75c':'#9be8ff');
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
+ if(!skillId&&origin===game.player)maybeProcWeaponEffects(e);
  if(e.hp<=0)kill(e)
 }
 // Guaranteed boss-kill rarity by floor - always real equipment (forceRarityName
@@ -2917,6 +3444,11 @@ function megabossGuaranteedDrops(floor){
 // guaranteed floor-tiered equipment instead (see bossGuaranteedRarityForFloor/
 // megabossGuaranteedDrops).
 function kill(e){
+ // Idempotency guard: a weapon on-hit proc (maybeProcWeaponEffects) can fire
+ // a nested attack() at the same target that finishes it off before the
+ // outer attack() call gets to its own `if(e.hp<=0)kill(e)` check - without
+ // this, the second call would hand out xp/gold/loot a second time.
+ if(!game.enemies.includes(e))return;
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);
  // A companion ordered onto this specific enemy (permanent pet) has nothing
@@ -2951,6 +3483,22 @@ function kill(e){
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
+// Weapon on-hit procs: after a basic (non-skill) player attack lands, the
+// equipped weapon's own effects[] gets one independent procChance roll; on
+// success it fires at the same target through the exact same composable-
+// effects engine as skills/potions (see effectSourceDef/beginExternalEffectsCast).
+// Skill-driven hits never proc here - a skill's own effects[] already covers
+// that cast; this is specifically the weapon itself doing its own thing on
+// a plain swing/shot.
+function maybeProcWeaponEffects(target){
+ const weapon=equippedWeapon();
+ if(!weapon||!Array.isArray(weapon.effects)||!weapon.effects.length)return;
+ const chance=Math.max(0,Math.min(100,Number(weapon.procChance)||0))/100;
+ if(chance<=0||Math.random()>=chance)return;
+ const castId=beginExternalEffectsCast('equip:weapon',weapon);
+ applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
+ endExternalEffectsCast();
+}
 function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const originalAmount=amount;
  amount=normalizeIncomingDamage(amount,sourceName);
@@ -2965,7 +3513,6 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  else if(dodgeChance>0&&Math.random()<dodgeChance){mult=0;result='esquiva'}
  else if(defenseDie+defenseBonus>=attackDC){mult=.5;result=`defensa de ${attackDefenseLabel(defenseStat)} superada`}
  else if(defenseDie===1){mult=1.25;result=`pifia en ${attackDefenseLabel(defenseStat)}`}
- if((p.activePotions||[]).some(b=>b.effect?.invulnerable)){mult=0;result='invulnerabilidad activa'}
  let d=Math.max(mult===0?0:1,Math.round(amount*mult));
  const blockChance=Math.min(.75,(p.derived?.blockChance||0)/100);
  const blocked=mult>0&&d>0&&Math.random()<blockChance;
@@ -3587,6 +4134,10 @@ function tickPlayerRegen(){
  p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
  p.mana=Math.min(p.maxMana,p.mana+Math.max(0,p.derived?.manaRegen||0));
 }
+function tickEquipmentCooldowns(){
+ const cd=game.player?.equipmentCooldowns;if(!cd)return;
+ for(const slot in cd)if(cd[slot]>0)cd[slot]--;
+}
 // Only ticks down a holyshield's turn limit when one was configured (turns>0
 // on cast) - a shield cast with turns:0 lasts until broken by damage, no
 // timer at all.
@@ -3604,11 +4155,13 @@ function tickPlayerInvisibility(){
  if(p.invisibleTurns<=0){p.invisibleTurns=0;p.invisibleBreaksOnAttack=false}
 }
 function activeEffectsHtml(){
+ // Potion-driven buffs/HOTs/shields now go through the exact same
+ // activeBuffs/holyShield/invisibleTurns state as skills (see
+ // effectSourceDef), so they already show up here with no separate list.
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
- const potions=(game.player.activePotions||[]).map(b=>`<span class="effectBadge potion">${b.name}: ${b.turns}T</span>`);
  const shield=game.player.holyShield>0?[`<span class="effectBadge buff">Escudo: ${game.player.holyShield}${game.player.holyShieldTurns>0?` (${game.player.holyShieldTurns}T)`:''}</span>`]:[];
  const invisible=game.player.invisibleTurns>0?[`<span class="effectBadge buff">Invisibilidad: ${game.player.invisibleTurns}T</span>`]:[];
- return[...buffs,...potions,...shield,...invisible].join('')
+ return[...buffs,...shield,...invisible].join('')
 }
 
 
@@ -4240,19 +4793,30 @@ function applyCreativeClassEffect(id,target,x,y){
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
 function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
-function hasEffectsList(id){const d=skillDefs[id];return Array.isArray(d?.effects)&&d.effects.length>0}
+// Potions now run through the exact same composable-effects engine as
+// skills (applyEffectComponent/applySkillEffectsList below), instead of a
+// separate bespoke potionEffectType system - a potion "cast" just registers
+// itself here for the duration of the call so every `skillDefs[id]`/
+// `skillLevel(id)` lookup in that engine transparently resolves to the
+// potion's own effects/level instead, with no synthetic skillDefs entry and
+// no cooldown/AP/knownSkills state (potions are single-use, consumed from
+// inventory quantity - see usePotion/resolveTargetedPotion).
+let activeExternalCast=null; // {id,name,effects,level}
+function effectSourceDef(id){return skillDefs[id]||(activeExternalCast&&activeExternalCast.id===id?activeExternalCast:null)}
+function effectSourceLevel(id){return skillDefs[id]?skillLevel(id):(activeExternalCast&&activeExternalCast.id===id?activeExternalCast.level:1)}
+function hasEffectsList(id){const d=effectSourceDef(id);return Array.isArray(d?.effects)&&d.effects.length>0}
 // What clicking/targeting the WHOLE skill needs, derived from its
 // components: any component that must hit an enemy or an area drives the
 // overall target mode (enemy beats area beats none); an all-self skill
 // (pure buff/heal/move-self) needs no click at all, matching how the
 // existing self-cast classEffect skills behave.
-function effectsListTargetMode(id){
- const d=skillDefs[id];const list=d?.effects||[];
+function effectsListTargetModeFor(list){
  if(list.some(c=>c.target==='enemy'))return'enemy';
  if(list.some(c=>c.target==='area'||(c.kind==='move'&&c.mode==='teleport')))return'area';
  if(list.some(c=>c.target==='ally'))return'ally';
  return null
 }
+function effectsListTargetMode(id){return effectsListTargetModeFor(effectSourceDef(id)?.effects||[])}
 function resolveComponentEnemyTargets(comp,ctx){
  if(comp.target==='area'){
   const radius=comp.range||2;
@@ -4295,7 +4859,7 @@ function resolveComponentAllyTargets(comp,ctx){
  return ctx.clickedAlly?[ctx.clickedAlly]:[];
 }
 function applyEffectComponent(id,comp,ctx){
- const d=skillDefs[id],p=game.player,lvl=skillLevel(id);
+ const d=effectSourceDef(id),p=game.player,lvl=effectSourceLevel(id);
  // Merges the enclosing skill's own top-level fields (type/resource, used
  // only for the "Automática" no-stat-chosen fallback) with this specific
  // component's own dmgStat/dmgStatMode/dmgStatCoef, so an enemy-facing hit
@@ -4357,8 +4921,11 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='heal'){
   const power=dicePowerFor(comp,8+lvl*3,p);
+  // d.resource is the enclosing skill's own resource (undefined for a
+  // potion "cast" - potions have no resource pool of their own), so the
+  // resource-restore side effect below only fires when there's a real one.
   if(comp.target==='area'){
-   healEntity(p,power*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+   healEntity(p,power*2);if(d.resource)p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
    for(const ally of resolveComponentAllyTargets(comp,ctx)){
     healEntity(ally,power*2,ally.x,ally.y);
     if(ally.pjId)sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
@@ -4367,7 +4934,7 @@ function applyEffectComponent(id,comp,ctx){
    healEntity(ctx.clickedAlly,power*2,ctx.clickedAlly.x,ctx.clickedAlly.y);
    sendMpAction('ally_heal',{targetId:ctx.clickedAlly.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
   }else{
-   healEntity(p,power*2);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+   healEntity(p,power*2);if(d.resource)p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
   }
   return true
  }
@@ -4468,7 +5035,10 @@ function applyEffectComponent(id,comp,ctx){
   }
   if(mode==='stealth'){game.player.shadowVeil=1;return true}
   if(mode==='shield'){game.player.shield+=Math.max(1,comp.value||10);return true}
-  if(mode==='resource'){const res=d.resource||'stamina',max=res==='mana'?'maxMana':'maxStamina';p[res]=Math.min(p[max],p[res]+Math.max(1,comp.value||10));return true}
+  // comp.resource lets this specific component pick mana/stamina on its own
+  // (needed for a potion, which has no enclosing skill resource to fall
+  // back on) - falls back to the enclosing skill's own resource, same as before.
+  if(mode==='resource'){const res=comp.resource||d.resource||'stamina',max=res==='mana'?'maxMana':'maxStamina';p[res]=Math.min(p[max],p[res]+Math.max(1,comp.value||10));return true}
   return false
  }
  if(comp.kind==='invisible'){
@@ -4581,7 +5151,7 @@ function applyEffectComponent(id,comp,ctx){
 // following area-style component (aoe, or a dmg/dot/debuff/cc aimed at
 // 'area') centers on the caster's new spot instead of the pre-move click.
 function applySkillEffectsList(id,ctx){
- const list=skillDefs[id]?.effects||[];
+ const list=effectSourceDef(id)?.effects||[];
  const ordered=[...list].sort((a,b)=>(a.kind==='move'?0:1)-(b.kind==='move'?0:1));
  let used=false;
  for(const comp of ordered){
@@ -4657,7 +5227,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;tickEquipmentCooldowns();if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -4665,6 +5235,7 @@ async function playerFinishedMultiplayer(){
  busy=true;
  if(game.over)return; // death flow persists its own state
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
+ tickEquipmentCooldowns();
  if(game.player.shield>0)game.player.shield--;
  updateUI();requestAnimationFrame(animate);
  const order=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:[game.pjId];
@@ -4679,7 +5250,7 @@ async function playerFinishedMultiplayer(){
    try{
     if(!game.over){
      sendMpAction('enemy_phase_start',{});
-     classSkillConsistencyGuard();tickPotionEffects();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();
+     classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();
      const t0=MP_DEBUG_LATENCY?performance.now():0;
      // enemyTurn() itself now paces each action with a real delay (PA mode,
      // always on in multiplayer) - each sendMpAction call it makes goes out
@@ -4964,18 +5535,29 @@ function cancelTargeting(message='Apuntado cancelado.'){
 // actually use once confirmed (effects-list "area" component's range, or the
 // legacy classEffect area formula).
 function pendingAreaRadius(){
- if(!pendingTargetAction||pendingTargetAction.kind!=='skill')return 2;
+ if(!pendingTargetAction)return 2;
+ if(pendingTargetAction.kind==='potion'){
+  const item=game.inventory.find(i=>i.id===pendingTargetAction.potionId);
+  const areaComp=(item?.effects||[]).find(c=>c.target==='area');
+  return areaComp?(areaComp.range||2):2;
+ }
+ if(pendingTargetAction.kind==='equipment'){
+  const item=game.player.equipment?.[pendingTargetAction.equipSlot];
+  const areaComp=(item?.effects||[]).find(c=>c.target==='area');
+  return areaComp?(areaComp.range||2):2;
+ }
+ if(pendingTargetAction.kind!=='skill')return 2;
  const id=game.player.equippedSkills[pendingTargetAction.slot],d=skillDefs[id];if(!d)return 2;
  if(hasEffectsList(id)){const areaComp=(d.effects||[]).find(c=>c.target==='area');return areaComp?(areaComp.range||2):2}
  return Math.min(4,1+Math.floor(skillLevel(id)/4)+(d.tier===3?1:0));
 }
 // Second click on the same locked-in cell (or the CONFIRMAR button) actually
-// casts the area skill; a failed cast (e.g. no enemies in range) re-prompts
-// instead of dropping targeting entirely.
+// casts the area skill/potion; a failed cast (e.g. no enemies in range)
+// re-prompts instead of dropping targeting entirely.
 function confirmAreaTarget(){
  if(!pendingTargetAction||!pendingAreaCandidate)return;
- const {x,y}=pendingAreaCandidate,slot=pendingTargetAction.slot;
- const ok=resolveTargetedSkill(slot,x,y);
+ const {x,y}=pendingAreaCandidate;
+ const ok=pendingTargetAction.kind==='potion'?resolveTargetedPotion(pendingTargetAction.potionId,x,y):pendingTargetAction.kind==='equipment'?resolveTargetedEquipmentActive(pendingTargetAction.equipSlot,x,y):resolveTargetedSkill(pendingTargetAction.slot,x,y);
  pendingAreaCandidate=null;pendingAreaHover=null;
  document.getElementById('confirmTargetBtn')?.classList.add('hidden');
  if(!ok&&pendingTargetAction){
@@ -5168,11 +5750,40 @@ function useSkill(slot){
  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
+// Passive gear effects: only the 'buff' kind makes sense with no target/cast
+// action of its own (a thrown potion or a weapon swing has an obvious
+// trigger; a permanently-worn helmet doesn't) - applied as a permanent buff
+// (999999-turn sentinel, same "until explicitly reverted" convention already
+// used elsewhere, e.g. the permanent-pet death penalty) the moment the item
+// lands in one of these slots, removed the moment that slot's item changes.
+// Weapon/trinket/ring slots use a different trigger (on-hit proc / active
+// click, see maybeProcWeaponEffects/useEquipmentActive) so they're excluded here.
+const PASSIVE_EQUIPMENT_SLOTS=new Set(['offhand','head','chest','hands','legs','boots','neck']);
+// Trinkets/rings carry an effects[] that's manually activated (like a potion)
+// instead of passive or on-hit - gated by game.player.equipmentCooldowns[slot]
+// instead of being consumed, see useEquipmentActive/tickEquipmentCooldowns.
+const EQUIPMENT_ACTIVE_SLOTS=new Set(['trinket1','trinket2','ring1','ring2']);
+// Re-applies every passive slot's current buff from scratch - used after
+// hydrating game.player.equipment from a save/session restore (where
+// activeBuffs comes back from a snapshot that could predate an admin
+// edit to the item's own effects) instead of trusting the persisted state.
+function syncAllEquipmentPassives(){for(const slot of PASSIVE_EQUIPMENT_SLOTS)syncEquipmentSlotPassive(slot)}
+function syncEquipmentSlotPassive(slot){
+ const p=game.player;
+ p.activeBuffs=(p.activeBuffs||[]).filter(b=>!String(b.id||'').startsWith(`equip:${slot}:`));
+ if(!PASSIVE_EQUIPMENT_SLOTS.has(slot))return;
+ const item=p.equipment?.[slot];
+ (item?.effects||[]).forEach((comp,i)=>{
+  if(comp.kind!=='buff')return;
+  const stat=comp.stat||'strength',mode=comp.mode||'add',value=comp.value??(mode==='mult'?1.2:5);
+  p.activeBuffs.push({id:`equip:${slot}:${i}`,name:item.name,turns:999999,effects:{[stat]:{mode,value}}});
+ });
+}
 function equipItem(id){
  const item=game.inventory.find(i=>i.id===id);if(!item)return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
  learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
- const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
+ const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 // Lets a weapon-slot dagger be equipped in the offhand slot instead of the
 // main weapon slot, for dual-wielding two real daggers - the item keeps its
@@ -5183,13 +5794,13 @@ function equipItemAsOffhand(id){
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
  learnItemSkills(item);
  const old=game.player.equipment.offhand;if(old)game.inventory.push(old);
- game.player.equipment.offhand=item;game.inventory=game.inventory.filter(i=>i.id!==id);
+ game.player.equipment.offhand=item;game.inventory=game.inventory.filter(i=>i.id!==id);syncEquipmentSlotPassive('offhand');
  log(`Equipado en mano izquierda: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
 function unequipItem(slot){
  const item=game.player.equipment?.[slot];if(!item)return;
- game.player.equipment[slot]=null;game.inventory.push(item);
+ game.player.equipment[slot]=null;game.inventory.push(item);syncEquipmentSlotPassive(slot);
  storyOverlay?.classList.add('hidden');
  log(`Desequipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw();
 }
@@ -5234,7 +5845,18 @@ function updateUI(){
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  const potionsEl=document.getElementById('potions');
  if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">No llevas pociones.</p>';
- setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
+ // Trinkets/rings with a configured effects[] show up here instead of the
+ // inventory - they stay equipped (see useEquipmentActive), so their icon is
+ // drawn via the same data-equipped-slot lookup as the paperdoll slots below.
+ const activablesEl=document.getElementById('activables');
+ if(activablesEl){
+  const activeItems=[...EQUIPMENT_ACTIVE_SLOTS].map(slot=>({slot,item:p.equipment[slot]})).filter(x=>x.item&&Array.isArray(x.item.effects)&&x.item.effects.length);
+  activablesEl.innerHTML=activeItems.length?activeItems.map(({slot,item})=>{
+   const cd=p.equipmentCooldowns?.[slot]||0;
+   return `<div class="item${cd?' onCooldown':''}" ${cd?'':`onclick="useEquipmentActive('${slot}')"`}><canvas class="itemThumb" width="48" height="48" data-equipped-slot="${slot}"></canvas><div><b class="${item.rarity}">${item.name}</b><span class="itemLevel">${slotNames[slot]} · ${item.label} · Nivel ${item.itemLevel||1}</span>${describeItem(item)}</div>${cd?`<span class="cooldown">${cd}</span>`:''}</div>`;
+  }).join(''):'<p class="small">No tienes objetos activables equipados.</p>';
+ }
+ setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=c.dataset.equippedSlot?p.equipment[c.dataset.equippedSlot]:game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
@@ -5615,9 +6237,9 @@ function drawCharacterIcon(q,iconHex,x,y,w,h,padding=0){
  return false;
 }
 // Same invisibility check enemyTurn() uses to skip the enemy response:
-// active from either the 'invisible' stackable skill effect or an
-// invisible-type potion.
-function isPlayerInvisible(){return (game.player.activePotions||[]).some(b=>b.effect?.invisible)||game.player.invisibleTurns>0}
+// active from the 'invisible' stackable effect - a skill's or a potion's,
+// both set the same p.invisibleTurns (see effectSourceDef).
+function isPlayerInvisible(){return game.player.invisibleTurns>0}
 // Concentric 5px square frames drawn around the hero tile, one per active
 // status: shield (blue) innermost, stat buffs (green), invisibility (gray)
 // outermost - stacking them instead of overlapping keeps every active status
@@ -5860,28 +6482,25 @@ function allClassIds(){
  return [...ids];
 }
 
-async function fetchConfigItems(){try{const r=await fetch('/api/config-items');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+async function fetchConfigItems(){try{const r=await fetch('/api/config-items');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();renderConfigPotionsList();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
-function potionEffectFromConfig(){
- const type=configPotionEffect?.value||'heal',resource=configPotionResource?.value||'hp',mode=configPotionValueMode?.value||'percent',amount=Number(configPotionAmount?.value)||0,turns=Number(configPotionTurns?.value)||0,stat=configPotionStat?.value||'strength',statAmount=Number(configPotionStatAmount?.value)||1,effect={};
- if(type==='heal'||type==='regen')effect[`${resource}${mode==='percent'?'Pct':'Flat'}`]=mode==='percent'?amount/100:amount;
- if(type==='temporaryStats'||type==='permanentStats')effect.stats={[stat]:statAmount};
- if(type==='learnSkill')effect.skillId=configPotionSkill?.value||selectedConfigSkillIds()[0]||'';
- if(type==='invulnerable')effect.invulnerable=true;if(type==='invisible')effect.invisible=true;
- return {type,effect,turns}
-}
-function potionKindForEffect(type){return ['permanentStats','learnSkill'].includes(type)?'permanent':['temporaryStats','regen','invulnerable','invisible'].includes(type)?'temporary':'instant'}
 
 function selectedConfigSkillIds(){return [...(document.getElementById('configSkills')?.selectedOptions||[])].map(o=>o.value)}
 function currentConfigItemJson(){
- const itemType=configItemType?.value||'equipment',skillIds=selectedConfigSkillIds(),rarity=configTier.value,ilvl=potionTierLevel(rarity),hidden=!!document.getElementById('configItemHidden')?.checked;
- if(itemType==='potion'){
-  const pot=potionEffectFromConfig(),name=configNombre.value.trim()||'Poción sin nombre',desc=describePotionEffect({type:'potion',potionEffectType:pot.type,effect:pot.effect,duration:pot.turns});
-  return {type:'potion',name,slot:'consumable',rarity,label:tierDefs[rarity]?.label||rarity,itemLevel:ilvl,score:ilvl*8,icon:window.currentConfigIconHex||'',iconShape:'vial',potionEffectType:pot.type,kind:potionKindForEffect(pot.type),duration:pot.turns,effect:pot.effect,potionEffect:pot.effect,skillIds:[],stats:configStats.value,affixes:[],passives:[],effects:[],hidden,desc:desc||`Poción configurada · ${potionEffectLabels[pot.type]||pot.type}`}
- }
+ const skillIds=selectedConfigSkillIds(),rarity=configTier.value,ilvl=potionTierLevel(rarity),hidden=!!document.getElementById('configItemHidden')?.checked;
  const slot=configSlot.value,weaponType=slot==='weapon'?(configWeaponCategory.value||configWeaponTypes[0]):null,weaponCategory=weaponType?(configWeaponTypeCategories[weaponType]||weaponCategories[0]):null,weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null,weaponIconCol=weaponCategory?weaponPowerColumn(ilvl,rarity,ilvl*8):null,rangePreset=weaponTypeRanges[weaponType]||{min:1,max:1},rangeMin=slot==='weapon'?normalizeWeaponRangeValue(configRangeMin?.value,rangePreset.min):null,rangeMax=slot==='weapon'?normalizeWeaponRangeValue(configRangeMax?.value,rangePreset.max):null;
- return {type:'equipment',name:configNombre.value.trim()||'Objeto sin nombre',slot,rarity,label:tierDefs[rarity]?.label||rarity,itemLevel:ilvl,score:ilvl*8,icon:window.currentConfigIconHex||'',damageDice:slot==='weapon'?configDamageDice.value:null,rangeMin:slot==='weapon'?Math.min(rangeMin,rangeMax):null,rangeMax:slot==='weapon'?Math.max(rangeMin,rangeMax):null,weaponType,weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null,defenseStat:weaponCategory?(weaponCategoryStats[weaponCategory]||'strength'):null,skillIds,stats:configStats.value,affixes:parseConfigStats(configStats.value),passives:[],effects:[],hidden,desc:`Configurado · ${configStats.value||'sin stats'}${skillIds.length?` · Habilidades: ${skillIds.map(id=>skillDefs[id]?.name||id).join(', ')}`:''}`}
+ const isActive=EQUIPMENT_ACTIVE_SLOTS.has(slot),effects=JSON.parse(JSON.stringify(window.currentEquipmentEffectsDraft||[]));
+ const procChance=slot==='weapon'?Math.max(0,Math.min(100,Number(configProcChance?.value)||0)):null;
+ const cooldown=isActive?Math.max(1,Number(configEquipmentCooldown?.value)||1):null;
+ const range=isActive?Math.max(1,Number(configEquipmentRange?.value)||5):null;
+ return {type:'equipment',name:configNombre.value.trim()||'Objeto sin nombre',slot,rarity,label:tierDefs[rarity]?.label||rarity,itemLevel:ilvl,score:ilvl*8,icon:window.currentConfigIconHex||'',damageDice:slot==='weapon'?configDamageDice.value:null,rangeMin:slot==='weapon'?Math.min(rangeMin,rangeMax):null,rangeMax:slot==='weapon'?Math.max(rangeMin,rangeMax):null,weaponType,weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null,defenseStat:weaponCategory?(weaponCategoryStats[weaponCategory]||'strength'):null,skillIds,stats:configStats.value,affixes:parseConfigStats(configStats.value),passives:[],effects,procChance,cooldown,range,hidden,desc:`Configurado · ${configStats.value||'sin stats'}${skillIds.length?` · Habilidades: ${skillIds.map(id=>skillDefs[id]?.name||id).join(', ')}`:''}`}
+}
+function currentConfigPotionJson(){
+ const rarity=configPotionTier.value,ilvl=potionTierLevel(rarity),hidden=!!document.getElementById('configPotionHidden')?.checked;
+ const name=configPotionNombre.value.trim()||'Poción sin nombre',effects=JSON.parse(JSON.stringify(window.currentPotionEffectsDraft||[])),range=Number(document.getElementById('configPotionRange')?.value)||0;
+ const desc=describePotionEffects({type:'potion',effects})||'Poción configurada.';
+ return {type:'potion',name,slot:'consumable',rarity,label:tierDefs[rarity]?.label||rarity,itemLevel:ilvl,score:ilvl*8,icon:window.currentConfigPotionIconHex||'',iconShape:'vial',effects,range,skillIds:[],stats:'',affixes:[],passives:[],hidden,desc}
 }
 
 async function readDeflatedZipEntry(bytes){
@@ -6326,6 +6945,7 @@ function effectComponentCardHtml(comp,i){
    <option value="shield" ${mode==='shield'?'selected':''}>Escudo plano</option>
    <option value="resource" ${mode==='resource'?'selected':''}>Restaurar recurso (maná/stamina)</option>
   </select></label>
+  ${mode==='resource'?`<label>Recurso a restaurar <select data-effect-idx="${i}" data-effect-field="resource"><option value="stamina" ${(!comp.resource||comp.resource==='stamina')?'selected':''}>Stamina</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option></select></label>`:''}
   ${mode!=='stealth'?`<label>${mode==='reveal'?'Radio':mode==='shield'?'Cantidad de escudo':'Cantidad restaurada'} <input type="number" min="1" value="${comp.value??10}" data-effect-idx="${i}" data-effect-field="value"></label>`:''}`;
  }
  else if(comp.kind==='hot')fields=`${effectDiceFieldsHtml(comp,i)}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
@@ -6589,18 +7209,27 @@ function renderConfigClassPotionResults(){
  updateSummary();
 }
 
-function renderConfigItemRow(i){const item=i.item_json||i,skills=Array.isArray(item.skillIds)?item.skillIds:[],isPotion=item.type==='potion',weaponType=item.slot==='weapon'&&(item.weaponType||item.weaponCategory)?` · ${item.weaponType||item.weaponCategory}`:'',weaponRange=item.slot==='weapon'?` · alcance ${weaponRangeBounds(item).min}-${weaponRangeBounds(item).max}`:'';return `<div class="configItem"><span class="tierDot" style="background:${tierColor(i.tier)}"></span><div><b>${i.nombre||'Sin nombre'}</b><span class="small">${isPotion?'Poción · ':''}${tierDefs[item.rarity||i.tier]?.label||item.rarity||i.tier} · iLvl ${item.itemLevel||i.ilvl||1}${weaponType}${weaponRange}${isPotion?` · ${potionEffectLabels[item.potionEffectType]||item.kind||'efecto'}`:''}${skills.length?` · ${skillNames(skills)}`:''}</span><div class="configItemActions"><button type="button" data-config-edit="${i.id}">Editar</button><button type="button" data-config-duplicate="${i.id}">Duplicar</button><button type="button" data-config-delete="${i.id}">Borrar</button></div></div></div>`}
-function renderConfigItems(){const root=document.getElementById('configItemsList');if(!root)return;if(!configItems.length){root.innerHTML='<p class="small">No hay objetos configurados.</p>';return}const knownConfigGroups=[...slots,'consumable'];const grouped=configItems.reduce((acc,i)=>{const item=i.item_json||i,slot=item.type==='potion'?'consumable':(i.slot||item.slot||'otros'),weaponGroup=slot==='weapon'?(item.weaponType||item.weaponCategory||'Sin tipo de arma'):null,key=weaponGroup?`${slot}::${weaponGroup}`:slot;(acc[key]??={slot,weaponGroup,items:[]}).items.push(i);return acc},{}),orderedKeys=[...knownConfigGroups.flatMap(slot=>Object.keys(grouped).filter(key=>grouped[key].slot===slot).sort((a,b)=>(grouped[a].weaponGroup||'').localeCompare(grouped[b].weaponGroup||'','es'))),...Object.keys(grouped).filter(key=>!knownConfigGroups.includes(grouped[key].slot)).sort((a,b)=>a.localeCompare(b,'es'))];root.innerHTML=orderedKeys.map((key,index)=>{const group=grouped[key],title=group.weaponGroup?`${slotNames[group.slot]||group.slot} · ${group.weaponGroup}`:(group.slot==='consumable'?itemTypes.potion:(slotNames[group.slot]||group.slot));return `<details class="configSlotGroup" ${index===0?'open':''}><summary><span>${title}</span><b>${group.items.length}</b></summary><div class="configSlotItems">${group.items.map(renderConfigItemRow).join('')}</div></details>`}).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigItemForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigItem(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigItem(b.dataset.configDelete))}
+function renderConfigItemRow(i){const item=i.item_json||i,skills=Array.isArray(item.skillIds)?item.skillIds:[],isPotion=item.type==='potion',weaponType=item.slot==='weapon'&&(item.weaponType||item.weaponCategory)?` · ${item.weaponType||item.weaponCategory}`:'',weaponRange=item.slot==='weapon'?` · alcance ${weaponRangeBounds(item).min}-${weaponRangeBounds(item).max}`:'',potionEffectsSummary=isPotion?((item.effects||[]).map(effectSummaryTag).join(', ')||'sin efectos'):'';return `<div class="configItem"><span class="tierDot" style="background:${tierColor(i.tier)}"></span><div><b>${i.nombre||'Sin nombre'}</b><span class="small">${isPotion?'Poción · ':''}${tierDefs[item.rarity||i.tier]?.label||item.rarity||i.tier} · iLvl ${item.itemLevel||i.ilvl||1}${weaponType}${weaponRange}${isPotion?` · ${potionEffectsSummary}`:''}${skills.length?` · ${skillNames(skills)}`:''}</span><div class="configItemActions"><button type="button" data-config-edit="${i.id}">Editar</button><button type="button" data-config-duplicate="${i.id}">Duplicar</button><button type="button" data-config-delete="${i.id}">Borrar</button></div></div></div>`}
+function renderConfigItems(){const root=document.getElementById('configItemsList');if(!root)return;const equipmentRows=configItems.filter(i=>(i.item_json||i).type!=='potion');if(!equipmentRows.length){root.innerHTML='<p class="small">No hay objetos configurados.</p>';return}const grouped=equipmentRows.reduce((acc,i)=>{const item=i.item_json||i,slot=i.slot||item.slot||'otros',weaponGroup=slot==='weapon'?(item.weaponType||item.weaponCategory||'Sin tipo de arma'):null,key=weaponGroup?`${slot}::${weaponGroup}`:slot;(acc[key]??={slot,weaponGroup,items:[]}).items.push(i);return acc},{}),orderedKeys=[...slots.flatMap(slot=>Object.keys(grouped).filter(key=>grouped[key].slot===slot).sort((a,b)=>(grouped[a].weaponGroup||'').localeCompare(grouped[b].weaponGroup||'','es'))),...Object.keys(grouped).filter(key=>!slots.includes(grouped[key].slot)).sort((a,b)=>a.localeCompare(b,'es'))];root.innerHTML=orderedKeys.map((key,index)=>{const group=grouped[key],title=group.weaponGroup?`${slotNames[group.slot]||group.slot} · ${group.weaponGroup}`:(slotNames[group.slot]||group.slot);return `<details class="configSlotGroup" ${index===0?'open':''}><summary><span>${title}</span><b>${group.items.length}</b></summary><div class="configSlotItems">${group.items.map(renderConfigItemRow).join('')}</div></details>`}).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigItemForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigItem(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigItem(b.dataset.configDelete))}
+// Same "Objetos guardados" list/row markup as equipment (renderConfigItemRow
+// already branches on isPotion for its own summary text), just filtered to
+// potions only and wired to the potion tab's own edit/duplicate/delete
+// handlers so the two tabs never touch each other's editingConfigId/form.
+function renderConfigPotionsList(){const root=document.getElementById('configPotionsList');if(!root)return;const potionRows=configItems.filter(i=>(i.item_json||i).type==='potion');if(!potionRows.length){root.innerHTML='<p class="small">No hay pociones configuradas.</p>';return}root.innerHTML=potionRows.map(renderConfigItemRow).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigPotionForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigPotion(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigPotion(b.dataset.configDelete))}
 function configStatDefinitions(){const seen=new Set();return [...primaryAffixes,...secondaryAffixes].filter(def=>{if(seen.has(def.key))return false;seen.add(def.key);return true})}
 function renderConfigStatsHelp(){const root=document.getElementById('configStatsHelp');if(!root)return;root.innerHTML='<p class="small"><b>Bonos disponibles:</b> pulsa uno para añadirlo a Stats.</p>'+configStatDefinitions().map(def=>`<button type="button" class="statBonusButton" data-stat-bonus="${def.key}" title="${def.label}. Slots: ${def.slots.map(s=>slotNames[s]||s).join(', ')}"><b>${def.key}</b><span>${def.label}${def.percent?' %':''}</span></button>`).join('');root.querySelectorAll('[data-stat-bonus]').forEach(btn=>btn.onclick=()=>{const sep=configStats.value.trim()? ', ':'';configStats.value+=`${sep}${btn.dataset.statBonus}:+1`;configStats.focus()})}
-function renderConfigSkillSelect(){const sel=document.getElementById('configSkills'),pot=document.getElementById('configPotionSkill');if(!sel)return;const html=Object.entries(skillDefs).sort((a,b)=>(a[1].name||a[0]).localeCompare(b[1].name||b[0],'es')).map(([id,d])=>`<option value="${id}">${d.icon||'•'} ${d.name} · ${tierDefs[d.rarity]?.label||d.rarity||'Común'}</option>`).join('');sel.innerHTML=html;if(pot)pot.innerHTML=html}
+function renderConfigSkillSelect(){const sel=document.getElementById('configSkills');if(!sel)return;const html=Object.entries(skillDefs).sort((a,b)=>(a[1].name||a[0]).localeCompare(b[1].name||b[0],'es')).map(([id,d])=>`<option value="${id}">${d.icon||'•'} ${d.name} · ${tierDefs[d.rarity]?.label||d.rarity||'Común'}</option>`).join('');sel.innerHTML=html}
 function setConfigSkillSelection(ids=[]){const set=new Set(ids);document.querySelectorAll('#configSkills option').forEach(o=>o.selected=set.has(o.value))}
 function addIconSilhouetteBorder(canvas,size=2,color=[0,0,0,255]){const q=canvas.getContext('2d'),w=canvas.width,h=canvas.height,orig=document.createElement('canvas');orig.width=w;orig.height=h;orig.getContext('2d').drawImage(canvas,0,0);const src=q.getImageData(0,0,w,h),border=q.createImageData(w,h),r=Math.max(1,Math.round(size));for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(src.data[i+3]>8)continue;let near=false;for(let dy=-r;dy<=r&&!near;dy++)for(let dx=-r;dx<=r;dx++){if(dx*dx+dy*dy>r*r)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;if(src.data[(ny*w+nx)*4+3]>8){near=true;break}}if(near){border.data[i]=color[0];border.data[i+1]=color[1];border.data[i+2]=color[2];border.data[i+3]=color[3]}}q.putImageData(border,0,0);q.drawImage(orig,0,0);return canvas}
 function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile'),dims={w:50,h:50}){const preview=document.getElementById(previewId);if(!preview)return;preview.width=dims.w;preview.height=dims.h;const c=preview.getContext('2d');c.clearRect(0,0,dims.w,dims.h);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=dims.w;out.height=dims.h;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,dims.w,dims.h);o.drawImage(img,0,0,dims.w,dims.h);if(withBorder)addIconSilhouetteBorder(out,2);c.clearRect(0,0,dims.w,dims.h);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
-function resetConfigForm(){window.editingConfigItemId=null;configItemType.value='equipment';configNombre.value='';configTier.value='common';configSlot.value='weapon';configIlvl.value='1';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=false;configPotionEffect.value='heal';configPotionResource.value='hp';configPotionValueMode.value='percent';configPotionAmount.value='25';configPotionTurns.value='6';configPotionStat.value='strength';configPotionStatAmount.value='1';configWeaponCategory.value=configWeaponTypes[0];configDamageDice.value='1d6';if(configRangeMin)configRangeMin.value='1';if(configRangeMax)configRangeMax.value='1';configStats.value='';window.currentConfigIconHex='';setConfigSkillSelection([]);configIconStatus.textContent='Sin icono';renderConfigIconPreview('');configStatus.textContent='Nuevo objeto.';configSlot.dispatchEvent(new Event('change'))}
-function loadConfigItemForEdit(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;const item=row.item_json||row;window.editingConfigItemId=row.id;configNombre.value=item.name||row.nombre||'';configTier.value=item.rarity||row.tier||'common';configItemType.value=item.type==='potion'?'potion':'equipment';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=!!item.hidden;configSlot.value=item.slot==='consumable'?'trinket1':(item.slot||row.slot||'trinket1');configIlvl.value=item.itemLevel||row.ilvl||1;configDamageDice.value=item.damageDice||'1d6';configWeaponCategory.value=item.weaponType||item.weaponCategory||configWeaponTypes[0];const bounds=weaponRangeBounds(item);if(configRangeMin)configRangeMin.value=bounds.min;if(configRangeMax)configRangeMax.value=bounds.max;configStats.value=item.stats||row.stats||'';window.currentConfigIconHex=item.icon||row.icon||'';setConfigSkillSelection(item.skillIds||[]);if(item.type==='potion'){configPotionEffect.value=item.potionEffectType||'heal';configPotionTurns.value=item.duration||6;const e=item.effect||{},resource=['hp','mana','stamina'].find(r=>e[`${r}Pct`]||e[`${r}Flat`]||e.healPct||e.regenPct)||'hp';configPotionResource.value=resource;configPotionValueMode.value=e[`${resource}Flat`]?'flat':'percent';configPotionAmount.value=e[`${resource}Flat`]||Math.round((e[`${resource}Pct`]||e.healPct||e.regenPct||0)*100)||25;const statEntry=Object.entries(e.stats||{})[0];if(statEntry){configPotionStat.value=statEntry[0];configPotionStatAmount.value=statEntry[1]}configPotionSkill.value=e.skillId||configPotionSkill.value;togglePotionEffectFields();}renderConfigIconPreview(window.currentConfigIconHex);configIconStatus.textContent=window.currentConfigIconHex?'Icono cargado desde objeto guardado.':'Sin icono';configSlot.dispatchEvent(new Event('change'));configStatus.textContent=`Editando #${row.id}: ${configNombre.value||'Sin nombre'}`}
+function resetConfigForm(){window.editingConfigItemId=null;configNombre.value='';configTier.value='common';configSlot.value='weapon';configIlvl.value='1';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=false;configWeaponCategory.value=configWeaponTypes[0];configDamageDice.value='1d6';if(configRangeMin)configRangeMin.value='1';if(configRangeMax)configRangeMax.value='1';configStats.value='';window.currentConfigIconHex='';setConfigSkillSelection([]);configIconStatus.textContent='Sin icono';renderConfigIconPreview('');if(configProcChance)configProcChance.value='20';if(configEquipmentCooldown)configEquipmentCooldown.value='4';if(configEquipmentRange)configEquipmentRange.value='5';window.currentEquipmentEffectsDraft=[];renderEquipmentEffectsList();configStatus.textContent='Nuevo objeto.';configSlot.dispatchEvent(new Event('change'))}
+function loadConfigItemForEdit(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;const item=row.item_json||row;window.editingConfigItemId=row.id;configNombre.value=item.name||row.nombre||'';configTier.value=item.rarity||row.tier||'common';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=!!item.hidden;configSlot.value=item.slot==='consumable'?'trinket1':(item.slot||row.slot||'trinket1');configIlvl.value=item.itemLevel||row.ilvl||1;configDamageDice.value=item.damageDice||'1d6';configWeaponCategory.value=item.weaponType||item.weaponCategory||configWeaponTypes[0];const bounds=weaponRangeBounds(item);if(configRangeMin)configRangeMin.value=bounds.min;if(configRangeMax)configRangeMax.value=bounds.max;configStats.value=item.stats||row.stats||'';window.currentConfigIconHex=item.icon||row.icon||'';setConfigSkillSelection(item.skillIds||[]);renderConfigIconPreview(window.currentConfigIconHex);configIconStatus.textContent=window.currentConfigIconHex?'Icono cargado desde objeto guardado.':'Sin icono';if(configProcChance)configProcChance.value=item.procChance??20;if(configEquipmentCooldown)configEquipmentCooldown.value=item.cooldown??4;if(configEquipmentRange)configEquipmentRange.value=item.range??5;window.currentEquipmentEffectsDraft=Array.isArray(item.effects)&&item.effects[0]?.kind?JSON.parse(JSON.stringify(item.effects)):[];renderEquipmentEffectsList();configSlot.dispatchEvent(new Event('change'));configStatus.textContent=`Editando #${row.id}: ${configNombre.value||'Sin nombre'}`}
+function resetConfigPotionForm(){window.editingConfigPotionId=null;configPotionNombre.value='';configPotionTier.value='common';if(document.getElementById('configPotionHidden'))document.getElementById('configPotionHidden').checked=false;const potionRange=document.getElementById('configPotionRange');if(potionRange)potionRange.value='5';window.currentPotionEffectsDraft=[];renderPotionEffectsList();window.currentConfigPotionIconHex='';renderConfigIconPreview('','configPotionIconPreview','configPotionIconStatus');configPotionIconStatus.textContent='Sin icono';configPotionStatus.textContent='Nueva poción.'}
+function loadConfigPotionForEdit(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;const item=row.item_json||row;window.editingConfigPotionId=row.id;configPotionNombre.value=item.name||row.nombre||'';configPotionTier.value=item.rarity||row.tier||'common';if(document.getElementById('configPotionHidden'))document.getElementById('configPotionHidden').checked=!!item.hidden;window.currentConfigPotionIconHex=item.icon||row.icon||'';window.currentPotionEffectsDraft=Array.isArray(item.effects)?JSON.parse(JSON.stringify(item.effects)):[];renderPotionEffectsList();const potionRange=document.getElementById('configPotionRange');if(potionRange)potionRange.value=item.range||5;renderConfigIconPreview(window.currentConfigPotionIconHex,'configPotionIconPreview','configPotionIconStatus');configPotionIconStatus.textContent=window.currentConfigPotionIconHex?'Icono cargado desde objeto guardado.':'Sin icono';configPotionStatus.textContent=`Editando #${row.id}: ${configPotionNombre.value||'Sin nombre'}`}
 async function duplicateConfigItem(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Objeto'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configStatus.textContent='Objeto duplicado.'}catch(e){configStatus.textContent=e.message}}
 async function removeConfigItem(id){if(!confirm('¿Borrar este objeto configurado?'))return;configStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigItemId)===String(id))resetConfigForm();configStatus.textContent='Objeto borrado.'}catch(e){configStatus.textContent=e.message}}
+async function duplicateConfigPotion(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configPotionStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Poción'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configPotionStatus.textContent='Poción duplicada.'}catch(e){configPotionStatus.textContent=e.message}}
+async function removeConfigPotion(id){if(!confirm('¿Borrar esta poción configurada?'))return;configPotionStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigPotionId)===String(id))resetConfigPotionForm();configPotionStatus.textContent='Poción borrada.'}catch(e){configPotionStatus.textContent=e.message}}
 
 function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',floorTiles:[],wallTiles:[],doorTiles:[]}}
 function currentFloorDraft(){return window.editingConfigFloorJson||emptyFloorDraft()}
@@ -7414,7 +8043,7 @@ function launchTestCombat(){
    stats,equipment,knownSkills:[...tstSkillIds],
    skillProgress:Object.fromEntries(tstSkillIds.map(id=>[id,{level:1,xp:0,uses:0}])),
    skillChoicesAwarded:{1:'complete'},equippedSkills:[0,1,2,3].map(i=>tstSkillIds[i]||null),
-   cooldowns:{},debuff:0,shards:{},unspentStatPoints:0,pendingLevelUpRewards:[]
+   cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},unspentStatPoints:0,pendingLevelUpRewards:[]
   }
  };
  const rb=raceDefs[tstRace]?.bonuses||{};
@@ -7492,7 +8121,7 @@ function drawShardTierIconToCanvas(canvas,tier){
  }
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1}}){
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
@@ -7650,18 +8279,136 @@ function setupClassConfigMode(){
   try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
  };
 }
-function togglePotionEffectFields(){
- const type=configPotionEffect?.value||'heal';
- document.querySelectorAll('[data-potion-field]').forEach(el=>el.classList.add('hidden'));
- const show=name=>document.querySelector(`[data-potion-field="${name}"]`)?.classList.remove('hidden');
- if(type==='heal'){show('resource')}
- else if(type==='regen'){show('resource');show('turns')}
- else if(type==='temporaryStats'){show('stat');show('turns')}
- else if(type==='permanentStats'){show('stat')}
- else if(type==='learnSkill'){show('skill')}
- else if(type==='invulnerable'||type==='invisible'){show('turns')}
+// ---- Potion composable-effects editor (admin) -------------------------
+// Same list-of-cards editor as the class skill editor's "Efectos apilables"
+// (effectComponentCardHtml/subEffectCardHtml/defaultComponentFor are shared,
+// generic functions - see renderSkillEffectsList) - just wired to its own
+// draft array/container so editing a potion never touches the skill editor's
+// own draft.
+function renderPotionEffectsList(){
+ const wrap=document.getElementById('configPotionEffectsList');if(!wrap)return;
+ populateSummonIconExistingList();
+ const list=window.currentPotionEffectsDraft||[];
+ wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos todavía: elige un tipo arriba y pulsa "Añadir efecto".</p>';
+ wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const idx=Number(el.dataset.effectIdx),field=el.dataset.effectField;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   window.currentPotionEffectsDraft[idx][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
+   if(field==='effectType'||field==='mode'||field==='target'||field==='damageMode'||field==='permanent')renderPotionEffectsList();
+  });
+ });
+ wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  window.currentPotionEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderPotionEffectsList();
+ }));
+ wrap.querySelectorAll('[data-sub-field]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const pIdx=Number(el.dataset.subParent),j=Number(el.dataset.subIdx),field=el.dataset.subField;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   const parent=window.currentPotionEffectsDraft[pIdx];if(!parent)return;
+   parent.skillEffects=parent.skillEffects||[];
+   parent.skillEffects[j][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
+  });
+ });
+ wrap.querySelectorAll('[data-remove-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.subParent),j=Number(btn.dataset.subIdx);
+  window.currentPotionEffectsDraft[pIdx]?.skillEffects?.splice(j,1);
+  renderPotionEffectsList();
+ }));
+ wrap.querySelectorAll('[data-add-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.addSubEffect);
+  const picker=wrap.querySelector(`[data-sub-add-kind][data-sub-parent="${pIdx}"]`);
+  const kind=picker?.value||'dmg';
+  const parent=window.currentPotionEffectsDraft[pIdx];if(!parent)return;
+  parent.skillEffects=parent.skillEffects||[];
+  parent.skillEffects.push(defaultComponentFor(kind));
+  renderPotionEffectsList();
+ }));
+ wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const idx=Number(btn.dataset.useSummonIcon);
+  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
+  window.currentPotionEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderPotionEffectsList();
+ }));
+ wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  window.currentPotionEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderPotionEffectsList();
+ }));
+ wrap.querySelectorAll('[data-summon-icon-idx]').forEach(c=>{
+  const comp=window.currentPotionEffectsDraft[Number(c.dataset.summonIconIdx)];
+  if(comp?.iconImage)drawSkillIconImg(c,comp.iconImage);
+ });
 }
-function setupConfigMode(){renderConfigStatsHelp();renderConfigSkillSelect();const slotSel=document.getElementById('configSlot');if(slotSel&&!slotSel.options.length)slotSel.innerHTML=slots.map(s=>`<option value="${s}">${slotNames[s]}</option>`).join('');if(configWeaponCategory&&!configWeaponCategory.options.length)configWeaponCategory.innerHTML=configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join('');const toggleWeaponFields=()=>{const isPotion=configItemType?.value==='potion',isWeapon=!isPotion&&configSlot.value==='weapon';configDamageDiceWrap.classList.toggle('hidden',!isWeapon);configWeaponCategoryWrap.classList.toggle('hidden',!isWeapon);configRangeMinWrap?.classList.toggle('hidden',!isWeapon);configRangeMaxWrap?.classList.toggle('hidden',!isWeapon);configSlotWrap?.classList.toggle('hidden',isPotion);configStats.parentElement?.classList.toggle('hidden',isPotion);document.querySelector('.configSkillSelectWrap')?.classList.toggle('hidden',isPotion);configPotionFields?.classList.toggle('hidden',!isPotion);togglePotionEffectFields()};const applyWeaponRangePreset=()=>{const preset=weaponTypeRanges[configWeaponCategory?.value]||{min:1,max:1};if(configRangeMin)configRangeMin.value=preset.min;if(configRangeMax)configRangeMax.value=preset.max};slotSel.onchange=toggleWeaponFields;if(configWeaponCategory)configWeaponCategory.onchange=applyWeaponRangePreset;if(configItemType)configItemType.onchange=toggleWeaponFields;if(configPotionEffect)configPotionEffect.onchange=togglePotionEffectFields;toggleWeaponFields();setupImageIconEditor({inputId:'configImageInput',canvasId:'configCropCanvas',previewId:'configIconPreview',statusId:'configIconStatus',zoomId:'configCropZoom',eraserId:'configMagicEraserBtn',toleranceId:'configMagicTolerance',hexKey:'currentConfigIconHex',statusPrefix:'Icono'});saveConfigItemBtn.onclick=async()=>{configStatus.textContent=window.editingConfigItemId?'Actualizando...':'Guardando...';try{const item=currentConfigItemJson();if(window.editingConfigItemId)await updateConfigItem(window.editingConfigItemId,item);else await saveConfigItems([{...item,nombre:configNombre.value,slot:item.slot,tier:configTier.value,ilvl:item.itemLevel,item_json:item}]);configStatus.textContent=window.editingConfigItemId?'Objeto actualizado.':'Objeto guardado.'}catch(e){configStatus.textContent=e.message}};newConfigItemBtn.onclick=resetConfigForm;exportConfigJsonBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentConfigItemJson(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-item.json';a.click();URL.revokeObjectURL(a.href)};importConfigJsonInput.onchange=async()=>{const files=[...importConfigJsonInput.files];configStatus.textContent='Leyendo JSON/ZIP...';try{const items=await parseImportedJsonFiles(files);configStatus.textContent=`Importando ${items.length} objeto(s) sin lote máximo...`;await saveConfigItems(items.map(x=>({...x,item_json:x})));configStatus.textContent=`Importados ${items.length} objeto(s).`}catch(e){configStatus.textContent=e.message}finally{importConfigJsonInput.value=''}}}
+// Equipment's own effects[] draft/list - same card renderer as potions
+// (effectComponentCardHtml/defaultComponentFor) bound to a separate
+// window.currentEquipmentEffectsDraft array and #configEquipmentEffectsList
+// container, since the Items tab is a fully separate editor from Potions.
+function renderEquipmentEffectsList(){
+ const wrap=document.getElementById('configEquipmentEffectsList');if(!wrap)return;
+ populateSummonIconExistingList();
+ const list=window.currentEquipmentEffectsDraft||[];
+ wrap.innerHTML=list.map((comp,i)=>effectComponentCardHtml(comp,i)).join('')||'<p class="small">Sin efectos apilables añadidos todavía: elige un tipo arriba y pulsa "Añadir efecto".</p>';
+ wrap.querySelectorAll('[data-effect-idx]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const idx=Number(el.dataset.effectIdx),field=el.dataset.effectField;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   window.currentEquipmentEffectsDraft[idx][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
+   if(field==='effectType'||field==='mode'||field==='target'||field==='damageMode'||field==='permanent')renderEquipmentEffectsList();
+  });
+ });
+ wrap.querySelectorAll('[data-remove-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  window.currentEquipmentEffectsDraft.splice(Number(btn.dataset.removeEffect),1);renderEquipmentEffectsList();
+ }));
+ wrap.querySelectorAll('[data-sub-field]').forEach(el=>{
+  el.addEventListener('change',()=>{
+   const pIdx=Number(el.dataset.subParent),j=Number(el.dataset.subIdx),field=el.dataset.subField;
+   const isNumber=el.type==='number',isCheckbox=el.type==='checkbox';
+   const parent=window.currentEquipmentEffectsDraft[pIdx];if(!parent)return;
+   parent.skillEffects=parent.skillEffects||[];
+   parent.skillEffects[j][field]=isNumber?Number(el.value):isCheckbox?el.checked:el.value;
+  });
+ });
+ wrap.querySelectorAll('[data-remove-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.subParent),j=Number(btn.dataset.subIdx);
+  window.currentEquipmentEffectsDraft[pIdx]?.skillEffects?.splice(j,1);
+  renderEquipmentEffectsList();
+ }));
+ wrap.querySelectorAll('[data-add-sub-effect]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const pIdx=Number(btn.dataset.addSubEffect);
+  const picker=wrap.querySelector(`[data-sub-add-kind][data-sub-parent="${pIdx}"]`);
+  const kind=picker?.value||'dmg';
+  const parent=window.currentEquipmentEffectsDraft[pIdx];if(!parent)return;
+  parent.skillEffects=parent.skillEffects||[];
+  parent.skillEffects.push(defaultComponentFor(kind));
+  renderEquipmentEffectsList();
+ }));
+ wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  const idx=Number(btn.dataset.useSummonIcon);
+  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
+  window.currentEquipmentEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderEquipmentEffectsList();
+ }));
+ wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  window.currentEquipmentEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderEquipmentEffectsList();
+ }));
+ wrap.querySelectorAll('[data-summon-icon-idx]').forEach(c=>{
+  const comp=window.currentEquipmentEffectsDraft[Number(c.dataset.summonIconIdx)];
+  if(comp?.iconImage)drawSkillIconImg(c,comp.iconImage);
+ });
+}
+function setupConfigMode(){renderConfigStatsHelp();renderConfigSkillSelect();const slotSel=document.getElementById('configSlot');if(slotSel&&!slotSel.options.length)slotSel.innerHTML=slots.map(s=>`<option value="${s}">${slotNames[s]}</option>`).join('');if(configWeaponCategory&&!configWeaponCategory.options.length)configWeaponCategory.innerHTML=configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join('');const toggleWeaponFields=()=>{const isWeapon=configSlot.value==='weapon',isActive=EQUIPMENT_ACTIVE_SLOTS.has(configSlot.value);configDamageDiceWrap.classList.toggle('hidden',!isWeapon);configWeaponCategoryWrap.classList.toggle('hidden',!isWeapon);configRangeMinWrap?.classList.toggle('hidden',!isWeapon);configRangeMaxWrap?.classList.toggle('hidden',!isWeapon);configProcChanceWrap?.classList.toggle('hidden',!isWeapon);configEquipmentCooldownWrap?.classList.toggle('hidden',!isActive);configEquipmentRangeWrap?.classList.toggle('hidden',!isActive)};const applyWeaponRangePreset=()=>{const preset=weaponTypeRanges[configWeaponCategory?.value]||{min:1,max:1};if(configRangeMin)configRangeMin.value=preset.min;if(configRangeMax)configRangeMax.value=preset.max};slotSel.onchange=toggleWeaponFields;if(configWeaponCategory)configWeaponCategory.onchange=applyWeaponRangePreset;toggleWeaponFields();window.currentEquipmentEffectsDraft=window.currentEquipmentEffectsDraft||[];renderEquipmentEffectsList();document.getElementById('addEquipmentEffectBtn')?.addEventListener('click',e=>{e.preventDefault();const kind=document.getElementById('configEquipmentEffectKindPicker')?.value||'dmg';window.currentEquipmentEffectsDraft.push(defaultComponentFor(kind));renderEquipmentEffectsList()});setupImageIconEditor({inputId:'configImageInput',canvasId:'configCropCanvas',previewId:'configIconPreview',statusId:'configIconStatus',zoomId:'configCropZoom',eraserId:'configMagicEraserBtn',toleranceId:'configMagicTolerance',hexKey:'currentConfigIconHex',statusPrefix:'Icono'});saveConfigItemBtn.onclick=async()=>{configStatus.textContent=window.editingConfigItemId?'Actualizando...':'Guardando...';try{const item=currentConfigItemJson();if(window.editingConfigItemId)await updateConfigItem(window.editingConfigItemId,item);else await saveConfigItems([{...item,nombre:configNombre.value,slot:item.slot,tier:configTier.value,ilvl:item.itemLevel,item_json:item}]);configStatus.textContent=window.editingConfigItemId?'Objeto actualizado.':'Objeto guardado.'}catch(e){configStatus.textContent=e.message}};newConfigItemBtn.onclick=resetConfigForm;exportConfigJsonBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentConfigItemJson(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-item.json';a.click();URL.revokeObjectURL(a.href)};importConfigJsonInput.onchange=async()=>{const files=[...importConfigJsonInput.files];configStatus.textContent='Leyendo JSON/ZIP...';try{const items=await parseImportedJsonFiles(files);configStatus.textContent=`Importando ${items.length} objeto(s) sin lote máximo...`;await saveConfigItems(items.map(x=>({...x,item_json:x})));configStatus.textContent=`Importados ${items.length} objeto(s).`}catch(e){configStatus.textContent=e.message}finally{importConfigJsonInput.value=''}}}
+// Own tab, own draft/state, own icon editor instance - shares only the
+// effects-card rendering (renderPotionEffectsList/defaultComponentFor) and
+// the generic saveConfigItems/updateConfigItem/deleteConfigItem calls with
+// the equipment tab, same table (config_items), never the same form fields.
+function setupConfigPotionMode(){window.currentPotionEffectsDraft=window.currentPotionEffectsDraft||[];renderPotionEffectsList();document.getElementById('addPotionEffectBtn')?.addEventListener('click',e=>{e.preventDefault();const kind=document.getElementById('configPotionEffectKindPicker')?.value||'dmg';window.currentPotionEffectsDraft.push(defaultComponentFor(kind));renderPotionEffectsList()});setupImageIconEditor({inputId:'configPotionImageInput',canvasId:'configPotionCropCanvas',previewId:'configPotionIconPreview',statusId:'configPotionIconStatus',zoomId:'configPotionCropZoom',eraserId:'configPotionMagicEraserBtn',toleranceId:'configPotionMagicTolerance',hexKey:'currentConfigPotionIconHex',statusPrefix:'Icono'});saveConfigPotionBtn.onclick=async()=>{configPotionStatus.textContent=window.editingConfigPotionId?'Actualizando...':'Guardando...';try{const item=currentConfigPotionJson();if(window.editingConfigPotionId)await updateConfigItem(window.editingConfigPotionId,item);else await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configPotionStatus.textContent=window.editingConfigPotionId?'Poción actualizada.':'Poción guardada.'}catch(e){configPotionStatus.textContent=e.message}};newConfigPotionBtn.onclick=resetConfigPotionForm;exportConfigPotionJsonBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentConfigPotionJson(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-potion.json';a.click();URL.revokeObjectURL(a.href)};importConfigPotionJsonInput.onchange=async()=>{const files=[...importConfigPotionJsonInput.files];configPotionStatus.textContent='Leyendo JSON/ZIP...';try{const items=await parseImportedJsonFiles(files);configPotionStatus.textContent=`Importando ${items.length} poción(es) sin lote máximo...`;await saveConfigItems(items.map(x=>({...x,item_json:x})));configPotionStatus.textContent=`Importadas ${items.length} poción(es).`}catch(e){configPotionStatus.textContent=e.message}finally{importConfigPotionJsonInput.value=''}}}
 
 async function fetchDungeonWorlds(){
  const status=document.getElementById('worldStatus'),list=document.getElementById('worldList');if(!status||!list)return;
@@ -7857,7 +8604,7 @@ async function resumeSession(sessionId){
   const pos=state.players?.[String(pj.id)];
   if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
-  recomputeDerived();updateUI();draw();banner(`SESIÓN RESTAURADA · PISO ${game.floor}`);
+  syncAllEquipmentPassives();recomputeDerived();updateUI();draw();banner(`SESIÓN RESTAURADA · PISO ${game.floor}`);
  }catch(e){alert('Error al continuar la sesión: '+e.message)}
 }
 
@@ -9655,7 +10402,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
 
 document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
-const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigAssetsMode();setupConfigGatesMode();setupTestingMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
+const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupConfigPotionMode();setupClassConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigAssetsMode();setupConfigGatesMode();setupTestingMode();fetchConfigItems();fetchConfigClasses();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();setupWorldSettings()};
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
@@ -9751,7 +10498,7 @@ document.getElementById('game').addEventListener('mousemove',ev=>{
 document.getElementById('game').addEventListener('click',ev=>{
  const {x:gx,y:gy}=gridCellFromEvent(ev);
  if(pendingTargetAction){
-  if(pendingTargetAction.kind==='skill'&&pendingTargetAction.mode==='area'){
+  if((pendingTargetAction.kind==='skill'||pendingTargetAction.kind==='potion'||pendingTargetAction.kind==='equipment')&&pendingTargetAction.mode==='area'){
    if(pendingAreaCandidate&&pendingAreaCandidate.x===gx&&pendingAreaCandidate.y===gy){confirmAreaTarget();return}
    const range=pendingTargetAction.range||1,minRange=pendingTargetAction.minRange??1;
    if(!validateTargetCell(gx,gy,range,minRange)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return}
@@ -9763,6 +10510,8 @@ document.getElementById('game').addEventListener('click',ev=>{
   }
   if(pendingTargetAction.kind==='companionCommand'){resolveCompanionCommand(pendingTargetAction.companionId,gx,gy);return}
   if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,gx,gy);
+  else if(pendingTargetAction.kind==='potion')resolveTargetedPotion(pendingTargetAction.potionId,gx,gy);
+  else if(pendingTargetAction.kind==='equipment')resolveTargetedEquipmentActive(pendingTargetAction.equipSlot,gx,gy);
   else resolveBasicAttack(gx,gy);
   return
  }
