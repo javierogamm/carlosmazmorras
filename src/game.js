@@ -7872,6 +7872,14 @@ async function enterWorldWithCharacter(){
  // custom-crafted items (Creator's Room) live in their own user_pj column too
  game.player.customItems=currentCharacter.custom_items||game.player.customItems||[];
  generateFloor();
+ // New session with an existing character: start the run topped up,
+ // regardless of what was persisted from a previous run. Resuming an
+ // existing session (resumeSession()) must NOT do this - it keeps whatever
+ // hp/stamina/mana was actually saved. maxHp/maxStamina/maxMana are already
+ // final here since generateFloor() ran recomputeDerived() above.
+ game.player.hp=game.player.maxHp;
+ game.player.stamina=game.player.maxStamina;
+ game.player.mana=game.player.maxMana;
  try{
   const r=await fetch('/api/dungeon-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_world_id:String(selectedDungeonWorld.id),players_ID:JSON.stringify([currentCharacter.id]),dungeon_status:{turn:0,currentFloor:1,floors:{},players:{[currentCharacter.id]:{x:game.player.x,y:game.player.y,floor:1,facing:game.player.facing||1}}}})});
   const data=await r.json();
@@ -9280,6 +9288,13 @@ async function mpEnterStartedSession(session,starter=false){
   app.classList.remove('hidden');
   if(starter){
    if(!loadPrecomputedFloor())generateFloor();
+   // Same reasoning as enterWorldWithCharacter(): a brand-new multiplayer
+   // session starts the host's character topped up, before its hp gets
+   // published into `players` below. Joiners (starter===false) and anyone
+   // resuming an already-started session never hit this branch.
+   game.player.hp=game.player.maxHp;
+   game.player.stamina=game.player.maxStamina;
+   game.player.mana=game.player.maxMana;
    game.floorEventRolled=true;
    // deterministic spawn cluster in turn order, host first
    const order=(st.turnOrder&&st.turnOrder.length)?st.turnOrder:[pj.id];
