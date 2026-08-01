@@ -2,6 +2,8 @@
 
 Reference for hand-writing/generating skill JSON for the class editor (`config_class.skills_json`). Written in English to stay token-cheap. This document is exhaustive: every field, every effect kind, every default, every runtime quirk that matters for authoring correct skills.
 
+The `effects[]` component catalog in §3-§5 is not skill-only: equipment (`reglas json objetos.md`) and potions (`reglas json pociones.md`) run the exact same stack (`applySkillEffectsList`/`applyEffectComponent`), and both of those documents keep their own inlined copy of this same catalog for convenience. This file stays the authoritative source — if a copy ever drifts, this one wins, since it's also the only place with the full damage-formula/AP-cost/enemy-AI reference (§6-§7).
+
 ## 1. Where this data lives
 
 - Table `config_class`, one row per class, columns:

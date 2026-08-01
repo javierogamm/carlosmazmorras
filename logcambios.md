@@ -1,3 +1,11 @@
+## v0.56.1 - Catálogo de efectos inlinado en los 4 documentos de JSON
+- Revisados los cuatro documentos de instrucciones de JSON (`skills-json-rules.md`, `reglas json objetos.md`, `reglas json pociones.md`, `INSTRUCCION_ITEMS_JSON.md`) contra el código actual, verificando el `switch` real de `applyEffectComponent` (27 `kind`, sin cambios desde la última consolidación) y los campos exactos que arma `currentConfigItemJson`/`currentConfigPotionJson`.
+- `reglas json objetos.md` y `reglas json pociones.md` incorporan ahora una copia completa del catálogo de los 27 `kind` de `effects[]` (campos, valores por defecto, target admitidos y una nota de mecánica por kind), en vez de solo remitir a `skills-json-rules.md`; `INSTRUCCION_ITEMS_JSON.md` hace lo mismo dentro de su §6.1. `skills-json-rules.md` queda como fuente canónica (fórmulas de daño, coste AP e IA enemiga aparte) y ahora indica explícitamente que las otras tres guías llevan copias de su catálogo.
+- Añadido el campo `hidden` (ausente en ambos documentos pese a ser un campo real y funcional) a `reglas json objetos.md` y `reglas json pociones.md`.
+- Corregida en `reglas json objetos.md` la sección de `skillIds`: ya no describe el selector "Habilidades" del formulario de Items, que se eliminó por quedar redundante con los efectos apilables propios del objeto; ahora documenta que el campo es legado, se conserva al editar pero no es asignable desde la UI.
+- Corregida en `reglas json pociones.md` una referencia obsoleta a "pestaña Items → tipo Poción" (la pestaña Pociones es independiente desde que se separaron los editores).
+- Sin cambios funcionales en el motor ni en el editor; sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting de `src/game.js` en `0.56.1`.
+
 ## v0.56.0 - Auditoría e instrucción maestra de items y JSON
 - Añadida `INSTRUCCION_ITEMS_JSON.md`, una guía operativa exhaustiva que traza el ciclo completo de equipo y pociones: formulario, objeto canónico, metadata de `config_items`, API, importación/exportación, normalización de loot, inventario y ejecución de efectos.
 - Documentados los contratos campo por campo para equipo, armas, activables y pociones, junto con tiers, slots, tipos y alcances de arma, stats/affixes, iconos y efectos apilables.
