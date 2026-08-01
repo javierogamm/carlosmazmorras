@@ -26,10 +26,14 @@ function withParsedShards(row){if(row&&typeof row==='object'&&'shards' in row)ro
 async function updateUserAggregates(url,key,nombre){
  if(!nombre)return;
  try{
-  const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
+  // Only pj_score and the nested player level are needed here - selecting the
+  // full pj_json (every character's whole inventory/equipment) was pulling
+  // megabytes of unused data out of Supabase on every single save, since this
+  // runs after every character PUT (i.e. every turn during play).
+  const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=pj_score,level:pj_json->player->>level&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
   const rows=await r.json();
   if(!r.ok||!Array.isArray(rows))return;
-  const maxLevel=rows.reduce((m,row)=>Math.max(m,Number(row.pj_json?.player?.level)||1),0);
+  const maxLevel=rows.reduce((m,row)=>Math.max(m,Number(row.level)||1),0);
   const totalScore=rows.reduce((s,row)=>s+(Number(row.pj_score)||0),0);
   await fetch(`${url}/rest/v1/user?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:headers(key),body:JSON.stringify({max_pj_lv:maxLevel,accumulated_points:totalScore})});
  }catch(e){/* ignore - aggregate refresh is best-effort */}
@@ -94,7 +98,16 @@ module.exports=async(req,res)=>{
    if('shards' in body)row.shards=shardsToText(body.shards);
    if('custom_items' in body)row.custom_items=body.custom_items;
    row.last_use=body.last_use??new Date().toISOString();
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   // minimal=true (opt-in, used by the every-turn autosave) skips echoing the
+   // whole character - inventory, equipment, effects - back down on a write
+   // nobody reads. Callers that still need the saved row keep the default.
+   const minimal=!!body.minimal;
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:minimal?'return=minimal':'return=representation'},body:JSON.stringify(row)});
+   if(minimal){
+    if(!r.ok){const err=await r.json().catch(()=>({error:'No se pudo actualizar'}));return res.status(r.status).json(err)}
+    await updateUserAggregates(url,key,body.nombre||null);
+    return res.status(200).json({ok:true});
+   }
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    const savedRow=Array.isArray(data)?data[0]:data;
