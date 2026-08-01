@@ -1674,6 +1674,21 @@ const FLOOR_ARCHETYPES={
   enemies:{density:.7, elite:1, tierBias:0, bossOnEven:false},
   rewards:{chests:1.3, rarity:2},
   roomWeights:{combat:24,filler:20,hub:16,knot:12,traproom:10,vault:8,guardpost:6,shrine:4,creator:2}
+ },
+ // Built by buildCityFloorPlan, not the shared room/corridor carving loop:
+ // an open district with no walled rooms, just building-sized (2x2+) assets
+ // laid out in a loose grid (with jitter/skips for asymmetry) plus 1x1 props
+ // scattered between them. `layout`/`roomWeights` below are still used - just
+ // for the unwalled bookkeeping "zones" (chests/traps/altars/enemies/safe
+ // spots) rather than for carving actual walls.
+ city:{
+  label:'Piso ciudad', minFloor:4, cooldown:5, objective:'stairs',
+  desc:'Un distrito abierto sin salas: edificios distribuidos en manzanas, con callejones y objetos pequeños entre ellos.',
+  weight:(f)=>f<4?0:14,
+  layout:{rooms:[16,16], size:[6,11], corridors:'open', loops:0, pillars:0},
+  enemies:{density:.85, elite:1, tierBias:0, bossOnEven:true},
+  rewards:{chests:1.1, rarity:1},
+  roomWeights:{filler:26,combat:22,guardpost:12,vault:8,shrine:8,creator:6,hub:8,eliteden:6,traproom:4}
  }
 };
 
@@ -1761,6 +1776,281 @@ function buildMegabossFloorPlan(floor,params){
   themeName:floorTileset.name,floorTileset,announce:true
  };
 }
+
+// City floor: no walled rooms - just an open district. Large (2x2+) building
+// assets go down in a loose grid (row-by-row jitter + random skips break the
+// checkerboard look into something asymmetric), then small 1x1 props fill the
+// gaps between them. Under the hood a handful of unwalled "zones" still carry
+// a room type (see rooms below) so the existing chest/trap/altar/enemy/safe-
+// room systems - all keyed off ROOM_TYPES - keep working exactly as on any
+// other floor; the player just never sees a wall separating them.
+function buildCityFloorPlan(floor,params,{populationScale=1}={}){
+ const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
+ const arch=FLOOR_ARCHETYPES.city,E=arch.enemies,R=arch.rewards;
+ const map=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+ for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)map[y][x]=0;
+ const occ=new Set();
+
+ // --- buildings (2x2+) on a loose grid, then 1x1 props in the gaps ---
+ const floorAssetDefs=assetDefsForFloor(floor,params);
+ const bigAssetDefs=floorAssetDefs.filter(a=>a.cols>=2&&a.rows>=2);
+ const smallAssetDefs=floorAssetDefs.filter(a=>a.cols===1&&a.rows===1);
+ const assetPlacements=[];
+ // Shared placement attempt: places `def` with its top-left at (ox,oy) if
+ // every covered cell is in-bounds and unclaimed; mirrors the mask-aware
+ // blocking rule used by the walled archetypes' own asset placement.
+ const tryPlaceAssetAt=(def,ox,oy)=>{
+  const cellsCovered=[];
+  for(let dy=0;dy<def.rows;dy++)for(let dx=0;dx<def.cols;dx++){
+   const px=ox+dx,py=oy+dy;
+   if(px<1||px>=COLS-1||py<1||py>=ROWS-1||occ.has(key(px,py)))return false;
+   cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
+  }
+  for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
+  assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
+  return true;
+ };
+ const margin=5;
+ if(bigAssetDefs.length){
+  const span=Math.max(...bigAssetDefs.map(a=>Math.max(a.cols,a.rows))),cell=span+2;
+  for(let gy=margin;gy+span<ROWS-margin;gy+=cell){
+   const rowShift=rng(3)-1; // a different left/right bias per row of blocks
+   for(let gx=margin;gx+span<COLS-margin;gx+=cell){
+    if(Math.random()<.22)continue; // gaps: plazas/lots between blocks, breaks the pure grid
+    const def=pick(bigAssetDefs);
+    const ox=Math.max(1,Math.min(COLS-def.cols-1,gx+rowShift+rng(3)-1));
+    const oy=Math.max(1,Math.min(ROWS-def.rows-1,gy+rng(3)-1));
+    tryPlaceAssetAt(def,ox,oy);
+   }
+  }
+ }
+ if(smallAssetDefs.length){
+  const target=Math.max(10,Math.round(assetPlacements.length*1.5));
+  let placed=0,guard=0;
+  while(placed<target&&guard<800){
+   guard++;
+   const x=1+rng(COLS-2),y=1+rng(ROWS-2);
+   if(map[y][x]!==0)continue;
+   if(tryPlaceAssetAt(pick(smallAssetDefs),x,y))placed++;
+  }
+ }
+
+ // --- unwalled zones: a 7x7 grid tiling the whole map, each tagged with a
+ // room type purely for bookkeeping (chests/traps/altars/enemies/safe spots).
+ // Sized close to a normal room (~6x6, same ballpark as ROOM_TYPES.size) on
+ // purpose - a coarser grid would turn "safe room" zones into a huge chunk of
+ // the map being enemy-free. No carve(), no corridors - the map is already
+ // open floor everywhere except the buildings placed above. ---
+ const gridN=7,zoneW=Math.floor((COLS-2)/gridN),zoneH=Math.floor((ROWS-2)/gridN);
+ const rooms=[];
+ for(let gy=0;gy<gridN;gy++)for(let gx=0;gx<gridN;gx++){
+  const x=1+gx*zoneW,y=1+gy*zoneH;
+  const w=gx===gridN-1?COLS-1-x:zoneW,h=gy===gridN-1?ROWS-1-y:zoneH;
+  const typeId=weightedRoomType(arch.roomWeights);
+  rooms.push({x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId});
+ }
+
+ // Every floor needs at least 2 Creator's Room zones, same rule as the walled archetypes.
+ {
+  const spawnZone=rooms[0];
+  const distFromSpawn=r=>Math.abs(r.cx-spawnZone.cx)+Math.abs(r.cy-spawnZone.cy);
+  const nonSpawn=rooms.filter(r=>r!==spawnZone);
+  if(nonSpawn.length)[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0].type='creator';
+  // spawnZone itself is excluded from this count even if the initial random
+  // grid roll happened to tag it 'creator' - it always gets reset to
+  // 'filler' below once spawn is finalized, so counting it here would let
+  // that reset silently drop the floor back to just 1 real creator zone.
+  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnZone);
+  while(creatorRooms.length<2){
+   const candidates=rooms.filter(r=>r!==spawnZone&&r.type!=='creator');
+   if(!candidates.length)break;
+   const r=pick(candidates);r.type='creator';creatorRooms.push(r);
+  }
+ }
+
+ // A zone's center can land inside a building; snap spawn/stairs to the
+ // nearest actually-open tile so the player never starts (or has to reach) a wall.
+ const nearestOpenCell=(cx,cy)=>{
+  if(map[cy]?.[cx]===0)return{x:cx,y:cy};
+  for(let radius=1;radius<Math.max(ROWS,COLS);radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+   const x=cx+dx,y=cy+dy;
+   if(x<1||y<1||x>=COLS-1||y>=ROWS-1||map[y][x]!==0)continue;
+   return{x,y};
+  }
+  return{x:cx,y:cy};
+ };
+ const spawnZone=rooms[0];
+ const spawnPos=nearestOpenCell(spawnZone.cx,spawnZone.cy);
+ spawnZone.cx=spawnPos.x;spawnZone.cy=spawnPos.y;spawnZone.type='filler';
+ const distanceFromSpawn=r=>Math.abs(r.cx-spawnZone.cx)+Math.abs(r.cy-spawnZone.cy);
+ const distantRooms=[...rooms].slice(1).sort((a,b)=>distanceFromSpawn(b)-distanceFromSpawn(a));
+ const stairRoom=distantRooms[0]||rooms.at(-1);
+ const stairPos=nearestOpenCell(stairRoom.cx,stairRoom.cy);
+ stairRoom.cx=stairPos.x;stairRoom.cy=stairPos.y;
+ const bossRoom=stairRoom;
+ const stairs={x:stairRoom.cx,y:stairRoom.cy};
+
+ // The open layout has no guaranteed corridor spine like the walled
+ // archetypes - flood-fill from spawn and, on the rare chance the buildings
+ // sealed off the stairs, carve a straight rescue path through.
+ const reachable=floodFillOpen(map,spawnZone.cx,spawnZone.cy);
+ if(!reachable.has(key(stairs.x,stairs.y))){
+  let x=spawnZone.cx,y=spawnZone.cy;
+  while(x!==stairs.x){map[y][x]=0;x+=Math.sign(stairs.x-x)}
+  while(y!==stairs.y){map[y][x]=0;y+=Math.sign(stairs.y-y)}
+ }
+
+ const occSpawnStairs=new Set([key(spawnZone.cx,spawnZone.cy),key(stairs.x,stairs.y)]);
+ occSpawnStairs.forEach(k=>occ.add(k));
+
+ const safeRoomCount=2+rng(3);
+ const excludedRooms=new Set([spawnZone,stairRoom,bossRoom]);
+ const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&distanceFromSpawn(r)>8).sort(()=>Math.random()-.5).slice(0,safeRoomCount).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
+ const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
+ safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
+
+ const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
+ if(!cells.length)return null;
+ // Random sampling from the static `cells` snapshot, with a bounded retry -
+ // but `cells` was taken before assets/etc. reserved further tiles into
+ // `occ`, so on a tight floor (few rooms, several assets) most of it can be
+ // stale by the time this runs. Falls back to an exhaustive scan of what's
+ // actually still free rather than giving up and returning an occupied cell;
+ // under genuine full-floor saturation (an extreme enemy count on a small
+ // archetype), the last-resort fallback still only ever returns a tile the
+ // map itself considers walkable (map===0) - it may end up sharing a tile
+ // with another entity, but it is never placed inside a wall.
+ const free=()=>{
+  let p,guard=0;
+  do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);
+  if(occ.has(key(p.x,p.y))){
+   const available=cells.filter(c=>!occ.has(key(c.x,c.y)));
+   if(available.length)p=pick(available);
+   else{
+    const stillWalkable=cells.filter(c=>map[c.y][c.x]===0);
+    if(stillWalkable.length)p=pick(stillWalkable);
+   }
+  }
+  occ.add(key(p.x,p.y));
+  return{...p};
+ };
+ const freeIn=r=>{
+  for(let i=0;i<40;i++){
+   const x=r.x+rng(Math.max(1,r.w)),y=r.y+rng(Math.max(1,r.h));
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return free();
+ };
+ const edgeIn=r=>{
+  for(let i=0;i<40;i++){
+   const onX=Math.random()<.5;
+   const x=onX?(Math.random()<.5?r.x:r.x+r.w-1):r.x+rng(Math.max(1,r.w));
+   const y=onX?r.y+rng(Math.max(1,r.h)):(Math.random()<.5?r.y:r.y+r.h-1);
+   if(map[y]?.[x]===0&&!occ.has(key(x,y))&&!safeCellKeys.has(key(x,y))){occ.add(key(x,y));return{x,y}}
+  }
+  return freeIn(r);
+ };
+
+ // Guarantee: at least a handful of zones (up to 3) end up with a 2x2+
+ // building even if the grid pass above happened to skip them all - same
+ // "never all 1x1 clutter by bad luck" rule as the walled archetypes.
+ if(bigAssetDefs.length){
+  const minBig=Math.min(3,rooms.length);
+  const bigCount=()=>assetPlacements.filter(a=>a.cols>=2&&a.rows>=2).length;
+  const pool=[...rooms].filter(r=>r!==spawnZone&&r!==stairRoom).sort(()=>Math.random()-.5);
+  for(const r of pool){
+   if(bigCount()>=minBig)break;
+   const fitting=bigAssetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+   if(!fitting.length)continue;
+   const def=pick(fitting);
+   for(let tries=0;tries<20;tries++){
+    const ox=r.x+1+rng(Math.max(1,r.w-2)),oy=r.y+1+rng(Math.max(1,r.h-2));
+    if(tryPlaceAssetAt(def,ox,oy))break;
+   }
+  }
+ }
+
+ // --- traps, altars, chests: same per-zone-type rules as the walled archetypes ---
+ const traps=[],altars=[],chests=[];
+ for(const r of rooms){
+  const T=ROOM_TYPES[r.type]||ROOM_TYPES.filler;
+  if(safeRooms.some(s=>s.x===r.x&&s.y===r.y))continue;
+  if(T.traps&&Math.random()<T.traps){
+   const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
+   for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
+  }
+  if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
+  const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
+  for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
+   const chestDef=pickChestDefForFloor(floor);
+   if(chestDef)chests.push({...freeIn(r),opened:false,locked:!!T.locked&&Math.random()<.5,chestDef});
+  }
+ }
+ const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
+ while(chests.length<minChests){
+  const chestDef=pickChestDefForFloor(floor);
+  if(!chestDef)break;
+  chests.push({...free(),opened:false,chestDef});
+ }
+ if(chests.length){
+  const bumpTier=Math.min(5,chestTierForFloor(floor)+1),bumpCount=Math.min(chests.length,1+(Math.random()<.5?1:0));
+  for(const c of [...chests].sort(()=>Math.random()-.5).slice(0,bumpCount)){
+   const bumpDef=pickChestDefAtTier(bumpTier);
+   if(bumpDef)c.chestDef=bumpDef;
+  }
+ }
+
+ // --- enemies: same budget/composition rules as the walled archetypes ---
+ const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
+ const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
+ const combatRooms=rooms.filter(r=>r!==spawnZone&&(ROOM_TYPES[r.type]?.enemies?.[1]||0)>0);
+ let placed=0;
+ for(const r of combatRooms){
+  if(placed>=baseCount)break;
+  const T=ROOM_TYPES[r.type];
+  const n=randBetween(T.enemies[0],T.enemies[1]);
+  for(let i=0;i<n&&placed<baseCount;i++){
+   const pos=T.place==='edges'?edgeIn(r):freeIn(r);
+   const wantElite=Math.random()<Math.min(.85,.05*(E.elite||1)*(T.elite?6:1));
+   const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),pos,floor,false);
+   e.enemyFamily=family.name;e.roomType=r.type;
+   if(T.tier||E.tierBias){
+    const bump=(T.tier||0)+(E.tierBias||0);
+    if(bump>0){e.maxHp=e.hp=Math.round(e.hp*(1+.22*bump));e.atk=e.damage=Math.round((e.atk||e.damage||4)*(1+.15*bump));e.xp=Math.round((e.xp||8)*(1+.2*bump))}
+    else if(bump<0){e.maxHp=e.hp=Math.max(4,Math.round(e.hp*.75));e.atk=e.damage=Math.max(1,Math.round((e.atk||e.damage||4)*.8))}
+   }
+   if(wantElite&&!e.boss){e.elite=true;e.name='Élite '+e.name;e.maxHp=e.hp=Math.round(e.hp*1.5);e.atk=e.damage=Math.round((e.atk||e.damage||4)*1.28);e.xp=Math.round((e.xp||8)*1.8);assignEnemySkills(e)}
+   enemies.push(e);placed++;
+  }
+ }
+ while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+
+ // --- boss: same bossOnEven rule as the standard archetype ---
+ let boss=null;
+ if(E.bossOnEven){
+  const bossCount=floor%2===0?1:(Math.random()<.08?1:0);
+  for(let bi=0;bi<bossCount;bi++){
+   const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),{x:bossRoom.cx,y:bossRoom.cy},floor,true);
+   b.enemyFamily=family.name;
+   enemies.push(b);if(!boss)boss=b;
+  }
+ }
+
+ const objective=buildFloorObjective('city',floor,total);
+ if(objective.type==='bossKill'&&!boss)objective.type='stairs';
+ const event=Math.random()<=.12?{id:pick(eventDefs).id}:null;
+ const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
+
+ return {
+  floor,map,rooms,safeRooms,spawn:{x:spawnZone.cx,y:spawnZone.cy},stairs,doors:[],keys:[],chests,traps,altars,event,assets:assetPlacements,
+  enemies,boss,family,archetype:'city',archetypeLabel:arch.label,archetypeDesc:arch.desc,
+  objective,tierExpected:expectedTierForFloor(floor,total),rewardRarityBonus:R.rarity||0,
+  enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
+  themeName:floorTileset.name,floorTileset,announce:!!arch.announce
+ };
+}
+
 // Shared floor builder used by both the pre-generated world JSON and the live
 // generator, so archetypes/rooms behave identically in single and multiplayer.
 // Assumes `game` is set with at least {floor,player,worldParams}.
@@ -1775,6 +2065,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
+ // City floors have no walled rooms at all (open district of building assets),
+ // so they can't go through the shared room/corridor carving below - built by
+ // its own dedicated generator instead, same pattern as buildMegabossFloorPlan.
+ if(archId==='city')return buildCityFloorPlan(floor,params,{populationScale});
  const arch=FLOOR_ARCHETYPES[archId]||FLOOR_ARCHETYPES.standard;
  const tier=expectedTierForFloor(floor,total);
  const L=arch.layout,E=arch.enemies,R=arch.rewards;
@@ -1793,6 +2087,15 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const layoutSizeMax=Math.min(COLS-6,Math.max(L.size[1],floorMaxAssetSpan+2));
 
  // --- rooms: count/size come from the archetype, shape from the room type ---
+ // Every generation rolls a fresh mirror axis (vertical/horizontal/point) and,
+ // for most placed rooms, also tries to carve their mirrored twin - so floors
+ // read as deliberately symmetric layouts (a different symmetry each time,
+ // never forced to repeat) instead of pure noise. Corridors/loops/pillars/
+ // enemies/loot placed afterwards stay randomized, so the symmetry is
+ // structural (room shapes/positions) without making every floor feel identical.
+ const symmetryMode=pick(SYMMETRY_MODES);
+ const overlapsRoom=(x,y,w,h)=>rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y);
+ const roomInBounds=(x,y,w,h)=>x>=1&&y>=1&&x+w<=COLS-1&&y+h<=ROWS-1;
  const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
  for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
   const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
@@ -1802,9 +2105,16 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(Math.random()<.35){if(Math.random()<.5)w=Math.max(3,Math.round(w*1.6));else h=Math.max(3,Math.round(h*1.6))}
   w=Math.min(w,COLS-4);h=Math.min(h,ROWS-4);
   const x=1+rng(Math.max(1,COLS-w-2)),y=1+rng(Math.max(1,ROWS-h-2));
-  if(rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y))continue;
-  rooms.push({x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId});
-  carve(map,rooms[rooms.length-1]);
+  if(overlapsRoom(x,y,w,h))continue;
+  const room={x,y,w,h,cx:x+Math.floor(w/2),cy:y+Math.floor(h/2),type:typeId};
+  rooms.push(room);carve(map,room);
+  if(rooms.length<targetRooms&&Math.random()<ROOM_MIRROR_CHANCE){
+   const m=mirrorRect(room,symmetryMode);
+   if(roomInBounds(m.x,m.y,m.w,m.h)&&!overlapsRoom(m.x,m.y,m.w,m.h)){
+    const twin={x:m.x,y:m.y,w:m.w,h:m.h,cx:m.x+Math.floor(m.w/2),cy:m.y+Math.floor(m.h/2),type:typeId};
+    rooms.push(twin);carve(map,twin);
+   }
+  }
  }
  if(!rooms.length)return null;
 
@@ -1821,7 +2131,11 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
    nearest.type='creator';
   }
-  const creatorRooms=rooms.filter(r=>r.type==='creator');
+  // spawnRoom itself is excluded from this count even if it happened to roll
+  // 'creator' at random above - it always gets reset to 'filler' once spawn
+  // is finalized further down, so counting it here would let that reset
+  // silently drop the floor back to just 1 real creator room.
+  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
   while(creatorRooms.length<2){
    const candidates=rooms.filter(r=>r!==spawnRoom&&r.type!=='creator'&&r.type!=='bossarena');
    if(!candidates.length)break;
@@ -1884,7 +2198,29 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const occ=new Set([key(spawn.cx,spawn.cy),key(stairs.x,stairs.y)]);safeRooms.forEach(r=>occ.add(key(r.cx,r.cy)));
  const cells=[];for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y)))cells.push({x,y});
  if(!cells.length)return null;
- const free=()=>{let p,guard=0;do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);occ.add(key(p.x,p.y));return{...p}};
+ // Random sampling from the static `cells` snapshot, with a bounded retry -
+ // but `cells` was taken before assets/etc. reserved further tiles into
+ // `occ`, so on a tight floor (few rooms, several assets) most of it can be
+ // stale by the time this runs. Falls back to an exhaustive scan of what's
+ // actually still free rather than giving up and returning an occupied cell;
+ // under genuine full-floor saturation (an extreme enemy count on a small
+ // archetype), the last-resort fallback still only ever returns a tile the
+ // map itself considers walkable (map===0) - it may end up sharing a tile
+ // with another entity, but it is never placed inside a wall.
+ const free=()=>{
+  let p,guard=0;
+  do{p=pick(cells);guard++}while(occ.has(key(p.x,p.y))&&guard<400);
+  if(occ.has(key(p.x,p.y))){
+   const available=cells.filter(c=>!occ.has(key(c.x,c.y)));
+   if(available.length)p=pick(available);
+   else{
+    const stillWalkable=cells.filter(c=>map[c.y][c.x]===0);
+    if(stillWalkable.length)p=pick(stillWalkable);
+   }
+  }
+  occ.add(key(p.x,p.y));
+  return{...p};
+ };
  const freeIn=r=>{
   for(let i=0;i<40;i++){
    const x=r.x+rng(Math.max(1,r.w)),y=r.y+rng(Math.max(1,r.h));
@@ -1911,6 +2247,39 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // on floor - never on a wall, a pillar, or another asset/entity's tile.
  const assetPlacements=[];
  const assetDefs=floorAssetDefs;
+ // Shared placement attempt: enumerates every offset where `def` fits inside
+ // room `r`'s interior (rather than randomly sampling offsets and retrying -
+ // for a room whose interior is only barely bigger than the asset, the room's
+ // own centre tile can sit on *every* randomly-reachable offset, making a
+ // fit that genuinely exists impossible to ever roll into) and picks randomly
+ // among the valid ones. Honours the same floor/occupancy/safe-room/landmark-
+ // tile rules everywhere an asset gets placed on this floor (the scattershot
+ // pass below and the size-guarantee pass after it).
+ // avoidCenter defaults on (keeps the room's centre tile - the usual walking
+ // line/line-of-sight anchor - clear); the size-guarantee pass below retries
+ // with it off as a last resort, since for a room whose interior is only
+ // barely bigger than the asset, every valid-bounds offset can end up
+ // covering the centre, which would otherwise make a genuine fit unreachable.
+ const tryPlaceAsset=(r,def,avoidCenter=true)=>{
+  const minOx=r.x+1,maxOx=r.x+r.w-2-def.cols+1,minOy=r.y+1,maxOy=r.y+r.h-2-def.rows+1;
+  if(maxOx<minOx||maxOy<minOy)return false;
+  const candidates=[];
+  for(let oy=minOy;oy<=maxOy;oy++)for(let ox=minOx;ox<=maxOx;ox++){
+   const cellsCovered=[];
+   let ok=true;
+   for(let dy=0;dy<def.rows&&ok;dy++)for(let dx=0;dx<def.cols&&ok;dx++){
+    const px=ox+dx,py=oy+dy;
+    if(map[py]?.[px]!==0||occ.has(key(px,py))||safeCellKeys.has(key(px,py))||(avoidCenter&&px===r.cx&&py===r.cy)||(px===spawn.cx&&py===spawn.cy)||(px===stairs.x&&py===stairs.y)){ok=false;break}
+    cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
+   }
+   if(ok)candidates.push({ox,oy,cellsCovered});
+  }
+  if(!candidates.length)return false;
+  const choice=pick(candidates);
+  for(const c of choice.cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
+  assetPlacements.push({key:def.key,name:def.name,x:choice.ox,y:choice.oy,cols:def.cols,rows:def.rows});
+  return true;
+ };
  if(assetDefs.length){
   const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
   // Hard cap so a floor never gets carpeted with decoration: a handful of
@@ -1921,21 +2290,23 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    if(Math.random()>=.25)continue; // not every eligible room gets one
    const fitting=assetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
    if(!fitting.length)continue;
-   const def=pick(fitting);
-   for(let tries=0;tries<30;tries++){
-    const ox=r.x+1+rng(Math.max(1,r.w-2)),oy=r.y+1+rng(Math.max(1,r.h-2));
-    const cellsCovered=[];
-    let ok=true;
-    for(let dy=0;dy<def.rows&&ok;dy++)for(let dx=0;dx<def.cols&&ok;dx++){
-     const px=ox+dx,py=oy+dy;
-     if(px<r.x+1||px>r.x+r.w-2||py<r.y+1||py>r.y+r.h-2){ok=false;break}
-     if(map[py]?.[px]!==0||occ.has(key(px,py))||safeCellKeys.has(key(px,py))||(px===r.cx&&py===r.cy)||(px===spawn.cx&&py===spawn.cy)||(px===stairs.x&&py===stairs.y)){ok=false;break}
-     cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
-    }
-    if(!ok)continue;
-    for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
-    assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
-    break;
+   tryPlaceAsset(r,pick(fitting));
+  }
+  // Guarantee: any floor with at least one 2x2-or-larger asset defined always
+  // lands that size in at least a handful of rooms (up to 3, or fewer on a
+  // very small floor), regardless of how the ~25%-per-room roll above landed -
+  // a floor should never read as "all 1x1 clutter" just by bad luck.
+  const bigAssetDefs=assetDefs.filter(a=>a.cols>=2&&a.rows>=2);
+  if(bigAssetDefs.length){
+   const minBigAssetRooms=Math.min(3,rooms.length);
+   const bigAssetCount=()=>assetPlacements.filter(a=>a.cols>=2&&a.rows>=2).length;
+   const bigAssetPool=[...rooms].filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
+   for(const r of bigAssetPool){
+    if(bigAssetCount()>=minBigAssetRooms)break;
+    const fitting=bigAssetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+    if(!fitting.length)continue;
+    const def=pick(fitting);
+    if(!tryPlaceAsset(r,def))tryPlaceAsset(r,def,false);
    }
   }
  }
@@ -2011,8 +2382,26 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
 
  // --- bosses ---
  let boss=null;const bosses=[];
+ // Boss spawn positions are always "a room's centre tile" (bossRoom, a
+ // bossRush arena, a distant room for bossOnEven's extra "Campeón" bosses) -
+ // usually kept clear of decoration, but the asset size-guarantee above can,
+ // as a last resort, place an asset on top of a room's own centre. Snap to
+ // the nearest genuinely free tile instead of trusting the centre blindly,
+ // and reserve it so two bosses in the same multi-boss floor can't stack.
+ const nearestFreeCellForBoss=(cx,cy)=>{
+  if(map[cy]?.[cx]===0&&!occ.has(key(cx,cy)))return{x:cx,y:cy};
+  for(let radius=1;radius<Math.max(ROWS,COLS);radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+   const x=cx+dx,y=cy+dy;
+   if(x<1||y<1||x>=COLS-1||y>=ROWS-1||map[y][x]!==0||occ.has(key(x,y)))continue;
+   return{x,y};
+  }
+  return{x:cx,y:cy};
+ };
  const mkBoss=(pos,label,tierBonus)=>{
-  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),pos,floor,true);
+  const resolvedPos=nearestFreeCellForBoss(pos.x,pos.y);
+  occ.add(key(resolvedPos.x,resolvedPos.y));
+  const b=buildConfiguredEnemy(weightedFamilyEnemy(family,true,floor,params.floors,E.minTier),resolvedPos,floor,true);
   b.enemyFamily=family.name;
   if(tierBonus>0){
    b.maxHp=b.hp=Math.round(b.hp*(1+.45*tierBonus));
@@ -2102,6 +2491,38 @@ function loadPrecomputedFloor(){
 }
 
 function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)map[y][x]=0}
+
+// Room symmetry: mirrors a {x,y,w,h} rect across the map's vertical axis
+// (left<->right), horizontal axis (top<->bottom), or both at once (180°
+// point symmetry) - used to grow a randomly-placed room into a symmetric
+// twin. A new axis is rolled per floor (see buildFloorPlan/buildCityFloorPlan)
+// so symmetry is always present but never the same shape twice.
+const SYMMETRY_MODES=['vertical','horizontal','point'];
+const ROOM_MIRROR_CHANCE=.62;
+function mirrorRect(r,mode){
+ const mx=COLS-r.w-r.x,my=ROWS-r.h-r.y;
+ if(mode==='vertical')return{x:mx,y:r.y,w:r.w,h:r.h};
+ if(mode==='horizontal')return{x:r.x,y:my,w:r.w,h:r.h};
+ return{x:mx,y:my,w:r.w,h:r.h};
+}
+// Flood-fill of every map===0 cell reachable from (sx,sy), used by
+// buildCityFloorPlan to guarantee the stairs are actually reachable from
+// spawn (the open-plan city layout has no guaranteed corridor spine like the
+// walled archetypes do).
+function floodFillOpen(map,sx,sy){
+ const seenSet=new Set([key(sx,sy)]),stack=[[sx,sy]];
+ while(stack.length){
+  const[x,y]=stack.pop();
+  for(const[dx,dy] of[[1,0],[-1,0],[0,1],[0,-1]]){
+   const nx=x+dx,ny=y+dy;
+   if(nx<1||ny<1||nx>=COLS-1||ny>=ROWS-1)continue;
+   const k=key(nx,ny);
+   if(seenSet.has(k)||map[ny][nx]!==0)continue;
+   seenSet.add(k);stack.push([nx,ny]);
+  }
+ }
+ return seenSet;
+}
 
 
 const eventStats=['strength','vitality','agility','luck','intelligence','wisdom'];
