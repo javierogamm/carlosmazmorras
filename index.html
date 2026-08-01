@@ -69,6 +69,7 @@
 <div class="tabs">
 <button class="active" data-tab="inventory">Mochila</button>
 <button data-tab="potions">Pociones</button>
+<button data-tab="activables">Activables</button>
 <button data-tab="equipment">Equipo</button>
 <button data-tab="shards">Shards</button>
 <button data-tab="skills">Habilidades</button>
@@ -77,6 +78,7 @@
 </div>
 <div id="inventory" class="tabview"></div>
 <div id="potions" class="tabview hidden"></div>
+<div id="activables" class="tabview hidden"></div>
 <div id="equipment" class="tabview hidden"></div>
 <div id="shards" class="tabview hidden"></div>
 <div id="skills" class="tabview hidden"></div>
@@ -192,6 +194,45 @@
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
     <label class="configSkillSelectWrap">Habilidades <select id="configSkills" multiple size="8"></select><span class="small">Ctrl/Cmd + clic para asignar varias habilidades del set completo.</span></label>
     <div id="configStatsHelp" class="configStatsHelp"></div>
+    <details class="configAccordion" style="grid-column:1/-1">
+     <summary>Efectos apilables</summary>
+     <p class="small">Igual que en pociones/skills: una pila de efectos independientes. Cómo se disparan depende del slot — Arma: cada efecto tiene una posibilidad de activarse al golpear (% de proc abajo). Trinket/Anillo I/II: se activan a mano desde el hueco "Activables" junto a la mochila, con su propio enfriamiento; si algún efecto apunta a Enemigo/Área/Aliado tendrás que seleccionar objetivo, igual que al lanzar una poción. Resto de slots (equipo general): los efectos de tipo Buff se aplican de forma pasiva mientras el objeto esté equipado.</p>
+     <div class="configItemActions">
+      <select id="configEquipmentEffectKindPicker">
+       <option value="dmg">Daño</option>
+       <option value="dot">Daño periódico (DOT)</option>
+       <option value="buff">Buff (mejora propia)</option>
+       <option value="debuff">Debuff (empeora al enemigo)</option>
+       <option value="heal">Curación</option>
+       <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+       <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+       <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+       <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+       <option value="trap">Trampa (se activa al pisarla)</option>
+       <option value="clones">Clones (invocan copias que luchan contigo)</option>
+       <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+       <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+       <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+       <option value="transform">Transformación (icono propio y stats en %)</option>
+      </select>
+      <button type="button" id="addEquipmentEffectBtn">AÑADIR EFECTO →</button>
+     </div>
+     <div id="configEquipmentEffectsList" class="effectsList"></div>
+    </details>
+    <label id="configProcChanceWrap">% de proc al golpear <input id="configProcChance" type="number" min="0" max="100" value="20"></label>
+    <label id="configEquipmentCooldownWrap">Enfriamiento (turnos) <input id="configEquipmentCooldown" type="number" min="1" max="50" value="4"></label>
+    <label id="configEquipmentRangeWrap">Alcance de activación (casillas) <input id="configEquipmentRange" type="number" min="1" max="20" value="5"></label>
    </div>
    <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
    <button id="newConfigItemBtn">NUEVO OBJETO</button>

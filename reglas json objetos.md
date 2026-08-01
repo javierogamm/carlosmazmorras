@@ -136,20 +136,94 @@ Los objetos con `slot: "weapon"` pueden declarar datos de arma. Si no los declar
 - Al equipar el objeto, el motor intenta aprender esas skills.
 - Usa IDs de la lista incluida en **reglas json pociones.md**.
 
-## Pasivas y efectos legendarios
+## Pasivas legendarias
 
-Puedes dejar `passives` y `effects` vacíos. Si los usas, la estructura habitual es:
+Puedes dejar `passives` vacío. Si lo usas, la estructura habitual es:
 
 ```json
 {
   "passives": [
     { "stat": "armor", "name": "Piel férrea", "desc": "Aumenta armadura.", "value": 2, "percent": false }
-  ],
-  "effects": [
-    { "name": "Chispa", "desc": "Efecto especial descriptivo." }
   ]
 }
 ```
+
+(`effects` con forma `{name, desc}` era el texto de sabor legendario del loot generado al azar; el equipo configurado a mano usa `effects` para la pila de efectos apilables — ver la sección siguiente. Nunca mezcles ambas formas en el mismo objeto.)
+
+## Efectos apilables de equipo
+
+El equipo configurado (`type: "equipment"`) puede llevar exactamente la misma pila de efectos apilables (`effects[]`) que las skills y las pociones — mismos `kind`, mismos campos, mismo comportamiento. Antes de escribir efectos, lee `skills-json-rules.md` (§3 y §4) para la referencia completa de cada `kind` disponible. Aquí solo se documenta cómo se disparan esos efectos según el `slot` del objeto.
+
+Cómo se activa `effects[]` depende del slot:
+
+- **Equipo general** (`offhand`, `head`, `chest`, `hands`, `legs`, `boots`, `neck`): los componentes de tipo `buff` se aplican de forma **pasiva** en cuanto el objeto está equipado (y se retiran al desequiparlo). Otros `kind` no tienen efecto en estos slots.
+- **`weapon`**: cada golpe conectado tiene una posibilidad de disparar la pila completa de `effects[]` sobre el objetivo golpeado (**proc on hit**). La posibilidad se controla con el campo `procChance` (0-100, entero, % por golpe).
+- **`trinket1`, `trinket2`, `ring1`, `ring2`**: los efectos son **activables a mano**, igual que una poción, desde un hueco propio ("Activables") junto a la mochila — si algún componente apunta a Enemigo/Área/Aliado hay que seleccionar objetivo al activarlo; si todos son sobre uno mismo, se aplica al instante. El objeto **no se consume** (sigue equipado); en su lugar queda en enfriamiento tras usarse, definido por el campo `cooldown` (turnos, entero ≥1). `range` define el alcance en casillas para seleccionar objetivo (por defecto 5), igual que `range` en una poción.
+
+`procChance`, `cooldown` y `range` se ignoran fuera de su slot correspondiente (ponlos a `null` o simplemente omítelos).
+
+```json
+{
+  "type": "equipment",
+  "name": "Guantelete de la tormenta",
+  "slot": "weapon",
+  "rarity": "epic",
+  "label": "Épico",
+  "itemLevel": 4,
+  "score": 32,
+  "damageDice": "1d8",
+  "rangeMin": 1,
+  "rangeMax": 1,
+  "weaponType": "Mazas",
+  "procChance": 25,
+  "effects": [
+    { "kind": "dmg", "dmgDice": 1, "dmgDie": 6, "dmgStat": "strength", "dmgStatMode": "add", "dmgStatCoef": .5, "flavor": "shock" }
+  ],
+  "passives": [],
+  "skillIds": [],
+  "desc": "25% de posibilidad de descarga eléctrica adicional al golpear."
+}
+```
+
+```json
+{
+  "type": "equipment",
+  "name": "Anillo de curación de emergencia",
+  "slot": "ring1",
+  "rarity": "rare",
+  "label": "Raro",
+  "itemLevel": 3,
+  "score": 24,
+  "cooldown": 6,
+  "range": 5,
+  "effects": [
+    { "kind": "heal", "target": "self", "dmgDice": 3, "dmgDie": 8, "dmgStat": "wisdom", "dmgStatMode": "add", "dmgStatCoef": 1 }
+  ],
+  "passives": [],
+  "skillIds": [],
+  "desc": "Activable · cura una porción de vida · enfriamiento 6 turnos."
+}
+```
+
+```json
+{
+  "type": "equipment",
+  "name": "Collar del guardián",
+  "slot": "neck",
+  "rarity": "rare",
+  "label": "Raro",
+  "itemLevel": 3,
+  "score": 24,
+  "effects": [
+    { "kind": "buff", "target": "self", "stat": "vitality", "mode": "add", "value": 3, "turns": 999999 }
+  ],
+  "passives": [],
+  "skillIds": [],
+  "desc": "Pasivo mientras esté equipado: +3 Vitalidad."
+}
+```
+
+Nota: en un `buff` pasivo de equipo el campo `turns` es irrelevante para el jugador (el motor lo aplica con duración permanente mientras el objeto siga equipado), pero debe existir en el componente por consistencia con el resto de la pila de efectos.
 
 ## Importar varios objetos
 
@@ -178,11 +252,10 @@ Puedes dejar `passives` y `effects` vacíos. Si los usas, la estructura habitual
     "itemLevel": 1,
     "score": 8,
     "iconShape": "vial",
-    "potionEffectType": "heal",
-    "kind": "instant",
-    "duration": 0,
-    "effect": { "hpFlat": 20 },
-    "potionEffect": { "hpFlat": 20 }
+    "effects": [
+      { "kind": "heal", "target": "self", "dmgDice": 2, "dmgDie": 8, "dmgStat": "vitality", "dmgStatMode": "add", "dmgStatCoef": 1 }
+    ],
+    "desc": "Restaura una porción de vida."
   }
 ]
 ```
