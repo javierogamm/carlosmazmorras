@@ -1,176 +1,137 @@
-# Instrucciones completas para crear JSON de items
+# Instrucción maestra: configuración de items y generación de JSON
 
-Esta guía sirve únicamente para escribir JSON de **equipo** y **pociones**. Incluye los campos disponibles, sus valores válidos y el efecto que producen durante la partida.
+## 1. Propósito y alcance
 
-## 1. Formato del archivo
+Usa esta instrucción para **auditar, crear, modificar, importar, exportar y consolidar** objetos de equipo y pociones sin romper su contrato con `config_items`, el generador de botín ni el motor de combate. No des por válido un JSON solo porque `JSON.parse` lo acepte: la aplicación actualmente comprueba la sintaxis, pero no aplica un esquema formal antes de persistir.
 
-El archivo puede contener un solo item:
+El orden de autoridad que debes respetar es:
 
-```json
-{ "type": "equipment", "name": "Espada simple" }
-```
+1. Código de ejecución en `src/game.js`.
+2. Sobre de persistencia de `api/config-items.js` y tabla Supabase `config_items`.
+3. Referencia completa de componentes en `skills-json-rules.md`.
+4. Reglas específicas de equipo en `reglas json objetos.md`.
+5. Reglas específicas de consumibles en `reglas json pociones.md`.
 
-O una lista de items:
+Si la documentación y el código difieren, documenta la diferencia, sigue el comportamiento real del código y corrige la documentación dentro de la misma consolidación. No inventes campos ni semánticas.
 
-```json
-[
-  { "type": "equipment", "name": "Espada simple" },
-  { "type": "potion", "name": "Poción de cura" }
-]
-```
+## 2. Instrucción operativa para un agente o colaborador
 
-Reglas de sintaxis:
+> Revisa primero el repositorio y cualquier `AGENTS.md` aplicable. Lee completos `api/config-items.js`, las funciones de items/importación de `src/game.js`, `reglas json objetos.md`, `reglas json pociones.md` y `skills-json-rules.md`. Traza cada campo desde el formulario hasta el JSON, desde el JSON hasta `config_items`, y desde la fila recuperada hasta el objeto usado en loot, inventario, equipo y combate. Genera JSON canónico, no solo JSON sintácticamente válido. No borres campos heredados al editar si la UI no los expone. No ejecutes tests salvo petición explícita. Antes de consolidar, actualiza la versión de la app y registra todos los cambios en `logcambios.md`.
 
-- Usa comillas dobles en claves y textos.
-- Separa propiedades y objetos con comas, sin coma después del último elemento.
-- Usa `true` y `false` sin comillas.
-- Usa punto para decimales: `0.5`.
-- No incluyas comentarios dentro del JSON.
-- No incluyas `id`, `created_at` ni `quantity`: no pertenecen a la plantilla del item.
+## 3. Arquitectura y flujo de datos real
 
-## 2. Tier, nivel y poder
+### 3.1 Fuente de verdad persistente
 
-Mantén siempre alineados estos cuatro campos:
+Todos los objetos configurados, incluidos equipo y pociones, viven en `config_items`. La API proyecta estas columnas:
 
-| `rarity` | `label` | `itemLevel` | `score` |
-|---|---|---:|---:|
-| `common` | `Común` | 1 | 8 |
-| `uncommon` | `Infrecuente` | 2 | 16 |
-| `rare` | `Raro` | 3 | 24 |
-| `epic` | `Épico` | 4 | 32 |
-| `legendary` | `Legendario` | 5 | 40 |
-| `artifact` | `Artefacto` | 6 | 48 |
+| Columna | Tipo lógico | Función |
+|---|---|---|
+| `id` | id de Supabase | Identidad de la fila; no forma parte del objeto reutilizable. |
+| `created_at` | fecha | Orden de listado descendente. |
+| `nombre` | texto | Índice/metadata; respaldo de `item_json.name`. |
+| `slot` | texto | Índice/metadata; respaldo de `item_json.slot`. |
+| `tier` | texto | Índice/metadata; respaldo de `item_json.rarity`/`tier`. |
+| `icon` | texto | Índice/metadata; respaldo del icono hexadecimal. |
+| `stats` | texto | Puede ser texto de stats o, si solo llegan `affixes`, JSON serializado. |
+| `ilvl` | texto | Metadata de nivel; la API lo fuerza a `String`. |
+| `item_json` | JSON/JSONB | Sobre canónico consumido por el juego. |
 
-El tier determina la calidad visual y sirve de referencia para la potencia. `itemLevel` representa el nivel del item y `score` su poder mostrado.
+Al guardar, `cleanItem(body)` usa `body.item_json || body` como objeto. En metadata, los campos exteriores tienen prioridad sobre los interiores. Por eso una importación debe evitar dos copias contradictorias: genera un `item_json` autoconsistente y deja que la API derive metadata, o repite exactamente los mismos valores.
 
-## 3. Equipo
+### 3.2 Escritura
 
-### 3.1 Plantilla completa
+- `POST /api/config-items`: acepta un objeto o un array y crea filas.
+- `PUT /api/config-items?id=<id>`: exige id y hace `PATCH` de la fila.
+- `DELETE /api/config-items?id=<id>`: exige id y elimina la fila.
+- La UI guarda/importa los registros **secuencialmente**, uno por petición; no existe transacción del lote. Si el elemento 8 falla, los 7 anteriores ya quedaron consolidados.
+- Importar siempre **crea** filas: no compara nombres, ids ni contenido y no hace upsert. Reimportar duplica.
+- La API no autentica roles ni valida el esquema de item por sí misma; no confundas una respuesta HTTP correcta con validación funcional.
+
+### 3.3 Lectura y normalización en runtime
+
+`configuredItemFromRow` copia `item_json`, crea un `id` nuevo para la instancia de inventario y completa fallbacks. Aspectos críticos:
+
+- `name`, `slot`, `rarity`, `label` e `icon` pueden caer a metadata de fila.
+- El `itemLevel` de una caída se **recorta a la banda de nivel del loot actual**; el nivel base ayuda a elegir la fila, pero no garantiza el nivel final de cada copia.
+- `score` conserva el declarado o usa `itemLevel * 8`. Como se calcula después del recorte y un valor declarado gana, un `score` manual puede quedar desalineado con el nivel final.
+- En armas se completan tipo, categoría, fila/columna/ruta visual, stat defensiva y alcance.
+- En pociones se fuerzan `type: "potion"`, `slot: "consumable"`, `iconShape: "vial"`, `effects: []` si falta y rango numérico.
+- `skillIds`, `affixes`, `passives` y `effects` acaban como arrays; los stats de metadata solo se parsean si `affixes` no viene ya como array.
+- El generador usa primero `config_items`; el generador procedural es reserva cuando no hay filas elegibles.
+
+## 4. Contrato canónico de equipo
+
+### 4.1 Campos comunes
 
 ```json
 {
   "type": "equipment",
-  "name": "Nombre del objeto",
-  "slot": "chest",
+  "name": "Nombre visible",
+  "slot": "weapon",
   "rarity": "rare",
   "label": "Raro",
   "itemLevel": 3,
   "score": 24,
   "icon": "",
   "hidden": false,
-  "stats": "vitality:+2, armor:+3",
+  "stats": "strength:+2, damage:+3",
   "affixes": [
-    { "key": "vitality", "label": "Vitalidad", "value": 2, "percent": false },
-    { "key": "armor", "label": "Armadura", "value": 3, "percent": false }
+    { "key": "strength", "label": "Fuerza", "value": 2, "percent": false },
+    { "key": "damage", "label": "Daño", "value": 3, "percent": false }
   ],
   "skillIds": [],
   "passives": [],
   "effects": [],
-  "desc": "Descripción visible del objeto."
+  "desc": "Descripción visible"
 }
 ```
 
-### 3.2 Campos de equipo
+Reglas:
 
-| Campo | Valor | Efecto |
-|---|---|---|
-| `type` | siempre `"equipment"` | Identifica el item como equipable. |
-| `name` | texto | Nombre visible. Se recomienda un máximo de 80 caracteres. |
-| `slot` | uno de §3.3 | Decide dónde se equipa y cómo se activan sus efectos. |
-| `rarity` | tier de §2 | Calidad del item. |
-| `label` | nombre de §2 | Texto visible de la calidad. |
-| `itemLevel` | entero positivo | Nivel mostrado y referencia de potencia. |
-| `score` | número | Poder de objeto mostrado. |
-| `icon` | PNG 50×50 en hexadecimal o `""` | Icono personalizado; vacío utiliza el aspecto disponible por defecto. |
-| `hidden` | booleano | Si es `true`, permanece oculto en selectores hasta buscarlo por nombre. |
-| `stats` | texto | Versión editable de los atributos, por ejemplo `strength:+2`. |
-| `affixes` | array | Atributos estructurados que recibe el personaje. |
-| `skillIds` | array de IDs | Compatibilidad con objetos antiguos que conceden habilidades al equiparse; para items nuevos usa `[]`. |
-| `passives` | array | Pasivas legendarias antiguas; normalmente `[]`. |
-| `effects` | array | Efectos apilables descritos en §6. |
-| `desc` | texto | Descripción visible; no crea mecánicas por sí sola. |
+- `type` debe ser `equipment`.
+- `name`: texto no vacío; el editor limita a 80 caracteres.
+- `rarity`: `common`, `uncommon`, `rare`, `epic`, `legendary` o `artifact`.
+- La equivalencia actual es tier → `itemLevel`: 1, 2, 3, 4, 5, 6; tier → `score`: 8, 16, 24, 32, 40, 48.
+- `label` debe concordar: Común, Infrecuente, Raro, Épico, Legendario, Artefacto.
+- `hidden: true` oculta el registro en buscadores generales hasta que una búsqueda textual coincida; no es una medida de seguridad ni impide que el motor lo use donde no se filtre explícitamente.
+- `icon` es un PNG 50×50 codificado como hexadecimal por el editor. No uses base64, ruta o data URL en este campo.
+- `stats` es la representación editable. `affixes` es la representación estructurada que usa runtime. Mantén ambas sincronizadas.
+- El parser de `stats` separa por coma, punto y coma o salto de línea y reconoce un entero con signo. No admite decimales ni `%`; además conserva como `label` la propia key. Para casos fuera de ese formato escribe `affixes` correctamente y verifica que una futura edición no los regenere desde `stats`.
+- `skillIds` es legado conservado al editar, pero ya no se expone en el formulario de equipo. No lo uses en objetos nuevos salvo que el encargo exija compatibilidad histórica y hayas verificado el aprendizaje al equipar.
+- `passives` pertenece al sistema legendario previo. No mezcles pasivas antiguas con objetos de forma `{name, desc}` dentro de `effects`.
 
-### 3.3 Slots posibles y comportamiento de `effects`
+### 4.2 Slots válidos
 
-| `slot` | Hueco | Comportamiento de los efectos |
-|---|---|---|
-| `weapon` | Arma | La pila completa puede activarse al golpear, según `procChance`. |
-| `offhand` | Mano secundaria | Solo los efectos `buff` funcionan pasivamente mientras esté equipado. |
-| `head` | Cabeza | Solo `buff` pasivo. |
-| `chest` | Pecho | Solo `buff` pasivo. |
-| `hands` | Manos | Solo `buff` pasivo. |
-| `legs` | Piernas | Solo `buff` pasivo. |
-| `boots` | Botas | Solo `buff` pasivo. |
-| `neck` | Cuello | Solo `buff` pasivo. |
-| `ring1` | Anillo I | Activable manual, no se consume; usa `cooldown` y `range`. |
-| `ring2` | Anillo II | Activable manual, no se consume; usa `cooldown` y `range`. |
-| `trinket1` | Trinket I | Activable manual, no se consume; usa `cooldown` y `range`. |
-| `trinket2` | Trinket II | Activable manual, no se consume; usa `cooldown` y `range`. |
+`weapon`, `offhand`, `head`, `chest`, `hands`, `legs`, `boots`, `neck`, `ring1`, `ring2`, `trinket1`, `trinket2`.
 
-No uses `consumable` en equipo; está reservado para pociones.
+`consumable` solo corresponde a pociones. La UI de equipo no ofrece ese slot y, si carga un registro consumible por error, lo cambia visualmente a `trinket1`.
 
-### 3.4 Stats y afijos
+### 4.3 Armas
 
-`stats` admite entradas separadas por coma, punto y coma o salto de línea:
-
-```json
-"stats": "strength:+2, armor:+3, critChance:+5"
-```
-
-Representa exactamente lo mismo en `affixes`:
-
-```json
-"affixes": [
-  { "key": "strength", "label": "Fuerza", "value": 2, "percent": false },
-  { "key": "armor", "label": "Armadura", "value": 3, "percent": false },
-  { "key": "critChance", "label": "Crítico", "value": 5, "percent": true }
-]
-```
-
-Claves disponibles:
-
-| `key` | Efecto |
-|---|---|
-| `strength` | Aumenta Fuerza y la potencia asociada al daño físico. |
-| `vitality` | Aumenta Vitalidad, vida y resistencia derivada. |
-| `agility` | Aumenta Agilidad, evasión, crítico y movilidad derivada. |
-| `luck` | Aumenta Suerte, crítico, botín y resultados de eventos asociados. |
-| `intelligence` | Aumenta Inteligencia, potencia mágica y maná derivado. |
-| `wisdom` | Aumenta Sabiduría, regeneración y defensa mágica derivada. |
-| `damage` | Aumenta el daño base. |
-| `armor` | Aumenta la armadura. |
-| `maxHp` | Aumenta la vida máxima. |
-| `maxStamina` | Aumenta la stamina máxima. |
-| `maxMana` | Aumenta el maná máximo. |
-| `critChance` | Añade probabilidad de crítico. Usa `percent:true`. |
-| `dodge` | Añade evasión. Usa `percent:true`. |
-| `blockChance` | Añade probabilidad de bloqueo. Usa `percent:true`. |
-| `staminaRegen` | Añade regeneración de stamina cuando exista una recuperación aplicable. |
-| `manaRegen` | Añade regeneración de maná cuando exista una recuperación aplicable. |
-
-Cada afijo requiere `key`, `label`, `value` numérico y `percent` booleano. Mantén `stats` y `affixes` sincronizados.
-
-### 3.5 Armas
-
-Añade estos campos si `slot` es `weapon`:
+Añade al contrato común:
 
 ```json
 {
   "damageDice": "1d8",
-  "weaponType": "Espadas",
   "rangeMin": 1,
   "rangeMax": 1,
-  "procChance": 25
+  "weaponType": "Espadas",
+  "weaponCategory": "Armas blancas steampunk básicas",
+  "weaponIconRow": 0,
+  "weaponIconCol": 0,
+  "weaponIconPath": "weapons/.../icon.png",
+  "defenseStat": "strength",
+  "procChance": 20
 }
 ```
 
-Dados disponibles: `1d4`, `1d6`, `1d6+1`, `1d8`, `1d8+1`, `1d10`, `1d12`, `2d6`, `2d8`.
+Dados admitidos por el formulario: `1d4`, `1d6`, `1d6+1`, `1d8`, `1d8+1`, `1d10`, `1d12`, `2d6`, `2d8`.
 
-Tipos disponibles: `Espadas`, `Dagas`, `Sables`, `Hachas`, `Mazas`, `Martillos`, `Lanzas`, `Bastones`, `Varitas`, `Arcos`, `Ballestas`, `Pistolas`, `Rifles`, `Escopetas`, `Armas pesadas`, `Guanteletes`, `Látigos`, `Drones`, `Granadas`, `Artefactos`.
+Tipos admitidos: Espadas, Dagas, Sables, Hachas, Mazas, Martillos, Lanzas, Bastones, Varitas, Arcos, Ballestas, Pistolas, Rifles, Escopetas, Armas pesadas, Guanteletes, Látigos, Drones, Granadas y Artefactos.
 
-Alcances recomendados:
+Presets a distancia:
 
-| Tipo | `rangeMin` | `rangeMax` |
+| Tipo | Mín. | Máx. |
 |---|---:|---:|
 | Varitas | 1 | 4 |
 | Arcos | 2 | 5 |
@@ -178,468 +139,188 @@ Alcances recomendados:
 | Pistolas | 1 | 3 |
 | Rifles | 2 | 5 |
 | Escopetas | 1 | 2 |
-| Resto | 1 | 1 |
 
-- `damageDice` controla los dados del ataque normal.
-- `rangeMin` es la distancia mínima válida.
-- `rangeMax` es la distancia máxima válida.
-- Las armas a distancia requieren línea de visión.
-- `procChance` es un entero de 0 a 100: porcentaje de posibilidad por golpe conectado de activar toda la pila `effects`.
-- Puedes añadir `weaponCategory`, `weaponIconRow`, `weaponIconCol`, `weaponIconPath` y `defenseStat` si necesitas fijar manualmente esos datos visuales o de categoría; normalmente basta con `weaponType`.
+Los demás tipos caen a 1–1. El editor limita ambos extremos a 1–20, normaliza números y ordena mínimo/máximo. `procChance` se limita a 0–100 y solo tiene semántica en `weapon`: cada impacto conectado hace una tirada independiente y, si acierta, dispara la pila completa de `effects` sobre el objetivo.
 
-### 3.6 Anillos y trinkets activables
+No calcules manualmente fila, columna, ruta, categoría o `defenseStat` si generas desde el formulario: se derivan del tipo. Si escribes JSON a mano puedes omitirlos y dejar los fallbacks, pero declarar `weaponType` exacto evita inferencias por nombre.
 
-Añade:
+### 4.4 Efectos según slot
 
-```json
-{
-  "cooldown": 6,
-  "range": 5,
-  "effects": [
-    { "kind": "heal", "target": "self", "dmgDice": 3, "dmgDie": 8 }
-  ]
-}
-```
+- `weapon`: proc on-hit de toda la pila; necesita `procChance`.
+- `ring1`, `ring2`, `trinket1`, `trinket2`: activable no consumible; necesita `cooldown >= 1` y normalmente `range >= 1`.
+- `offhand`, `head`, `chest`, `hands`, `legs`, `boots`, `neck`: solo los componentes `buff` se aplican pasivamente al equipar; otros kinds no tienen efecto útil en esos slots.
+- Los campos de disparo ajenos al slot deben ser `null` u omitirse, no reutilizarse con otro significado.
 
-- `cooldown`: turnos antes de volver a utilizarlo; mínimo 1.
-- `range`: alcance para elegir enemigo, aliado o área; se ignora si todo afecta al propio personaje.
-- El item sigue equipado y no se consume.
-
-### 3.7 Pasiva antigua opcional
-
-```json
-"passives": [
-  { "stat": "armor", "name": "Piel férrea", "desc": "Aumenta armadura.", "value": 2, "percent": false }
-]
-```
-
-No uses objetos `{ "name": ..., "desc": ... }` dentro de `effects`: `effects` exige componentes con `kind`.
-
-## 4. Pociones
-
-### 4.1 Plantilla completa
+## 5. Contrato canónico de pociones
 
 ```json
 {
   "type": "potion",
   "name": "Poción de cura",
   "slot": "consumable",
-  "rarity": "rare",
-  "label": "Raro",
-  "itemLevel": 3,
-  "score": 24,
+  "rarity": "common",
+  "label": "Común",
+  "itemLevel": 1,
+  "score": 8,
   "icon": "",
   "iconShape": "vial",
-  "hidden": false,
   "range": 5,
   "effects": [
-    { "kind": "heal", "target": "self", "dmgDice": 3, "dmgDie": 8, "dmgStat": "wisdom", "dmgStatMode": "add", "dmgStatCoef": 1 }
+    {
+      "kind": "heal",
+      "target": "self",
+      "dmgDice": 2,
+      "dmgDie": 8,
+      "dmgStat": "vitality",
+      "dmgStatMode": "add",
+      "dmgStatCoef": 1
+    }
   ],
   "skillIds": [],
   "stats": "",
   "affixes": [],
   "passives": [],
-  "desc": "Cura vida al beberla."
-}
-```
-
-Reglas:
-
-- `type` debe ser `potion` y `slot` debe ser `consumable`.
-- `iconShape` debe ser `vial`; `icon` vacío utiliza el vial predeterminado.
-- Una poción sin componentes en `effects` no produce ningún efecto.
-- Al usarse correctamente consume una unidad.
-- `range` es la distancia de lanzamiento, no el radio de un AOE.
-- No uses los campos antiguos `potionEffectType`, `effect`, `duration` ni un `kind` en el nivel superior.
-
-### 4.2 Beber o lanzar
-
-El objetivo de los componentes decide el uso:
-
-1. Si algún componente tiene `target:"enemy"`, se debe seleccionar un enemigo.
-2. Si no, pero alguno tiene `target:"area"`, se debe seleccionar una casilla.
-3. Si no, pero alguno tiene `target:"ally"`, se debe seleccionar un aliado.
-4. Si todos son propios o no requieren objetivo, se bebe y se aplica inmediatamente.
-
-## 5. Reglas compartidas de `effects`
-
-`effects` es una lista ordenada de componentes independientes. Todos los componentes se intentan aplicar en el mismo uso. Los componentes `move` se resuelven primero aunque aparezcan después en el array.
-
-### 5.1 Objetivos
-
-| `target` | Efecto |
-|---|---|
-| `self` | El propio personaje. |
-| `enemy` | El enemigo seleccionado. |
-| `area` | Entidades dentro del radio `range` alrededor de la casilla elegida. |
-| `ally` | Un aliado seleccionado; especialmente relevante en multijugador. |
-
-Prioridad de selección de toda la pila: `enemy` → `area` → `ally` → aplicación inmediata.
-
-### 5.2 Bloque de dados
-
-Muchos componentes usan:
-
-```json
-{
-  "dmgDice": 2,
-  "dmgDie": 6,
-  "dmgStat": "strength",
-  "dmgStatMode": "add",
-  "dmgStatCoef": 1
-}
-```
-
-Para DOT cambia el prefijo `dmg` por `dot`.
-
-- `dmgDice`/`dotDice`: cantidad de dados; entero ≥ 0.
-- `dmgDie`/`dotDie`: caras, una de `4`, `6`, `8`, `10`, `12`, `20`.
-- `dmgStat`/`dotStat`: stat que escala el resultado; `""` usa el cálculo automático disponible.
-- `dmgStatMode`/`dotStatMode`: `add` suma `stat × coeficiente`; `mult` multiplica el resultado usando stat y coeficiente.
-- `dmgStatCoef`/`dotStatCoef`: número decimal de escalado.
-
-## 6. Todos los tipos de efecto
-
-### 6.1 `dmg` — daño directo
-
-```json
-{ "kind": "dmg", "target": "enemy", "dmgDice": 2, "dmgDie": 6, "dmgStat": "strength", "dmgStatMode": "add", "dmgStatCoef": 1, "multiplier": 1 }
-```
-
-Objetivos: `enemy`, `area`, `self`. `self` daña directamente al usuario. `area` usa `range` (2 por defecto) y normalmente aplica potencia 0.85. `multiplier` sustituye el multiplicador normal.
-
-### 6.2 `dot` — daño periódico
-
-```json
-{ "kind": "dot", "target": "enemy", "dotDice": 1, "dotDie": 6, "dotStat": "intelligence", "dotStatMode": "add", "dotStatCoef": 0.5, "turns": 4, "flavor": "burn", "range": 2 }
-```
-
-Objetivos: `enemy`, `area`. `turns` fija la duración. `flavor` puede ser `dot`, `bleed`, `burn` o `poison`; cambia la etiqueta/identidad del estado, no la fórmula básica.
-
-### 6.3 `buff` — mejora
-
-```json
-{ "kind": "buff", "target": "self", "stat": "strength", "mode": "add", "value": 5, "turns": 6 }
-```
-
-Stats: las seis principales y `armor`, `damage`, `ap`, `dodge`, `critChance`, `blockChance`, `manaRegen`, `staminaRegen`. `add` suma valor plano; `mult` usa multiplicador bruto (`1.2` equivale a +20%). En dodge/crítico/bloqueo, `value` son puntos porcentuales y conviene usar `add`.
-
-### 6.4 `debuff` — debilitación
-
-```json
-{ "kind": "debuff", "target": "enemy", "stat": "damage", "mode": "add", "value": 2, "turns": 3, "range": 2 }
-```
-
-Objetivos: `enemy`, `area`. Stats útiles: principales, `damage` y `ap`. `ap` en modo `add` interpreta `value` como porcentaje de PA reducido. Omitir `stat` aplica debilitación genérica.
-
-### 6.5 `heal` — curación instantánea
-
-```json
-{ "kind": "heal", "target": "self", "dmgDice": 2, "dmgDie": 8, "dmgStat": "wisdom", "dmgStatMode": "add", "dmgStatCoef": 1, "range": 2 }
-```
-
-Objetivos: `self`, `ally`, `area`. Cura vida; sobre el propio personaje también puede restaurar el recurso asociado. `area` cura al usuario y aliados dentro del radio.
-
-### 6.6 `move` — desplazamiento
-
-```json
-{ "kind": "move", "mode": "dash", "range": 3, "multiplier": 1 }
-```
-
-`mode` puede ser `dash` o `teleport`. Dash avanza hacia el objetivo y ataca. Teleport mueve a la casilla elegida o a una casilla libre junto al enemigo. Siempre ocurre antes que los demás componentes.
-
-### 6.7 `cc` — control
-
-```json
-{ "kind": "cc", "target": "enemy", "type": "stun", "turns": 2, "range": 2 }
-```
-
-Objetivos: `enemy`, `area`. `type`: `stun`, `freeze`, `silence`, `root`. Aplica el control durante `turns` y puede producir un impacto menor.
-
-### 6.8 `drain` — drenaje
-
-```json
-{ "kind": "drain", "target": "enemy", "dmgDice": 2, "dmgDie": 6, "dmgStat": "intelligence", "dmgStatMode": "add", "dmgStatCoef": 1 }
-```
-
-Objetivos: `enemy`, `area`. Daña al objetivo y cura/restaura recurso al usuario. Los dados configuran principalmente la recuperación obtenida.
-
-### 6.9 `aoe` — daño de área
-
-```json
-{ "kind": "aoe", "dmgDice": 2, "dmgDie": 8, "dmgStat": "intelligence", "dmgStatMode": "add", "dmgStatCoef": 1, "range": 2, "multiplier": 0.85 }
-```
-
-No usa `target`. Golpea a los enemigos con línea de visión dentro del radio `range` alrededor de la casilla de lanzamiento.
-
-### 6.10 `multihit` — impactos múltiples
-
-```json
-{ "kind": "multihit", "hits": 3, "dmgDice": 1, "dmgDie": 6, "dmgStat": "strength", "dmgStatMode": "add", "dmgStatCoef": 0.6, "multiplier": 0.6 }
-```
-
-Golpea al mismo enemigo `hits` veces. Cada impacto resuelve daño, defensa y crítico de forma independiente.
-
-### 6.11 `mark` — marca amplificadora
-
-```json
-{ "kind": "mark", "target": "enemy", "value": 25, "turns": 4, "range": 2 }
-```
-
-Objetivos: `enemy`, `area`. El objetivo recibe `value` por ciento de daño adicional de todas las fuentes durante `turns`. Reaplicar refresca o conserva el valor/duración mayor.
-
-### 6.12 `summon` — aliado móvil
-
-```json
-{
-  "kind": "summon", "hp": 20, "turns": 8, "ap": 10,
-  "effectType": "damage", "range": 0,
-  "dmgDice": 1, "dmgDie": 6, "dmgStat": "", "dmgStatMode": "add", "dmgStatCoef": 1,
-  "effectTurns": 2, "iconImage": "", "targetable": true, "hitByAoe": true,
-  "stance": "aggressive", "permanent": false
-}
-```
-
-- `hp`: vida máxima.
-- `turns`: duración; se ignora si `permanent:true`.
-- `ap`: cada 10 concede aproximadamente una acción por turno.
-- `effectType`: `damage`, `skill`, `heal`, `root`, `buff`, `debuff`.
-- `range`: 0 es cuerpo a cuerpo; un valor positivo permite actuar a distancia.
-- Para `skill`, añade `skillName` y `skillEffects`; estos últimos pueden contener `dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `buff` o `heal`.
-- Para `buff`/`debuff`, añade `stat`, `mode`, `value`; `effectTurns` controla root/debuff.
-- `iconImage`: PNG 50×50 hexadecimal.
-- `targetable:false`: no puede ser elegido como objetivo directo.
-- `hitByAoe:false`: inmune a ataques enemigos considerados AOE.
-- `stance`: `aggressive` combate; `passive` solo sigue al jugador.
-- `permanent:true`: compañero persistente que no expira. Solo existe uno por fuente. Al morir penaliza las stats principales hasta revivir.
-- Para permanente: `reviveResource` puede ser `hp`, `stamina` o `mana`; `reviveAmount` determina el coste y revive con parte de su vida.
-
-### 6.13 `summonturret` — torreta estacionaria
-
-```json
-{ "kind": "summonturret", "hp": 16, "turns": 8, "ap": 10, "effectType": "damage", "range": 7, "damageMode": "nearest", "dmgDice": 1, "dmgDie": 6, "iconImage": "" }
-```
-
-No se mueve. Comparte los seis `effectType` y campos asociados de `summon`. `damageMode` puede ser `nearest` o `area`; solo se usa con `effectType:"damage"`. No admite compañero permanente.
-
-### 6.14 `clones` — varios aliados
-
-```json
-{ "kind": "clones", "count": 2, "hp": 14, "turns": 8, "ap": 10, "effectType": "damage", "range": 0, "dmgDice": 1, "dmgDie": 6, "iconImage": "" }
-```
-
-`count` admite 1–4. Cada clon se comporta como una invocación temporal independiente y comparte sus `effectType` y campos. No admite modo permanente.
-
-### 6.15 `utility` — utilidad propia
-
-```json
-{ "kind": "utility", "mode": "reveal", "value": 10, "resource": "stamina" }
-```
-
-- `reveal`: revela mapa en radio `value`.
-- `stealth`: omite la siguiente respuesta enemiga.
-- `shield`: suma `value` de armadura temporal que decae por turno; no absorbe como vida extra.
-- `resource`: restaura `value` del `resource` indicado (`stamina` o `mana`).
-
-### 6.16 `hot` — curación periódica
-
-```json
-{ "kind": "hot", "target": "self", "dmgDice": 1, "dmgDie": 6, "dmgStat": "wisdom", "dmgStatMode": "add", "dmgStatCoef": 0.5, "turns": 4, "range": 2 }
-```
-
-Objetivos: `self`, `area`. Cura cada turno durante `turns`. Las aplicaciones se apilan. En área afecta también a aliados dentro del radio; en multijugador la curación de otro jugador puede entregarse de forma adelantada en vez de por ticks.
-
-### 6.17 `execute` — ejecución
-
-```json
-{ "kind": "execute", "target": "enemy", "dmgDice": 2, "dmgDie": 6, "dmgStat": "strength", "dmgStatMode": "add", "dmgStatCoef": 1, "threshold": 35, "execMultiplier": 2.5 }
-```
-
-Objetivos: `enemy`, `area`. Hace un golpe normal; si el objetivo está por debajo de `threshold` por ciento de vida, usa `execMultiplier`.
-
-### 6.18 `pullroot` — atraer y enraizar
-
-```json
-{ "kind": "pullroot", "target": "enemy", "turns": 2, "multiplier": 0.8, "range": 2 }
-```
-
-Objetivos: `enemy`, `area`. Inflige un impacto menor, atrae una casilla si está libre y aplica root durante `turns`.
-
-### 6.19 `counter` — contraataque
-
-```json
-{ "kind": "counter", "shield": 10, "dmgDice": 1, "dmgDie": 8, "turns": 5 }
-```
-
-Concede armadura `shield` y prepara una respuesta al próximo daño recibido. El contraataque usa los dados y se consume al activarse. Los campos de escalado por stat no aumentan este contraataque.
-
-### 6.20 `cheatdeath` — desafiar la muerte
-
-```json
-{ "kind": "cheatdeath", "turns": 5 }
-```
-
-El próximo golpe mortal deja al usuario con 1 HP y consume la carga. La carga permanece armada; `turns` no funciona como una cuenta atrás normal.
-
-### 6.21 `holyshield` — escudo de absorción
-
-```json
-{ "kind": "holyshield", "target": "self", "value": 20, "stat": "wisdom", "mode": "add", "statCoef": 1, "turns": 0 }
-```
-
-Absorbe daño antes de la vida. `stat` puede ser una stat principal o `""`. `add` suma `stat × statCoef`; `mult` amplifica `value` usando stat y coeficiente. `turns:0` dura hasta romperse; un valor positivo también lo hace caducar. Nuevos escudos se suman.
-
-### 6.22 `lineshot` — disparo perforante
-
-```json
-{ "kind": "lineshot", "dmgDice": 2, "dmgDie": 6, "dmgStat": "agility", "dmgStatMode": "add", "dmgStatCoef": 1, "range": 6, "multiplier": 0.8 }
-```
-
-Dispara una línea hasta `range`, se detiene ante pared y golpea a todos los enemigos atravesados.
-
-### 6.23 `trap` — trampa
-
-```json
-{ "kind": "trap", "turns": 8, "range": 1 }
-```
-
-Coloca una trampa invisible. Se activa cuando un enemigo entra en `range`, golpea a los enemigos cercanos y desaparece; si no, caduca tras `turns`. Los campos de dados/stat admitidos por editores no modifican actualmente el daño real, por lo que es preferible omitirlos.
-
-### 6.24 `linkdamage` — daño en cadena
-
-```json
-{ "kind": "linkdamage", "dmgDice": 2, "dmgDie": 6, "dmgStat": "intelligence", "dmgStatMode": "add", "dmgStatCoef": 1, "jumps": 3, "falloff": 25, "range": 4 }
-```
-
-Golpea al primer enemigo y salta hasta `jumps` veces a enemigos nuevos dentro de `range`. `falloff` es el porcentaje acumulativo perdido por salto, de 0 a 95.
-
-### 6.25 `invisible` — invisibilidad
-
-```json
-{ "kind": "invisible", "turns": 2, "breakOnAttack": true }
-```
-
-Durante `turns`, los enemigos omiten su turno. Si `breakOnAttack` es `true`, atacar o usar una habilidad ofensiva termina el efecto.
-
-### 6.26 `ascend` — ascensión
-
-```json
-{ "kind": "ascend", "resource": "any", "value": 150, "turns": 6, "allowSkills": true, "iconImage": "" }
-```
-
-Cambia el coste de habilidades al `value` por ciento de su coste normal. `resource`: `any`, `mana`, `stamina`. No cambia cooldown ni PA. `allowSkills:false` bloquea otras habilidades. `iconImage` puede sustituir temporalmente el aspecto del personaje.
-
-### 6.27 `transform` — transformación
-
-```json
-{ "kind": "transform", "turns": 8, "damagePct": 20, "armorPct": 10, "hpPct": 25, "allowSkills": true, "iconImage": "" }
-```
-
-Modifica daño, armadura y vida máxima por porcentaje durante `turns`; admite porcentajes negativos. `hpPct` se calcula con la vida máxima al activarse. `allowSkills:false` impide usar otras habilidades. `iconImage` sustituye temporalmente el icono y tiene prioridad sobre el de ascensión.
-
-## 7. Ejemplos completos
-
-### Arma con proc de quemadura
-
-```json
-{
-  "type": "equipment",
-  "name": "Espada de la fragua",
-  "slot": "weapon",
-  "rarity": "epic",
-  "label": "Épico",
-  "itemLevel": 4,
-  "score": 32,
-  "icon": "",
   "hidden": false,
-  "damageDice": "1d10",
-  "weaponType": "Espadas",
-  "rangeMin": 1,
-  "rangeMax": 1,
-  "procChance": 25,
-  "stats": "strength:+4, damage:+3",
-  "affixes": [
-    { "key": "strength", "label": "Fuerza", "value": 4, "percent": false },
-    { "key": "damage", "label": "Daño", "value": 3, "percent": false }
-  ],
-  "effects": [
-    { "kind": "dot", "target": "enemy", "dotDice": 1, "dotDie": 6, "dotStat": "strength", "dotStatMode": "add", "dotStatCoef": 0.5, "turns": 4, "flavor": "burn" }
-  ],
-  "skillIds": [],
-  "passives": [],
-  "desc": "25% de posibilidad por golpe de aplicar quemadura durante 4 turnos."
+  "desc": "Cura vida."
 }
 ```
 
-### Anillo activable de curación y escudo
+- Una poción sin `effects` se puede guardar, pero no hace nada: trátala como inválida funcionalmente.
+- Si algún componente apunta a `enemy`, se selecciona enemigo; si no, `area`; si no, `ally`; en otro caso se consume inmediatamente sobre el jugador.
+- `range` es alcance exterior de lanzamiento. No lo confundas con el radio `range` de un componente AOE.
+- El uso exitoso reduce `quantity` o elimina la última unidad. `quantity` pertenece a la instancia de inventario, no a la plantilla de catálogo.
+- No uses el sistema antiguo `potionEffectType`, `effect`, `kind` superior o `duration`: el runtime moderno requiere `effects[]`.
 
-```json
-{
-  "type": "equipment",
-  "name": "Anillo del custodio",
-  "slot": "ring1",
-  "rarity": "legendary",
-  "label": "Legendario",
-  "itemLevel": 5,
-  "score": 40,
-  "icon": "",
-  "hidden": false,
-  "stats": "wisdom:+5",
-  "affixes": [
-    { "key": "wisdom", "label": "Sabiduría", "value": 5, "percent": false }
-  ],
-  "cooldown": 6,
-  "range": 5,
-  "effects": [
-    { "kind": "heal", "target": "self", "dmgDice": 3, "dmgDie": 8, "dmgStat": "wisdom", "dmgStatMode": "add", "dmgStatCoef": 1 },
-    { "kind": "holyshield", "target": "self", "value": 15, "stat": "wisdom", "mode": "add", "statCoef": 0.5, "turns": 4 }
-  ],
-  "skillIds": [],
-  "passives": [],
-  "desc": "Activable: cura y concede un escudo de absorción. Enfriamiento 6 turnos."
-}
-```
+## 6. Habilidades y efectos apilables
 
-### Bomba arrojadiza de área
+En esta documentación, **habilidad** puede significar dos cosas distintas:
 
-```json
-{
-  "type": "potion",
-  "name": "Bomba incendiaria",
-  "slot": "consumable",
-  "rarity": "rare",
-  "label": "Raro",
-  "itemLevel": 3,
-  "score": 24,
-  "icon": "",
-  "iconShape": "vial",
-  "hidden": false,
-  "range": 5,
-  "effects": [
-    { "kind": "aoe", "dmgDice": 2, "dmgDie": 8, "dmgStat": "intelligence", "dmgStatMode": "add", "dmgStatCoef": 1, "range": 2 },
-    { "kind": "dot", "target": "area", "dotDice": 1, "dotDie": 6, "dotStat": "intelligence", "dotStatMode": "add", "dotStatCoef": 0.4, "turns": 4, "flavor": "burn", "range": 2 }
-  ],
-  "skillIds": [],
-  "stats": "",
-  "affixes": [],
-  "passives": [],
-  "desc": "Se lanza hasta 5 casillas; explota en radio 2 y aplica quemadura."
-}
-```
+1. Habilidad del juego: una skill de clase definida en `skills_json`.
+2. Skill/herramienta del agente: una capacidad auxiliar disponible en el entorno de trabajo.
 
-## 8. Lista final antes de guardar
+### 6.1 Habilidades del juego
 
-- [ ] El JSON tiene sintaxis válida y no contiene comentarios.
-- [ ] `type` es `equipment` o `potion`.
-- [ ] El slot corresponde al tipo.
-- [ ] `rarity`, `label`, `itemLevel` y `score` pertenecen a la misma fila de §2.
-- [ ] `stats` y `affixes` representan los mismos atributos.
-- [ ] `effects`, `affixes`, `skillIds` y `passives` son arrays.
-- [ ] Cada componente tiene un `kind` válido y solamente los campos apropiados.
-- [ ] Los objetivos hacen que el item se beba, lance, active o procese como se desea.
-- [ ] `range` exterior y radio de componentes no están confundidos.
-- [ ] Un arma define dados, tipo, alcance y `procChance` si tiene efectos.
-- [ ] Un anillo/trinket con efectos define `cooldown` y `range`.
-- [ ] Un item pasivo usa únicamente componentes `buff`.
-- [ ] Una poción contiene al menos un efecto útil.
-- [ ] La descripción explica el resultado real y no pretende crear mecánicas adicionales.
+Equipo, pociones y skills comparten la misma lista ordenada de componentes `effects[]`. Antes de generar un componente, consulta la tabla y las fórmulas completas de `skills-json-rules.md`. Kinds soportados por el editor actual:
+
+`dmg`, `dot`, `buff`, `debuff`, `heal`, `cc`, `drain`, `aoe`, `multihit`, `mark`, `summon`, `summonturret`, `utility`, `hot`, `execute`, `pullroot`, `counter`, `cheatdeath`, `holyshield`, `lineshot`, `trap`, `clones`, `linkdamage`, `invisible`, `ascend`, `transform`.
+
+Lista de control por componente:
+
+- Escribe `kind` exacto y todos los campos obligatorios de ese kind.
+- Usa `target` solo con valores soportados: `self`, `enemy`, `area`, `ally`.
+- No confundas dados de daño/curación (`dmgDice`, `dmgDie`) con DOT (`dotDice`, `dotDie`).
+- Decide de forma explícita stat, modo (`add`/`mult`) y coeficiente.
+- Conserva el orden porque los componentes se aplican secuencialmente, salvo movimientos que se resuelven primero.
+- Comprueba combinaciones: una pila puede tener daño + DOT + debuff, pero cada bloque debe ser autosuficiente.
+- No copies campos del sobre de una skill (`cd`, `cost`, `resource`, `classId`, `tier`) al item esperando que controlen sus efectos. En equipo activable se usa `cooldown`; en pociones no hay cooldown porque se consumen.
+
+### 6.2 Uso de skills/herramientas del agente
+
+- **No invoques una skill por rutina.** Primero determina si aporta valor real al encargo.
+- Usa `imagegen` solo cuando se solicite crear o transformar un icono bitmap original. Después, adapta el resultado al pipeline real del editor: recorte cuadrado, 50×50, transparencia comprobada y hexadecimal. No la uses para editar código, documentación, SVG o para sustituir iconos existentes sin permiso.
+- Usa `openai-docs` únicamente si el encargo trata de productos o APIs de OpenAI; no es pertinente para el esquema de items.
+- Usa `skill-creator` si se pide crear una skill reutilizable **del agente**, no una habilidad de combate del juego.
+- Usa `skill-installer` solo si se pide instalar una skill del agente desde el catálogo o un repositorio.
+- Usa `plugin-creator` solo para plugins de Codex; no para items, mods internos ni skills de clase.
+- Para imágenes ya existentes en el repositorio, inspecciona el archivo local; no regeneres el arte.
+- No busques en internet para deducir el contrato local. El código del repositorio es la fuente primaria. Navega solo si se solicita información externa o actualizada.
+
+## 7. Generación e importación de JSON
+
+### 7.1 Formatos aceptados
+
+- Un archivo `.json` con un objeto.
+- Un archivo `.json` con un array de objetos.
+- Varios archivos a la vez.
+- Un `.zip` con entradas `.json`, sin límite de lote declarado por la UI.
+
+El lector ZIP propio solo soporta entradas almacenadas (método 0) o Deflate (método 8), y depende de `DecompressionStream('deflate-raw')`. Si el navegador no lo ofrece, hay que extraer el ZIP e importar JSON suelto. Evita ZIP cifrado, ZIP64 y métodos especiales.
+
+### 7.2 Diferencia crucial entre importar y exportar
+
+- Exportar equipo o poción descarga **solo el objeto interior**, no la fila completa de Supabase.
+- Importar envuelve cada valor como `{...x, item_json: x}` y crea una fila.
+- El importador de la pestaña Equipo no verifica `type === "equipment"`.
+- El importador de Pociones no verifica `type === "potion"`.
+- El parser no valida campos, rangos, duplicados ni referencias; únicamente ejecuta `JSON.parse` y aplana el array superior.
+
+Por tanto, separa los lotes por tipo y valida antes. Un archivo aceptado puede terminar listado en otra pestaña, ser inútil o fallar mucho más tarde en runtime.
+
+### 7.3 Algoritmo obligatorio para generar
+
+1. Determina `equipment` o `potion`.
+2. Elige tier y deriva `label`, `itemLevel` y `score` coherentes.
+3. Para equipo, elige un slot válido y elimina campos exclusivos de otros slots.
+4. Para arma, declara tipo, dados, alcance y proc; para activables, cooldown y alcance; para equipo pasivo, limita efectos a buffs.
+5. Escribe `stats` y `affixes` equivalentes.
+6. Construye cada componente consultando `skills-json-rules.md`, no por analogía informal.
+7. Define un `desc` que explique el resultado real, sin prometer efectos que el slot ignora.
+8. Omite `id`, `created_at` y `quantity` de la plantilla.
+9. Usa comillas dobles, sin comentarios, sin comas finales y con números JSON válidos (`0.5`, no expresiones).
+10. Haz revisión semántica manual antes de importar.
+
+### 7.4 Checklist de validación manual
+
+- [ ] El documento raíz es objeto o array plano de objetos.
+- [ ] Cada objeto tiene `type`, `name`, `slot`, `rarity`, `itemLevel`, `score` y `effects`.
+- [ ] `type` y `slot` concuerdan.
+- [ ] Tier, label, nivel y score concuerdan.
+- [ ] No hay ids de fila copiados entre entornos.
+- [ ] `stats` y `affixes` dicen lo mismo.
+- [ ] Los arrays son realmente arrays, incluso vacíos.
+- [ ] Cada `kind` existe y usa los nombres/casos exactos.
+- [ ] Targets y rangos corresponden a cómo se activará el item.
+- [ ] Un arma tiene dados y alcance; un activable tiene cooldown; una poción útil tiene efectos.
+- [ ] El icono, si existe, es hex válido de PNG 50×50 y no una ruta/base64.
+- [ ] No hay duplicados intencionados ni nombres engañosamente iguales.
+- [ ] La descripción refleja los campos, no sustituye mecánicas.
+
+## 8. Procedimiento de auditoría detallada
+
+Cuando se pida “revisar items”, entrega hallazgos separados por severidad y evidencia:
+
+1. **Inventario del contrato:** formulario, serializador, API, tabla, normalizador, selección de loot y ejecución de efectos.
+2. **Consistencia vertical:** sigue al menos un equipo normal, un arma, un activable y una poción de extremo a extremo.
+3. **Consistencia horizontal:** compara todos los tiers, slots, tipos de arma y kinds.
+4. **Persistencia:** busca divergencias entre metadata y `item_json`, duplicados, nulos y tipos inesperados.
+5. **Generación:** comprueba bandas de loot, clamp de iLvl, score y fallbacks.
+6. **Edición destructiva:** identifica campos preservados pero no editables (`skillIds`) y campos que el editor puede regenerar.
+7. **Importación:** revisa tipo de archivo, raíz, esquema, atomicidad y errores parciales.
+8. **Runtime:** verifica equipar/desequipar, proc, cooldown, selección de objetivo, consumo e inventario.
+9. **Documentación:** actualiza ejemplos y advertencias si cambió el comportamiento.
+10. **Consolidación:** versión única y coherente, entrada de changelog, commit y PR.
+
+## 9. Hallazgos de la revisión actual
+
+### Riesgo alto
+
+- No existe validación de esquema ni en el importador ni en `api/config-items.js`. Datos mal tipados pueden persistirse con HTTP 200.
+- Los lotes se escriben registro a registro y no son atómicos; un error produce una importación parcial.
+- Los endpoints usan la anon key del servidor sin una comprobación de autorización propia en este archivo. La protección depende por completo de la exposición de la ruta y de las políticas/configuración externa de Supabase/Vercel.
+
+### Riesgo medio
+
+- Los importadores de Equipo y Pociones aceptan cualquier `type`; el usuario puede importar en la pestaña equivocada sin aviso.
+- Metadata exterior e `item_json` pueden divergir. Algunas vistas/selecciones leen una, otras priorizan el objeto interior.
+- Un `score` declarado no se recalcula cuando runtime recorta `itemLevel` a la banda de loot.
+- La UI permite guardar una poción sin efectos y equipo con efectos ignorados por su slot.
+- `hidden` controla presentación/búsqueda, no confidencialidad ni exclusión universal del loot.
+
+### Compatibilidad que debe preservarse
+
+- `skillIds` de equipo antiguo se conserva al editar aunque ya no aparezca en el formulario.
+- Las armas antiguas pueden inferir tipo/alcance por metadatos o nombre.
+- El fallback procedural sigue siendo necesario si `config_items` está vacío o no tiene candidatos.
+- `item_json` exportado es portable; ids y metadata de fila no deben formar parte del fichero canónico.
+
+## 10. Criterio de finalización
+
+Una consolidación está lista cuando:
+
+- el JSON es sintáctica y semánticamente coherente;
+- se ha trazado el efecto hasta su consumidor real;
+- no se han destruido campos heredados silenciosamente;
+- documentación, `APP_VERSION`, `package.json` y cache-busting de `index.html` comparten versión;
+- todos los cambios consolidados están descritos en `logcambios.md`;
+- no se ejecutaron tests si el usuario no los pidió;
+- los cambios están confirmados en Git y la PR explica alcance, riesgos conocidos y validación realizada.

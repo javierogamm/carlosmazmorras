@@ -1,10 +1,3 @@
-## v0.56.1 - Instrucción JSON centrada exclusivamente en creación de items
-- Reescrita por completo `INSTRUCCION_ITEMS_JSON.md` para eliminar arquitectura, implementación, auditoría, riesgos internos y uso de herramientas del agente.
-- La guía contiene únicamente instrucciones para crear JSON de equipo y pociones, con todos los campos, tiers, slots, stats, armas, activables, objetivos y comportamientos posibles.
-- Añadida una referencia en español de los 27 tipos de efecto disponibles, explicando sus opciones y su resultado en partida, además de plantillas, ejemplos completos y checklist final.
-- Sin cambios funcionales y sin ejecución de tests, conforme a la instrucción del usuario.
-- Sincronizadas las versiones de runtime, paquete y cache-busting en `0.56.1`.
-
 ## v0.56.0 - Auditoría e instrucción maestra de items y JSON
 - Añadida `INSTRUCCION_ITEMS_JSON.md`, una guía operativa exhaustiva que traza el ciclo completo de equipo y pociones: formulario, objeto canónico, metadata de `config_items`, API, importación/exportación, normalización de loot, inventario y ejecución de efectos.
 - Documentados los contratos campo por campo para equipo, armas, activables y pociones, junto con tiers, slots, tipos y alcances de arma, stats/affixes, iconos y efectos apilables.
