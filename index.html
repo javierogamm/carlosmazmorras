@@ -171,7 +171,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -182,7 +182,6 @@
    <div class="configForm">
     <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
     <label>Tier <select id="configTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
-    <label>Tipo de item <select id="configItemType"><option value="equipment">Equipo</option><option value="potion">Poción</option></select></label>
     <label class="tileRotateLabel"><input id="configItemHidden" type="checkbox"> Oculta (solo aparece en los buscadores al escribir texto que coincida)</label>
     <label id="configSlotWrap">Slot <select id="configSlot"></select></label>
     <input id="configIlvl" type="hidden" value="1">
@@ -192,49 +191,6 @@
     <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
     <label class="configSkillSelectWrap">Habilidades <select id="configSkills" multiple size="8"></select><span class="small">Ctrl/Cmd + clic para asignar varias habilidades del set completo.</span></label>
-    <div id="configPotionFields" class="configPotionFields hidden">
-     <details class="configAccordion" open style="grid-column:1/-1">
-      <summary>Efectos apilables</summary>
-      <p class="small">Una poción se define exactamente igual que una skill: una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, control, marca, invocación, utilidad...), cada uno con su propio objetivo cuando aplique. Si añades algún efecto dirigido a Enemigo/Área/Aliado, la poción deja de beberse al instante y pasa a ser un arma arrojadiza de un solo uso: al usarla desde el inventario tendrás que seleccionar el objetivo, igual que con una skill. Si todos los efectos son sobre ti mismo (curación, buff, utilidad...), se aplica al instante al pulsarla, como hasta ahora.</p>
-      <div class="configItemActions">
-       <select id="configPotionEffectKindPicker">
-        <option value="dmg">Daño</option>
-        <option value="dot">Daño periódico (DOT)</option>
-        <option value="buff">Buff (mejora propia)</option>
-        <option value="debuff">Debuff (empeora al enemigo)</option>
-        <option value="heal">Curación</option>
-        <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
-        <option value="drain">Drenaje (daña y te cura)</option>
-        <option value="aoe">AOE (daño en área)</option>
-        <option value="multihit">Multihit (varios impactos)</option>
-        <option value="mark">Marca (aumenta el daño recibido)</option>
-        <option value="summon">Invocación (aliado temporal)</option>
-        <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
-        <option value="utility">Utilidad</option>
-        <option value="hot">Curación periódica (HOT)</option>
-        <option value="execute">Ejecutar (umbral de % de vida)</option>
-        <option value="pullroot">Atraer + enraizar</option>
-        <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
-        <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
-        <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
-        <option value="lineshot">Disparo en línea (perfora enemigos)</option>
-        <option value="trap">Trampa (se activa al pisarla)</option>
-        <option value="clones">Clones (invocan copias que luchan contigo)</option>
-        <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
-        <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
-        <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
-        <option value="transform">Transformación (icono propio y stats en %)</option>
-       </select>
-       <button type="button" id="addPotionEffectBtn">AÑADIR EFECTO →</button>
-      </div>
-      <div id="configPotionEffectsList" class="effectsList"></div>
-     </details>
-     <details class="configAccordion" style="grid-column:1/-1">
-      <summary>Alcance de lanzamiento</summary>
-      <p class="small">Solo se usa si la poción incluye algún efecto dirigido a Enemigo/Área/Aliado (arma arrojadiza). Ignorado si todos sus efectos son sobre ti mismo.</p>
-      <label>Alcance (casillas) <input id="configPotionRange" type="number" min="1" max="20" value="5"></label>
-     </details>
-    </div>
     <div id="configStatsHelp" class="configStatsHelp"></div>
    </div>
    <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
@@ -246,6 +202,71 @@
   <section class="panel">
    <h2>Objetos guardados</h2>
    <div id="configItemsList" class="configItemsList"></div>
+  </section>
+ </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabPotions">
+ <div class="configLayout">
+  <section class="panel">
+   <h2>Editor de pociones</h2>
+   <label>Imagen base <input type="file" id="configPotionImageInput" accept="image/*"></label>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configPotionCropZoom" min="25" max="400" value="100"></label><button type="button" id="configPotionMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configPotionMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configPotionCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px. Si no subes ninguna, el juego dibuja el vial base.</div></div>
+   <div class="configPreview"><canvas id="configPotionIconPreview" width="50" height="50"></canvas><span id="configPotionIconStatus" class="small">Sin icono</span></div>
+   <div class="configForm">
+    <label>Nombre <input id="configPotionNombre" maxlength="80" placeholder="Nombre de la poción"></label>
+    <label>Tier <select id="configPotionTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
+    <label class="tileRotateLabel"><input id="configPotionHidden" type="checkbox"> Oculta (solo aparece en los buscadores al escribir texto que coincida)</label>
+    <details class="configAccordion" open style="grid-column:1/-1">
+     <summary>Efectos apilables</summary>
+     <p class="small">Una poción se define exactamente igual que una skill: una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, control, marca, invocación, utilidad...), cada uno con su propio objetivo cuando aplique. Si añades algún efecto dirigido a Enemigo/Área/Aliado, la poción deja de beberse al instante y pasa a ser un arma arrojadiza de un solo uso: al usarla desde el inventario tendrás que seleccionar el objetivo, igual que con una skill. Si todos los efectos son sobre ti mismo (curación, buff, utilidad...), se aplica al instante al pulsarla, como hasta ahora.</p>
+     <div class="configItemActions">
+      <select id="configPotionEffectKindPicker">
+       <option value="dmg">Daño</option>
+       <option value="dot">Daño periódico (DOT)</option>
+       <option value="buff">Buff (mejora propia)</option>
+       <option value="debuff">Debuff (empeora al enemigo)</option>
+       <option value="heal">Curación</option>
+       <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+       <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+       <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+       <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+       <option value="trap">Trampa (se activa al pisarla)</option>
+       <option value="clones">Clones (invocan copias que luchan contigo)</option>
+       <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+       <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+       <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+       <option value="transform">Transformación (icono propio y stats en %)</option>
+      </select>
+      <button type="button" id="addPotionEffectBtn">AÑADIR EFECTO →</button>
+     </div>
+     <div id="configPotionEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion" style="grid-column:1/-1">
+     <summary>Alcance de lanzamiento</summary>
+     <p class="small">Solo se usa si la poción incluye algún efecto dirigido a Enemigo/Área/Aliado (arma arrojadiza). Ignorado si todos sus efectos son sobre ti mismo.</p>
+     <label>Alcance (casillas) <input id="configPotionRange" type="number" min="1" max="20" value="5"></label>
+    </details>
+   </div>
+   <button class="start" id="saveConfigPotionBtn">GUARDAR POCIÓN</button>
+   <button id="newConfigPotionBtn">NUEVA POCIÓN</button>
+   <button id="exportConfigPotionJsonBtn">EXPORTAR JSON</button>
+   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigPotionJsonInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
+   <div id="configPotionStatus" class="small"></div>
+  </section>
+  <section class="panel">
+   <h2>Pociones guardadas</h2>
+   <div id="configPotionsList" class="configItemsList"></div>
   </section>
  </div>
  </div>
