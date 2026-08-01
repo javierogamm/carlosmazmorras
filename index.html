@@ -193,23 +193,47 @@
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
     <label class="configSkillSelectWrap">Habilidades <select id="configSkills" multiple size="8"></select><span class="small">Ctrl/Cmd + clic para asignar varias habilidades del set completo.</span></label>
     <div id="configPotionFields" class="configPotionFields hidden">
-     <label>Efecto de poción <select id="configPotionEffect"><option value="heal">Curación de stat</option><option value="regen">Regeneración de stat</option><option value="temporaryStats">Incremento temporal de stat</option><option value="permanentStats">Incremento permanente de stat</option><option value="learnSkill">Aprender habilidad</option><option value="teleportSafe">Teletransporte a sala segura</option><option value="teleportStairs">Teletransporte a escalera de piso</option><option value="invulnerable">Invulnerabilidad</option><option value="invisible">Invisibilidad</option></select></label>
-     <div class="potionEffectConfig" data-potion-field="resource">
-      <label>Stat objetivo <select id="configPotionResource"><option value="hp">HP</option><option value="mana">Maná</option><option value="stamina">Stamina</option></select></label>
-      <label>Tipo de valor <select id="configPotionValueMode"><option value="percent">Porcentaje</option><option value="flat">Número</option></select></label>
-      <label>Cantidad <input id="configPotionAmount" type="number" min="0" value="25"></label>
-     </div>
-     <div class="potionEffectConfig" data-potion-field="stat">
-      <label>Stat a modificar <select id="configPotionStat"><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
-      <label>Incremento <input id="configPotionStatAmount" type="number" value="1"></label>
-     </div>
-     <div class="potionEffectConfig" data-potion-field="skill">
-      <label>Habilidad a aprender <select id="configPotionSkill"></select></label>
-     </div>
-     <div class="potionEffectConfig" data-potion-field="turns">
-      <label>Nº de turnos <input id="configPotionTurns" type="number" min="1" value="6"></label>
-     </div>
-     <p class="small">Los efectos son excluyentes: al elegir uno solo se muestran sus características aplicables.</p>
+     <details class="configAccordion" open style="grid-column:1/-1">
+      <summary>Efectos apilables</summary>
+      <p class="small">Una poción se define exactamente igual que una skill: una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, control, marca, invocación, utilidad...), cada uno con su propio objetivo cuando aplique. Si añades algún efecto dirigido a Enemigo/Área/Aliado, la poción deja de beberse al instante y pasa a ser un arma arrojadiza de un solo uso: al usarla desde el inventario tendrás que seleccionar el objetivo, igual que con una skill. Si todos los efectos son sobre ti mismo (curación, buff, utilidad...), se aplica al instante al pulsarla, como hasta ahora.</p>
+      <div class="configItemActions">
+       <select id="configPotionEffectKindPicker">
+        <option value="dmg">Daño</option>
+        <option value="dot">Daño periódico (DOT)</option>
+        <option value="buff">Buff (mejora propia)</option>
+        <option value="debuff">Debuff (empeora al enemigo)</option>
+        <option value="heal">Curación</option>
+        <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+        <option value="drain">Drenaje (daña y te cura)</option>
+        <option value="aoe">AOE (daño en área)</option>
+        <option value="multihit">Multihit (varios impactos)</option>
+        <option value="mark">Marca (aumenta el daño recibido)</option>
+        <option value="summon">Invocación (aliado temporal)</option>
+        <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+        <option value="utility">Utilidad</option>
+        <option value="hot">Curación periódica (HOT)</option>
+        <option value="execute">Ejecutar (umbral de % de vida)</option>
+        <option value="pullroot">Atraer + enraizar</option>
+        <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+        <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option>
+        <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+        <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+        <option value="trap">Trampa (se activa al pisarla)</option>
+        <option value="clones">Clones (invocan copias que luchan contigo)</option>
+        <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+        <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+        <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+        <option value="transform">Transformación (icono propio y stats en %)</option>
+       </select>
+       <button type="button" id="addPotionEffectBtn">AÑADIR EFECTO →</button>
+      </div>
+      <div id="configPotionEffectsList" class="effectsList"></div>
+     </details>
+     <details class="configAccordion" style="grid-column:1/-1">
+      <summary>Alcance de lanzamiento</summary>
+      <p class="small">Solo se usa si la poción incluye algún efecto dirigido a Enemigo/Área/Aliado (arma arrojadiza). Ignorado si todos sus efectos son sobre ti mismo.</p>
+      <label>Alcance (casillas) <input id="configPotionRange" type="number" min="1" max="20" value="5"></label>
+     </details>
     </div>
     <div id="configStatsHelp" class="configStatsHelp"></div>
    </div>
