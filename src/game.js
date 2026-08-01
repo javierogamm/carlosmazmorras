@@ -3892,6 +3892,37 @@ function executeCompanionOrder(c){
  else{attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
  c.orderTarget=null;
 }
+// A permanent pet's own PA pool for resolving an attack/skill order - kept
+// separate from the player's own AP (game.player.ap) and from the free
+// companionsFollowPlayerStep() follow, which never costs anything. Move/
+// attack costs mirror the player's own AP_COSTS so the pet's budget reads
+// the same way: enough for a handful of tiles, or fewer tiles plus a hit.
+const COMPANION_AP_COSTS={move:5,attack:10};
+function companionMaxAp(){return 30}
+// Advances a pending order (issued via resolveCompanionCommand) as far as
+// the pet's current PA allows: walks toward orderTarget one tile at a time,
+// spending PA per tile, and fires the attack/skill (also spending PA) the
+// instant it's in range. Stops the moment PA runs out, the path is blocked,
+// or the order resolves/target dies - any unfinished distance is picked up
+// again once the pet's PA refills (see startPlayerAP()), so a chase that
+// can't finish this turn continues on its own at the start of the next one,
+// before the player acts.
+function companionResolveOrder(c){
+ if(!c.orderTarget||c.orderTarget.hp<=0){c.orderTarget=null;return}
+ if(c.ap==null)c.ap=companionMaxAp();
+ while(c.orderTarget&&c.orderTarget.hp>0){
+  const target=c.orderTarget;
+  if(gridDistance(c,target)<=c.range){
+   if(c.ap<COMPANION_AP_COSTS.attack)return;
+   c.ap-=COMPANION_AP_COSTS.attack;
+   executeCompanionOrder(c);
+   return;
+  }
+  if(c.ap<COMPANION_AP_COSTS.move)return;
+  if(!moveCompanionToward(c,target))return;
+  c.ap-=COMPANION_AP_COSTS.move;
+ }
+}
 // Entry point from useSkill(): the skill slot that originally summoned this
 // pet is now its command button. Heal has no target to pick and resolves
 // right away; attack/skill open normal enemy-targeting (resolveCompanionCommand
@@ -3917,13 +3948,12 @@ function resolveCompanionCommand(companionId,x,y){
  cancelTargeting('');
  log(`Ordenas a ${c.name} que ataque a ${enemy.name}.`,'good');
  // Resolve the order right now instead of leaving it for the next
- // companionTurn() tick (which only runs once per full player round) - close
- // the distance immediately (free, same as companionsFollowPlayerStep) and
- // fire the attack/skill the moment it's in range, so a command given at the
- // start of the player's turn doesn't just sit there doing nothing until the
- // round ends.
- companionCloseGapTo(c,enemy,c.range);
- if(c.orderTarget&&gridDistance(c,c.orderTarget)<=c.range)executeCompanionOrder(c);
+ // companionTurn() tick (which only runs once per full player round): walk
+ // toward the enemy and fire the moment it's in range - bounded by the pet's
+ // own PA (companionResolveOrder), same as if it had used its turn. If its PA
+ // runs out before it gets there, the chase continues on its own once its PA
+ // refills at the start of the player's next turn (see startPlayerAP()).
+ companionResolveOrder(c);
  updateUI();draw();
 }
 function companionTurn(){
@@ -3958,8 +3988,10 @@ function companionTurn(){
   // until they're finally in range, fire once, and go back to following.
   if(c.permanent&&c.effectType){
    if(c.orderTarget&&c.orderTarget.hp>0){
-    if(gridDistance(c,c.orderTarget)<=c.range)executeCompanionOrder(c);
-    else moveCompanionToward(c,c.orderTarget);
+    // Already resolved as far as this round's PA allows by
+    // companionResolveOrder (called immediately on command, and again at the
+    // start of every round by startPlayerAP()) - nothing left to spend here.
+    companionResolveOrder(c);
    }else{
     c.orderTarget=null;
     companionFollowPlayer(c);
@@ -4588,7 +4620,19 @@ const AP_COST_BY_EFFECT={
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode||game.player?.combatMode==='ap'))}
 function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const base=30+Math.ceil((st.agility||0)/2);return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
-function startPlayerAP(){if(game?.player)game.player.ap=playerMaxAP()}
+// Also refills every companion's own PA pool and immediately resumes any
+// pending permanent-pet order (companionResolveOrder) with that fresh PA -
+// this runs at the very start of the new round, before the player takes any
+// action in it, so a chase that couldn't finish last turn continues on its
+// own right away instead of waiting for the round to end again.
+function startPlayerAP(){
+ if(game?.player)game.player.ap=playerMaxAP();
+ for(const c of game?.companions||[]){
+  if(c.hp<=0)continue;
+  c.ap=companionMaxAp();
+  if(c.permanent&&c.effectType&&c.orderTarget)companionResolveOrder(c);
+ }
+}
 function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
  if(game.player.ap==null)startPlayerAP();
