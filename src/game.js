@@ -3740,19 +3740,24 @@ function companionFollowPlayer(c){
  if(c.stationary)return;
  if(gridDistance(c,game.player)>1)moveCompanionToward(c,game.player);
 }
-// Closes the ENTIRE gap to the player in one call (unlike moveCompanionToward,
-// which only ever takes a single step) - used by companionsFollowPlayerStep()
-// so a companion snaps back to your side the instant it has nothing to fight,
-// instead of trailing a tile behind for a whole round. maxSteps just guards
-// against an unexpected infinite loop; a real dungeon floor is never that big.
-function companionCloseGapToPlayer(c,maxSteps=24){
+// Closes the ENTIRE gap to a target in one call (unlike moveCompanionToward,
+// which only ever takes a single step), stopping once within `range` tiles
+// instead of always walking fully adjacent - so a ranged pet closing on an
+// enemy stops at its own attack range instead of melee-ing in. maxSteps just
+// guards against an unexpected infinite loop; a real dungeon floor is never
+// that big.
+function companionCloseGapTo(c,target,range=1,maxSteps=24){
  if(c.stationary)return;
  let steps=0;
- while(gridDistance(c,game.player)>1&&steps<maxSteps){
-  if(!moveCompanionToward(c,game.player))break;
+ while(gridDistance(c,target)>range&&steps<maxSteps){
+  if(!moveCompanionToward(c,target))break;
   steps++;
  }
 }
+// Used by companionsFollowPlayerStep() so a companion snaps back to your
+// side the instant it has nothing to fight, instead of trailing a tile
+// behind for a whole round.
+function companionCloseGapToPlayer(c,maxSteps=24){companionCloseGapTo(c,game.player,1,maxSteps)}
 // Whether a companion is currently committed to a fight and should NOT be
 // pulled back to the player's side this step - a permanent pet with a live
 // ordered target, or (for every other kind) any live enemy within the same
@@ -3911,7 +3916,14 @@ function resolveCompanionCommand(companionId,x,y){
  c.orderTarget=enemy;
  cancelTargeting('');
  log(`Ordenas a ${c.name} que ataque a ${enemy.name}.`,'good');
- if(gridDistance(c,enemy)<=c.range)executeCompanionOrder(c);
+ // Resolve the order right now instead of leaving it for the next
+ // companionTurn() tick (which only runs once per full player round) - close
+ // the distance immediately (free, same as companionsFollowPlayerStep) and
+ // fire the attack/skill the moment it's in range, so a command given at the
+ // start of the player's turn doesn't just sit there doing nothing until the
+ // round ends.
+ companionCloseGapTo(c,enemy,c.range);
+ if(c.orderTarget&&gridDistance(c,c.orderTarget)<=c.range)executeCompanionOrder(c);
  updateUI();draw();
 }
 function companionTurn(){
