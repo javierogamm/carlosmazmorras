@@ -63,7 +63,6 @@
 <button class="empty">.</button><button data-move="0,1" aria-label="Mover abajo">▼</button><button class="empty">.</button>
 </div>
 <div class="small">Muévete exclusivamente con las flechas · habilidades abajo · enemigos actúan tras tu movimiento</div>
-<div class="log" id="log"></div>
 </section>
 
 <section class="panel sidePanel">
@@ -84,6 +83,12 @@
 <div id="achievements" class="tabview hidden"></div>
 <div id="trade" class="tabview hidden"></div>
 </section>
+<!-- Last in the layout on purpose: on mobile (.layout becomes display:block)
+     this puts the log after the mochila/equipo panels instead of sandwiched
+     right before them, so its own internal scroll (overflow:auto) doesn't
+     sit in the middle of the page and hijack a scroll gesture meant for the
+     panels above it. -->
+<div class="log" id="log"></div>
 </div>
 </div>
 

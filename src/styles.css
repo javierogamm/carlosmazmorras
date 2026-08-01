@@ -11,6 +11,7 @@ header{display:flex;justify-content:space-between;align-items:center;border-bott
 h1{font-size:clamp(20px,5vw,38px);margin:0;color:#ffd68b;text-shadow:3px 3px #000}
 .badge{border:2px solid var(--accent);padding:5px 8px;background:#0008;color:#ffd68b}
 .layout{display:grid;grid-template-columns:250px minmax(420px,1fr) 310px;gap:10px}
+.layout>.log{grid-column:1/-1}
 .panel{background:linear-gradient(#261c30,#18111f);border:3px solid var(--line);box-shadow:0 0 0 3px #0008,inset 0 0 24px #0005;padding:10px}
 .panel h2,.panel h3{margin:0 0 8px;color:#ffd68b}
 .stat{display:flex;justify-content:space-between;margin:4px 0}
