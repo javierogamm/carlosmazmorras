@@ -8665,11 +8665,15 @@ function persistTurnState(){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ // minimal:true - this fires every single turn and the response is never
+ // read (fire-and-forget .catch below), so there's no reason to have Supabase
+ // echo the whole character/floor blob back down on every write. See the
+ // matching opt-in in api/user-pj.js and api/dungeon-status.js.
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
  const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
- fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState})}).catch(e=>console.error('No se pudo guardar la sesión',e));
+ fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState,minimal:true})}).catch(e=>console.error('No se pudo guardar la sesión',e));
 }
 
 async function finalizeCharacterDeath(){

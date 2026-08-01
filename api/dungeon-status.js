@@ -59,7 +59,22 @@ module.exports=async(req,res)=>{
    const expectedRev=body.expectedRev;
    const hasExpectedRev=expectedRev!==undefined&&expectedRev!==null;
    if(hasExpectedRev)filter+=`&dungeon_status->>rev=eq.${encodeURIComponent(String(expectedRev))}`;
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?${filter}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   // minimal=true (opt-in, used by the every-turn autosave which never reads
+   // its own write back) skips echoing the whole floor snapshot - map,
+   // enemies, chests... - down again. Same idea as the direct-Supabase
+   // dsPatch() minimal path in game.js, just for callers stuck on this
+   // serverless fallback instead of talking to Supabase REST directly.
+   const minimal=!!body.minimal;
+   const prefer=minimal?'return=minimal,count=exact':'return=representation';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?${filter}`,{method:'PATCH',headers:{...headers(key),Prefer:prefer},body:JSON.stringify(row)});
+   if(minimal){
+    if(!r.ok){const err=await r.json().catch(()=>({error:'No se pudo actualizar'}));return res.status(r.status).json(err)}
+    if(hasExpectedRev){
+     const cr=r.headers.get('content-range');
+     if(!cr||/\/0$/.test(cr))return res.status(409).json({conflict:true,error:'La sesión cambió mientras tanto, vuelve a intentarlo'});
+    }
+    return res.status(200).json({ok:true});
+   }
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    if(hasExpectedRev&&Array.isArray(data)&&data.length===0)return res.status(409).json({conflict:true,error:'La sesión cambió mientras tanto, vuelve a intentarlo'});
