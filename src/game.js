@@ -2918,7 +2918,16 @@ function megabossGuaranteedDrops(floor){
 // megabossGuaranteedDrops).
 function kill(e){
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
- game.enemies=game.enemies.filter(x=>x!==e);gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
+ game.enemies=game.enemies.filter(x=>x!==e);
+ // A companion ordered onto this specific enemy (permanent pet) has nothing
+ // left to do - clear its order and let it snap straight back to the
+ // player's side right now instead of waiting out a full companionTurn()
+ // tick. Also covers every other companion kind: with the kill already
+ // applied above, companionsFollowPlayerStep() re-checks whether anything
+ // is still within engage range and pulls back anyone left with no fight.
+ for(const c of game.companions||[])if(c.orderTarget===e)c.orderTarget=null;
+ companionsFollowPlayerStep();
+ gainXp(e.boss?60:8+Math.floor(game.floor/2),`xp_${game.floor}_${e.eid}`);game.player.gold+=e.boss?75:3+rng(6);
  const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
  if(e.megaboss){
   const{count,rarity}=megabossGuaranteedDrops(game.floor);
@@ -3136,6 +3145,7 @@ function move(dx,dy){
  if(e){if(!apCan('attack'))return;attack(e);actionDone('attack');return}
  if(!apCan('move'))return;
  const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
+ companionsFollowPlayerStep();
  actionDone('move');
 }
 function checkTile(){
@@ -3729,6 +3739,44 @@ function moveCompanionToward(c,target){
 function companionFollowPlayer(c){
  if(c.stationary)return;
  if(gridDistance(c,game.player)>1)moveCompanionToward(c,game.player);
+}
+// Closes the ENTIRE gap to the player in one call (unlike moveCompanionToward,
+// which only ever takes a single step) - used by companionsFollowPlayerStep()
+// so a companion snaps back to your side the instant it has nothing to fight,
+// instead of trailing a tile behind for a whole round. maxSteps just guards
+// against an unexpected infinite loop; a real dungeon floor is never that big.
+function companionCloseGapToPlayer(c,maxSteps=24){
+ if(c.stationary)return;
+ let steps=0;
+ while(gridDistance(c,game.player)>1&&steps<maxSteps){
+  if(!moveCompanionToward(c,game.player))break;
+  steps++;
+ }
+}
+// Whether a companion is currently committed to a fight and should NOT be
+// pulled back to the player's side this step - a permanent pet with a live
+// ordered target, or (for every other kind) any live enemy within the same
+// COMPANION_ENGAGE_RADIUS companionTurn() itself uses to pick a target. Kept
+// in sync with companionTurn()'s own targeting so this never fights the
+// combat AI over where the companion should be.
+function companionHasLiveEngagement(c){
+ if(c.stationary)return true;
+ if(c.permanent&&c.effectType)return !!(c.orderTarget&&c.orderTarget.hp>0);
+ if(c.stance==='passive')return false;
+ return (game.enemies||[]).some(e=>e.hp>0&&gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS);
+}
+// Called every time the player actually moves (see move()) so companions
+// stay glued to the player's side turn-by-turn instead of only catching up
+// once per full round in companionTurn() - and for free: this never touches
+// actionsPerTurn/commandCost or any other per-turn action budget, only the
+// combat branches in companionTurn() do that. A companion mid-fight (see
+// companionHasLiveEngagement) is left alone instead of being yanked back.
+function companionsFollowPlayerStep(){
+ for(const c of game.companions||[]){
+  if(c.hp<=0)continue;
+  if(companionHasLiveEngagement(c))continue;
+  companionCloseGapToPlayer(c);
+ }
 }
 // Runs one component of a 'skill'-typed invocation's own inline effects list
 // (see subEffectsListHtml/COMPANION_SKILL_EFFECT_KINDS) against a single
