@@ -1,3 +1,9 @@
+## v0.56.2 - Compatibilidad del ID de personajes tras migrar Supabase
+- Corregida la creación de personajes cuando la columna primaria `user_pj.id` existe como `int8 NOT NULL` pero el proyecto Supabase migrado no conserva su identity/default: la API intenta primero el insert normal y, únicamente si PostgreSQL devuelve que `id` no puede ser nulo, repite la operación con un identificador entero seguro generado criptográficamente.
+- Se mantiene la compatibilidad con el esquema anterior y con columnas identity, que continúan generando el ID en base de datos sin recibir un valor explícito.
+- Sincronizadas las versiones de runtime, paquete y cache-busting de `src/game.js` en `0.56.2`.
+- No se ejecutaron tests, conforme a la instrucción del usuario.
+
 ## v0.56.1 - Catálogo de efectos inlinado en los 4 documentos de JSON
 - Revisados los cuatro documentos de instrucciones de JSON (`skills-json-rules.md`, `reglas json objetos.md`, `reglas json pociones.md`, `INSTRUCCION_ITEMS_JSON.md`) contra el código actual, verificando el `switch` real de `applyEffectComponent` (27 `kind`, sin cambios desde la última consolidación) y los campos exactos que arma `currentConfigItemJson`/`currentConfigPotionJson`.
 - `reglas json objetos.md` y `reglas json pociones.md` incorporan ahora una copia completa del catálogo de los 27 `kind` de `effects[]` (campos, valores por defecto, target admitidos y una nota de mecánica por kind), en vez de solo remitir a `skills-json-rules.md`; `INSTRUCCION_ITEMS_JSON.md` hace lo mismo dentro de su §6.1. `skills-json-rules.md` queda como fuente canónica (fórmulas de daño, coste AP e IA enemiga aparte) y ahora indica explícitamente que las otras tres guías llevan copias de su catálogo.
