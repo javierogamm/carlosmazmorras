@@ -1,4 +1,5 @@
 const SUPABASE_TABLE='user_pj';
+const {randomBytes}=require('node:crypto');
 
 function supabaseConfig(){
  const url=process.env.SUPABASE_URL;
@@ -8,6 +9,15 @@ function supabaseConfig(){
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
 function requestId(req){return req.query?.id||req.body?.id||req.body?.pj_id||null}
+// The original Supabase project generated the bigint primary key itself, but
+// migrated tables are sometimes recreated as `int8 NOT NULL` without an
+// identity/default. Keep the normal insert first (so identity columns continue
+// to work) and only provide an explicit, JS-safe bigint when Postgres reports
+// that `id` was null.
+function generatedPjId(){return randomBytes(6).readUIntBE(0,6)+1}
+function missingGeneratedId(error){
+ return error?.code==='23502'&&/\bid\b/i.test(`${error.message||''} ${error.details||''}`);
+}
 // The `shards` column is a plain TEXT column (not jsonb), so the API always
 // stores/reads a JSON-encoded string there - encode on the way in, decode on
 // the way out, so callers never have to think about the storage format.
@@ -80,8 +90,14 @@ module.exports=async(req,res)=>{
   }
   if(req.method==='POST'){
    const row=cleanPj(req.body||{});
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
-   const data=await r.json();
+   const insert=payload=>fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(payload)});
+   let r=await insert(row);
+   let data=await r.json();
+   if(!r.ok&&missingGeneratedId(data)){
+    row.id=generatedPjId();
+    r=await insert(row);
+    data=await r.json();
+   }
    if(!r.ok)return res.status(r.status).json(data);
    await updateUserAggregates(url,key,row.nombre);
    return res.status(200).json(Array.isArray(data)?withParsedShards(data[0]):withParsedShards(data));
