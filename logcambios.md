@@ -1,3 +1,10 @@
+## v0.57.1 - Selector táctil de recorte de iconos
+
+- El selector de imagen del configurador permite ahora dibujar y mover el área de recorte arrastrando con un dedo. El gesto se mantiene activo mediante captura de puntero aunque los eventos táctiles no informen botones pulsados.
+- Se bloquean el scroll, el zoom gestual y la selección de texto únicamente sobre el canvas mientras se manipula el recorte, evitando que el navegador móvil interrumpa el trazado del cuadrado.
+- Se gestionan de forma segura la finalización y cancelación del toque para no dejar un arrastre residual. El cambio se aplica al editor compartido por objetos, pociones, clases, invocaciones, skills, tiles, enemigos, cofres y assets.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.57.1`.
+
 ## v0.57.0 - Dungeons de seis pisos y progresión por nivel
 
 - Las dungeons pasan a tener siempre seis pisos: se elimina el selector de cantidad, se conservan las opciones visuales, de familia y ambiente por piso, y el sexto genera obligatoriamente un megaboss o una sucesión de jefes.

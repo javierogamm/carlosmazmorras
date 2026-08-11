@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.57.0';
+const APP_VERSION='0.57.1';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -8134,7 +8134,7 @@ function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEac
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1}}){
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
  if(!imgInput||!crop)return null;
- let source=null,rect=null,drag=null,eraser=false;
+ let source=null,rect=null,drag=null,activePointerId=null,eraser=false;
  // Output/preview pixel size, proportioned to aspect's w:h ratio (cols:rows
  // for assets) and capped so the longer side is 50px - the fixed square size
  // every other icon in this game used before assets needed a non-square shape.
@@ -8172,9 +8172,11 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
   drawCrop();saveIcon()
  }
  imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);const o=outSize();rect=clampRect({x:0,y:0,w:Math.min(o.w,crop.width),h:Math.min(o.h,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};
- crop.onpointerdown=e=>{if(!source)return;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};
- crop.onpointermove=e=>{if(e.buttons&&!eraser)updateDrag(e)};
- crop.onpointerup=e=>{crop.releasePointerCapture?.(e.pointerId);if(!eraser){updateDrag(e);drag=null;saveIcon()}};
+ crop.onpointerdown=e=>{if(!source||activePointerId!==null)return;e.preventDefault();activePointerId=e.pointerId;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);activePointerId=null;return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};
+ crop.onpointermove=e=>{if(e.pointerId!==activePointerId||eraser||!drag)return;e.preventDefault();updateDrag(e)};
+ const finishPointer=e=>{if(e.pointerId!==activePointerId)return;e.preventDefault();if(!eraser&&drag){updateDrag(e);drag=null;saveIcon()}crop.releasePointerCapture?.(e.pointerId);activePointerId=null};
+ crop.onpointerup=finishPointer;
+ crop.onpointercancel=e=>{if(e.pointerId!==activePointerId)return;if(drag)saveIcon();drag=null;activePointerId=null;crop.releasePointerCapture?.(e.pointerId);drawCrop()};
  if(zoom)zoom.oninput=canvasZoom;
  if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};
  canvasZoom();
