@@ -55,6 +55,7 @@ function cleanPj(body){
   pj_json:body.pj_json??null,
   pj_status:body.pj_status??'alive',
   pj_score:body.pj_score??0,
+  feats:body.feats??{elites:0,bosses:0,megabosses:0,dungeons:0},
   // tier shards from the Creator's Room disenchant altar - a real column,
   // not nested in pj_json, so it can be updated independently
   shards:shardsToText(body.shards),
@@ -83,7 +84,7 @@ module.exports=async(req,res)=>{
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
    }
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,shards,custom_items&order=pj_score.desc.nullslast`,{headers:headers(key)});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,feats,shards,custom_items&order=pj_score.desc.nullslast`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
@@ -111,6 +112,7 @@ module.exports=async(req,res)=>{
    if('pj_status' in body)row.pj_status=body.pj_status;
    if('pj_score' in body)row.pj_score=body.pj_score;
    if('pj_name' in body)row.pj_name=body.pj_name;
+   if('feats' in body)row.feats=body.feats;
    if('shards' in body)row.shards=shardsToText(body.shards);
    if('custom_items' in body)row.custom_items=body.custom_items;
    row.last_use=body.last_use??new Date().toISOString();
