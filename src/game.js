@@ -28,14 +28,16 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.56.2';
+const APP_VERSION='0.57.0';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
-const DEFAULT_WORLD_PARAMS={damageReceivedPct:125,damageDealtPct:100,lifePct:125,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:10,floorPlan:[],apMode:false};
+const DUNGEON_FLOORS=6;
+const BALANCE_LEVEL_CAP=30;
+const DEFAULT_WORLD_PARAMS={damageReceivedPct:125,damageDealtPct:100,lifePct:125,xpReceivedPct:100,enemyCountPct:100,enemyLootPct:100,floors:DUNGEON_FLOORS,floorPlan:[],apMode:false};
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff4d4d'}};
@@ -138,10 +140,10 @@ const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,
 // regardless of how many floors the current dungeon actually has - a 1-floor
 // (or otherwise short) dungeon must still feel like floor 1 of a normal run,
 // never jump straight to top-tier loot just because it's also the last floor.
-const PROGRESSION_REFERENCE_FLOORS=20;
+const PROGRESSION_REFERENCE_FLOORS=DUNGEON_FLOORS;
+function balanceLevel(level=1){return Math.max(1,Math.min(BALANCE_LEVEL_CAP,Number(level)||1))}
 function lootProgressRatio(floor,totalFloors){
- const span=Math.max(PROGRESSION_REFERENCE_FLOORS,Number(totalFloors)||1)-1;
- return span<=0?0:Math.min(1,(Math.max(1,Number(floor)||1)-1)/span);
+ return (balanceLevel(game?.floorEntryLevel||game?.player?.level||1)-1)/(BALANCE_LEVEL_CAP-1);
 }
 // Maps a real floor number back onto the PROGRESSION_REFERENCE_FLOORS scale -
 // used by any loot formula (potions, skills) that scales off "how far into
@@ -152,16 +154,12 @@ function effectiveProgressFloor(floor,totalFloors){
 }
 function currentTotalFloors(){return selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
- const ratio=lootProgressRatio(floor,totalFloors),level=Number(playerLevel)||1;
- let idx=2;
- if(ratio>=.22||level>=LOOT_RARITY_MIN_PLAYER_LEVEL.epic)idx=3;
- if(ratio>=.55&&level>=LOOT_RARITY_MIN_PLAYER_LEVEL.legendary)idx=4;
- if(ratio>=.82&&level>=LOOT_RARITY_MIN_PLAYER_LEVEL.artifact)idx=5;
- return Math.min(idx,LOOT_RARITY_ORDER.length-1);
+ const level=balanceLevel(game?.floorEntryLevel||playerLevel);
+ return level<4?0:level<8?1:level<13?2:level<19?3:level<25?4:5;
 }
 function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
- const f=Math.max(1,Number(floor)||1),lvl=Math.max(1,Number(playerLevel)||1),ratio=lootProgressRatio(f,totalFloors),base=Math.max(1,Math.round(lvl+f*.85));
- return {min:Math.max(1,Math.floor(base+ratio*2)-1),max:Math.max(1,Math.ceil(base+2+ratio*5))};
+ const lvl=Math.max(1,Number(game?.floorEntryLevel||playerLevel)||1);
+ return {min:Math.max(1,lvl-1),max:lvl+2};
 }
 function lootProgressionRow(floor,totalFloors,playerLevel=1){
  const maxIndex=maxLootRarityIndexForProgress(floor,totalFloors,playerLevel),range=lootIlvlRangeForProgress(floor,totalFloors,playerLevel),ratio=lootProgressRatio(floor,totalFloors);
@@ -175,7 +173,7 @@ function lootProgressionRow(floor,totalFloors,playerLevel=1){
  for(let i=maxIndex+1;i<LOOT_RARITY_ORDER.length;i++)weights[LOOT_RARITY_ORDER[i]]=0;
  return {floor,totalFloors,minCharacterLevel:playerLevel,itemLevel:range,allowedRarities:LOOT_RARITY_ORDER.slice(0,maxIndex+1),rarityWeights:weights};
 }
-function createLootProgressionTable(totalFloors){return Array.from({length:Math.max(1,Number(totalFloors)||1)},(_,i)=>lootProgressionRow(i+1,totalFloors,Math.max(1,Math.ceil((i+1)/2))))}
+function createLootProgressionTable(totalFloors){return Array.from({length:DUNGEON_FLOORS},(_,i)=>lootProgressionRow(i+1,DUNGEON_FLOORS,1))}
 function currentLootProgressionRow(floor=game?.floor||1,level=game?.player?.level||1){const table=selectedDungeonWorld?.world_json?.lootTable||game?.worldLootTable;if(table?.[floor-1])return lootProgressionRow(floor,table.length,level);return lootProgressionRow(floor,worldParams().floors||DEFAULT_WORLD_PARAMS.floors,level)}
 function lootRarityAllowed(name,row){return (row?.allowedRarities||LOOT_RARITY_ORDER).includes(name)}
 
@@ -985,7 +983,7 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=Math.max(1,Math.min(100,Math.round(Number(p.floors)||DEFAULT_WORLD_PARAMS.floors)));p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,p.floors).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):''})):[];return p}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=DUNGEON_FLOORS;p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,DUNGEON_FLOORS).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):''})):[];return p}
 function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||'',ambiente:row.querySelector('[data-world-ambiente-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,enemyLootPct:document.getElementById('worldEnemyLootPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
@@ -1628,7 +1626,7 @@ function start(){
  const stats={...cls.stats},maxHp=30+stats.vitality*3+vitalityHpBonus(stats.vitality);
  const maxStamina=45+stats.strength*4+stats.agility*2,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.agility||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -1671,7 +1669,7 @@ storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)gen
 
 // Expected enemy tier at a given depth (drives boss strength and elite mix).
 function expectedTierForFloor(floor,total=20){
- const r=total<=1?1:(floor-1)/(total-1);
+ const r=(balanceLevel(game?.floorEntryLevel||game?.player?.level||1)-1)/(BALANCE_LEVEL_CAP-1);
  return r<.25?1:r<.55?2:r<.8?3:4;
 }
 
@@ -2164,12 +2162,18 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // including the megaboss special case, bypassing minFloor/cooldown gating
  // entirely so any floor type can be tried out regardless of level/floor.
  if(game?.forcedFloorArchetype==='megaboss')return buildMegabossFloorPlan(floor,params);
+ // El sexto piso es siempre el clímax: megajefe o sucesión de jefes.
+ if(!game?.forcedFloorArchetype&&floor===DUNGEON_FLOORS){
+  if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
+  game.forcedFloorArchetype='bossrush';
+ }
  // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
  // 33% chance on every floor that's a multiple of 3, regardless of recency/
  // cooldown or the other archetypes' weights.
  if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
+ if(floor===DUNGEON_FLOORS&&game?.forcedFloorArchetype==='bossrush')delete game.forcedFloorArchetype;
  // City floors have no walled rooms at all (open district of building assets),
  // so they can't go through the shared room/corridor carving below - built by
  // its own dedicated generator instead, same pattern as buildMegabossFloorPlan.
@@ -3108,10 +3112,11 @@ function updateRestButton(){
 // enemy object from the current floor - stale once the floor changes, so
 // every companion goes back to just following instead of chasing a ghost.
 function clearCompanionOrders(){for(const c of game?.companions||[])c.orderTarget=null}
-function generateFloor(){clearCompanionOrders();if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,game?.player?.level||1);if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  busy=false;
  const params=worldParams();
- const populationScale=1+Math.min(1.2,((game.player?.level||1)-1)*.012);
+ const overCap=Math.max(0,(game.floorEntryLevel||1)-BALANCE_LEVEL_CAP);
+ const populationScale=1+Math.min(1.2,(balanceLevel(game.floorEntryLevel)-1)*.012)+overCap*.04;
  game.recentArchetypes=(game.recentArchetypes||[]).slice(-8);
  let plan=null;
  for(let attempt=0;attempt<3&&!plan;attempt++)plan=buildFloorPlan(game.floor,params,{recent:game.recentArchetypes,populationScale});
@@ -3156,24 +3161,14 @@ const FLOOR_REWARD_TIER_THRESHOLDS=[
  {upTo:15,rarity:'legendary'}
 ]; // beyond the last threshold: artifact
 function topRarityNameForFloor(floor){
- const f=Math.max(1,Number(floor)||1);
- for(const t of FLOOR_REWARD_TIER_THRESHOLDS)if(f<=t.upTo)return t.rarity;
- return 'artifact';
+ return LOOT_RARITY_ORDER[maxLootRarityIndexForProgress(1,DUNGEON_FLOORS,game?.floorEntryLevel||game?.player?.level||1)]||'common';
 }
 // Grants one guaranteed item at the floor's best available rarity and shows
 // a dedicated floor-reward popup. Runs once per floor arrival, floor 2+.
 function grantFloorRewardPopup(){
- if((game.floor||1)<2||!game?.player)return;
- const item=makeLoot(game.player.level,'floorReward',topRarityNameForFloor(game.floor));
- if(!item)return;
- addInventoryItem(item);
- const c=document.createElement('canvas');c.width=c.height=64;drawItemIcon(c,item);
- storyTitle.textContent=`RECOMPENSA DE PISO ${game.floor}`;
- storyBody.innerHTML=`<div class="narrative"><p>Al llegar al piso ${game.floor} recibes un objeto garantizado de la mejor calidad disponible en este piso.</p><div class="floorRewardItem" style="display:flex;align-items:center;gap:12px;margin:10px 0"><div class="floorRewardIcon"></div><div><b class="${item.rarity}">${item.name}</b><div class="small">${slotNames[item.slot]} · ${item.label} · Nv. ${item.itemLevel}</div><div class="itemScore">Poder ${item.score}</div></div></div><div class="startActions"><button id="continueFloorReward">Continuar</button></div></div>`;
- storyBody.querySelector('.floorRewardIcon')?.appendChild(c);
- storyOverlay.classList.remove('hidden');
- setTimeout(()=>document.getElementById('continueFloorReward')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
+ // Conservada como punto de extensión: ya no hay recompensa al entrar en un piso.
 }
+
 function objectiveText(obj=game?.objective){
  if(!obj)return 'Encuentra la salida.';
  switch(obj.type){
@@ -3451,6 +3446,10 @@ function kill(e){
  if(!game.enemies.includes(e))return;
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);
+ game.feats=normalizeFeats(game.feats);
+ if(e.megaboss)game.feats.megabosses++;
+ else if(e.boss)game.feats.bosses++;
+ else if(e.elite)game.feats.elites++;
  // A companion ordered onto this specific enemy (permanent pet) has nothing
  // left to do - clear its order and let it snap straight back to the
  // player's side right now instead of waiting out a full companionTurn()
@@ -3639,7 +3638,7 @@ function grantXp(v){
  // immediately rather than a move/action later.
  if(p.level>startLevel&&game.pjId){
   const bundle=characterBundleFromGame();
-  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:p.name,last_use:new Date().toISOString()})})
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:p.name,last_use:new Date().toISOString()})})
    .then(()=>refreshCurrentUserProgress())
    .catch(e=>console.error('No se pudo guardar el personaje tras subir de nivel',e));
  }
@@ -3704,7 +3703,8 @@ function checkTile(){
  if(p.x===game.stairs.x&&p.y===game.stairs.y){
   const block=stairsBlockedReason();
   if(block){log(block,'combat');return}
-  if(game.multiplayer)sendMpAction('floor_transition_start',{});
+ if(game.multiplayer)sendMpAction('floor_transition_start',{});
+  if(game.floor>=DUNGEON_FLOORS){completeDungeon();return}
   game.floor++;generateFloor();
  }
 }
@@ -7273,13 +7273,13 @@ function normalizedEnemyFamilies(){return configEnemyFamilies.map(r=>({...(r.fam
 // Clamped to player.level±2 so deeper floors never drift arbitrarily far from
 // the character's actual power - the raw floor-based formula still nudges
 // enemies up within that band, it just can't escape it.
-function enemyLevelForFloor(floor){const playerLevel=game?.player?.level||1;const raw=Math.round(playerLevel+(floor-1)*1.4+rng(3)-1);return Math.max(1,Math.min(playerLevel+2,Math.max(playerLevel-2,raw)))}
+function enemyLevelForFloor(floor){const playerLevel=game?.floorEntryLevel||game?.player?.level||1;return Math.max(1,Math.round(playerLevel+rng(3)-1))}
 // Bosses ignore the floor-paced formula above entirely: always the player's
 // own level plus a flat 1-3 (megaboss: 2-4) bump, independent of how deep the
 // floor is - recalculated on floor load (scaleFloorForPlayerLevel) and again
 // the moment the player levels up mid-floor (rescaleBossOnLevelUp).
-function bossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(1,3))}
-function megabossLevelForPlayer(){return Math.max(1,(game?.player?.level||1)+randBetween(2,4))}
+function bossLevelForPlayer(){return Math.max(1,(game?.floorEntryLevel||game?.player?.level||1)+randBetween(1,3))}
+function megabossLevelForPlayer(){return Math.max(1,(game?.floorEntryLevel||game?.player?.level||1)+randBetween(2,4))}
 // Enemy TIER mix shifts from mostly-weak to mostly-strong across the
 // dungeon's depth (d=0 at floor 1, d=1 at the last floor), so every run
 // reads as a progression on top of any room-specific tier rules, regardless
@@ -7297,7 +7297,7 @@ const ENEMY_TIER_RANK={i:0,ii:1,iii:2,iv:3};
 function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTier=null){
  let pool=(family.enemies||[]).filter(e=>wantBoss?e.boss:!e.boss);if(!pool.length)pool=family.enemies||[];
  if(minTier){const minRank=ENEMY_TIER_RANK[minTier]??0,filtered=pool.filter(e=>(ENEMY_TIER_RANK[e.tier]??0)>=minRank);if(filtered.length)pool=filtered}
- const depth=(floor-1)/Math.max(1,totalFloors-1),tierWeights=enemyTierWeightsForDepth(depth);
+ const depth=(balanceLevel(game?.floorEntryLevel||game?.player?.level||1)-1)/(BALANCE_LEVEL_CAP-1),tierWeights=enemyTierWeightsForDepth(depth);
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
@@ -8457,15 +8457,26 @@ function computeScore(bundle){
  const gold=player.gold||0;
  return Math.round(level*100+ilvl*5+maxFloor*50+gold/10);
 }
+function normalizeFeats(raw={}){return {elites:Math.max(0,Number(raw?.elites)||0),bosses:Math.max(0,Number(raw?.bosses)||0),megabosses:Math.max(0,Number(raw?.megabosses)||0),dungeons:Math.max(0,Number(raw?.dungeons)||0)}}
+function completeDungeon(){
+ if(game.dungeonCompleted)return;
+ game.dungeonCompleted=true;game.feats=normalizeFeats(game.feats);game.feats.dungeons++;
+ const rarity=topRarityNameForFloor(game.floorEntryLevel||game.player.level);
+ const item=makeLoot(game.floorEntryLevel||game.player.level,'dungeonReward',rarity,'equipment');
+ if(item){addInventoryItem(item);lootToast(item)}
+ const bundle=characterBundleFromGame();
+ if(game.pjId)fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:game.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar la dungeon completada',e));
+ banner(`DUNGEON COMPLETADA · ${tierDefs[rarity]?.label||rarity}`);log('Dungeon completada: recibes un objeto del tier máximo permitido para tu nivel.','loot');
+}
 function characterBundleFromGame(){
- return {player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},bossesKilled:game.bossesKilled||0,chestsOpened:game.chestsOpened||0,maxFloorReached:Math.max(game.maxFloorReached||1,game.floor||1)};
+ return {player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},feats:normalizeFeats(game.feats),bossesKilled:game.bossesKilled||0,chestsOpened:game.chestsOpened||0,maxFloorReached:Math.max(game.maxFloorReached||1,game.floor||1)};
 }
 
 async function finishCharacterCreation(){
- const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},bossesKilled:0,chestsOpened:0,maxFloorReached:1};
+ const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,maxFloorReached:1};
  const score=computeScore(bundle);
  try{
-  const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
+  const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,feats:bundle.feats,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
   const data=await r.json().catch(()=>null);
   // api/user-pj.js forwards Supabase/PostgREST's response verbatim on error,
   // whose shape is {message, details, hint, code} - not {error} - so reading
@@ -8585,7 +8596,7 @@ async function resumeSession(sessionId){
   const player=bundle.player;
   const floorNum=state.currentFloor||1;
   const overlay=state.floors?.[String(floorNum)]||null;
-  game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
+  game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(pj.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
  game.player.shards=pj.shards?normalizeShards(pj.shards):(game.player.shards||{});
  game.player.customItems=pj.custom_items||game.player.customItems||[];
   singlePlayerOverlay.classList.add('hidden');
@@ -8620,7 +8631,7 @@ async function enterWorldWithCharacter(){
  if(!currentCharacter){banner('Selecciona un personaje primero.');return}
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(currentCharacter.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
  // shards live in their own user_pj column (not pj_json) so they survive
  // independently of the rest of the character bundle - see persistShards()
  game.player.shards=currentCharacter.shards?normalizeShards(currentCharacter.shards):(game.player.shards||{});
@@ -8651,14 +8662,14 @@ function decodeSeen(seen){
  return seen;
 }
 function floorSnapshot(){
- return {map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
+ return {floorEntryLevel:game.floorEntryLevel,map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
 }
 // dynamic-only parts (the static map/rooms/tileset never change within a floor)
 function floorSnapshotDynamic(){
  return {stairs:game.stairs,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null};
 }
 function applyFloorSnapshot(overlay){
- Object.assign(game,{map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
+ Object.assign(game,{floorEntryLevel:overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
 }
 function persistTurnState(){
@@ -8669,7 +8680,7 @@ function persistTurnState(){
  // read (fire-and-forget .catch below), so there's no reason to have Supabase
  // echo the whole character/floor blob back down on every write. See the
  // matching opt-in in api/user-pj.js and api/dungeon-status.js.
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
  const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
@@ -8680,7 +8691,7 @@ async function finalizeCharacterDeath(){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  try{
-  await fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_status:'dead',last_use:new Date().toISOString()})});
+  await fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_status:'dead',last_use:new Date().toISOString()})});
  }catch(e){console.error('No se pudo marcar el personaje como muerto',e)}
  if(game.multiplayer){
   if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
@@ -8720,7 +8731,7 @@ async function fetchScores(){
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar las puntuaciones');
   if(!data.length){status.textContent='Todavía no hay personajes.';return}
   status.textContent=`${data.length} personaje(s).`;
-  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const p=c.pj_json?.player||{};return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${p.className||'-'}</td><td>${p.raceName||'-'}</td><td>${p.level||1}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
+  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Élites</th><th>Jefes</th><th>Megaboss</th><th>Dungeons</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const p=c.pj_json?.player||{},f=normalizeFeats(c.feats||c.pj_json?.feats);return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${p.className||'-'}</td><td>${p.raceName||'-'}</td><td>${p.level||1}</td><td>${f.elites}</td><td>${f.bosses}</td><td>${f.megabosses}</td><td>${f.dungeons}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
 
@@ -9836,7 +9847,7 @@ async function checkAndApplyTrade(){
   recomputeDerived();updateUI();draw();renderTradeTab();
   // persist immediately: the given/received items must survive a reload right away
   const bundle=characterBundleFromGame();
-  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje tras el intercambio',e));
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje tras el intercambio',e));
   mpSend('trade',{});
  }finally{mpTradeApplying=false}
 }
@@ -10043,7 +10054,7 @@ async function mpEnterStartedSession(session,starter=false){
   const bundle=pj.pj_json||{};
   let st=session.dungeon_status||{};
   const floorNum=starter?1:(st.currentFloor||1);
-  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:starter?0:(st.activePlayerIndex||0),hostId:st.host,roster:st.roster||[],mpLastRev:Number(st.rev)||0,mpLastEvSeq:st.evSeq||0,mpPendingEvents:[],mpSeq:Number(st.seq)||0,mpCheckpointTurn:st.turn||0,mpCheckpointFloor:starter?1:(st.currentFloor||1)};
+  game={floor:floorNum,themeIndex:0,turn:st.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(pj.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:st.floors||{},multiplayer:true,turnOrder:st.turnOrder||[pj.id],activePlayerIndex:starter?0:(st.activePlayerIndex||0),hostId:st.host,roster:st.roster||[],mpLastRev:Number(st.rev)||0,mpLastEvSeq:st.evSeq||0,mpPendingEvents:[],mpSeq:Number(st.seq)||0,mpCheckpointTurn:st.turn||0,mpCheckpointFloor:starter?1:(st.currentFloor||1)};
   app.classList.remove('hidden');
   if(starter){
    if(!loadPrecomputedFloor())generateFloor();
@@ -10277,7 +10288,7 @@ async function mpPersistTurnState({advance=false,includeOtherPlayers=false,check
  game.mpPjSaveCounter=(game.mpPjSaveCounter||0)+1;
  if(!game.multiplayer||game.mpPjSaveCounter%3===1||game.floor!==game.mpPjLastSavedFloor||game.player.hp<=game.player.maxHp*.35){
   game.mpPjLastSavedFloor=game.floor;
-  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  }
  if(!game.dungeonStatusId)return;
  const floorSnap=floorSnapshot(),dynSnap=floorSnapshotDynamic();

@@ -1,3 +1,12 @@
+## v0.57.0 - Dungeons de seis pisos y progresión por nivel
+
+- Las dungeons pasan a tener siempre seis pisos: se elimina el selector de cantidad, se conservan las opciones visuales, de familia y ambiente por piso, y el sexto genera obligatoriamente un megaboss o una sucesión de jefes.
+- El nivel del personaje al entrar en cada piso queda fijado como referencia de ese piso. A partir de él se determinan niveles y tiers enemigos, tiers de cofres y rareza/iLvl de todo el loot, sin bonificaciones por profundidad.
+- El nivel 30 es el techo de progresión de tiers. Por encima, los tiers dejan de crecer, pero el nivel real de los enemigos y su población continúan escalando.
+- Completar el sexto piso registra la dungeon y concede una pieza de equipo del tier máximo que permite el nivel con el que se inició el piso.
+- Se registran en la columna JSON `user_pj.feats` las bajas de élites, jefes y megabosses, además de las dungeons completadas. La tabla de puntuaciones muestra los cuatro contadores y conserva compatibilidad con personajes anteriores inicializándolos a cero.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.57.0`.
+
 ## v0.56.2 - Compatibilidad del ID de personajes tras migrar Supabase
 - Corregida la creación de personajes cuando la columna primaria `user_pj.id` existe como `int8 NOT NULL` pero el proyecto Supabase migrado no conserva su identity/default: la API intenta primero el insert normal y, únicamente si PostgreSQL devuelve que `id` no puede ser nulo, repite la operación con un identificador entero seguro generado criptográficamente.
 - Se mantiene la compatibilidad con el esquema anterior y con columnas identity, que continúan generando el ID en base de datos sin recibir un valor explícito.

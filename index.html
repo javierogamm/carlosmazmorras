@@ -727,7 +727,8 @@
 <details class="worldSettingsSubAccordion">
 <summary>Historias</summary>
 <div class="worldStoryControls">
-<label>Nº de pisos <input id="worldFloorsInput" type="number" value="10" min="1" max="100"></label>
+<p class="small"><b>6 pisos fijos.</b> Configura su aspecto y familia; el sexto siempre será un encuentro final especial.</p>
+<input id="worldFloorsInput" type="hidden" value="6">
 <p class="small">Selecciona para cada piso un floor visual de <b>config_floor</b> y una familia existente de <b>enemy_family</b>, o deja <b>Aleatorio</b> para que se elija durante la generación.</p>
 <div id="worldFloorPlanList" class="worldFloorPlanList"></div>
 </div>
@@ -785,7 +786,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.56.2"></script>
+<script src="./src/game.js?v=0.57.0"></script>
 
 </body>
 </html>
