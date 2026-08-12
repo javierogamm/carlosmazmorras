@@ -1,3 +1,18 @@
+## v0.58.1 - Cofres de poción aditivos y tier de consumible
+
+- Corregido el incremento de cofres de poción para que sea aditivo: cada cofre de loot ya generado aporta una tirada independiente del 15% para añadir un cofre de poción extra, sin sustituir ni convertir cofres de equipo, armas o skills.
+- Los drops de poción seleccionan siempre un consumible real de `config_items` del tier más alto permitido por la progresión actual; se reconocen tanto los registros `type: potion` como los consumibles declarados mediante `type` o `slot: consumable`, normalizándolos al contrato de poción al entregarlos.
+- Los cofres de poción adicionales respetan el tier máximo del piso y solo retroceden a un tier inferior cuando no hay un cofre de poción configurado en el tier adecuado.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.58.1`.
+
+## v0.58.0 - Loot de pociones consolidado y vitalidad
+
+- El loot de pociones y las pociones iniciales se obtienen exclusivamente de filas de `config_items` cuyo JSON sea de tipo `potion` y slot `consumable`; se eliminó el catálogo procedural y, si no hay consumibles configurados, no se inventa ningún sustituto.
+- Los cofres de tipo poción tienen un 15% más de peso relativo al seleccionar cofres configurados del mismo tier.
+- Los enemigos mágicos o de apoyo (`caster`, invocador, clérigo y chamán) tienen un 15% más de peso relativo de drop de poción, conservando una única recompensa por tirada.
+- Cada punto de Vitalidad aporta 1 HP adicional respecto al balance anterior: el aporte total pasa de 5 a 6 HP por punto, también para los puntos añadidos por equipo y efectos.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.58.0`.
+
 ## v0.57.1 - Selector táctil de recorte de iconos
 
 - El selector de imagen del configurador permite ahora dibujar y mover el área de recorte arrastrando con un dedo. El gesto se mantiene activo mediante captura de puntero aunque los eventos táctiles no informen botones pulsados.

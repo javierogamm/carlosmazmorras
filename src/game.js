@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.57.1';
+const APP_VERSION='0.58.1';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -973,7 +973,7 @@ function describeItem(item){item.defenseStat=item.defenseStat||inferWeaponDefens
  }
  return lines.join('');
 }
-function vitalityHpBonus(vitality){return Math.max(0,Math.floor(Number(vitality||0)*2))}
+function vitalityHpBonus(vitality){return Math.max(0,Math.floor(Number(vitality||0)*3))}
 function worldParams(){return game?.worldParams||selectedDungeonWorld?.world_json?.params||DEFAULT_WORLD_PARAMS}
 function pctMult(value){const n=Number(value);return Number.isFinite(n)?n/100:1}
 function damageDealtMultiplier(){return pctMult(worldParams().damageDealtPct)}
@@ -1084,7 +1084,7 @@ function recomputeDerived(){
   const eff=b.effects?.[k];if(eff==null)continue;
   allStats[k]=Math.round(applyStatDelta(allStats[k],eff));
  }
- d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*5);
+ d.maxHp+=Math.max(0,(allStats.vitality-base.vitality)*6);
  d.maxStamina+=Math.max(0,(allStats.strength-base.strength)*4+(allStats.agility-base.agility)*2);
  d.maxMana+=Math.max(0,(allStats.wisdom-base.wisdom)*5+(allStats.intelligence-base.intelligence)*3);
  d.damage+=Math.floor((allStats.strength-base.strength)*1.2);
@@ -1105,26 +1105,13 @@ function recomputeDerived(){
 }
 
 
-// Built-in potion pool used whenever no admin-configured potions exist -
-// same composable `effects[]` schema/engine as skills now (see
-// effectSourceDef/applySkillEffectsList), so a couple of these are thrown,
-// single-use weapons (an enemy/area-targeting component) instead of always
-// being drunk on the self - see usePotion/resolveTargetedPotion.
-const potionDefs=[
- {id:'minorHealing',name:'Poción de curación menor',tier:'common',desc:'Cura una pequeña cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:2,dmgDie:8,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1}]},
- {id:'greaterHealing',name:'Poción de curación superior',tier:'rare',desc:'Cura una gran cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:4,dmgDie:10,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1.5}]},
- {id:'manaDraught',name:'Breve de maná',tier:'uncommon',desc:'Restaura maná.',effects:[{kind:'utility',mode:'resource',resource:'mana',value:35}]},
- {id:'staminaTonic',name:'Tónico del corredor',tier:'uncommon',desc:'Restaura stamina.',effects:[{kind:'utility',mode:'resource',resource:'stamina',value:35}]},
- {id:'berserkerElixir',name:'Elixir del berserker',tier:'rare',desc:'Más daño durante varios turnos.',effects:[{kind:'buff',target:'self',stat:'damage',mode:'mult',value:1.2,turns:12}]},
- {id:'ironSkin',name:'Poción de piel de hierro',tier:'rare',desc:'Más armadura durante varios turnos.',effects:[{kind:'buff',target:'self',stat:'armor',mode:'mult',value:1.25,turns:12}]},
- {id:'giantElixir',name:'Elixir de gigante',tier:'legendary',desc:'Gran bonus de Fuerza muy duradero.',effects:[{kind:'buff',target:'self',stat:'strength',mode:'add',value:4,turns:500}]},
- {id:'sageElixir',name:'Elixir del sabio',tier:'legendary',desc:'Gran bonus de Inteligencia muy duradero.',effects:[{kind:'buff',target:'self',stat:'intelligence',mode:'add',value:4,turns:500}]},
- {id:'firebomb',name:'Bomba incendiaria',tier:'rare',range:5,desc:'Arma arrojadiza: explota en área y quema.',effects:[{kind:'aoe',dmgDice:2,dmgDie:8,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,range:2},{kind:'dot',target:'area',dotDice:1,dotDie:6,dotStat:'intelligence',dotStatMode:'add',dotStatCoef:.4,turns:4,flavor:'burn',range:2}]},
- {id:'weakeningVial',name:'Vial debilitante',tier:'uncommon',range:5,desc:'Arma arrojadiza: debilita al enemigo.',effects:[{kind:'debuff',target:'enemy',stat:'damage',mode:'add',value:3,turns:4}]}
-];
-const STARTER_HEALING_POTION_ID='109';
-const STARTER_HEALING_POTION_TEMPLATE={id:STARTER_HEALING_POTION_ID,type:'potion',slot:'consumable',rarity:'common',label:skillRarities.common?.label||'Común',name:'Pocion de curacion comun #109',desc:'Cura una pequeña cantidad de vida.',effects:[{kind:'heal',target:'self',dmgDice:2,dmgDie:8,dmgStat:'vitality',dmgStatMode:'add',dmgStatCoef:1}],range:0,iconShape:'vial',itemLevel:1,score:8,quantity:1};
-function cloneStarterHealingPotion(){return {...STARTER_HEALING_POTION_TEMPLATE,id:STARTER_HEALING_POTION_ID,effects:JSON.parse(JSON.stringify(STARTER_HEALING_POTION_TEMPLATE.effects)),quantity:1}}
+// Potions are never synthesized by the client: every consumable awarded by
+// loot or at character creation must originate in Supabase config_items.
+function configuredPotionRows(){return configItems.filter(row=>{const item=row.item_json||row;return item.type==='potion'||item.type==='consumable'||item.slot==='consumable'})}
+function configuredPotionFromRow(row,lootRow,level){
+ const raw=row.item_json||row,potionRow={...row,item_json:{...raw,type:'potion',slot:'consumable'}};
+ return configuredItemFromRow(potionRow,lootRow,level)
+}
 function potionStackKey(item){return [item.type,item.name||'',item.rarity||'',JSON.stringify(item.effects||[])].join('|')}
 function addInventoryItem(item){
  if(!game?.inventory||!item)return item;
@@ -1137,36 +1124,28 @@ function addInventoryItem(item){
 }
 // An advanced/custom class can pin explicit starter potions in its editor
 // (class_json.starterPotionIds, config_item row ids); falls back to the
-// classic 2x default healing potion when unset/empty (also the behavior
-// for every hardcoded class, which never sets this field). Each chosen
-// starter potion is granted as 2 copies, same as the default healing potion.
+// otherwise uses one of the real configured consumables. Each chosen starter
+// potion is granted as 2 copies. If the catalog has none, nothing is invented.
 function addStarterPotions(classId){
  const ids=configClassRowForId(classId)?.class_json?.starterPotionIds;
- if(Array.isArray(ids)&&ids.length){
-  for(const id of ids.slice(0,3)){
-   const row=configItems.find(r=>String(r.id)===String(id));
-   if(!row)continue;
+ const selected=Array.isArray(ids)&&ids.length?ids.slice(0,3).map(id=>configuredPotionRows().find(r=>String(r.id)===String(id))).filter(Boolean):configuredPotionRows().slice(0,1);
+ if(selected.length){
+  for(const row of selected){
    for(let i=0;i<2;i++){
-    const item=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+    const item=configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1);
     addInventoryItem(item)
    }
   }
-  return
  }
- for(let i=0;i<2;i++)addInventoryItem(cloneStarterHealingPotion())
 }
 function compactPotionStacks(){const original=[...(game?.inventory||[])];game.inventory=[];for(const item of original)addInventoryItem(item)}
 
-function potionRarityWeight(tier,quality){
- const base={common:50,uncommon:28,rare:14,epic:6,legendary:2}[tier]||1;
- return base*Math.max(.25,1+(quality-1)*({common:-.16,uncommon:-.06,rare:.10,epic:.22,legendary:.32}[tier]||0))
-}
 function makePotion(quality=1){
- let total=potionDefs.reduce((s,p)=>s+potionRarityWeight(p.tier,quality),0),roll=Math.random()*total;
- let def=potionDefs[0];
- for(const p of potionDefs){roll-=potionRarityWeight(p.tier,quality);if(roll<=0){def=p;break}}
- const itemLevel=Math.max(1,Math.round(quality));
- return{id:crypto.randomUUID(),type:'potion',slot:'consumable',rarity:def.tier,label:skillRarities[def.tier]?.label||def.tier,name:def.name,desc:def.desc,effects:JSON.parse(JSON.stringify(def.effects)),range:def.range||0,iconShape:'vial',itemLevel,score:itemLevel*8,quantity:1}
+ const rows=configuredPotionRows();if(!rows.length)return null;
+ const level=Math.max(1,Math.round(quality)),lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level);
+ const allowed=rows.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));
+ const tierPool=allowed.length?allowed:rows,maxRank=Math.max(...tierPool.map(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common'))),suitable=tierPool.filter(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common')===maxRank);
+ return configuredPotionFromRow(pick(suitable),lootRow,level)
 }
 function nearestSafeRoom(){return [...(game.safeRooms||[])].sort((a,b)=>gridDistance(game.player,{x:a.cx,y:a.cy})-gridDistance(game.player,{x:b.cx,y:b.cy}))[0]}
 // ---- External effects casting: reuses the exact same composable-effects
@@ -1385,7 +1364,7 @@ const configImageCache={};function configIconImage(src){if(!configImageCache[src
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
 // Itemization uses config_items exclusively; the random generator below only
 // remains as a fallback for when the table is empty or has no eligible rows.
-function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0)))return makePotion(encounterLootQuality(source));
+function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0))){const potion=makePotion(encounterLootQuality(source));if(potion)return potion}
  if(forceRarityName){
   // Used only by the guaranteed floor-completion reward (grantFloorRewardPopup):
   // it must always be real equipment, never a configured potion (which could
@@ -2103,6 +2082,7 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
    if(bumpDef)c.chestDef=bumpDef;
   }
  }
+ addBonusPotionChests(chests,free,floor);
 
  // --- enemies: same budget/composition rules as the walled archetypes ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
@@ -2462,6 +2442,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    if(bumpDef)c.chestDef=bumpDef;
   }
  }
+ addBonusPotionChests(chests,free,floor);
 
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
@@ -3434,7 +3415,9 @@ function megabossGuaranteedDrops(floor){
 }
 // Enemy kill loot: once a drop is decided (killLootChance, or always on
 // boss/eventBoss), a normal kill gives exactly one of equipment (64.5%),
-// potion (32.2%) or skill unlock (3.3%) - never more than one, never none.
+// potion (32.2%) or skill unlock (3.3%). Magical/support archetypes apply a
+// 1.15 relative weight to the potion share. No potion is awarded when the
+// config_items consumable catalog is empty; a substitute is never invented.
 // Bosses and megabosses skip that roll entirely: they always hand out their
 // guaranteed floor-tiered equipment instead (see bossGuaranteedRarityForFloor/
 // megabossGuaranteedDrops).
@@ -3467,13 +3450,13 @@ function kill(e){
   const item=makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));addInventoryItem(item);lootToast(item);
  }else if(Math.random()<killLootChance||e.eventBoss){
   const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
-  const roll=Math.random();
-  if(roll<.645){
+  const potionWeight=.322*(new Set(['caster','invocador','clerigo','chaman']).has(enemyClassOf(e))?1.15:1),equipmentWeight=.645,skillWeight=.033,totalWeight=equipmentWeight+potionWeight+skillWeight,roll=Math.random()*totalWeight;
+  if(roll<equipmentWeight){
    // Elites never drop below 'uncommon', same guaranteed-floor idea as
    // bosses (rare) and megabosses (epic) above.
    const item=makeLoot(game.player.level,source,null,'equipment',e.elite?'uncommon':null);addInventoryItem(item);lootToast(item);
-  }else if(roll<.967){
-   const item=makeLoot(game.player.level,source,null,'potion');addInventoryItem(item);lootToast(item);
+  }else if(roll<equipmentWeight+potionWeight){
+   const item=makeLoot(game.player.level,source,null,'potion');if(item){addInventoryItem(item);lootToast(item)}
   }else{
    const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
    if(drop)unlockSkillLoot(drop);
@@ -4038,7 +4021,7 @@ function chestTierForFloor(floor){
 // which case no chest gets placed at all.
 function pickChestDefAtOrBelowTier(tier){
  if(!configChests.length)return null;
- for(let t=tier;t>=1;t--){const matches=configChests.filter(r=>Number(r.chest_json?.tier)===t);if(matches.length)return pick(matches).chest_json}
+ for(let t=tier;t>=1;t--){const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion');if(nonPotion.length)return pick(nonPotion).chest_json}
  return null;
 }
 // Exact-tier pick (no falling back to lower tiers), used to bump a couple of
@@ -4047,7 +4030,20 @@ function pickChestDefAtOrBelowTier(tier){
 function pickChestDefAtTier(tier){
  if(!configChests.length)return null;
  const matches=configChests.filter(r=>Number(r.chest_json?.tier)===tier);
- return matches.length?pick(matches).chest_json:null;
+ const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion');
+ return nonPotion.length?pick(nonPotion).chest_json:null;
+}
+function pickPotionChestDefForFloor(floor){
+ const tier=chestTierForFloor(floor);
+ for(let t=tier;t>=1;t--){const rows=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type==='potion');if(rows.length)return pick(rows).chest_json}
+ return null
+}
+// Additive bonus: each regular chest grants an independent 15% chance to
+// place one extra potion chest. Existing loot chests are never replaced.
+function addBonusPotionChests(chests,freeCell,floor){
+ const def=pickPotionChestDefForFloor(floor);if(!def)return;
+ const regularCount=chests.length;
+ for(let i=0;i<regularCount;i++)if(Math.random()<.15)chests.push({...freeCell(),opened:false,chestDef:def})
 }
 function pickChestDefForFloor(floor){
  return pickChestDefAtOrBelowTier(chestTierForFloor(floor));
@@ -4073,7 +4069,8 @@ function chestLootItem(c){
  const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
  if(pickedId!==CHEST_RANDOM_PICK_ID){
   const row=configItems.find(r=>String(r.id)===String(pickedId));
-  if(row)return configuredItemFromRow(row,lootRow,game.player.level);
+  const item=row&&(row.item_json||row);
+  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all'))return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level);
  }
  // The chest's own configured itemTiers is an upper bound the admin picked
  // for that chest tier, but never a substitute for the floor's own hard
@@ -4088,7 +4085,7 @@ function chestLootItem(c){
   if(!lootRarityAllowed(rarity,lootRow))return false;
   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
  });
- if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
+ if(pool.length){const row=pick(pool);return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level)}
  return null;
 }
 function openChest(c){
@@ -7385,7 +7382,7 @@ let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
 // offhand ("mano secundaria"/mano izquierda) counts as weapon type, not equipment
 function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
- if(type==='potion')return j.type==='potion';
+ if(type==='potion')return j.type==='potion'||j.type==='consumable'||j.slot==='consumable';
  if(type==='weapon'){
   if(j.slot!=='weapon'&&j.slot!=='offhand')return false;
   if(weaponTypeFilter&&weaponTypeFilter!=='all'&&j.weaponType!==weaponTypeFilter)return false;
