@@ -1,3 +1,10 @@
+## v0.58.4 - Loot no-poción determinado por el cofre
+
+- Los cofres no-poción determinan directamente la rareza de su recompensa: tier 1 común, tier 2 infrecuente, tier 3 raro, tier 4 épico y tier 5 legendario.
+- Cada cofre no-poción entrega exclusivamente un objeto real de `config_items` de la rareza exacta del cofre, escogido entre cualquier categoría, slot o tipo salvo pociones; sus antiguos filtros de categoría, tipo e IDs concretos ya no restringen este loot.
+- La generación solo coloca un cofre normal de un tier si existe al menos un objeto no-poción configurado de ese mismo tier; nunca rebaja la recompensa a otro tier, evitando tanto cofres vacíos como objetos fuera del tier indicado.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.58.4`.
+
 ## v0.58.3 - Crafteo y deshacer pociones
 
 - Añadida al Altar del Creador la pestaña Crear pociones, alimentada exclusivamente por el mismo catálogo estricto de Configuración → Pociones (`item_json.type === "potion"`).
