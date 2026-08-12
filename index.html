@@ -681,13 +681,18 @@
 <div class="overlay hidden" id="disenchantOverlay">
 <div class="modal">
 <h2>ALTAR DEL CREADOR</h2>
-<p class="small">Deshacer objetos por shards ya no requiere esta sala: hazlo desde el botón "Deshacer" de cualquier objeto en tu Mochila. Aquí solo se crea y mejora equipo.</p>
+<p class="small">Deshacer equipo o pociones por shards se hace desde su botón en el inventario. Aquí puedes crear pociones y mejorar equipo.</p>
 <div class="craftTabs">
+<button type="button" class="craftTabBtn" data-craft-tab="potions">Crear pociones</button>
 <button type="button" class="craftTabBtn active" data-craft-tab="tier">Mejorar tier</button>
 <button type="button" class="craftTabBtn" data-craft-tab="addstat">Añadir stat</button>
 <button type="button" class="craftTabBtn" data-craft-tab="upgradestat">Mejorar stat</button>
 </div>
 <p class="small" id="craftShardsSummary"></p>
+<div class="craftPane hidden" id="craftPanePotions">
+<p class="small">Crea una copia de cualquier poción de Configuración → Pociones. Coste: 7 shards del mismo tier de la poción.</p>
+<div id="craftPotionsList" class="configItemsList"></div>
+</div>
 <div class="craftPane" id="craftPaneTier">
 <p class="small">Sube el tier de un objeto: su stat principal pasa a la base del tier objetivo. Coste: 20 shards del tier objetivo.</p>
 <div id="craftTierList" class="configItemsList"></div>

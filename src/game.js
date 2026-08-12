@@ -3787,9 +3787,9 @@ function useAltar(a){
 // artifact) and stored on game.player.shards, persisted to user_pj's own
 // `shards` column (not inside pj_json) so they survive independently of the
 // rest of the character bundle - see persistShards()/api/user-pj.js.
-// Every item, regardless of tier/iLvl, breaks down into 3-5 shards of its
-// own tier - a flat random range, not scaled by item power.
-function shardsForItem(item){return 3+Math.floor(Math.random()*3)}
+// Equipment breaks down into 3-5 shards and each potion unit into 1-3 shards
+// of its own tier; both ranges are flat and do not scale with item power.
+function shardsForItem(item){return item?.type==='potion'?1+Math.floor(Math.random()*3):3+Math.floor(Math.random()*3)}
 // Craft actions can fire several shard/item saves in quick succession
 // (disenchant, create, upgrade tier, add/upgrade stat); plain fire-and-forget
 // fetches can land out of order and let an earlier, stale write clobber a
@@ -3820,7 +3820,7 @@ function disenchantItem(item){
  const n=shardsForItem(item);
  game.player.shards=game.player.shards||{};
  game.player.shards[item.rarity]=(game.player.shards[item.rarity]||0)+n;
- game.inventory.splice(idx,1);
+ if(item.type==='potion'&&(item.quantity||1)>1)item.quantity--;else game.inventory.splice(idx,1);
  log(`Deshecho ${item.name}: +${n} shard(s) de ${tierDefs[item.rarity]?.label||item.rarity}.`,'good');
  persistShards();
  renderCraftShardsSummary();
@@ -3828,14 +3828,15 @@ function disenchantItem(item){
 }
 function confirmDisenchantItem(id){
  const item=(game.inventory||[]).find(i=>i.id===id);if(!item)return;
- if(!confirm(`¿Deshacer "${item.name}" a cambio de 3-5 shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
+ const range=item.type==='potion'?'1-3':'3-5',unit=item.type==='potion'?' una unidad de':'';
+ if(!confirm(`¿Deshacer${unit} "${item.name}" a cambio de ${range} shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
  disenchantItem(item);
 }
-// Opens the Creator's Room altar for the 4 actual crafting actions (create,
-// upgrade tier, add stat, upgrade stat). Disenchanting lives outside it now.
+// Opens the Creator's Room altar for potion creation and equipment upgrades.
+// Disenchanting lives in the inventory itself.
 function openCraftModal(){switchCraftTab('tier');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
 
-// ---- Creator's Room: full craft system (create/upgrade tier/add stat/upgrade stat) ----
+// ---- Creator's Room: potion craft + equipment tier/stat upgrades ----
 // Bonus values by tier: common+1, uncommon+2, rare+4, epic+6, legendary+8, artifact+10.
 const CRAFT_TIER_BONUS={common:1,uncommon:2,rare:4,epic:6,legendary:8,artifact:10};
 // Extra (non-primary) stat slots an item can hold, on top of its main bonus, by tier.
@@ -3843,6 +3844,7 @@ const CRAFT_EXTRA_STAT_SLOTS={common:0,uncommon:0,rare:1,epic:1,legendary:2,arti
 const CRAFT_TIER_UPGRADE_COST=20;
 const CRAFT_ADD_STAT_COST=20;
 const CRAFT_STAT_UPGRADE_COST=20;
+const CRAFT_POTION_COST=7;
 // Which shard tier a stat-bonus value costs to reach: +1 common, +2/+3 uncommon,
 // +4/+5 rare, +6/+7 epic, +8/+9 legendary, +10 artifact.
 function craftShardTierForValue(v){
@@ -3918,12 +3920,29 @@ function renderCraftShardsSummary(){
 function switchCraftTab(tab){
  document.querySelectorAll('.craftTabBtn').forEach(b=>b.classList.toggle('active',b.dataset.craftTab===tab));
  document.querySelectorAll('.craftPane').forEach(p=>p.classList.add('hidden'));
- const map={tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
+ const map={potions:'craftPanePotions',tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
  document.getElementById(map[tab])?.classList.remove('hidden');
- if(tab==='tier')renderCraftTierPane();
+ if(tab==='potions')renderCraftPotionsPane();
+ else if(tab==='tier')renderCraftTierPane();
  else if(tab==='addstat')renderCraftAddStatPane();
  else if(tab==='upgradestat')renderCraftUpgradeStatPane();
  renderCraftShardsSummary();
+}
+function renderCraftPotionsPane(){
+ const root=document.getElementById('craftPotionsList');if(!root)return;
+ const rows=configuredPotionRows();
+ root.innerHTML=rows.length?rows.map((row,i)=>{const item=row.item_json||row,tier=item.rarity||row.tier||'common',canCraft=hasShards(tier,CRAFT_POTION_COST);return `<div class="configItem"><span class="tierDot" style="background:${tierColor(tier)}"></span><div><b>${item.name||row.nombre||'Poción configurada'}</b><span class="small">${tierDefs[tier]?.label||tier} · ${CRAFT_POTION_COST} shards</span><div class="configItemActions"><button type="button" data-craft-potion="${i}" ${canCraft?'':'disabled'}>Crear poción</button></div></div></div>`}).join(''):'<p class="small">No hay pociones en Configuración → Pociones.</p>';
+ root.querySelectorAll('[data-craft-potion]').forEach(b=>b.onclick=()=>craftConfiguredPotion(rows[Number(b.dataset.craftPotion)]));
+}
+function craftConfiguredPotion(row){
+ if(!isConfiguredPotionRow(row)){log('Esta poción ya no pertenece al catálogo configurado.','sys');renderCraftPotionsPane();return}
+ const raw=row.item_json||row,tier=raw.rarity||row.tier||'common';
+ if(!hasShards(tier,CRAFT_POTION_COST)){log(`Necesitas ${CRAFT_POTION_COST} shards de ${tierDefs[tier]?.label||tier}.`,'sys');return}
+ spendShards(tier,CRAFT_POTION_COST);
+ const itemLevel=Math.max(1,Number(raw.itemLevel||row.ilvl)||1),item=configuredItemFromRow(row,{itemLevel:{min:itemLevel,max:itemLevel}},itemLevel);
+ addInventoryItem(item);
+ log(`Creada ${item.name} por ${CRAFT_POTION_COST} shards de ${tierDefs[tier]?.label||tier}.`,'good');
+ renderCraftPotionsPane();renderCraftShardsSummary();updateUI();
 }
 function renderCraftTierPane(){
  const root=document.getElementById('craftTierList');if(!root)return;
@@ -3999,11 +4018,21 @@ function craftUpgradeStat(item,affix){
  log(`${item.name}: ${affix.label} sube a +${newValue}.`,'good');
  persistCustomItems();renderCraftUpgradeStatPane();renderCraftShardsSummary();recomputeDerived();updateUI();
 }
+const CHEST_ITEM_RARITY_BY_TIER={1:'common',2:'uncommon',3:'rare',4:'epic',5:'legendary'};
+function chestItemRarity(tier){return CHEST_ITEM_RARITY_BY_TIER[Math.max(1,Math.min(5,Number(tier)||1))]}
+function configuredRowsForChestDef(def){
+ if(!def||def.type==='potion'||def.type==='skill')return [];
+ const rarity=chestItemRarity(def.tier);
+ return configItems.filter(row=>{const item=row.item_json||row;return !isConfiguredPotionRow(row)&&(item.rarity||row.tier||'common')===rarity&&chestItemMatchesType(item,def.type,def.slotFilter||'all',def.weaponTypeFilter||'all')})
+}
+function chestDefHasLoot(def){
+ if(def?.type==='skill')return Object.keys(skillDefs).length>0;
+ return configuredRowsForChestDef(def).length>0
+}
 // Chest tier (1-5) max for a floor, kept consistent with the same floor
 // thresholds as the guaranteed floor-completion item
 // (FLOOR_REWARD_TIER_THRESHOLDS): común/1 -> tier 1, infrecuente/2-3 -> tier
-// 2, raro/4-7 -> tier 3, épico/8-10 -> tier 4, legendario-y-artefacto/11+ ->
-// tier 5 (the chest scale tops out at 5, so legendary and artifact share it).
+// 2, raro/4-7 -> tier 3, épico/8-10 -> tier 4 y legendario/11+ -> tier 5.
 function chestTierForFloor(floor){
  const f=Math.max(1,Number(floor)||1);
  if(f<=1)return 1;
@@ -4048,22 +4077,19 @@ function addBonusPotionChests(chests,freeCell,floor){
 function pickChestDefForFloor(floor){
  return pickChestDefAtOrBelowTier(chestTierForFloor(floor));
 }
-// Resolves one loot slot against the chest's own resolved config_chest
-// definition (specific items/skills if picked, else random within its
-// configured item tiers/slot/weapon-type); returns null when the slot only
-// unlocked a skill, or when nothing in config_items matches - never a
-// generic/procedural item.
+// The chest definition determines the item type/category and its numeric tier
+// determines the exact rarity. Specific ids are honored only when they meet
+// both constraints; otherwise the same typed, exact-tier pool guarantees loot.
 function chestLootItem(c){
  const def=c.chestDef;if(!def)return null;
  const type=def.type;
+ const lootRow=currentLootProgressionRow(game.floor,game.player.level);
  if(type==='skill'){
-  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID);
-  const specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
+  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID),specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
   const id=specific.length?pick(specific):randomLootableSkill();
   if(id)unlockSkillLoot(id);
-  return null;
+  return null
  }
- const lootRow=currentLootProgressionRow(game.floor,game.player.level);
  // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
  // sentinel ("Aleatorio" checkbox); an empty list also means random
  const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
@@ -5841,7 +5867,7 @@ function updateUI(){
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  const potionsEl=document.getElementById('potions');
- if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">No llevas pociones.</p>';
+ if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div><button type="button" class="disenchantMiniBtn" title="Deshacer una poción: 1-3 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button></div>`).join(''):'<p class="small">No llevas pociones.</p>';
  // Trinkets/rings with a configured effects[] show up here instead of the
  // inventory - they stay equipped (see useEquipmentActive), so their icon is
  // drawn via the same data-equipped-slot lookup as the paperdoll slots below.
@@ -7198,10 +7224,10 @@ function renderConfigClassPotionResults(){
  const q=(document.getElementById('configClassPotionSearch')?.value||'').trim().toLowerCase();
  // Hidden potions never show up in the default (empty-search) list - they
  // only surface once the search text actually matches their name.
- const pool=configItems.filter(r=>(r.item_json||r).type==='potion').map(r=>({id:String(r.id),name:(r.item_json||r).name||r.nombre||String(r.id),hidden:!!(r.item_json||r).hidden})).filter(x=>q?x.name.toLowerCase().includes(q):!x.hidden);
+ const pool=configuredPotionRows().map(r=>({id:String(r.id),name:(r.item_json||r).name||r.nombre||String(r.id),hidden:!!(r.item_json||r).hidden})).filter(x=>q?x.name.toLowerCase().includes(q):!x.hidden);
  const selected=new Set(window.currentClassStarterPotionIds.map(String));
  root.innerHTML=pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-class-potion-pick="${x.id}" ${selected.has(x.id)?'checked':''}><span>${x.name}</span></label>`).join(''):'<p class="small">No hay pociones configuradas todavía.</p>';
- const updateSummary=()=>{if(summary)summary.textContent=window.currentClassStarterPotionIds.length?`${window.currentClassStarterPotionIds.length} poción(es) seleccionada(s) como equipo inicial.`:'Nada seleccionado: se usarán las 2 pociones de curación por defecto.'};
+ const updateSummary=()=>{if(summary)summary.textContent=window.currentClassStarterPotionIds.length?`${window.currentClassStarterPotionIds.length} poción(es) seleccionada(s) como equipo inicial.`:'Nada seleccionado: se usarán 2 unidades de una poción del catálogo configurado.'};
  root.querySelectorAll('[data-class-potion-pick]').forEach(cb=>cb.onchange=()=>{
   const id=cb.dataset.classPotionPick;
   window.currentClassStarterPotionIds=cb.checked?[...window.currentClassStarterPotionIds,id]:window.currentClassStarterPotionIds.filter(x=>x!==id);
@@ -7222,7 +7248,7 @@ function renderConfigItems(){const root=document.getElementById('configItemsList
 // already branches on isPotion for its own summary text), just filtered to
 // potions only and wired to the potion tab's own edit/duplicate/delete
 // handlers so the two tabs never touch each other's editingConfigId/form.
-function renderConfigPotionsList(){const root=document.getElementById('configPotionsList');if(!root)return;const potionRows=configItems.filter(i=>(i.item_json||i).type==='potion');if(!potionRows.length){root.innerHTML='<p class="small">No hay pociones configuradas.</p>';return}root.innerHTML=potionRows.map(renderConfigItemRow).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigPotionForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigPotion(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigPotion(b.dataset.configDelete))}
+function renderConfigPotionsList(){const root=document.getElementById('configPotionsList');if(!root)return;const potionRows=configuredPotionRows();if(!potionRows.length){root.innerHTML='<p class="small">No hay pociones configuradas.</p>';return}root.innerHTML=potionRows.map(renderConfigItemRow).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigPotionForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigPotion(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigPotion(b.dataset.configDelete))}
 function configStatDefinitions(){const seen=new Set();return [...primaryAffixes,...secondaryAffixes].filter(def=>{if(seen.has(def.key))return false;seen.add(def.key);return true})}
 function renderConfigStatsHelp(){const root=document.getElementById('configStatsHelp');if(!root)return;root.innerHTML='<p class="small"><b>Bonos disponibles:</b> pulsa uno para añadirlo a Stats.</p>'+configStatDefinitions().map(def=>`<button type="button" class="statBonusButton" data-stat-bonus="${def.key}" title="${def.label}. Slots: ${def.slots.map(s=>slotNames[s]||s).join(', ')}"><b>${def.key}</b><span>${def.label}${def.percent?' %':''}</span></button>`).join('');root.querySelectorAll('[data-stat-bonus]').forEach(btn=>btn.onclick=()=>{const sep=configStats.value.trim()? ', ':'';configStats.value+=`${sep}${btn.dataset.statBonus}:+1`;configStats.focus()})}
 function addIconSilhouetteBorder(canvas,size=2,color=[0,0,0,255]){const q=canvas.getContext('2d'),w=canvas.width,h=canvas.height,orig=document.createElement('canvas');orig.width=w;orig.height=h;orig.getContext('2d').drawImage(canvas,0,0);const src=q.getImageData(0,0,w,h),border=q.createImageData(w,h),r=Math.max(1,Math.round(size));for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(src.data[i+3]>8)continue;let near=false;for(let dy=-r;dy<=r&&!near;dy++)for(let dx=-r;dx<=r;dx++){if(dx*dx+dy*dy>r*r)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;if(src.data[(ny*w+nx)*4+3]>8){near=true;break}}if(near){border.data[i]=color[0];border.data[i+1]=color[1];border.data[i+2]=color[2];border.data[i+3]=color[3]}}q.putImageData(border,0,0);q.drawImage(orig,0,0);return canvas}
