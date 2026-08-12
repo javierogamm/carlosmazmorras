@@ -1,3 +1,11 @@
+## v0.58.5 - Tipo de loot definido por el cofre
+
+- Corregida la selección de loot no-poción: el cofre vuelve a determinar el tipo/categoría del objeto mediante su configuración (`equipment`, slot, `weapon` y tipo de arma), mientras su tier sigue determinando la rareza exacta.
+- Los IDs específicos de un cofre solo se entregan si coinciden a la vez con su tipo configurado y con la rareza exacta derivada del tier; en caso contrario se escoge otro objeto válido del mismo tipo y tier desde `config_items`.
+- La generación descarta definiciones de cofre cuyo tipo y tier no tengan ningún objeto compatible en `config_items`, evitando loot vacío sin mezclar categorías ni rebajar tiers.
+- Restaurado el flujo propio de los cofres de habilidad; los cofres de poción mantienen intacto su catálogo estricto y sus reglas independientes.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.58.5`.
+
 ## v0.58.4 - Loot no-poción determinado por el cofre
 
 - Los cofres no-poción determinan directamente la rareza de su recompensa: tier 1 común, tier 2 infrecuente, tier 3 raro, tier 4 épico y tier 5 legendario.

@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.58.4';
+const APP_VERSION='0.58.5';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -4020,9 +4020,14 @@ function craftUpgradeStat(item,affix){
 }
 const CHEST_ITEM_RARITY_BY_TIER={1:'common',2:'uncommon',3:'rare',4:'epic',5:'legendary'};
 function chestItemRarity(tier){return CHEST_ITEM_RARITY_BY_TIER[Math.max(1,Math.min(5,Number(tier)||1))]}
-function configuredNonPotionRowsForChestTier(tier){
- const rarity=chestItemRarity(tier);
- return configItems.filter(row=>{const item=row.item_json||row;return !isConfiguredPotionRow(row)&&(item.rarity||row.tier||'common')===rarity})
+function configuredRowsForChestDef(def){
+ if(!def||def.type==='potion'||def.type==='skill')return [];
+ const rarity=chestItemRarity(def.tier);
+ return configItems.filter(row=>{const item=row.item_json||row;return !isConfiguredPotionRow(row)&&(item.rarity||row.tier||'common')===rarity&&chestItemMatchesType(item,def.type,def.slotFilter||'all',def.weaponTypeFilter||'all')})
+}
+function chestDefHasLoot(def){
+ if(def?.type==='skill')return Object.keys(skillDefs).length>0;
+ return configuredRowsForChestDef(def).length>0
 }
 // Chest tier (1-5) max for a floor, kept consistent with the same floor
 // thresholds as the guaranteed floor-completion item
@@ -4046,8 +4051,7 @@ function chestTierForFloor(floor){
 function pickChestDefAtOrBelowTier(tier){
  if(!configChests.length)return null;
  for(let t=tier;t>=1;t--){
-  if(!configuredNonPotionRowsForChestTier(t).length)continue;
-  const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion');
+  const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion'&&chestDefHasLoot(r.chest_json));
   if(nonPotion.length)return pick(nonPotion).chest_json
  }
  return null;
@@ -4057,9 +4061,8 @@ function pickChestDefAtOrBelowTier(tier){
 // in buildFloorPlan(). Returns null if nothing is configured at that tier.
 function pickChestDefAtTier(tier){
  if(!configChests.length)return null;
- if(!configuredNonPotionRowsForChestTier(tier).length)return null;
  const matches=configChests.filter(r=>Number(r.chest_json?.tier)===tier);
- const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion');
+ const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion'&&chestDefHasLoot(r.chest_json));
  return nonPotion.length?pick(nonPotion).chest_json:null;
 }
 function pickPotionChestDefForFloor(floor){
@@ -4077,18 +4080,18 @@ function addBonusPotionChests(chests,freeCell,floor){
 function pickChestDefForFloor(floor){
  return pickChestDefAtOrBelowTier(chestTierForFloor(floor));
 }
-// Potion chests retain their configured potion rules. Every other chest
-// ignores category/type/specific-item filters for loot: its numeric tier
-// exclusively determines an exact item rarity, and the reward is a real,
-// non-potion config_items row of that rarity.
+// The chest definition determines the item type/category and its numeric tier
+// determines the exact rarity. Specific ids are honored only when they meet
+// both constraints; otherwise the same typed, exact-tier pool guarantees loot.
 function chestLootItem(c){
  const def=c.chestDef;if(!def)return null;
  const type=def.type;
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
- if(type!=='potion'){
-  const pool=configuredNonPotionRowsForChestTier(def.tier);
-  if(!pool.length){log(`No hay objetos no-poción de tier ${def.tier} configurados para resolver este cofre.`, 'sys');return null}
-  return configuredItemFromRow(pick(pool),lootRow,game.player.level)
+ if(type==='skill'){
+  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID),specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
+  const id=specific.length?pick(specific):randomLootableSkill();
+  if(id)unlockSkillLoot(id);
+  return null
  }
  // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
  // sentinel ("Aleatorio" checkbox); an empty list also means random
@@ -4096,7 +4099,13 @@ function chestLootItem(c){
  if(pickedId!==CHEST_RANDOM_PICK_ID){
   const row=configItems.find(r=>String(r.id)===String(pickedId));
   const item=row&&(row.item_json||row),rarity=item&&(item.rarity||row.tier||'common');
-  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all')&&(type!=='potion'||lootRarityAllowed(rarity,lootRow)))return configuredItemFromRow(row,lootRow,game.player.level);
+  const exactRarity=type==='potion'?lootRarityAllowed(rarity,lootRow):rarity===chestItemRarity(def.tier);
+  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all')&&exactRarity)return configuredItemFromRow(row,lootRow,game.player.level);
+ }
+ if(type!=='potion'){
+  const pool=configuredRowsForChestDef(def);
+  if(!pool.length){log(`No hay objetos de tipo ${type} y tier ${def.tier} configurados para resolver este cofre.`,'sys');return null}
+  return configuredItemFromRow(pick(pool),lootRow,game.player.level)
  }
  // The chest's own configured itemTiers is an upper bound the admin picked
  // for that chest tier, but never a substitute for the floor's own hard
