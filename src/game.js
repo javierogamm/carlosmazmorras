@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.58.5';
+const APP_VERSION='0.58.1';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -1105,12 +1105,13 @@ function recomputeDerived(){
 }
 
 
-// Single source of truth shared by loot, Configuración > Pociones and the
-// class starter-potion picker. Only rows whose stored item_json explicitly
-// declares type:'potion' belong to the potion catalog; a consumable slot by
-// itself must never be promoted into or presented as a potion.
-function isConfiguredPotionRow(row){return (row?.item_json||row)?.type==='potion'}
-function configuredPotionRows(){return configItems.filter(isConfiguredPotionRow)}
+// Potions are never synthesized by the client: every consumable awarded by
+// loot or at character creation must originate in Supabase config_items.
+function configuredPotionRows(){return configItems.filter(row=>{const item=row.item_json||row;return item.type==='potion'||item.type==='consumable'||item.slot==='consumable'})}
+function configuredPotionFromRow(row,lootRow,level){
+ const raw=row.item_json||row,potionRow={...row,item_json:{...raw,type:'potion',slot:'consumable'}};
+ return configuredItemFromRow(potionRow,lootRow,level)
+}
 function potionStackKey(item){return [item.type,item.name||'',item.rarity||'',JSON.stringify(item.effects||[])].join('|')}
 function addInventoryItem(item){
  if(!game?.inventory||!item)return item;
@@ -1131,7 +1132,7 @@ function addStarterPotions(classId){
  if(selected.length){
   for(const row of selected){
    for(let i=0;i<2;i++){
-    const item=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+    const item=configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1);
     addInventoryItem(item)
    }
   }
@@ -1143,9 +1144,8 @@ function makePotion(quality=1){
  const rows=configuredPotionRows();if(!rows.length)return null;
  const level=Math.max(1,Math.round(quality)),lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level);
  const allowed=rows.filter(row=>lootRarityAllowed((row.item_json||row).rarity||row.tier||'common',lootRow));
- if(!allowed.length)return null;
- const maxRank=Math.max(...allowed.map(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common'))),suitable=allowed.filter(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common')===maxRank);
- return configuredItemFromRow(pick(suitable),lootRow,level)
+ const tierPool=allowed.length?allowed:rows,maxRank=Math.max(...tierPool.map(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common'))),suitable=tierPool.filter(row=>LOOT_RARITY_ORDER.indexOf((row.item_json||row).rarity||row.tier||'common')===maxRank);
+ return configuredPotionFromRow(pick(suitable),lootRow,level)
 }
 function nearestSafeRoom(){return [...(game.safeRooms||[])].sort((a,b)=>gridDistance(game.player,{x:a.cx,y:a.cy})-gridDistance(game.player,{x:b.cx,y:b.cy}))[0]}
 // ---- External effects casting: reuses the exact same composable-effects
@@ -4050,10 +4050,7 @@ function chestTierForFloor(floor){
 // which case no chest gets placed at all.
 function pickChestDefAtOrBelowTier(tier){
  if(!configChests.length)return null;
- for(let t=tier;t>=1;t--){
-  const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion'&&chestDefHasLoot(r.chest_json));
-  if(nonPotion.length)return pick(nonPotion).chest_json
- }
+ for(let t=tier;t>=1;t--){const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion');if(nonPotion.length)return pick(nonPotion).chest_json}
  return null;
 }
 // Exact-tier pick (no falling back to lower tiers), used to bump a couple of
@@ -4062,7 +4059,7 @@ function pickChestDefAtOrBelowTier(tier){
 function pickChestDefAtTier(tier){
  if(!configChests.length)return null;
  const matches=configChests.filter(r=>Number(r.chest_json?.tier)===tier);
- const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion'&&chestDefHasLoot(r.chest_json));
+ const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion');
  return nonPotion.length?pick(nonPotion).chest_json:null;
 }
 function pickPotionChestDefForFloor(floor){
@@ -4098,14 +4095,8 @@ function chestLootItem(c){
  const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
  if(pickedId!==CHEST_RANDOM_PICK_ID){
   const row=configItems.find(r=>String(r.id)===String(pickedId));
-  const item=row&&(row.item_json||row),rarity=item&&(item.rarity||row.tier||'common');
-  const exactRarity=type==='potion'?lootRarityAllowed(rarity,lootRow):rarity===chestItemRarity(def.tier);
-  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all')&&exactRarity)return configuredItemFromRow(row,lootRow,game.player.level);
- }
- if(type!=='potion'){
-  const pool=configuredRowsForChestDef(def);
-  if(!pool.length){log(`No hay objetos de tipo ${type} y tier ${def.tier} configurados para resolver este cofre.`,'sys');return null}
-  return configuredItemFromRow(pick(pool),lootRow,game.player.level)
+  const item=row&&(row.item_json||row);
+  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all'))return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level);
  }
  // The chest's own configured itemTiers is an upper bound the admin picked
  // for that chest tier, but never a substitute for the floor's own hard
@@ -4120,7 +4111,7 @@ function chestLootItem(c){
   if(!lootRarityAllowed(rarity,lootRow))return false;
   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
  });
- if(pool.length)return configuredItemFromRow(pick(pool),lootRow,game.player.level);
+ if(pool.length){const row=pick(pool);return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level)}
  return null;
 }
 function openChest(c){
@@ -7417,7 +7408,7 @@ let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
 // offhand ("mano secundaria"/mano izquierda) counts as weapon type, not equipment
 function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
- if(type==='potion')return isConfiguredPotionRow(j);
+ if(type==='potion')return j.type==='potion'||j.type==='consumable'||j.slot==='consumable';
  if(type==='weapon'){
   if(j.slot!=='weapon'&&j.slot!=='offhand')return false;
   if(weaponTypeFilter&&weaponTypeFilter!=='all'&&j.weaponType!==weaponTypeFilter)return false;
