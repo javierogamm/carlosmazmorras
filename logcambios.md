@@ -1,3 +1,10 @@
+## v0.58.3 - Crafteo y deshacer pociones
+
+- Añadida al Altar del Creador la pestaña Crear pociones, alimentada exclusivamente por el mismo catálogo estricto de Configuración → Pociones (`item_json.type === "potion"`).
+- Crear una poción cuesta 7 shards de su propio tier y entrega una copia real de la fila seleccionada de `config_items`, conservando nombre, efectos, icono, rareza y nivel configurados.
+- Las pociones pueden deshacerse desde su inventario: cada unidad destruida concede entre 1 y 3 shards de su tier; en una pila solo se consume una unidad por operación.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.58.3`.
+
 ## v0.58.2 - Catálogo único y estricto de pociones
 
 - Corregida la causa por la que objetos con `slot: consumable` o `type: consumable` podían promocionarse artificialmente a poción aunque no figurasen en Configuración → Pociones.

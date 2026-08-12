@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.58.2';
+const APP_VERSION='0.58.3';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -3787,9 +3787,9 @@ function useAltar(a){
 // artifact) and stored on game.player.shards, persisted to user_pj's own
 // `shards` column (not inside pj_json) so they survive independently of the
 // rest of the character bundle - see persistShards()/api/user-pj.js.
-// Every item, regardless of tier/iLvl, breaks down into 3-5 shards of its
-// own tier - a flat random range, not scaled by item power.
-function shardsForItem(item){return 3+Math.floor(Math.random()*3)}
+// Equipment breaks down into 3-5 shards and each potion unit into 1-3 shards
+// of its own tier; both ranges are flat and do not scale with item power.
+function shardsForItem(item){return item?.type==='potion'?1+Math.floor(Math.random()*3):3+Math.floor(Math.random()*3)}
 // Craft actions can fire several shard/item saves in quick succession
 // (disenchant, create, upgrade tier, add/upgrade stat); plain fire-and-forget
 // fetches can land out of order and let an earlier, stale write clobber a
@@ -3820,7 +3820,7 @@ function disenchantItem(item){
  const n=shardsForItem(item);
  game.player.shards=game.player.shards||{};
  game.player.shards[item.rarity]=(game.player.shards[item.rarity]||0)+n;
- game.inventory.splice(idx,1);
+ if(item.type==='potion'&&(item.quantity||1)>1)item.quantity--;else game.inventory.splice(idx,1);
  log(`Deshecho ${item.name}: +${n} shard(s) de ${tierDefs[item.rarity]?.label||item.rarity}.`,'good');
  persistShards();
  renderCraftShardsSummary();
@@ -3828,14 +3828,15 @@ function disenchantItem(item){
 }
 function confirmDisenchantItem(id){
  const item=(game.inventory||[]).find(i=>i.id===id);if(!item)return;
- if(!confirm(`¿Deshacer "${item.name}" a cambio de 3-5 shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
+ const range=item.type==='potion'?'1-3':'3-5',unit=item.type==='potion'?' una unidad de':'';
+ if(!confirm(`¿Deshacer${unit} "${item.name}" a cambio de ${range} shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
  disenchantItem(item);
 }
-// Opens the Creator's Room altar for the 4 actual crafting actions (create,
-// upgrade tier, add stat, upgrade stat). Disenchanting lives outside it now.
+// Opens the Creator's Room altar for potion creation and equipment upgrades.
+// Disenchanting lives in the inventory itself.
 function openCraftModal(){switchCraftTab('tier');document.getElementById('disenchantOverlay')?.classList.remove('hidden')}
 
-// ---- Creator's Room: full craft system (create/upgrade tier/add stat/upgrade stat) ----
+// ---- Creator's Room: potion craft + equipment tier/stat upgrades ----
 // Bonus values by tier: common+1, uncommon+2, rare+4, epic+6, legendary+8, artifact+10.
 const CRAFT_TIER_BONUS={common:1,uncommon:2,rare:4,epic:6,legendary:8,artifact:10};
 // Extra (non-primary) stat slots an item can hold, on top of its main bonus, by tier.
@@ -3843,6 +3844,7 @@ const CRAFT_EXTRA_STAT_SLOTS={common:0,uncommon:0,rare:1,epic:1,legendary:2,arti
 const CRAFT_TIER_UPGRADE_COST=20;
 const CRAFT_ADD_STAT_COST=20;
 const CRAFT_STAT_UPGRADE_COST=20;
+const CRAFT_POTION_COST=7;
 // Which shard tier a stat-bonus value costs to reach: +1 common, +2/+3 uncommon,
 // +4/+5 rare, +6/+7 epic, +8/+9 legendary, +10 artifact.
 function craftShardTierForValue(v){
@@ -3918,12 +3920,29 @@ function renderCraftShardsSummary(){
 function switchCraftTab(tab){
  document.querySelectorAll('.craftTabBtn').forEach(b=>b.classList.toggle('active',b.dataset.craftTab===tab));
  document.querySelectorAll('.craftPane').forEach(p=>p.classList.add('hidden'));
- const map={tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
+ const map={potions:'craftPanePotions',tier:'craftPaneTier',addstat:'craftPaneAddStat',upgradestat:'craftPaneUpgradeStat'};
  document.getElementById(map[tab])?.classList.remove('hidden');
- if(tab==='tier')renderCraftTierPane();
+ if(tab==='potions')renderCraftPotionsPane();
+ else if(tab==='tier')renderCraftTierPane();
  else if(tab==='addstat')renderCraftAddStatPane();
  else if(tab==='upgradestat')renderCraftUpgradeStatPane();
  renderCraftShardsSummary();
+}
+function renderCraftPotionsPane(){
+ const root=document.getElementById('craftPotionsList');if(!root)return;
+ const rows=configuredPotionRows();
+ root.innerHTML=rows.length?rows.map((row,i)=>{const item=row.item_json||row,tier=item.rarity||row.tier||'common',canCraft=hasShards(tier,CRAFT_POTION_COST);return `<div class="configItem"><span class="tierDot" style="background:${tierColor(tier)}"></span><div><b>${item.name||row.nombre||'Poción configurada'}</b><span class="small">${tierDefs[tier]?.label||tier} · ${CRAFT_POTION_COST} shards</span><div class="configItemActions"><button type="button" data-craft-potion="${i}" ${canCraft?'':'disabled'}>Crear poción</button></div></div></div>`}).join(''):'<p class="small">No hay pociones en Configuración → Pociones.</p>';
+ root.querySelectorAll('[data-craft-potion]').forEach(b=>b.onclick=()=>craftConfiguredPotion(rows[Number(b.dataset.craftPotion)]));
+}
+function craftConfiguredPotion(row){
+ if(!isConfiguredPotionRow(row)){log('Esta poción ya no pertenece al catálogo configurado.','sys');renderCraftPotionsPane();return}
+ const raw=row.item_json||row,tier=raw.rarity||row.tier||'common';
+ if(!hasShards(tier,CRAFT_POTION_COST)){log(`Necesitas ${CRAFT_POTION_COST} shards de ${tierDefs[tier]?.label||tier}.`,'sys');return}
+ spendShards(tier,CRAFT_POTION_COST);
+ const itemLevel=Math.max(1,Number(raw.itemLevel||row.ilvl)||1),item=configuredItemFromRow(row,{itemLevel:{min:itemLevel,max:itemLevel}},itemLevel);
+ addInventoryItem(item);
+ log(`Creada ${item.name} por ${CRAFT_POTION_COST} shards de ${tierDefs[tier]?.label||tier}.`,'good');
+ renderCraftPotionsPane();renderCraftShardsSummary();updateUI();
 }
 function renderCraftTierPane(){
  const root=document.getElementById('craftTierList');if(!root)return;
@@ -5841,7 +5860,7 @@ function updateUI(){
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
  const potionsEl=document.getElementById('potions');
- if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div></div>`).join(''):'<p class="small">No llevas pociones.</p>';
+ if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div><button type="button" class="disenchantMiniBtn" title="Deshacer una poción: 1-3 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button></div>`).join(''):'<p class="small">No llevas pociones.</p>';
  // Trinkets/rings with a configured effects[] show up here instead of the
  // inventory - they stay equipped (see useEquipmentActive), so their icon is
  // drawn via the same data-equipped-slot lookup as the paperdoll slots below.
