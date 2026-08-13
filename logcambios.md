@@ -1,3 +1,12 @@
+## v0.61.0 - Companions, animación y navegación enemiga
+
+- Corregido el error `clampCompanionReservedResources is not defined` al elegir habilidades de compañero y consolidado el ciclo completo de reserva, liberación, reactivación y límite efectivo de vida, maná o stamina.
+- Optimizado el bucle visual con un único planificador basado en `requestAnimationFrame`, avance dependiente del tiempo transcurrido y prevención de frames duplicados.
+- Integrado GSAP sin spritesheets mediante una capa de efectos DOM sobre el canvas para animar desplazamientos, ataques, habilidades y cada componente apilable de skill (daño, DOT, curación, buff, escudo y movimiento).
+- Añadidas señales GSAP específicas para ticks de daño en el tiempo, golpes normales, ataques enemigos, proyectiles y desplazamientos de la IA.
+- Sustituido el avance enemigo codicioso por búsqueda de ruta con colisiones, paredes, esquinas, zonas seguras y ocupación de entidades; las clases a distancia conservan una conducta defensiva de retirada y las clases de cuerpo a cuerpo buscan una ruta ofensiva hasta el objetivo.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.61.0`.
+
 ## v0.60.1 - Imágenes nítidas y recarga en el editor
 
 - Los recortes de imágenes subidas conservan ahora la resolución completa del área seleccionada, en lugar de reducirse permanentemente a 50x50 px antes de guardarse.
