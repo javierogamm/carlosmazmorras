@@ -1,14 +1,3 @@
-## v0.61.0 - Compañeros, reservas y multihit dirigido
-
-- Las habilidades y efectos stackeables `multihit` pasan a seleccionar un enemigo concreto y mantienen todos sus impactos sobre ese blanco.
-- Las invocaciones, torretas, clones y compañeros procedentes tanto de habilidades como de objetos reservan el porcentaje configurado de vida, maná o stamina mientras permanezcan invocados; la reserva limita la recuperación máxima y se libera al desinvocar.
-- Añadida la pestaña **Compañeros** junto a Mochila, Pociones y Activables, con resumen de origen, vida, comportamiento y reserva, además de **Desinvocar** sin PA y **Llamar** por 5 PA.
-- Los compañeros desinvocados se conservan en el personaje y pueden volver a viajar junto a él sin volver a crear ni duplicar la invocación.
-- Sustituido el movimiento directo de compañeros por búsqueda de caminos sobre el mapa real, respetando muros, puertas y casillas ocupadas al seguir al personaje o acercarse a un enemigo.
-- Los efectos stackeables **Curación** y **HOT** permiten escoger Vida, Maná o Stamina en los editores compartidos por habilidades, pociones y objetos.
-- Todos los anillos, trinkets y colgantes con efectos stackeables reciben y respetan un cooldown mínimo consolidado cuando no exista uno válido en datos antiguos.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.61.0`.
-
 ## v0.60.0 - Activables, procs y equipo pasivo
 
 - Corregida la selección de objetivo de pociones con efectos dirigidos: daño y debuffs permiten escoger enemigo, mientras áreas, trampas, invocaciones, torretas y clones abren el apuntado al suelo y solo consumen una unidad después de resolver el efecto.
