@@ -52,7 +52,7 @@ Common component shape: `{ "kind": "<kind>", "target": "...", ...kind-specific f
 
 ### 3.1 Shared "dice block" (prefix defaults to `dmg`, some kinds use `dot`)
 
-Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Every one of these derives its stat bonus (`dmgStatMode:"add"`) or multiplier (`dmgStatMode:"mult"`) from **its own component's** `dmgStat`/`dmgStatCoef` and the caster's (the player's) live stat value, not from the enclosing skill's top-level fields or a generic guess — leaving `dmgStat` empty ("Automática") falls back to the enclosing skill's `type`/`resource`-based bonus, same as before. `trap` computes but then discards its own dice/stat magnitude entirely — see §4.23.
+Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Los dados fijan la magnitud base. Los campos legacy de stat/coefficient se ignoran: el bonus automático se calcula con INT para daño/DOT/debuff y con SAB para curación/utilidad. `trap` computes but then discards its own dice/stat magnitude entirely — see §4.23.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
@@ -489,3 +489,15 @@ The 12 "shared" tags (`ranged, shield, dash, debuff, aoe, heal, multihit, utilit
   }
 }
 ```
+
+## Bonus automático consolidado (v0.62.1)
+
+No se configura categoría, atributo de scaling ni coeficiente por skill. El motor clasifica el efecto que resuelve:
+
+- Daño directo y DOT: `base × (1 + INT × 0.01)`.
+- Debuffs cuantitativos: su magnitud usa `1 + INT × 0.01`.
+- Curación y HOT: `base × (1 + SAB × 0.01)`.
+- Utilidad cuantitativa (escudos, buffs, HP de invocaciones, recursos, alcance de revelado, transformaciones y ascensiones): su magnitud usa `1 + SAB × 0.01`.
+- Los efectos binarios no reciben una magnitud artificial.
+
+Se usa la INT o SAB total consolidada del actor que lanza la habilidad. Esto se aplica igualmente a jugadores, enemigos, élites y bosses. Los campos legacy `scaling`, `dmgStat`, `dotStat`, modos y coeficientes pueden existir en datos antiguos, pero no producen ningún efecto.
