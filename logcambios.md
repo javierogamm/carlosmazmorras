@@ -1,3 +1,10 @@
+## v0.63.1 - Invisibilidad y teletransporte raciales
+
+- Corregido el orden del ciclo de invisibilidad apilable: sus turnos se consumen después de la respuesta enemiga, por lo que una invisibilidad propia de un turno evita correctamente una fase enemiga completa.
+- Aplicado el mismo orden de consumo en combate clásico, modo PA y fase enemiga multijugador.
+- Añadido Movimiento al selector de efectos apilables de las skills raciales, incluyendo Dash y Teletransporte con alcance configurable y selección de casilla.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.63.1`.
+
 ## v0.63.0 - Sistema integral de razas configurables
 
 - Añadida la pestaña **Razas** a Configuración con alta, edición, borrado, importación y exportación JSON sobre la tabla `config_razas`.
