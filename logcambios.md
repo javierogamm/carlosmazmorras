@@ -1,3 +1,12 @@
+## v0.63.0 - Sistema integral de razas configurables
+
+- Añadida la pestaña **Razas** a Configuración con alta, edición, borrado, importación y exportación JSON sobre la tabla `config_razas`.
+- Organizado el editor en acordeones de identidad, bonus de stats/recursos/PA, skill racial de efectos apilables e icono recortable.
+- El catálogo persistido alimenta la creación de personaje, el modo testing y la configuración de bloqueos mediante una clave racial estable.
+- Las skills raciales se aprenden y equipan al crear personaje, usan el motor común de efectos y se distinguen con acabado dorado/blanco.
+- Integrados los bonus raciales de PA y porcentaje de gasto de recursos junto a los atributos, regeneraciones y derivados ya existentes.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.63.0`.
+
 ## v0.62.1 - Bonus automático de skills
 
 - Eliminada la configuración manual de categoría, atributo y coeficiente de scaling de las skills; también se retiraron esos controles del editor.

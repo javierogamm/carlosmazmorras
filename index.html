@@ -175,8 +175,8 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.60.1 IMÁGENES NÍTIDAS</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.63.0 RAZAS CONFIGURABLES</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -312,6 +312,35 @@
    <div id="configPotionsList" class="configItemsList"></div>
   </section>
  </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabRaces">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de razas</h2>
+    <p class="small">Crea, modifica, elimina, importa y exporta razas persistidas en <code>config_razas</code>. Las razas configuradas sustituyen el catálogo clásico y conservan sus bloqueos por clave estable.</p>
+    <details class="configAccordion" open><summary>Nombre y descripción</summary>
+     <label>Raza <select id="configRaceSelect"></select></label>
+     <label>Clave de bloqueo <input id="configRaceKey" maxlength="60" placeholder="elfo_nocturno"></label>
+     <label>Nombre <input id="configRaceName" maxlength="80"></label>
+     <label>Descripción <textarea id="configRaceDesc" maxlength="400"></textarea></label>
+    </details>
+    <details class="configAccordion"><summary>Stats</summary>
+     <p class="small">Bonus aditivos salvo los multiplicadores (%): admite atributos, regeneraciones, PA, gasto de recursos y cualquier clave numérica del motor.</p>
+     <div class="configForm" id="configRaceStatsFields"></div>
+     <label>Otros stats (JSON) <textarea id="configRaceExtraStats" placeholder='{"floorHeal":10,"xpMult":1.1}'></textarea></label>
+    </details>
+    <details class="configAccordion"><summary>Skill de raza</summary>
+     <p class="small">Skill exclusiva de nivel 1, renderizada en dorado/blanco. Se construye con el mismo sistema apilable de efectos.</p>
+     <div class="configForm"><label>Nombre <input id="configRaceSkillName"></label><label>Icono texto <input id="configRaceSkillIcon" maxlength="4" value="✦"></label><label>Descripción <textarea id="configRaceSkillDesc"></textarea></label><label>Recurso <select id="configRaceSkillResource"><option value="stamina">Stamina</option><option value="mana">Maná</option></select></label><label>Coste <input id="configRaceSkillCost" type="number" min="0" value="10"></label><label>PA <input id="configRaceSkillAp" type="number" min="0" value="10"></label><label>Cooldown <input id="configRaceSkillCd" type="number" min="0" value="5"></label><label>Alcance <input id="configRaceSkillRange" type="number" min="0" value="1"></label></div>
+     <div class="configItemActions"><select id="configRaceEffectKindPicker"></select><button type="button" id="addRaceEffectBtn">AÑADIR EFECTO →</button></div>
+     <div id="configRaceEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion"><summary>Icono de raza</summary>
+     <label>Imagen <input type="file" id="configRaceImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceIconPreview" width="50" height="50"></canvas><span id="configRaceIconStatus" class="small">Sin icono.</span></div>
+    </details>
+    <button class="start" id="saveConfigRaceBtn">GUARDAR RAZA</button><button id="newConfigRaceBtn">NUEVA RAZA</button><button id="deleteConfigRaceBtn">ELIMINAR</button><button id="exportConfigRacesBtn">EXPORTAR JSON</button><label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigRacesInput" accept="application/json,.json" multiple></label><div id="configRaceStatus" class="small"></div>
+   </section><section class="panel"><h2>Razas guardadas</h2><div id="configRacesList" class="configItemsList"></div></section>
+  </div>
  </div>
  <div class="configTabPanel hidden" id="configTabClasses">
   <section class="panel">
@@ -822,7 +851,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.62.1"></script>
+<script src="./src/game.js?v=0.63.0"></script>
 
 </body>
 </html>
