@@ -1,3 +1,12 @@
+## v0.59.0 - Editor integral de dungeons
+
+- Añadida la pestaña **Dungeons** en Configuración con creación, edición y borrado de dungeons persistidas, organizada en acordeones de identidad/historia, dificultad/progresión, geometría/dimensiones y configuración individual de los seis pisos.
+- Incorporados parámetros finos para daño, vida, experiencia, población enemiga, loot enemigo, loot por piso, modo PA, geometría, densidad, dimensiones, historia inicial, historia por piso, archetype y tileset por piso. Los archetypes seleccionados se aplican al pregenerar cada piso.
+- Añadidas importación y exportación JSON tanto del borrador como de dungeons consolidadas.
+- Añadida una vista previa simplificada y navegable piso a piso con mapa, salas, puertas, enemigos, cofres, entrada y salida.
+- Ampliada la API de `dungeon_world` con actualización PATCH y borrado DELETE.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.59.0`.
+
 ## v0.58.1 - Cofres de poción aditivos y tier de consumible
 
 - Corregido el incremento de cofres de poción para que sea aditivo: cada cofre de loot ya generado aporta una tirada independiente del 15% para añadir un cofre de poción extra, sin sustituir ni convertir cofres de equipo, armas o skills.

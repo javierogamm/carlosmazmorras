@@ -252,3 +252,6 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 /* Discreet realtime connection indicator, only visible in multiplayer. */
 .mpConnBadge{font-size:9px;letter-spacing:.03em;color:#70dc9b;display:flex;align-items:center;padding:0 6px;white-space:nowrap}
 .mpConnBadge.mpConnDegraded{color:#ffb454}
+
+/* Dungeon configuration */
+.dungeonConfigLayout{grid-template-columns:minmax(390px,1fr) minmax(420px,1fr)}.dungeonPreviewNav{display:flex;justify-content:center;align-items:center;gap:14px;margin:8px}.dungeonPreviewNav button{background:#31223c;color:#fff;border:2px solid #6a4d7d;padding:7px 14px}.dungeonFloorRow{grid-template-columns:32px 1fr}.dungeonFloorControls{display:grid;grid-template-columns:1fr 1fr;gap:6px}.dungeonFloorControls label:last-child{grid-column:1/-1}.dungeonImportBtn{display:inline-block;width:auto;margin:0;padding:7px}.dungeonConfigLayout textarea{background:#100b16;color:#f4ead5;border:2px solid #5b4269;padding:8px}#dungeonGeometryPreview{display:block;width:100%;height:auto;max-height:65vh;background:#09070c;border:2px solid #684b7c;image-rendering:pixelated}@media(max-width:900px){.dungeonConfigLayout{grid-template-columns:1fr}.dungeonFloorControls{grid-template-columns:1fr}}

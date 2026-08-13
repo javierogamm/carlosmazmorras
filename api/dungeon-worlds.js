@@ -36,6 +36,13 @@ module.exports=async(req,res)=>{
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(Array.isArray(data)?data[0]:data);
   }
-  res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Método no permitido'});
+  if(req.method==='PATCH'){
+   const body=req.body||{},id=body.id||req.query?.id;if(!id)return res.status(400).json({error:'Falta id'});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({world_name:body.world_name,world_json:body.world_json})});const data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data);
+  }
+  if(req.method==='DELETE'){
+   const id=req.query?.id||req.body?.id;if(!id)return res.status(400).json({error:'Falta id'});const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});if(!r.ok)return res.status(r.status).json(await r.json());return res.status(200).json({ok:true});
+  }
+  res.setHeader('Allow','GET, POST, PATCH, DELETE');return res.status(405).json({error:'Método no permitido'});
  }catch(e){return res.status(500).json({error:e.message});}
 };
