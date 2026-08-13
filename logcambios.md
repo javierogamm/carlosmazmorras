@@ -1,3 +1,11 @@
+## v0.60.1 - Imágenes nítidas y recarga en el editor
+
+- Los recortes de imágenes subidas conservan ahora la resolución completa del área seleccionada, en lugar de reducirse permanentemente a 50x50 px antes de guardarse.
+- El escalado de canvases, iconos personalizados, miniaturas y sprites configurados usa interpolación suave de alta calidad y deja de forzar el renderizado pixelado del navegador.
+- Al editar un objeto, poción, clase, skill, invocación, tile, enemigo, cofre, objeto del mundo o asset ya guardado, su imagen se decodifica y recarga en el visor de recorte; ya no aparece únicamente en la miniatura.
+- El recorte inicial abarca la mayor región posible de la imagen respetando la proporción requerida, en vez de seleccionar automáticamente un cuadrado de solo 50 px.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.60.1`.
+
 ## v0.60.0 - Activables, procs y equipo pasivo
 
 - Corregida la selección de objetivo de pociones con efectos dirigidos: daño y debuffs permiten escoger enemigo, mientras áreas, trampas, invocaciones, torretas y clones abren el apuntado al suelo y solo consumen una unidad después de resolver el efecto.

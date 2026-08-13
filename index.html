@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.60.0 ACTIVABLES</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.60.0">
+<title>MAZMORRA // BOTÍN v0.60.1 IMÁGENES NÍTIDAS</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.60.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.60.0 ACTIVABLES</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.60.1 IMÁGENES NÍTIDAS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -174,14 +174,14 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.60.0 ACTIVABLES</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.60.1 IMÁGENES NÍTIDAS</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
    <h2>Editor</h2>
    <label>Imagen base <input type="file" id="configImageInput" accept="image/*"></label>
-   <div class="cropTools"><label>Zoom imagen <input type="range" id="configCropZoom" min="25" max="400" value="100"></label><button type="button" id="configMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configCropZoom" min="25" max="400" value="100"></label><button type="button" id="configMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación.</div></div>
    <div class="configPreview"><canvas id="configIconPreview" width="50" height="50"></canvas><span id="configIconStatus" class="small">Sin icono</span></div>
    <div class="configForm">
     <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
@@ -252,7 +252,7 @@
   <section class="panel">
    <h2>Editor de pociones</h2>
    <label>Imagen base <input type="file" id="configPotionImageInput" accept="image/*"></label>
-   <div class="cropTools"><label>Zoom imagen <input type="range" id="configPotionCropZoom" min="25" max="400" value="100"></label><button type="button" id="configPotionMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configPotionMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configPotionCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px. Si no subes ninguna, el juego dibuja el vial base.</div></div>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configPotionCropZoom" min="25" max="400" value="100"></label><button type="button" id="configPotionMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configPotionMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configPotionCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación. Si no subes ninguna, el juego dibuja el vial base.</div></div>
    <div class="configPreview"><canvas id="configPotionIconPreview" width="50" height="50"></canvas><span id="configPotionIconStatus" class="small">Sin icono</span></div>
    <div class="configForm">
     <label>Nombre <input id="configPotionNombre" maxlength="80" placeholder="Nombre de la poción"></label>
@@ -329,7 +329,7 @@
     <label>Nombre <input id="configClassName" maxlength="80" placeholder="Nombre de la clase"></label>
     <label>Descripción <input id="configClassDesc" maxlength="160" placeholder="Descripción de la clase"></label>
     <label>Icono de personaje <input type="file" id="configClassImageInput" accept="image/*"></label>
-    <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada se redimensiona a icono final de 50x50 px.</div></div>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación.</div></div>
     <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
     <button id="rollbackConfigClassBtn" type="button">ROLLBACK AL ORIGINAL</button>
    </details>
@@ -435,7 +435,7 @@
      <summary>Icono de imagen</summary>
      <label>Icono de imagen (opcional, sustituye al emoji en juego) <input type="file" id="configSkillImageInput" accept="image/*"></label>
      <div class="cropTools"><label>Zoom imagen <input type="range" id="configSkillCropZoom" min="25" max="400" value="100"></label><button type="button" id="configSkillMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configSkillMagicTolerance" min="0" max="160" value="38"></label></div>
-     <div class="cropWrap"><canvas id="configSkillCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final de la skill a 50x50 px.</div></div>
+     <div class="cropWrap"><canvas id="configSkillCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono de la skill conservando su resolución.</div></div>
      <div class="configPreview"><canvas id="configSkillIconPreview" width="50" height="50"></canvas><span id="configSkillIconStatus" class="small">Sin imagen: se usa el icono de texto/emoji.</span></div>
      <button id="rollbackConfigSkillIconBtn" type="button">QUITAR ICONO DE IMAGEN</button>
     </details>
@@ -461,7 +461,7 @@
     <p class="small">Define un floor completo guardado en <code>config_floor</code>: tiles de suelo, muros direccionales con rotación y puertas. El primer piso usará siempre <b>Caverna verdeante</b>.</p>
     <label>Imagen tile <input type="file" id="configTileImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configTileCropZoom" min="25" max="400" value="100"></label><button type="button" id="configTileMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configTileMagicTolerance" min="0" max="160" value="38"></label></div>
-    <div class="cropWrap"><canvas id="configTileCropCanvas" width="320" height="320"></canvas><div class="small">Recorta un tile cuadrado. El área seleccionada se redimensiona a 50x50 y en juego a 64x64.</div></div>
+    <div class="cropWrap"><canvas id="configTileCropCanvas" width="320" height="320"></canvas><div class="small">Recorta un tile cuadrado. El área seleccionada conserva su resolución y se adapta suavemente al tablero.</div></div>
     <div class="configPreview"><canvas id="configTileIconPreview" width="50" height="50"></canvas><span id="configTileIconStatus" class="small">Sin tile</span></div>
     <div class="configForm">
      <label>Nombre tile <input id="configTileName" maxlength="80" placeholder="Musgo, roca, puerta..."></label>
@@ -504,7 +504,7 @@
     <p class="small">Define familias completas en <code>enemy_family</code> y enemigos individuales en <code>enemy_detail</code>. El JSON de familia consolida todos los enemigos con sus iconos hexadecimales.</p>
     <label>Imagen enemigo <input type="file" id="configEnemyImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configEnemyCropZoom" min="25" max="400" value="100"></label><button type="button" id="configEnemyMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configEnemyMagicTolerance" min="0" max="160" value="38"></label></div>
-    <div class="cropWrap"><canvas id="configEnemyCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final del enemigo a 50x50 px. Los jefes se renderizan más grandes en el tablero.</div></div>
+    <div class="cropWrap"><canvas id="configEnemyCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono del enemigo conservando su resolución. Los jefes se renderizan más grandes en el tablero.</div></div>
     <div class="configPreview"><canvas id="configEnemyIconPreview" width="50" height="50"></canvas><span id="configEnemyIconStatus" class="small">Sin icono</span></div>
     <div class="configForm">
      <label>Familia <input id="configEnemyFamilyName" maxlength="80" placeholder="Orquidos, No muertos..."></label>
@@ -550,7 +550,7 @@
     </div>
     <label>Icono cofre <input type="file" id="configChestImageInput" accept="image/*"></label>
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configChestCropZoom" min="25" max="400" value="100"></label><button type="button" id="configChestMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configChestMagicTolerance" min="0" max="160" value="38"></label></div>
-    <div class="cropWrap"><canvas id="configChestCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final del cofre a 50x50 px.</div></div>
+    <div class="cropWrap"><canvas id="configChestCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono del cofre conservando su resolución.</div></div>
     <div class="configPreview"><canvas id="configChestIconPreview" width="50" height="50"></canvas><span id="configChestIconStatus" class="small">Sin icono</span></div>
     <p class="small">Rareza de objeto que puede soltar (filtra también el buscador de abajo)</p>
     <div id="configChestItemTiers" class="chestTierChecks">
@@ -581,7 +581,7 @@
      <p class="small" id="configWorldObjectSelected">Ningún objeto seleccionado.</p>
      <label>Imagen <input type="file" id="configWorldObjectImageInput" accept="image/*"></label>
      <div class="cropTools"><label>Zoom imagen <input type="range" id="configWorldObjectCropZoom" min="25" max="400" value="100"></label><button type="button" id="configWorldObjectMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configWorldObjectMagicTolerance" min="0" max="160" value="38"></label></div>
-     <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono final a 50x50 px.</div></div>
+     <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono conservando su resolución.</div></div>
      <div class="configPreview"><canvas id="configWorldObjectIconPreview" width="50" height="50"></canvas><span id="configWorldObjectIconStatus" class="small">Sin icono</span></div>
      <button class="start" id="saveConfigWorldObjectBtn" type="button">GUARDAR ICONO</button>
      <button id="rollbackConfigWorldObjectBtn" type="button">QUITAR ICONO (sprite por defecto)</button>
@@ -820,7 +820,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.60.0"></script>
+<script src="./src/game.js?v=0.60.1"></script>
 
 </body>
 </html>

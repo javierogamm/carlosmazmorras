@@ -1,6 +1,6 @@
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const gameCanvasWrap=document.getElementById('gameStage');
-ctx.imageSmoothingEnabled=false;
+ctx.imageSmoothingEnabled=true;
 const TILE=64,COLS=49,ROWS=49,MIN_VISIBLE_TILES=5,MAX_VISIBLE_TILES=12;
 let visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(localStorage.getItem('visibleTiles')||8)||8));
 let CANVAS_SIZE=TILE*visibleTiles;
@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.60.0';
+const APP_VERSION='0.60.1';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -795,7 +795,7 @@ const itemIconShapes={
  trinket2:['screw','figurine','coupon','key','dice']
 };
 function drawItemIcon(canvas,item){
- const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,48,48);
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=true;q.clearRect(0,0,48,48);
  q.fillStyle='#21172a';q.fillRect(0,0,48,48);
  if(item?.icon){try{const hex=item.icon.startsWith('#')?item.icon.slice(1):item.icon,data='data:image/png;base64,'+hexToBase64(hex),img=configIconImage(data);if(img.complete&&img.naturalWidth){q.drawImage(img,0,0,48,48);q.strokeStyle=tierColor(item.rarity);q.lineWidth=2;q.strokeRect(2,2,44,44);return}img.onload=()=>drawItemIcon(canvas,item)}catch(e){}}
  if(item?.slot==='weapon'){
@@ -6145,7 +6145,7 @@ const tileImageCache=new Map();
 // this only draws when an override has actually been set.
 function drawSkillIconImg(canvas,hex){
  let img=tileImageCache.get('skill:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('skill:'+hex,img)}
- const paint=()=>{const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(img,0,0,canvas.width,canvas.height)};
+ const paint=()=>{const c=canvas.getContext('2d');c.imageSmoothingEnabled=true;c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(img,0,0,canvas.width,canvas.height)};
  if(img.complete)paint();else img.onload=paint;
 }
 function drawConfiguredTile(tile,x,y,rotate=0){if(!tile?.icon)return false;let img=tileImageCache.get(tile.icon);if(!img){img=tileImageFromHex(tile.icon);tileImageCache.set(tile.icon,img)}if(!img)return false;const paint=()=>{ctx.save();ctx.translate(x+TILE/2,y+TILE/2);if(rotate)ctx.rotate(rotate*Math.PI/180);ctx.drawImage(img,-TILE/2,-TILE/2,TILE,TILE);ctx.restore()};if(img.complete){paint();return true}img.onload=()=>game&&draw();return false}
@@ -6282,10 +6282,10 @@ function drawCharacter(q,x,y,scale,cls,equipment={},frame=0,facing=1){
  q.restore()
 }
 function drawTrimmedImage(q,img,x,y,w,h,padding=0){
- const src=document.createElement('canvas');src.width=img.naturalWidth||img.width;src.height=img.naturalHeight||img.height;const s=src.getContext('2d');s.imageSmoothingEnabled=false;s.clearRect(0,0,src.width,src.height);s.drawImage(img,0,0);
+ const src=document.createElement('canvas');src.width=img.naturalWidth||img.width;src.height=img.naturalHeight||img.height;const s=src.getContext('2d');s.imageSmoothingEnabled=true;s.clearRect(0,0,src.width,src.height);s.drawImage(img,0,0);
  const data=s.getImageData(0,0,src.width,src.height).data;let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
  for(let yy=0;yy<src.height;yy++)for(let xx=0;xx<src.width;xx++){if(data[(yy*src.width+xx)*4+3]>8){if(xx<minX)minX=xx;if(yy<minY)minY=yy;if(xx>maxX)maxX=xx;if(yy>maxY)maxY=yy}}
- q.imageSmoothingEnabled=false;
+ q.imageSmoothingEnabled=true;
  if(maxX<0){q.drawImage(img,x,y,w,h);return}
  const sw=maxX-minX+1,sh=maxY-minY+1,scale=Math.min((w-padding*2)/sw,(h-padding*2)/sh),dw=Math.max(1,Math.round(sw*scale)),dh=Math.max(1,Math.round(sh*scale)),dx=x+Math.round((w-dw)/2),dy=y+Math.round((h-dh)/2);
  q.drawImage(img,minX,minY,sw,sh,dx,dy,dw,dh)
@@ -6352,14 +6352,14 @@ function remotePlayerSprite(x,y,rp){
  ctx.fillText((rp.name||'JUGADOR').toUpperCase().slice(0,14),x+32,y+63);
 }
 function drawClassPreview(canvas,cls){
- const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,64,64);
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=true;q.clearRect(0,0,64,64);
  q.fillStyle='#120c18';q.fillRect(0,0,64,64);
  q.fillStyle='#25182e';for(let i=0;i<4;i++)q.fillRect(i*18,50+(i%2)*3,15,8);
  if(drawCharacterIcon(q,classIconForId(cls),3,3,58,58,2))return;
  drawCharacter(q,32,38,.85,cls,{},0,1)
 }
 function drawPaperDoll(canvas,p){
- const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,128,192);
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=true;q.clearRect(0,0,128,192);
  const grad=q.createLinearGradient(0,0,0,192);grad.addColorStop(0,'#21162b');grad.addColorStop(1,'#0d0912');q.fillStyle=grad;q.fillRect(0,0,128,192);
  q.strokeStyle='#493454';q.strokeRect(5,5,118,182);
  for(let y=12;y<188;y+=16){q.fillStyle=y%32?'#16101d':'#1a1222';q.fillRect(8,y,112,1)}
@@ -7303,7 +7303,7 @@ function renderConfigPotionsList(){const root=document.getElementById('configPot
 function configStatDefinitions(){const seen=new Set();return [...primaryAffixes,...secondaryAffixes].filter(def=>{if(seen.has(def.key))return false;seen.add(def.key);return true})}
 function renderConfigStatsHelp(){const root=document.getElementById('configStatsHelp');if(!root)return;root.innerHTML='<p class="small"><b>Bonos disponibles:</b> pulsa uno para añadirlo a Stats.</p>'+configStatDefinitions().map(def=>`<button type="button" class="statBonusButton" data-stat-bonus="${def.key}" title="${def.label}. Slots: ${def.slots.map(s=>slotNames[s]||s).join(', ')}"><b>${def.key}</b><span>${def.label}${def.percent?' %':''}</span></button>`).join('');root.querySelectorAll('[data-stat-bonus]').forEach(btn=>btn.onclick=()=>{const sep=configStats.value.trim()? ', ':'';configStats.value+=`${sep}${btn.dataset.statBonus}:+1`;configStats.focus()})}
 function addIconSilhouetteBorder(canvas,size=2,color=[0,0,0,255]){const q=canvas.getContext('2d'),w=canvas.width,h=canvas.height,orig=document.createElement('canvas');orig.width=w;orig.height=h;orig.getContext('2d').drawImage(canvas,0,0);const src=q.getImageData(0,0,w,h),border=q.createImageData(w,h),r=Math.max(1,Math.round(size));for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(src.data[i+3]>8)continue;let near=false;for(let dy=-r;dy<=r&&!near;dy++)for(let dx=-r;dx<=r;dx++){if(dx*dx+dy*dy>r*r)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;if(src.data[(ny*w+nx)*4+3]>8){near=true;break}}if(near){border.data[i]=color[0];border.data[i+1]=color[1];border.data[i+2]=color[2];border.data[i+3]=color[3]}}q.putImageData(border,0,0);q.drawImage(orig,0,0);return canvas}
-function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile'),dims={w:50,h:50}){const preview=document.getElementById(previewId);if(!preview)return;preview.width=dims.w;preview.height=dims.h;const c=preview.getContext('2d');c.clearRect(0,0,dims.w,dims.h);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=dims.w;out.height=dims.h;const o=out.getContext('2d');o.imageSmoothingEnabled=false;o.clearRect(0,0,dims.w,dims.h);o.drawImage(img,0,0,dims.w,dims.h);if(withBorder)addIconSilhouetteBorder(out,2);c.clearRect(0,0,dims.w,dims.h);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
+function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile'),dims={w:50,h:50}){const preview=document.getElementById(previewId);if(!preview)return;preview.width=dims.w;preview.height=dims.h;const c=preview.getContext('2d');c.clearRect(0,0,dims.w,dims.h);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=dims.w;out.height=dims.h;const o=out.getContext('2d');o.imageSmoothingEnabled=true;o.imageSmoothingQuality='high';o.clearRect(0,0,dims.w,dims.h);o.drawImage(img,0,0,dims.w,dims.h);if(withBorder)addIconSilhouetteBorder(out,2);c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.clearRect(0,0,dims.w,dims.h);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw;preview._iconEditor?.loadHex(hex)}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
 function resetConfigForm(){window.editingConfigItemId=null;configNombre.value='';configTier.value='common';configSlot.value='weapon';configIlvl.value='1';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=false;configWeaponCategory.value=configWeaponTypes[0];configDamageDice.value='1d6';if(configRangeMin)configRangeMin.value='1';if(configRangeMax)configRangeMax.value='1';configStats.value='';window.currentConfigIconHex='';window.currentConfigItemSkillIds=[];configIconStatus.textContent='Sin icono';renderConfigIconPreview('');if(configProcChance)configProcChance.value='20';if(configEquipmentCooldown)configEquipmentCooldown.value='4';if(configEquipmentRange)configEquipmentRange.value='5';window.currentEquipmentEffectsDraft=[];renderEquipmentEffectsList();configStatus.textContent='Nuevo objeto.';configSlot.dispatchEvent(new Event('change'))}
 function loadConfigItemForEdit(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;const item=row.item_json||row;window.editingConfigItemId=row.id;configNombre.value=item.name||row.nombre||'';configTier.value=item.rarity||row.tier||'common';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=!!item.hidden;configSlot.value=item.slot==='consumable'?'trinket1':(item.slot||row.slot||'trinket1');configIlvl.value=item.itemLevel||row.ilvl||1;configDamageDice.value=item.damageDice||'1d6';configWeaponCategory.value=item.weaponType||item.weaponCategory||configWeaponTypes[0];const bounds=weaponRangeBounds(item);if(configRangeMin)configRangeMin.value=bounds.min;if(configRangeMax)configRangeMax.value=bounds.max;configStats.value=item.stats||row.stats||'';window.currentConfigIconHex=item.icon||row.icon||'';window.currentConfigItemSkillIds=Array.isArray(item.skillIds)?item.skillIds:[];renderConfigIconPreview(window.currentConfigIconHex);configIconStatus.textContent=window.currentConfigIconHex?'Icono cargado desde objeto guardado.':'Sin icono';if(configProcChance)configProcChance.value=item.procChance??20;if(configEquipmentCooldown)configEquipmentCooldown.value=item.cooldown??4;if(configEquipmentRange)configEquipmentRange.value=item.range??5;window.currentEquipmentEffectsDraft=Array.isArray(item.effects)&&item.effects[0]?.kind?JSON.parse(JSON.stringify(item.effects)):[];renderEquipmentEffectsList();configSlot.dispatchEvent(new Event('change'));configStatus.textContent=`Editando #${row.id}: ${configNombre.value||'Sin nombre'}`}
 function resetConfigPotionForm(){window.editingConfigPotionId=null;configPotionNombre.value='';configPotionTier.value='common';if(document.getElementById('configPotionHidden'))document.getElementById('configPotionHidden').checked=false;const potionRange=document.getElementById('configPotionRange');if(potionRange)potionRange.value='5';window.currentPotionEffectsDraft=[];renderPotionEffectsList();window.currentConfigPotionIconHex='';renderConfigIconPreview('','configPotionIconPreview','configPotionIconStatus');configPotionIconStatus.textContent='Sin icono';configPotionStatus.textContent='Nueva poción.'}
@@ -7421,7 +7421,7 @@ function drawEnemyIconHex(hex,x,y,boss=false,mega=false){
  const size=mega?TILE*2:boss?78:58,off=mega?0:(64-size)/2,dx=x+off,dy=y+off;
  const paint=()=>{
   const layer=document.createElement('canvas');layer.width=layer.height=size;
-  const lc=layer.getContext('2d');lc.imageSmoothingEnabled=false;lc.drawImage(img,0,0,size,size);
+  const lc=layer.getContext('2d');lc.imageSmoothingEnabled=true;lc.drawImage(img,0,0,size,size);
   lc.globalCompositeOperation='source-atop';
   const g=lc.createRadialGradient(size/2,size*.45,3,size/2,size/2,size*.58);
   g.addColorStop(0,boss?'#fff1a84f':'#d7c6ff42');
@@ -7748,7 +7748,7 @@ function renderConfigAssetGrid(){
  // Real in-game size: exactly cols x rows tiles at TILE px each, so the
  // preview shows precisely how large/how it'll look on the dungeon grid.
  canvas.width=cols*TILE;canvas.height=rows*TILE;
- const g=canvas.getContext('2d');g.imageSmoothingEnabled=false;
+ const g=canvas.getContext('2d');g.imageSmoothingEnabled=true;
  g.clearRect(0,0,canvas.width,canvas.height);
  const preview=document.getElementById('configAssetIconPreview');
  if(preview)g.drawImage(preview,0,0,canvas.width,canvas.height);
@@ -8159,7 +8159,7 @@ function launchTestCombat(){
 // plain glyph instead of the default game sprite when no icon is configured.
 function drawWorldObjectIconToCanvas(canvas,objectKey,fallbackGlyph='🔒'){
  if(!canvas)return;
- const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,canvas.width,canvas.height);
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=true;q.clearRect(0,0,canvas.width,canvas.height);
  const hex=configWorldObjects[objectKey];
  if(hex){
   let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
@@ -8194,7 +8194,7 @@ function drawAssetIcon(objectKey,x,y,w,h){
 // back to a tier-colored dot when the admin hasn't configured a custom icon.
 function drawShardTierIconToCanvas(canvas,tier){
  if(!canvas)return;
- const q=canvas.getContext('2d');q.imageSmoothingEnabled=false;q.clearRect(0,0,canvas.width,canvas.height);
+ const q=canvas.getContext('2d');q.imageSmoothingEnabled=true;q.clearRect(0,0,canvas.width,canvas.height);
  const hex=configWorldObjects[`shard_${tier}`];
  if(hex){
   let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
@@ -8209,13 +8209,12 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
  if(!imgInput||!crop)return null;
  let source=null,rect=null,drag=null,activePointerId=null,eraser=false;
- // Output/preview pixel size, proportioned to aspect's w:h ratio (cols:rows
- // for assets) and capped so the longer side is 50px - the fixed square size
- // every other icon in this game used before assets needed a non-square shape.
- function outSize(){const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);let w=50,h=Math.round(50/ratio);if(h>50){h=50;w=Math.round(50*ratio)}return{w:Math.max(1,w),h:Math.max(1,h)}}
+ // Preserve every pixel in the selected source area. The former fixed 50px
+ // export permanently discarded detail before the image reached the game.
+ function outSize(){if(rect)return{w:Math.max(1,Math.round(rect.w)),h:Math.max(1,Math.round(rect.h))};const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);return ratio>=1?{w:50,h:Math.max(1,Math.round(50/ratio))}:{w:Math.max(1,Math.round(50*ratio)),h:50}}
  function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}
  function clampRect(r){
-  const o=outSize(),ratio=o.w/o.h;
+  const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);
   let w=Math.max(1,Math.round(r.w)),h=Math.max(1,Math.round(w/ratio));
   if(w>crop.width||h>crop.height){
    if(crop.width/ratio<=crop.height){w=crop.width;h=Math.max(1,Math.round(crop.width/ratio))}
@@ -8226,12 +8225,12 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
  function pointerPos(e){const b=crop.getBoundingClientRect();return{x:(e.clientX-b.left)*crop.width/b.width,y:(e.clientY-b.top)*crop.height/b.height}}
  function inRect(p,r){return r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h}
  function checker(c){c.fillStyle='#241b2c';c.fillRect(0,0,crop.width,crop.height);c.fillStyle='#392d44';for(let y=0;y<crop.height;y+=16)for(let x=0;x<crop.width;x+=16)if((x/16+y/16)%2===0)c.fillRect(x,y,16,16)}
- function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}
+ function drawCrop(){const c=crop.getContext('2d');c.imageSmoothingEnabled=true;c.clearRect(0,0,crop.width,crop.height);checker(c);if(source)c.drawImage(source,0,0);if(rect){c.save();c.fillStyle='#0008';c.fillRect(0,0,crop.width,rect.y);c.fillRect(0,rect.y+rect.h,crop.width,crop.height-rect.y-rect.h);c.fillRect(0,rect.y,rect.x,rect.h);c.fillRect(rect.x+rect.w,rect.y,crop.width-rect.x-rect.w,rect.h);c.strokeStyle=eraser?'#7cffd4':'#ffd68b';c.lineWidth=2;c.strokeRect(rect.x+.5,rect.y+.5,rect.w,rect.h);c.fillStyle=c.strokeStyle;c.fillRect(rect.x+rect.w-5,rect.y+rect.h-5,5,5);c.restore()}}
  function saveIcon(){
   if(!source||!rect)return;
   const o=outSize();
   const out=document.createElement('canvas');out.width=o.w;out.height=o.h;
-  const oc=out.getContext('2d');oc.imageSmoothingEnabled=false;oc.clearRect(0,0,o.w,o.h);oc.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,o.w,o.h);
+  const oc=out.getContext('2d');oc.imageSmoothingEnabled=true;oc.imageSmoothingQuality='high';oc.clearRect(0,0,o.w,o.h);oc.drawImage(source,rect.x,rect.y,rect.w,rect.h,0,0,o.w,o.h);
   if(outline)addIconSilhouetteBorder(out,2);
   preview.width=o.w;preview.height=o.h;
   const pc=preview.getContext('2d');pc.clearRect(0,0,o.w,o.h);pc.drawImage(out,0,0);
@@ -8245,7 +8244,10 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
   else{const o=outSize(),ratio=o.w/o.h,dx=Math.max(1,Math.abs(p.x-drag.origin.x)),dh=Math.max(1,Math.round(dx/ratio));rect=clampRect({x:p.x<drag.origin.x?drag.origin.x-dx:drag.origin.x,y:p.y<drag.origin.y?drag.origin.y-dh:drag.origin.y,w:dx,h:dh})}
   drawCrop();saveIcon()
  }
- imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=false;sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);const o=outSize();rect=clampRect({x:0,y:0,w:Math.min(o.w,crop.width),h:Math.min(o.h,crop.height)});canvasZoom();drawCrop();saveIcon();if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`};img.src=URL.createObjectURL(f)};
+ function loadImage(img,save=false){crop.width=img.naturalWidth;crop.height=img.naturalHeight;source=document.createElement('canvas');source.width=crop.width;source.height=crop.height;const sc=source.getContext('2d');sc.imageSmoothingEnabled=true;sc.imageSmoothingQuality='high';sc.clearRect(0,0,source.width,source.height);sc.drawImage(img,0,0);const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);let w=crop.width,h=Math.round(w/ratio);if(h>crop.height){h=crop.height;w=Math.round(h*ratio)}rect=clampRect({x:(crop.width-w)/2,y:(crop.height-h)/2,w,h});canvasZoom();drawCrop();if(save)saveIcon()}
+ function loadHex(hex){if(!hex)return;const img=new Image();img.onload=()=>{loadImage(img,false);if(status)status.textContent=`Imagen guardada ${crop.width}x${crop.height} recargada en el visor de recorte.`};img.src='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex)}
+ preview._iconEditor={loadHex};
+ imgInput.onchange=()=>{const f=imgInput.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{loadImage(img,true);if(status)status.textContent=`Imagen original ${crop.width}x${crop.height}. Ajusta zoom, recorte o Magic eraser.`;URL.revokeObjectURL(img.src)};img.src=URL.createObjectURL(f)};
  crop.onpointerdown=e=>{if(!source||activePointerId!==null)return;e.preventDefault();activePointerId=e.pointerId;crop.setPointerCapture?.(e.pointerId);const p=pointerPos(e);if(eraser){eraseAt(p);activePointerId=null;return}if(inRect(p,rect))drag={mode:'move',start:{...rect},dx:p.x-rect.x,dy:p.y-rect.y};else{drag={mode:'draw',origin:p};rect=clampRect({x:p.x,y:p.y,w:1,h:1})}drawCrop()};
  crop.onpointermove=e=>{if(e.pointerId!==activePointerId||eraser||!drag)return;e.preventDefault();updateDrag(e)};
  const finishPointer=e=>{if(e.pointerId!==activePointerId)return;e.preventDefault();if(!eraser&&drag){updateDrag(e);drag=null;saveIcon()}crop.releasePointerCapture?.(e.pointerId);activePointerId=null};
@@ -8254,7 +8256,7 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
  if(zoom)zoom.oninput=canvasZoom;
  if(eraserBtn)eraserBtn.onclick=()=>{eraser=!eraser;eraserBtn.textContent=`Magic eraser: ${eraser?'on':'off'}`;crop.classList.toggle('magicEraserActive',eraser);drawCrop()};
  canvasZoom();
- return{drawCrop,saveIcon,reclamp:()=>{if(rect){rect=clampRect(rect);drawCrop();saveIcon()}}}
+ return{drawCrop,saveIcon,loadHex,reclamp:()=>{if(rect){rect=clampRect(rect);drawCrop();saveIcon()}}}
 }
 function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
