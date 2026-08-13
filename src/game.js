@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.60.1';
+const APP_VERSION='0.61.2';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -1129,7 +1129,7 @@ function addInventoryItem(item){
 // potion is granted as 2 copies. If the catalog has none, nothing is invented.
 function addStarterPotions(classId){
  const ids=configClassRowForId(classId)?.class_json?.starterPotionIds;
- const selected=Array.isArray(ids)&&ids.length?ids.slice(0,3).map(id=>configuredPotionRows().find(r=>String(r.id)===String(id))).filter(Boolean):configuredPotionRows().slice(0,1);
+ const selected=Array.isArray(ids)&&ids.length?ids.map(id=>configuredPotionRows().find(r=>String(r.id)===String(id))).filter(Boolean):configuredPotionRows().slice(0,1);
  if(selected.length){
   for(const row of selected){
    for(let i=0;i<2;i++){
@@ -1621,10 +1621,16 @@ function processClassSkillChoices(){
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
 
-function start(){
+async function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
  if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
+ // Character creation can be reached while the catalog requests started by
+ // openSinglePlayerScreen() are still in flight. Starter selections are row
+ // ids, so creating before both catalogs arrive silently produced an empty
+ // selection. Wait here, at the point where the data becomes mandatory.
+ if(!configItems.length)await fetchConfigItems();
+ if(!configClasses.length)await fetchConfigClasses();
  const race=selectedRace,cls=resolveClassDef(selectedClass);
  // resolveClassDef returns null for a custom class whose config_class row
  // hasn't finished loading yet (fetchConfigClasses is async and the class-
@@ -4347,6 +4353,11 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  return companion
 }
 function companionReserveBase(resource){const p=game?.player;if(!p)return 0;return resource==='hp'?p.maxHp:resource==='stamina'?p.maxStamina:p.maxMana}
+function companionResourceCap(resource){
+ const p=game?.player;if(!p)return 0;
+ const reserved=(game.companions||[]).filter(c=>c.hp>0&&c.reserveResource===resource).reduce((sum,c)=>sum+Math.max(0,Number(c.reservedAmount)||0),0);
+ return Math.max(resource==='hp'?1:0,companionReserveBase(resource)-reserved)
+}
 function reserveCompanionResource(c){
  const p=game?.player,resource=c.reserveResource||'mana';if(!p)return false;
  const amount=Math.max(1,Math.floor(companionReserveBase(resource)*(c.reservePct||20)/100));
@@ -5617,12 +5628,15 @@ function isSelfHealSkill(id){return skillDefs[id]?.classEffect==='heal'}
 function skillTargetMode(id){
  const d=skillDefs[id];if(!d)return null;
  if(hasEffectsList(id))return effectsListTargetMode(id);
+ // Multihit is always aimed explicitly. Honour this before a stale/incorrect
+ // targetMode:'self' saved by the editor can turn it back into an automatic
+ // cast against arbitrary visible enemies.
+ if(d.classEffect==='multihit')return'enemy';
  if(d.targetMode==='self')return null;
  if(d.targetMode==='area')return 'area';
  if(d.targetMode==='enemy')return 'enemy';
  if(isSelfHealSkill(id)&&game?.multiplayer&&(game.otherPlayers||[]).some(p=>p.hp>0))return 'ally';
  if(d.type==='utility')return null;
- if(d.classEffect==='multihit')return'enemy';
  if(AREA_SKILLS.has(id)||['aoe','ultimate','massive'].includes(d.classEffect))return 'area';
  if(ENEMY_TARGET_SKILLS.has(id)||d.classEffect==='ranged'||d.classEffect==='debuff'||d.classEffect==='execute'||isRangedSkill(id))return 'enemy';
  return null
