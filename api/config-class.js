@@ -5,6 +5,7 @@ const SUPABASE_TABLE='config_class';
 // caps a project at 12 Serverless Functions and this repo is already at
 // that limit (see config-floor.js's ?kind=object for the same pattern).
 const GATES_TABLE='config_unlock_gates';
+const RACES_TABLE='config_razas';
 
 function supabaseConfig(){
  const url=process.env.SUPABASE_URL;
@@ -26,6 +27,28 @@ function cleanClass(body){
  };
 }
 function requestId(req){return req.query?.id||req.body?.id||req.body?.class_id||null}
+
+
+async function handleRaces(req,res,url,key){
+ const id=req.query?.id||req.body?.id||null;
+ if(req.method==='GET'){
+  const r=await fetch(`${url}/rest/v1/${RACES_TABLE}?select=id,created_at,nombre,skill,stats&order=nombre.asc`,{headers:headers(key)}),data=await r.json();
+  return r.ok?res.status(200).json(data):res.status(r.status).json(data);
+ }
+ if(req.method==='POST'||req.method==='PUT'){
+  if(req.method==='PUT'&&!id)return res.status(400).json({error:'Falta id para actualizar la raza'});
+  const row={nombre:req.body?.nombre??null,skill:req.body?.skill??null,stats:req.body?.stats??null};
+  const endpoint=req.method==='PUT'?`${url}/rest/v1/${RACES_TABLE}?id=eq.${encodeURIComponent(id)}`:`${url}/rest/v1/${RACES_TABLE}`;
+  const r=await fetch(endpoint,{method:req.method==='PUT'?'PATCH':'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)}),data=await r.json();
+  return r.ok?res.status(200).json(Array.isArray(data)?data[0]:data):res.status(r.status).json(data);
+ }
+ if(req.method==='DELETE'){
+  if(!id)return res.status(400).json({error:'Falta id para borrar la raza'});
+  const r=await fetch(`${url}/rest/v1/${RACES_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}}),data=await r.json();
+  return r.ok?res.status(200).json(data):res.status(r.status).json(data);
+ }
+ res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
+}
 
 async function handleGates(req,res,url,key){
  if(req.method==='GET'){
@@ -51,6 +74,7 @@ module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.query?.kind==='gates')return handleGates(req,res,url,key);
+  if(req.query?.kind==='races')return handleRaces(req,res,url,key);
   if(req.method==='GET'){
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,icon,stats,skills,class_json,skills_json,advanced&order=nombre.asc`,{headers:headers(key)});
    const data=await r.json();
