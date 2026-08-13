@@ -37,8 +37,13 @@ module.exports=async(req,res)=>{
    return res.status(200).json(Array.isArray(data)?data[0]:data);
   }
   if(req.method==='PATCH'){
-   const body=req.body||{},id=body.id||req.query?.id;if(!id)return res.status(400).json({error:'Falta id'});
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({world_name:body.world_name,world_json:body.world_json})});const data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]:data);
+   const body=req.body||{},id=body.id||req.query?.id,changes=Array.isArray(body.changes)?body.changes:[];if(!id)return res.status(400).json({error:'Falta id'});
+   if(!changes.length&&body.world_name==null)return res.status(400).json({error:'No hay parámetros modificados'});
+   if(changes.some(change=>!Array.isArray(change?.path)||!change.path.length))return res.status(400).json({error:'Cada cambio necesita un path JSON no vacío'});
+   // The RPC performs jsonb_set for each changed leaf inside PostgreSQL: the
+   // large world_json (maps, enemies and rooms) never travels to this API and
+   // is never rewritten from a client-provided full document.
+   const r=await fetch(`${url}/rest/v1/rpc/patch_dungeon_world_json`,{method:'POST',headers:headers(key),body:JSON.stringify({p_id:Number(id),p_world_name:body.world_name??null,p_changes:changes})});const data=await r.json();if(!r.ok)return res.status(r.status).json(data);return res.status(200).json(Array.isArray(data)?data[0]||null:data);
   }
   if(req.method==='DELETE'){
    const id=req.query?.id||req.body?.id;if(!id)return res.status(400).json({error:'Falta id'});const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});if(!r.ok)return res.status(r.status).json(await r.json());return res.status(200).json({ok:true});

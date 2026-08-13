@@ -8,10 +8,15 @@ function supabaseConfig(){
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
 function cleanItem(body){
- const item=body.item_json||body;
+ const source=body.item_json||body,isPotion=source.type==='potion'||source.type==='consumable'||source.slot==='consumable'||body.slot==='consumable';
+ // Consumables have one canonical contract regardless of whether they came
+ // from the UI, an older JSON export or an import wrapper. This prevents a
+ // damage/effects potion from being stored as generic equipment and becoming
+ // invisible to potion loot pools.
+ const item=isPotion?{...source,type:'potion',slot:'consumable',effects:Array.isArray(source.effects)?source.effects:[]}:source;
  return {
   nombre:body.nombre??item.name??item.nombre??null,
-  slot:body.slot??item.slot??null,
+  slot:isPotion?'consumable':(body.slot??item.slot??null),
   tier:body.tier??item.rarity??item.tier??null,
   icon:body.icon??item.icon??null,
   stats:body.stats??(item.affixes?JSON.stringify(item.affixes):null),
