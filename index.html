@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.55.0 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.55.0">
+<title>MAZMORRA // BOTÍN v0.59.1 MULTIPLAYER</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.59.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.59.1 MULTIPLAYER</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -172,8 +172,8 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.55.0 MULTIPLAYER</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.59.1 MULTIPLAYER</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -635,6 +635,33 @@
   <button class="start" id="saveConfigGatesBtn" type="button">GUARDAR BLOQUEOS</button>
   <div id="configGatesStatus" class="small"></div>
  </div>
+ <div class="configTabPanel hidden" id="configTabDungeons">
+  <div class="configLayout dungeonConfigLayout">
+   <section class="panel">
+    <h2>Editor de dungeons</h2>
+    <p class="small">Crea o edita una dungeon completa. Los ajustes se organizan por categorías y se consolidan junto a sus pisos pregenerados.</p>
+    <details class="configAccordion" open><summary>Identidad e historia</summary><div class="configForm">
+     <label>Nombre <input id="dungeonConfigName" maxlength="100" placeholder="Nombre de la dungeon"></label>
+     <label style="grid-column:1/-1">Historia inicial <textarea id="dungeonConfigStory" rows="5" placeholder="Texto que presenta la aventura..."></textarea></label>
+    </div></details>
+    <details class="configAccordion"><summary>Dificultad y progresión</summary><div class="configForm">
+     <label>Daño recibido % <input id="dungeonDamageReceived" type="number" min="25" max="500" value="125"></label><label>Daño causado % <input id="dungeonDamageDealt" type="number" min="25" max="500" value="100"></label>
+     <label>Vida enemigos % <input id="dungeonLife" type="number" min="25" max="500" value="125"></label><label>Experiencia % <input id="dungeonXp" type="number" min="25" max="500" value="100"></label>
+     <label>Número de enemigos % <input id="dungeonEnemyCount" type="number" min="25" max="500" value="100"></label><label>Loot de enemigos % <input id="dungeonEnemyLoot" type="number" min="25" max="500" value="100"></label>
+     <label>Loot/cofres por piso <input id="dungeonLootPerFloor" type="number" min="0" max="50" value="4"></label><label><input id="dungeonApMode" type="checkbox"> Combate por puntos de acción</label>
+    </div></details>
+    <details class="configAccordion"><summary>Geometría y dimensiones totales</summary><div class="configForm">
+     <label>Ancho (casillas) <input id="dungeonWidth" type="number" min="15" max="99" step="2" value="49"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" min="15" max="99" step="2" value="49"></label>
+     <label>Geometría <select id="dungeonGeometry"><option value="rooms">Salas y corredores</option><option value="caves">Cuevas orgánicas</option><option value="mixed">Mixta</option><option value="open">Espacio abierto</option></select></label><label>Densidad de salas % <input id="dungeonRoomDensity" type="number" min="25" max="200" value="100"></label>
+    </div><p class="small">Las dimensiones y geometría son metadatos finos del diseño; el motor conserva su malla táctica compatible de 49×49 al consolidar los pisos.</p></details>
+    <details class="configAccordion" open><summary>Tipos e historia de los 6 pisos</summary><div id="dungeonFloorEditor" class="configItemsList"></div></details>
+    <div class="configItemActions"><button class="start" id="saveDungeonConfigBtn">GUARDAR DUNGEON</button><button id="newDungeonConfigBtn">NUEVA</button><button id="deleteDungeonConfigBtn">BORRAR</button></div>
+    <div class="configItemActions"><button id="exportDungeonConfigBtn">EXPORTAR JSON</button><label class="importJsonBtn dungeonImportBtn">IMPORTAR JSON<input type="file" id="importDungeonConfigInput" accept=".json,application/json"></label></div>
+    <div id="dungeonConfigStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Vista previa navegable</h2><div class="dungeonPreviewNav"><button id="dungeonPreviewPrev">◀</button><b id="dungeonPreviewLabel">Piso 1</b><button id="dungeonPreviewNext">▶</button></div><canvas id="dungeonGeometryPreview" width="520" height="520"></canvas><p class="small">Suelo, muros, salas, puertas, enemigos, cofres, entrada y salida en una representación simplificada.</p><h2>Dungeons guardadas</h2><div id="dungeonConfigList" class="configItemsList"></div></section>
+  </div>
+ </div>
  <div class="configTabPanel hidden" id="configTabTesting">
   <p class="small">Personaje y piso 100% temporales para probar combate, skills y archetypes de piso: no se guardan en Supabase y no están sujetos a bloqueos de nivel/puntuación. Sales en cualquier momento con "☰ MENÚ PRINCIPAL".</p>
   <div class="configLayout">
@@ -791,7 +818,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.58.1"></script>
+<script src="./src/game.js?v=0.59.1"></script>
 
 </body>
 </html>

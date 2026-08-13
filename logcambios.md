@@ -1,3 +1,20 @@
+## v0.59.1 - Parches JSON de dungeons y contrato de pociones
+
+- Las ediciones de dungeons existentes ya no regeneran, descargan ni reinsertan `world_json` completo: el cliente calcula exclusivamente las hojas modificadas y una función RPC aplica cada ruta mediante `jsonb_set` dentro de PostgreSQL, conservando intactos mapas, salas, enemigos y demás datos pesados. La creación inicial sigue consolidando el mundo completo una sola vez.
+- Añadida `supabase/patch_dungeon_world_json.sql`, que debe ejecutarse una vez en Supabase para habilitar el parcheo granular y devuelve únicamente metadata ligera de la fila actualizada.
+- Canonizado el contrato de pociones en la API de items: cualquier registro marcado como poción, consumible o `slot: consumable` se persiste siempre con `type: potion`, `slot: consumable` y `effects` como array.
+- El importador de la pestaña Pociones normaliza también JSON antiguos o envueltos, y los catálogos de editor y loot comparten un único detector compatible con metadata legacy; así las pociones nuevas con efectos de daño u otros componentes vuelven a aparecer como pociones y a participar en el loot.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.59.1`.
+
+## v0.59.0 - Editor integral de dungeons
+
+- Añadida la pestaña **Dungeons** en Configuración con creación, edición y borrado de dungeons persistidas, organizada en acordeones de identidad/historia, dificultad/progresión, geometría/dimensiones y configuración individual de los seis pisos.
+- Incorporados parámetros finos para daño, vida, experiencia, población enemiga, loot enemigo, loot por piso, modo PA, geometría, densidad, dimensiones, historia inicial, historia por piso, archetype y tileset por piso. Los archetypes seleccionados se aplican al pregenerar cada piso.
+- Añadidas importación y exportación JSON tanto del borrador como de dungeons consolidadas.
+- Añadida una vista previa simplificada y navegable piso a piso con mapa, salas, puertas, enemigos, cofres, entrada y salida.
+- Ampliada la API de `dungeon_world` con actualización PATCH y borrado DELETE.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.59.0`.
+
 ## v0.58.1 - Cofres de poción aditivos y tier de consumible
 
 - Corregido el incremento de cofres de poción para que sea aditivo: cada cofre de loot ya generado aporta una tirada independiente del 15% para añadir un cofre de poción extra, sin sustituir ni convertir cofres de equipo, armas o skills.
