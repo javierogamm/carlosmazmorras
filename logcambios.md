@@ -1,3 +1,12 @@
+## v0.62.1 - Bonus automático de skills
+
+- Eliminada la configuración manual de categoría, atributo y coeficiente de scaling de las skills; también se retiraron esos controles del editor.
+- El daño directo, DOT y la magnitud cuantitativa de debuffs reciben automáticamente el bonus general de INT, superpuesto a dados, potencia base y demás modificadores.
+- Curaciones, HOT y magnitudes cuantitativas de utilidad reciben automáticamente el bonus general de SAB; se incluyen escudos, buffs, recursos restaurados, HP de invocaciones, transformaciones, ascensiones y revelado escalable.
+- Los campos de scaling antiguos se aceptan en datos legacy pero se ignoran y no tienen efecto.
+- El mismo cálculo automático utiliza los atributos consolidados del actor y se aplica a jugadores, enemigos, élites y bosses.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.62.1`.
+
 ## v0.62.0 - Consolidación del sistema de estadísticas
 
 - Eliminados `physicalPower` y `magicPower` del sistema activo, las razas y los afijos; los campos legacy se ignoran al cargar.
