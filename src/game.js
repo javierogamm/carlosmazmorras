@@ -59,7 +59,7 @@ const classDefs={
  monk:{name:'Monje del Bucle Infinito',desc:'Atrapado en un ciclo de tiempo que solo él percibe.',stats:{strength:3,vitality:3,agility:4,luck:1,intelligence:1,wisdom:3},skills:['charge','fortify'],resourceBias:'stamina'},
  engineer:{name:'Ingeniero Alquímico',desc:'Mezcla pólvora, código y reactivos inestables.',stats:{strength:1,vitality:2,agility:2,luck:3,intelligence:5,wisdom:2},skills:['ironRain','lootMagnet','scrapGrenade'],resourceBias:'mana'},
  seer:{name:'Vidente del Abismo Digital',desc:'Ve el futuro por pantallas rotas, a costa de su cordura.',stats:{strength:1,vitality:1,agility:1,luck:4,intelligence:3,wisdom:5},skills:['taunt','quake','spiritWolf'],resourceBias:'mana'},
- beastGuardian:{name:'Guardián Bestial Aumentado',desc:'Vincula su mente a criaturas con implantes cibernéticos.',stats:{strength:3,vitality:4,agility:3,luck:1,intelligence:1,wisdom:3},skills:['smash','charge'],resourceBias:'stamina'}
+ beastGuardian:{name:'Arquero de plasma',desc:'Cazador aumentado que combina instinto, compañeros y proyectiles de plasma.',stats:{strength:3,vitality:4,agility:3,luck:1,intelligence:1,wisdom:3},skills:['smash','charge'],resourceBias:'stamina'}
 };
 
 const slots=['weapon','offhand','head','chest','hands','legs','boots','neck','ring1','ring2','trinket1','trinket2'];
@@ -1418,12 +1418,23 @@ function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-M
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
 // GSAP effects are independent DOM particles: they keep canvas art crisp and
 // avoid spritesheets while still covering movement, attacks and every skill component.
-function combatFx(kind,x,y,{to=null,color='#ffd45f',icon='✦'}={}){
+const CLASS_FX_THEMES={
+ yunque:{color:'#b9c3c9',accent:'#ff9f43',icon:'▰',theme:'forge'},berserker:{color:'#ff3f81',accent:'#ff8b3d',icon:'╳',theme:'rage'},necromancer:{color:'#78d66b',accent:'#9b6cff',icon:'☠',theme:'necrotic'},paladin:{color:'#ffe07a',accent:'#8de8ff',icon:'✚',theme:'holy'},
+ jester:{color:'#e06cff',accent:'#58f2d2',icon:'◇',theme:'chaos'},sniper:{color:'#80eaff',accent:'#ffcf5a',icon:'⌖',theme:'rune'},shaman:{color:'#66dfff',accent:'#c88cff',icon:'ϟ',theme:'storm'},thief:{color:'#8d75ff',accent:'#46f1dc',icon:'◈',theme:'quantum'},
+ cleric:{color:'#fff0a0',accent:'#70dc9b',icon:'✧',theme:'silicon'},entropyMage:{color:'#b05cff',accent:'#ff557f',icon:'◌',theme:'entropy'},bountyHunter:{color:'#ff9b4a',accent:'#54d7ff',icon:'⌁',theme:'bounty'},druid:{color:'#77c76a',accent:'#d0ad62',icon:'❧',theme:'nature'},
+ monk:{color:'#f4d06f',accent:'#75e6dd',icon:'◎',theme:'loop'},engineer:{color:'#ffb14e',accent:'#84ffb1',icon:'⚗',theme:'alchemy'},seer:{color:'#8fa7ff',accent:'#e783ff',icon:'◉',theme:'abyss'},beastGuardian:{color:'#58e8ff',accent:'#9cff71',icon:'➵',theme:'plasma'}
+};
+function skillFxProfile(id,kind='attack'){
+ const d=effectSourceDef(id)||skillDefs[id]||{},base=CLASS_FX_THEMES[d.classId||game?.player?.cls]||{color:'#b98cff',accent:'#ffd45f',icon:'✦',theme:'arcane'};
+ const utility=['buff','heal','shield','hot'].includes(kind),dot=kind==='dot';
+ return {...base,color:dot?'#e06b72':utility?base.accent:base.color,icon:dot?'·':utility?'○':base.icon}
+}
+function combatFx(kind,x,y,{to=null,color='#ffd45f',accent=color,icon='·',theme='neutral',subtle=false}={}){
  const layer=document.getElementById('combatFxLayer');if(!layer||!game)return;
  const c=camera(),el=document.createElement('i'),pct=100/visibleTiles;
- el.className=`combatFx ${kind}`;el.textContent=icon;el.style.color=color;el.style.left=`${(x-c.x+.5)*pct}%`;el.style.top=`${(y-c.y+.5)*pct}%`;layer.appendChild(el);
+ el.className=`combatFx ${kind} fx-${theme}${subtle?' subtle':''}`;el.textContent=icon;el.style.color=color;el.style.setProperty('--fx-accent',accent);el.style.left=`${(x-c.x+.5)*pct}%`;el.style.top=`${(y-c.y+.5)*pct}%`;layer.appendChild(el);
  const end=to?{left:`${(to.x-c.x+.5)*pct}%`,top:`${(to.y-c.y+.5)*pct}%`}:{};
- if(window.gsap)gsap.fromTo(el,{scale:.25,opacity:0,rotation:-25},{...end,scale:kind==='attack'?1.8:1.25,opacity:1,rotation:kind==='buff'?135:15,duration:kind==='move'?.22:.36,ease:'power2.out',onComplete:()=>gsap.to(el,{scale:.2,opacity:0,duration:.28,onComplete:()=>el.remove()})});
+ if(window.gsap)gsap.fromTo(el,{scale:.35,opacity:0,rotation:kind==='melee'?-35:-12},{...end,scale:subtle?.85:kind==='attack'?1.35:1.15,opacity:subtle?.62:.92,rotation:kind==='buff'?120:kind==='melee'?35:12,duration:kind==='move'?.22:subtle?.2:.34,ease:'power2.out',onComplete:()=>gsap.to(el,{scale:.35,opacity:0,duration:subtle?.16:.26,onComplete:()=>el.remove()})});
  else{el.animate([{opacity:0,transform:'scale(.25)'},{opacity:1,transform:'scale(1.2)'},{opacity:0,transform:'scale(.2)'}],{duration:650}).onfinish=()=>el.remove()}
 }
 // Brief tracer line for any hit landed from more than 1 tile away (ranged
@@ -3409,7 +3420,9 @@ function attack(e,bonus=0,options={}){
  const crit=Math.random()<critChance();if(crit&&d>0)d=Math.round(d*1.75);
  if(game?.multiplayer){mpEnsureEnemyIds();sendMpAction(isRangedSkill(skillId)||weaponIsRanged(equippedWeapon())?'ranged_attack':'attack',{attackerType:'player',attackerId:game.pjId,targetType:'enemy',targetId:e.eid,visualAmount:d,result:crit?'critical':d?'hit':'evaded'})}
  const origin=options.origin||game.player;
- combatFx('attack',origin.x,origin.y,{to:{x:e.x,y:e.y},color:skillId?'#b98cff':'#ffd45f',icon:skillId?(skillDefs[skillId]?.icon||'✦'):'⚔'});
+ const ranged=skillId?isRangedSkill(skillId):weaponIsRanged(equippedWeapon());
+ const fx=skillId?skillFxProfile(skillId):{color:ranged?'#9ed9e8':'#ddd2bd',accent:ranged?'#d9f6ff':'#fff0d0',icon:ranged?'➤':'╱',theme:ranged?'projectile':'melee'};
+ combatFx(skillId?'attack':ranged?'ranged':'melee',origin.x,origin.y,{to:{x:e.x,y:e.y},...fx,subtle:!skillId});
  if(Math.max(Math.abs(origin.x-e.x),Math.abs(origin.y-e.y))>1)rangedTracer(origin.x,origin.y,e.x,e.y,crit?'#ffd75c':'#9be8ff');
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
@@ -3508,7 +3521,7 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  const originalAmount=amount;
  amount=normalizeIncomingDamage(amount,sourceName);
  const p=game.player;
- combatFx('attack',p.x,p.y,{color:'#ff6666',icon:'!'});
+ combatFx('attack',p.x,p.y,{color:'#e99a9a',accent:'#ff6666',icon:'·',theme:'impact',subtle:true});
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount*.75));
  let mult=1,result=`fallo defensivo de ${attackDefenseLabel(defenseStat)}`;
@@ -4948,7 +4961,8 @@ function resolveComponentAllyTargets(comp,ctx){
  return ctx.clickedAlly?[ctx.clickedAlly]:[];
 }
 function applyEffectComponent(id,comp,ctx){
- combatFx(comp.kind==='move'?'move':comp.kind==='dot'?'dot':['buff','heal','shield','hot'].includes(comp.kind)?'buff':'attack',game.player.x,game.player.y,{to:ctx?.target?{x:ctx.target.x,y:ctx.target.y}:ctx?.x!=null?{x:ctx.x,y:ctx.y}:null,color:comp.kind==='dot'?'#d98a75':comp.kind==='heal'?'#70dc9b':'#b98cff',icon:skillDefs[id]?.icon||'✦'});
+ const fxKind=comp.kind==='move'?'move':comp.kind==='dot'?'dot':['buff','heal','shield','hot'].includes(comp.kind)?'buff':'attack',fx=skillFxProfile(id,fxKind);
+ combatFx(fxKind,game.player.x,game.player.y,{to:ctx?.target?{x:ctx.target.x,y:ctx.target.y}:ctx?.x!=null?{x:ctx.x,y:ctx.y}:null,...fx});
  const d=effectSourceDef(id),p=game.player,lvl=effectSourceLevel(id);
  // Merges the enclosing skill's own top-level fields (type/resource, used
  // only for the "Automática" no-stat-chosen fallback) with this specific

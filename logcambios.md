@@ -1,3 +1,11 @@
+## v0.61.1 - Ataques sutiles y efectos temáticos de clase
+
+- Reducido el tamaño, brillo, borde y duración de los indicadores de ataque básico para que acompañen al golpe sin tapar personajes ni tablero.
+- Diferenciados visualmente los ataques básicos: el cuerpo a cuerpo usa un corte breve y el ataque a distancia un proyectil direccional discreto.
+- Añadida una identidad visual GSAP propia para las 16 clases, con paletas, acentos, símbolos y geometrías temáticas aplicadas a daño, movimiento, DOT, curación, escudos y buffs de sus skills.
+- Renombrado y tematizado el antiguo Guardián Bestial Aumentado como **Arquero de plasma**, de acuerdo con el listado consolidado de clases.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.61.1`.
+
 ## v0.61.0 - Companions, animación y navegación enemiga
 
 - Corregido el error `clampCompanionReservedResources is not defined` al elegir habilidades de compañero y consolidado el ciclo completo de reserva, liberación, reactivación y límite efectivo de vida, maná o stamina.
