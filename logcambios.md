@@ -1,3 +1,11 @@
+## v0.61.2 - Pociones iniciales, curación y apuntado multihit
+
+- Restaurado el cálculo del máximo efectivo de vida, maná y stamina cuando existen reservas de compañeros; las pociones de curación instantánea vuelven a modificar la vida, manteniendo los límites reservados.
+- La creación de personaje espera a que estén cargados tanto el catálogo de pociones como la configuración de clases antes de resolver las pociones iniciales seleccionadas.
+- Eliminado el límite silencioso de tres pociones iniciales: se entregan todas las seleccionadas en la clase, incluidas las ofensivas configuradas con DOT o trampas.
+- Las habilidades multihit exigen siempre seleccionar explícitamente un enemigo, incluso si conservaban por error `targetMode: self` en su configuración.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.61.2`.
+
 ## v0.61.1 - Ataques sutiles y efectos temáticos de clase
 
 - Reducido el tamaño, brillo, borde y duración de los indicadores de ataque básico para que acompañen al golpe sin tapar personajes ni tablero.
