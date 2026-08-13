@@ -1,3 +1,13 @@
+## v0.62.0 - Consolidación del sistema de estadísticas
+
+- Eliminados `physicalPower` y `magicPower` del sistema activo, las razas y los afijos; los campos legacy se ignoran al cargar.
+- Consolidado `critDamage` con base 175 como multiplicador crítico real, crítico de SUE a 0,75 puntos por punto y cap de 75%, y bonus de SUE exclusivo para procs de armas (+0,5 puntos por punto, máximo +15).
+- Actualizadas las derivadas: stamina `45 + FUE×4`, visión por INT, detección de trampas por SAB, HP `30 + VIT×6` y armadura `4 + floor(VIT/2)` más bonus directos.
+- Añadidos slots activos por SAB (`3 + floor(SAB/10)`), conservando el ataque básico fuera del límite y recortando de forma segura los slots excedentes si SAB disminuye.
+- Configurados los multiplicadores globales de skills ofensivas por INT y defensivas/utilidad por SAB, ambos con coeficiente explícito 0,01 por punto.
+- Consolidado el scaling de skills en un único atributo y coeficiente explícitos; eliminado el fallback implícito de atributo principal más secundario y ampliado el editor con categoría y scaling configurables.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.62.0`.
+
 ## v0.61.2 - Pociones iniciales, curación y apuntado multihit
 
 - Restaurado el cálculo del máximo efectivo de vida, maná y stamina cuando existen reservas de compañeros; las pociones de curación instantánea vuelven a modificar la vida, manteniendo los límites reservados.

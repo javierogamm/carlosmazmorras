@@ -52,7 +52,7 @@ Common component shape: `{ "kind": "<kind>", "target": "...", ...kind-specific f
 
 ### 3.1 Shared "dice block" (prefix defaults to `dmg`, some kinds use `dot`)
 
-Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Every one of these derives its stat bonus (`dmgStatMode:"add"`) or multiplier (`dmgStatMode:"mult"`) from **its own component's** `dmgStat`/`dmgStatCoef` and the caster's (the player's) live stat value, not from the enclosing skill's top-level fields or a generic guess — leaving `dmgStat` empty ("Automática") falls back to the enclosing skill's `type`/`resource`-based bonus, same as before. `trap` computes but then discards its own dice/stat magnitude entirely — see §4.23.
+Used by: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`, `summon`, `summonturret`, `clones`, `lineshot`, `linkdamage`, `trap` (all prefix `dmg`), and `dot` (prefix `dot`). Every one of these derives its stat bonus (`dmgStatMode:"add"`) or multiplier (`dmgStatMode:"mult"`) from **its own component's** `dmgStat`/`dmgStatCoef` and the caster's (the player's) live stat value, not from the enclosing skill's top-level fields or a generic guess — leaving the scaling stat empty applies no attribute contribution. `trap` computes but then discards its own dice/stat magnitude entirely — see §4.23.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
@@ -489,3 +489,15 @@ The 12 "shared" tags (`ranged, shield, dash, debuff, aoe, heal, multihit, utilit
   }
 }
 ```
+
+## Categoría y scaling consolidado (v0.62.0)
+
+Cada skill declara `category` como `offensive`, `defensive` o `utility`. Las ofensivas reciben el multiplicador global `1 + INT × 0.01`; las defensivas y de utilidad reciben `1 + SAB × 0.01` únicamente sobre magnitudes cuantitativas.
+
+El scaling usa un solo objeto explícito:
+
+```json
+"scaling": { "stat": "strength", "coefficient": 1.2 }
+```
+
+La contribución es `totalStat × coefficient`. No existe atributo secundario ni fallback automático; sin `scaling`, la contribución de atributos es cero.

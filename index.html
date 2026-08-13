@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.61.2 POCIONES Y MULTIHIT</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.61.2">
+<title>MAZMORRA // BOTÍN v0.62.0 ESTADÍSTICAS CONSOLIDADAS</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.62.0">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.61.2 POCIONES Y MULTIHIT</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.62.0 ESTADÍSTICAS CONSOLIDADAS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -378,6 +378,9 @@
       <label>Enfriamiento (turnos) <input id="configSkillCd" type="number" min="0" value="5"></label>
       <label>PA (coste en modo turnos por Puntos de Acción, single y multi) <input id="configSkillApCost" type="number" min="0" value="10"></label>
       <label>Tipo <select id="configSkillType"><option value="physical">Físico</option><option value="magic">Mágico</option><option value="utility">Utilidad</option></select></label>
+      <label>Categoría <select id="configSkillCategory"><option value="offensive">Ofensiva</option><option value="defensive">Defensiva</option><option value="utility">Utilidad</option></select></label>
+      <label>Atributo de scaling <select id="configSkillScalingStat"><option value="">Sin scaling</option><option value="strength">Fuerza</option><option value="vitality">Vitalidad</option><option value="agility">Agilidad</option><option value="luck">Suerte</option><option value="intelligence">Inteligencia</option><option value="wisdom">Sabiduría</option></select></label>
+      <label>Coeficiente de scaling <input id="configSkillScalingCoefficient" type="number" min="0" step="0.01" value="1"></label>
       <label>Rareza <select id="configSkillRarity"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option></select></label>
       <label>Alcance (0 = cuerpo a cuerpo) <input id="configSkillRange" type="number" min="0" value="1"></label>
       <label>Modo de objetivo <select id="configSkillTargetMode"><option value="">Automático</option><option value="self">Uno mismo</option><option value="enemy">Enemigo</option><option value="area">Área</option></select></label>
@@ -822,7 +825,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.61.2"></script>
+<script src="./src/game.js?v=0.62.0"></script>
 
 </body>
 </html>
