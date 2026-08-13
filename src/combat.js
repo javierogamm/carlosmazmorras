@@ -1,4 +1,4 @@
-/* MAZMORRA // BOTÍN v0.61.0
+/* MAZMORRA // BOTÍN v0.61.1
  * Resolución de combate, efectos, turnos, inventario y actualización del HUD.
  * Carga clásica ordenada por index.html; el estado compartido pertenece al ámbito global del juego.
  */
@@ -1064,6 +1064,33 @@ function findFreeNear(origin){
   if(!blocked(x,y)&&!isSafeCell(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)&&!(game.companions||[]).some(c=>c.x===x&&c.y===y)&&!(game.player.x===x&&game.player.y===y))return{x,y}
  }
  return findFreeAdjacentToPlayer()
+}
+// A permanent companion reserves part of one player resource while it is
+// active. These helpers are deliberately kept next to summonCompanion(): the
+// HUD, healing/resource restoration and dismiss/call flows all share this
+// single source of truth for the effective cap and the reserved amount.
+function companionReservationAmount(resource,pct){
+ const maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana';
+ return Math.max(1,Math.round((Number(game.player[maxKey])||0)*Math.max(1,Math.min(100,Number(pct)||20))/100))
+}
+function companionResourceCap(resource){
+ const p=game?.player;if(!p)return 0;
+ const maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana';
+ const reserved=(game.companions||[]).reduce((sum,c)=>sum+(c.reserveResource===resource?(c.reservedAmount||0):0),0);
+ return Math.max(1,(Number(p[maxKey])||0)-reserved)
+}
+function clampCompanionReservedResources(){
+ if(!game?.player)return;
+ for(const resource of['hp','mana','stamina'])game.player[resource]=Math.min(game.player[resource],companionResourceCap(resource))
+}
+function reserveCompanionResource(c){
+ const resource=c.reserveResource||'mana',amount=companionReservationAmount(resource,c.reservePct);
+ if(game.player[resource]<=amount){log(`No puedes reservar ${amount} de ${resource}: debes conservar al menos 1 punto.`,'sys');return false}
+ game.player[resource]-=amount;c.reservedAmount=amount;c.reserveResource=resource;return true
+}
+function releaseCompanionResource(c){
+ const resource=c.reserveResource||'mana',maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana';
+ game.player[resource]=Math.min(game.player[maxKey],game.player[resource]+Math.max(0,c.reservedAmount||0));c.reservedAmount=0
 }
 // `custom` (from a stackable 'summon' effect component) overrides the
 // hardcoded per-kind stat table with author-configured hp/atk/range/effect,

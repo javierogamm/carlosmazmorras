@@ -1,4 +1,4 @@
-/* MAZMORRA // BOTÍN v0.61.0
+/* MAZMORRA // BOTÍN v0.61.1
  * Estado global, catálogos, progresión de loot, estadísticas derivadas y objetos.
  * Carga clásica ordenada por index.html; el estado compartido pertenece al ámbito global del juego.
  */
@@ -32,7 +32,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.61.0';
+const APP_VERSION='0.61.1';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;

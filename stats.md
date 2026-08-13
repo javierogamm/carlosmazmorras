@@ -1,6 +1,6 @@
 # Estadísticas y su efecto real en el motor
 
-> Referencia de la versión **0.61.0**. Este documento describe lo que calcula el código, no solo los textos de la interfaz. Los valores de raza, equipo y buffs se vuelven a consolidar mediante `recomputeDerived()`.
+> Referencia de la versión **0.61.1**. Este documento describe lo que calcula el código, no solo los textos de la interfaz. Los valores de raza, equipo y buffs se vuelven a consolidar mediante `recomputeDerived()`.
 
 ## Flujo de cálculo
 

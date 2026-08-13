@@ -1,4 +1,4 @@
-/* MAZMORRA // BOTÍN v0.61.0
+/* MAZMORRA // BOTÍN v0.61.1
  * Persistencia, selección de personaje, multijugador y bootstrap de eventos.
  * Carga clásica ordenada por index.html; el estado compartido pertenece al ámbito global del juego.
  */

@@ -1,4 +1,4 @@
-/* MAZMORRA // BOTÍN v0.61.0
+/* MAZMORRA // BOTÍN v0.61.1
  * Carga de configuración y editores administrativos.
  * Carga clásica ordenada por index.html; el estado compartido pertenece al ámbito global del juego.
  */

@@ -1,3 +1,10 @@
+## v0.61.1 - Reservas de recursos de companions
+
+- Restauradas en el módulo de combate las funciones compartidas que calculan, aplican, limitan y liberan las reservas de vida, maná o stamina de los companions permanentes.
+- Corregido el error `clampCompanionReservedResources is not defined` que interrumpía `updateUI()` al elegir una habilidad, incluso cuando el companion estaba configurado correctamente.
+- Centralizado el límite efectivo del recurso reservado para que invocación, curación, regeneración, HUD, desinvocación y rellamada del companion utilicen el mismo cálculo.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.61.1`.
+
 ## v0.61.0 - Motor modular y referencia de estadísticas
 
 - Repartido el antiguo `src/game.js` monolítico en seis scripts por responsabilidad: núcleo y datos (`core.js`), dungeon (`dungeon.js`), combate (`combat.js`), renderizado (`renderer.js`), administración (`admin.js`) y bootstrap/persistencia (`game.js`).
