@@ -59,7 +59,7 @@ const classDefs={
  monk:{name:'Monje del Bucle Infinito',desc:'Atrapado en un ciclo de tiempo que solo él percibe.',stats:{strength:3,vitality:3,agility:4,luck:1,intelligence:1,wisdom:3},skills:['charge','fortify'],resourceBias:'stamina'},
  engineer:{name:'Ingeniero Alquímico',desc:'Mezcla pólvora, código y reactivos inestables.',stats:{strength:1,vitality:2,agility:2,luck:3,intelligence:5,wisdom:2},skills:['ironRain','lootMagnet','scrapGrenade'],resourceBias:'mana'},
  seer:{name:'Vidente del Abismo Digital',desc:'Ve el futuro por pantallas rotas, a costa de su cordura.',stats:{strength:1,vitality:1,agility:1,luck:4,intelligence:3,wisdom:5},skills:['taunt','quake','spiritWolf'],resourceBias:'mana'},
- beastGuardian:{name:'Guardián Bestial Aumentado',desc:'Vincula su mente a criaturas con implantes cibernéticos.',stats:{strength:3,vitality:4,agility:3,luck:1,intelligence:1,wisdom:3},skills:['smash','charge'],resourceBias:'stamina'}
+ beastGuardian:{name:'Arquero de plasma',desc:'Cazador aumentado que combina instinto, compañeros y proyectiles de plasma.',stats:{strength:3,vitality:4,agility:3,luck:1,intelligence:1,wisdom:3},skills:['smash','charge'],resourceBias:'stamina'}
 };
 
 const slots=['weapon','offhand','head','chest','hands','legs','boots','neck','ring1','ring2','trinket1','trinket2'];
@@ -1416,6 +1416,27 @@ function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
 function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
+// GSAP effects are independent DOM particles: they keep canvas art crisp and
+// avoid spritesheets while still covering movement, attacks and every skill component.
+const CLASS_FX_THEMES={
+ yunque:{color:'#b9c3c9',accent:'#ff9f43',icon:'▰',theme:'forge'},berserker:{color:'#ff3f81',accent:'#ff8b3d',icon:'╳',theme:'rage'},necromancer:{color:'#78d66b',accent:'#9b6cff',icon:'☠',theme:'necrotic'},paladin:{color:'#ffe07a',accent:'#8de8ff',icon:'✚',theme:'holy'},
+ jester:{color:'#e06cff',accent:'#58f2d2',icon:'◇',theme:'chaos'},sniper:{color:'#80eaff',accent:'#ffcf5a',icon:'⌖',theme:'rune'},shaman:{color:'#66dfff',accent:'#c88cff',icon:'ϟ',theme:'storm'},thief:{color:'#8d75ff',accent:'#46f1dc',icon:'◈',theme:'quantum'},
+ cleric:{color:'#fff0a0',accent:'#70dc9b',icon:'✧',theme:'silicon'},entropyMage:{color:'#b05cff',accent:'#ff557f',icon:'◌',theme:'entropy'},bountyHunter:{color:'#ff9b4a',accent:'#54d7ff',icon:'⌁',theme:'bounty'},druid:{color:'#77c76a',accent:'#d0ad62',icon:'❧',theme:'nature'},
+ monk:{color:'#f4d06f',accent:'#75e6dd',icon:'◎',theme:'loop'},engineer:{color:'#ffb14e',accent:'#84ffb1',icon:'⚗',theme:'alchemy'},seer:{color:'#8fa7ff',accent:'#e783ff',icon:'◉',theme:'abyss'},beastGuardian:{color:'#58e8ff',accent:'#9cff71',icon:'➵',theme:'plasma'}
+};
+function skillFxProfile(id,kind='attack'){
+ const d=effectSourceDef(id)||skillDefs[id]||{},base=CLASS_FX_THEMES[d.classId||game?.player?.cls]||{color:'#b98cff',accent:'#ffd45f',icon:'✦',theme:'arcane'};
+ const utility=['buff','heal','shield','hot'].includes(kind),dot=kind==='dot';
+ return {...base,color:dot?'#e06b72':utility?base.accent:base.color,icon:dot?'·':utility?'○':base.icon}
+}
+function combatFx(kind,x,y,{to=null,color='#ffd45f',accent=color,icon='·',theme='neutral',subtle=false}={}){
+ const layer=document.getElementById('combatFxLayer');if(!layer||!game)return;
+ const c=camera(),el=document.createElement('i'),pct=100/visibleTiles;
+ el.className=`combatFx ${kind} fx-${theme}${subtle?' subtle':''}`;el.textContent=icon;el.style.color=color;el.style.setProperty('--fx-accent',accent);el.style.left=`${(x-c.x+.5)*pct}%`;el.style.top=`${(y-c.y+.5)*pct}%`;layer.appendChild(el);
+ const end=to?{left:`${(to.x-c.x+.5)*pct}%`,top:`${(to.y-c.y+.5)*pct}%`}:{};
+ if(window.gsap)gsap.fromTo(el,{scale:.35,opacity:0,rotation:kind==='melee'?-35:-12},{...end,scale:subtle?.85:kind==='attack'?1.35:1.15,opacity:subtle?.62:.92,rotation:kind==='buff'?120:kind==='melee'?35:12,duration:kind==='move'?.22:subtle?.2:.34,ease:'power2.out',onComplete:()=>gsap.to(el,{scale:.35,opacity:0,duration:subtle?.16:.26,onComplete:()=>el.remove()})});
+ else{el.animate([{opacity:0,transform:'scale(.25)'},{opacity:1,transform:'scale(1.2)'},{opacity:0,transform:'scale(.2)'}],{duration:650}).onfinish=()=>el.remove()}
+}
 // Brief tracer line for any hit landed from more than 1 tile away (ranged
 // weapons, ranged skills, enemy ranged attacks) - a plain DOM overlay like
 // floating(), not a canvas draw, so it doesn't need to hook into the
@@ -3399,6 +3420,9 @@ function attack(e,bonus=0,options={}){
  const crit=Math.random()<critChance();if(crit&&d>0)d=Math.round(d*1.75);
  if(game?.multiplayer){mpEnsureEnemyIds();sendMpAction(isRangedSkill(skillId)||weaponIsRanged(equippedWeapon())?'ranged_attack':'attack',{attackerType:'player',attackerId:game.pjId,targetType:'enemy',targetId:e.eid,visualAmount:d,result:crit?'critical':d?'hit':'evaded'})}
  const origin=options.origin||game.player;
+ const ranged=skillId?isRangedSkill(skillId):weaponIsRanged(equippedWeapon());
+ const fx=skillId?skillFxProfile(skillId):{color:ranged?'#9ed9e8':'#ddd2bd',accent:ranged?'#d9f6ff':'#fff0d0',icon:ranged?'➤':'╱',theme:ranged?'projectile':'melee'};
+ combatFx(skillId?'attack':ranged?'ranged':'melee',origin.x,origin.y,{to:{x:e.x,y:e.y},...fx,subtle:!skillId});
  if(Math.max(Math.abs(origin.x-e.x),Math.abs(origin.y-e.y))>1)rangedTracer(origin.x,origin.y,e.x,e.y,crit?'#ffd75c':'#9be8ff');
  e.hp-=d;floating(d?`${crit?'CRIT ':''}-${d}`:'EVITA',e.x,e.y,d?(crit?'#ffd75c':'#fff'):'#70dc9b');effect('flash');
  log(`${e.name}: ${defense.result}. Tirada 1d20 (${defense.die}) + ${defense.bonus} contra CD ${defense.dc}. ${d?`Recibe ${d}${crit?' crítico':''}`:'No recibe daño'} [${expr}: ${roll.rolls.join('+')}${roll.bonus?`${roll.bonus>0?'+':''}${roll.bonus}`:''}; ataque +${statMod}].`,'combat');
@@ -3497,6 +3521,7 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  const originalAmount=amount;
  amount=normalizeIncomingDamage(amount,sourceName);
  const p=game.player;
+ combatFx('attack',p.x,p.y,{color:'#e99a9a',accent:'#ff6666',icon:'·',theme:'impact',subtle:true});
  const defenseDie=rollDie(20),defenseBonus=playerDefenseBonus(defenseStat);
  const attackDC=10+Math.max(1,Math.round(amount*.75));
  let mult=1,result=`fallo defensivo de ${attackDefenseLabel(defenseStat)}`;
@@ -4241,7 +4266,7 @@ function tickEnemyStatuses(){
   if(e.hp<=0)continue;
   for(const s of e.statuses||[]){
    if(['bleed','burn','poison','dot','plague','decay','decayDot','areaDot'].includes(s.type)){
-    const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d98a75');
+    const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d98a75');combatFx('dot',e.x,e.y,{color:'#d98a75',icon:'●'});
     if(s.type==='decayDot')s.power=Math.max(1,s.power-1);
     if(e.hp<=0){kill(e);break}
    }
@@ -4320,6 +4345,20 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  game.companions.push(companion);
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
  return companion
+}
+function companionReserveBase(resource){const p=game?.player;if(!p)return 0;return resource==='hp'?p.maxHp:resource==='stamina'?p.maxStamina:p.maxMana}
+function reserveCompanionResource(c){
+ const p=game?.player,resource=c.reserveResource||'mana';if(!p)return false;
+ const amount=Math.max(1,Math.floor(companionReserveBase(resource)*(c.reservePct||20)/100));
+ const used=(game.companions||[]).filter(o=>o!==c&&o.hp>0&&o.reserveResource===resource).reduce((n,o)=>n+(o.reservedAmount||0),0);
+ if(companionReserveBase(resource)-used-amount<1){log(`No hay suficiente ${resource} libre para reservar a ${c.name}.`,'bad');return false}
+ c.reservedAmount=amount;return true
+}
+function releaseCompanionResource(c){if(c)c.reservedAmount=0}
+function clampCompanionReservedResources(){
+ const p=game?.player;if(!p)return;
+ const reserved={hp:0,stamina:0,mana:0};for(const c of game.companions||[])if(c.hp>0)reserved[c.reserveResource||'mana']+=Math.max(0,c.reservedAmount||0);
+ p.hp=Math.min(p.hp,Math.max(1,p.maxHp-reserved.hp));p.stamina=Math.min(p.stamina,Math.max(0,p.maxStamina-reserved.stamina));p.mana=Math.min(p.mana,Math.max(0,p.maxMana-reserved.mana));
 }
 function moveCompanionToward(c,target){
  const occupied=(x,y)=>game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)||(game.companions||[]).some(o=>o!==c&&o.x===x&&o.y===y)||(game.player.x===x&&game.player.y===y);
@@ -4922,6 +4961,8 @@ function resolveComponentAllyTargets(comp,ctx){
  return ctx.clickedAlly?[ctx.clickedAlly]:[];
 }
 function applyEffectComponent(id,comp,ctx){
+ const fxKind=comp.kind==='move'?'move':comp.kind==='dot'?'dot':['buff','heal','shield','hot'].includes(comp.kind)?'buff':'attack',fx=skillFxProfile(id,fxKind);
+ combatFx(fxKind,game.player.x,game.player.y,{to:ctx?.target?{x:ctx.target.x,y:ctx.target.y}:ctx?.x!=null?{x:ctx.x,y:ctx.y}:null,...fx});
  const d=effectSourceDef(id),p=game.player,lvl=effectSourceLevel(id);
  // Merges the enclosing skill's own top-level fields (type/resource, used
  // only for the "Automática" no-stat-chosen fallback) with this specific
@@ -5273,7 +5314,7 @@ function actionDone(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return playerFinished();
  if(game.player.ap==null)startPlayerAP();
  game.player.ap=Math.max(0,game.player.ap-cost);
- busy=false;updateUI();requestAnimationFrame(animate);
+ busy=false;updateUI();requestGameFrame();
  // not enough AP left for even a move (5) - force the turn to end instead of
  // leaving the player stuck staring at a "PASAR TURNO" button they still
  // have to click themselves
@@ -5286,7 +5327,7 @@ function playerFinished(){
   playerFinishedMultiplayer();return;
  }
  busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerInvisibility();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;tickEquipmentCooldowns();if(game.player.shield>0)game.player.shield--;
- updateUI();requestAnimationFrame(animate);
+ updateUI();requestGameFrame();
  setTimeout(()=>{enemyTurn(()=>{startPlayerAP();busy=false;updateUI();draw()})},500);
 }
 async function playerFinishedMultiplayer(){
@@ -5295,7 +5336,7 @@ async function playerFinishedMultiplayer(){
  for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;
  tickEquipmentCooldowns();
  if(game.player.shield>0)game.player.shield--;
- updateUI();requestAnimationFrame(animate);
+ updateUI();requestGameFrame();
  const order=(game.turnOrder&&game.turnOrder.length)?game.turnOrder:[game.pjId];
  const myIndex=order.findIndex(id=>String(id)===String(game.pjId));
  const isLast=myIndex===-1||myIndex===order.length-1;
@@ -5404,6 +5445,14 @@ function enemyNormalAttackDamage(e){
  const roll=rollDice(w.dice||'1d4').total,statMod=enemyStatModifier(e);
  return Math.max(1,Math.round(roll+statMod+(w.atkResidual||0)));
 }
+function enemyPathStep(e,target,flee=false){
+ const occupied=(x,y)=>game.enemies.some(o=>o!==e&&o.hp>0&&o.x===x&&o.y===y)||(game.companions||[]).some(c=>c.hp>0&&c.x===x&&c.y===y)||(game.player.x===x&&game.player.y===y);
+ const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+ if(flee){const choices=dirs.map(([dx,dy])=>({x:e.x+dx,y:e.y+dy})).filter(p=>!blocked(p.x,p.y)&&!isSafeCell(p.x,p.y)&&!occupied(p.x,p.y)).sort((a,b)=>gridDistance(b,target)-gridDistance(a,target));return choices[0]||null}
+ const start=`${e.x},${e.y}`,queue=[{x:e.x,y:e.y}],seen=new Set([start]),parent=new Map();let goal=null;
+ while(queue.length&&seen.size<900){const cur=queue.shift();if(gridDistance(cur,target)<=1){goal=`${cur.x},${cur.y}`;break}for(const[dx,dy]of dirs){const nx=cur.x+dx,ny=cur.y+dy,key=`${nx},${ny}`;if(seen.has(key)||blocked(nx,ny)||isSafeCell(nx,ny)||occupied(nx,ny))continue;if(dx&&dy&&(blocked(cur.x+dx,cur.y)||blocked(cur.x,cur.y+dy)))continue;seen.add(key);parent.set(key,`${cur.x},${cur.y}`);queue.push({x:nx,y:ny})}}
+ if(!goal)return null;while(parent.get(goal)&&parent.get(goal)!==start)goal=parent.get(goal);const[x,y]=goal.split(',').map(Number);return{x,y}
+}
 function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible()){log('La invisibilidad evita la respuesta enemiga.','good');onDone?.();return}if(game.player.shadowVeil){game.player.shadowVeil=0;log('El velo de sombras evita la respuesta enemiga.','good');onDone?.();return}
  if(game.multiplayer)mpEnsureEnemyIds(); // per-action pings below need e.eid to already exist
  const visible=game.enemies.filter(e=>game.seen[e.y][e.x]);if(visible.filter(e=>Math.abs(e.x-game.player.x)<=1&&Math.abs(e.y-game.player.y)<=1).length>=3)unlock('crowd','Reunión multitudinaria','Ten 3 enemigos adyacentes.');
@@ -5441,9 +5490,8 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   }
   // ranged classes try to back away from melee contact
   if(wRanged&&dist===1&&Math.random()<.5){
-   const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-.5);
-   let stepped=false;
-   for(const[mx,my]of dirs){const nx=e.x+mx,ny=e.y+my;if(gridDistance({x:nx,y:ny},chosen)>1&&!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});stepped=true;break}}
+   let stepped=false;const step=enemyPathStep(e,chosen,true);
+   if(step&&gridDistance(step,chosen)>1){const from={x:e.x,y:e.y};e.x=step.x;e.y=step.y;combatFx('move',from.x,from.y,{to:step,color:'#ff8a62',icon:'›'});if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:step});stepped=true}
    if(stepped)return AP_COSTS.move;
   }
   if(dist===1&&chosen!==game.player){
@@ -5455,7 +5503,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(!w&&chosen===game.player&&['chamanGoblin','liche','licheEnloquecido','archiliche'].includes(e.type)&&dist<=5&&hasLineOfSight(e,game.player)&&Math.random()<.45){if(game.multiplayer)sendMpAction('enemy_spell',{enemyId:e.eid,origin:{x:e.x,y:e.y},target:{x:game.player.x,y:game.player.y},targetType:'player',targetId:String(game.pjId),visualAmount:e.atk,icon:'✦'});damagePlayer(e.atk,/liche|chaman|mage|priest/i.test(e.type)?'wisdom':'intelligence',`${e.name} lanza un ataque mágico`);floating('✦',e.x,e.y,'#be82ff');return AP_COSTS.attack}
   // shooters hold position while target is in range and sight
   if(wRanged&&dist<=w.rangeMax&&hasLineOfSight(e,chosen))return 0;
-  if(dist<8){const opts=Math.random()<.5?[[Math.sign(chosen.x-e.x),0],[0,Math.sign(chosen.y-e.y)]]:[[0,Math.sign(chosen.y-e.y)],[Math.sign(chosen.x-e.x),0]];for(const[mx,my]of opts){const nx=e.x+mx,ny=e.y+my;if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){const from={x:e.x,y:e.y};e.x=nx;e.y=ny;if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:{x:nx,y:ny}});return AP_COSTS.move}}}
+  if(dist<8){const step=enemyPathStep(e,chosen);if(step){const from={x:e.x,y:e.y};e.x=step.x;e.y=step.y;combatFx('move',from.x,from.y,{to:step,color:'#ff8a62',icon:'›'});if(game.multiplayer)sendMpAction('enemy_move',{entityType:'enemy',entityId:e.eid,from,to:step});return AP_COSTS.move}}
  
   return 0;
  };
@@ -5936,7 +5984,12 @@ function updateUI(){
  setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
 }
-function animate(){if(anim.t<1){anim.t=Math.min(1,anim.t+.2);draw();requestAnimationFrame(animate)}else draw()}
+let animationFrame=0,lastAnimationTime=0;
+function animate(now=performance.now()){
+ animationFrame=0;const dt=Math.min(50,Math.max(0,now-(lastAnimationTime||now)));lastAnimationTime=now;
+ if(anim.t<1){anim.t=Math.min(1,anim.t+dt/140);draw();animationFrame=requestAnimationFrame(animate)}else draw()
+}
+function requestGameFrame(){if(!animationFrame)animationFrame=requestAnimationFrame(animate)}
 
 function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;

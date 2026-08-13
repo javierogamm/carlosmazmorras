@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.60.1 IMÁGENES NÍTIDAS</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.60.1">
+<title>MAZMORRA // BOTÍN v0.61.1 EFECTOS DE CLASE</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.61.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.60.1 IMÁGENES NÍTIDAS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.61.1 EFECTOS DE CLASE</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -36,6 +36,7 @@
 </div>
 <div class="gameStage" id="gameStage">
 <canvas id="game" width="512" height="512"></canvas>
+<div class="combatFxLayer" id="combatFxLayer" aria-hidden="true"></div>
 <div class="gameHudIdentity" id="gameHudIdentity"></div>
 <div class="vitalBars" id="vitalBars">
  <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
@@ -820,7 +821,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.60.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="./src/game.js?v=0.61.1"></script>
 
 </body>
 </html>
