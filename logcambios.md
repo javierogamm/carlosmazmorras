@@ -1,3 +1,13 @@
+## v0.60.0 - Activables, procs y equipo pasivo
+
+- Corregida la selección de objetivo de pociones con efectos dirigidos: daño y debuffs permiten escoger enemigo, mientras áreas, trampas, invocaciones, torretas y clones abren el apuntado al suelo y solo consumen una unidad después de resolver el efecto.
+- Las invocaciones activadas sobre el suelo aparecen en la casilla elegida o en la alternativa libre más cercana, en vez de generarse siempre junto al personaje.
+- Anillos, trinkets y colgantes con efectos se consolidan como objetos activables reutilizables con el cooldown configurado en cada objeto; al cambiar o retirar el objeto se limpia el cooldown propio del slot.
+- Los efectos de armas se ejecutan exclusivamente como proc al golpear, incluida una daga equipada en la mano izquierda, respetando la probabilidad configurada de cada arma.
+- Los buffs de cabeza, pecho, manos, piernas, botas y mano secundaria permanecen activos exactamente mientras la pieza esté equipada. Se excluyen las armas colocadas en la mano izquierda para que sus efectos no se conviertan accidentalmente en pasivos.
+- Añadido un recuadro amarillo fino alrededor del personaje mientras exista al menos un buff permanente procedente del equipo, separado de los indicadores temporales de buff, escudo e invisibilidad.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.60.0`.
+
 ## v0.59.1 - Parches JSON de dungeons y contrato de pociones
 
 - Las ediciones de dungeons existentes ya no regeneran, descargan ni reinsertan `world_json` completo: el cliente calcula exclusivamente las hojas modificadas y una función RPC aplica cada ruta mediante `jsonb_set` dentro de PostgreSQL, conservando intactos mapas, salas, enemigos y demás datos pesados. La creación inicial sigue consolidando el mundo completo una sola vez.

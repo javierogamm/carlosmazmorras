@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.59.1';
+const APP_VERSION='0.60.0';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -3475,13 +3475,14 @@ function kill(e){
 // that cast; this is specifically the weapon itself doing its own thing on
 // a plain swing/shot.
 function maybeProcWeaponEffects(target){
- const weapon=equippedWeapon();
- if(!weapon||!Array.isArray(weapon.effects)||!weapon.effects.length)return;
- const chance=Math.max(0,Math.min(100,Number(weapon.procChance)||0))/100;
- if(chance<=0||Math.random()>=chance)return;
- const castId=beginExternalEffectsCast('equip:weapon',weapon);
- applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
- endExternalEffectsCast();
+ const weapons=[['weapon',equippedWeapon()],['offhand',game.player.equipment?.offhand]].filter(([,item])=>item?.slot==='weapon'&&Array.isArray(item.effects)&&item.effects.length);
+ for(const [slot,weapon] of weapons){
+  const chance=Math.max(0,Math.min(100,Number(weapon.procChance)||0))/100;
+  if(chance<=0||Math.random()>=chance)continue;
+  const castId=beginExternalEffectsCast(`equip:${slot}:proc`,weapon);
+  applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
+  endExternalEffectsCast();
+ }
 }
 function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const originalAmount=amount;
@@ -4258,12 +4259,21 @@ function findFreeAdjacentToPlayer(){
  }
  return{x:game.player.x,y:game.player.y}
 }
+function findFreeNear(origin){
+ const center=origin&&Number.isFinite(origin.x)&&Number.isFinite(origin.y)?origin:game.player;
+ const offsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+ for(const [dx,dy] of offsets){
+  const x=center.x+dx,y=center.y+dy;
+  if(!blocked(x,y)&&!isSafeCell(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)&&!(game.companions||[]).some(c=>c.x===x&&c.y===y)&&!(game.player.x===x&&game.player.y===y))return{x,y}
+ }
+ return findFreeAdjacentToPlayer()
+}
 // `custom` (from a stackable 'summon' effect component) overrides the
 // hardcoded per-kind stat table with author-configured hp/atk/range/effect,
 // so admin-authored summons don't need a dedicated `kind` entry here.
 function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  game.companions=game.companions||[];
- const pos=findFreeAdjacentToPlayer();
+ const pos=findFreeNear(custom?.spawnAt);
  let stats,name;
  if(custom){
   stats={hp:Math.max(1,Math.round(custom.hp||20)),atk:custom.atk||'1d4',range:Math.max(1,custom.range||1),shape:'allyCompanion'};
@@ -4835,9 +4845,10 @@ function hasEffectsList(id){const d=effectSourceDef(id);return Array.isArray(d?.
 // overall target mode (enemy beats area beats none); an all-self skill
 // (pure buff/heal/move-self) needs no click at all, matching how the
 // existing self-cast classEffect skills behave.
+const GROUND_TARGET_EFFECT_KINDS=new Set(['aoe','trap','summon','summonturret','clones']);
 function effectsListTargetModeFor(list){
  if(list.some(c=>c.target==='enemy'))return'enemy';
- if(list.some(c=>c.target==='area'||(c.kind==='move'&&c.mode==='teleport')))return'area';
+ if(list.some(c=>c.target==='area'||(GROUND_TARGET_EFFECT_KINDS.has(c.kind)&&!c.permanent)||(c.kind==='move'&&c.mode==='teleport')))return'area';
  if(list.some(c=>c.target==='ally'))return'ally';
  return null
 }
@@ -5043,12 +5054,12 @@ function applyEffectComponent(id,comp,ctx){
    summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
    return true
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
+  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||'',spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='utility'){
@@ -5145,7 +5156,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -5783,11 +5794,11 @@ function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)
 // lands in one of these slots, removed the moment that slot's item changes.
 // Weapon/trinket/ring slots use a different trigger (on-hit proc / active
 // click, see maybeProcWeaponEffects/useEquipmentActive) so they're excluded here.
-const PASSIVE_EQUIPMENT_SLOTS=new Set(['offhand','head','chest','hands','legs','boots','neck']);
+const PASSIVE_EQUIPMENT_SLOTS=new Set(['offhand','head','chest','hands','legs','boots']);
 // Trinkets/rings carry an effects[] that's manually activated (like a potion)
 // instead of passive or on-hit - gated by game.player.equipmentCooldowns[slot]
 // instead of being consumed, see useEquipmentActive/tickEquipmentCooldowns.
-const EQUIPMENT_ACTIVE_SLOTS=new Set(['trinket1','trinket2','ring1','ring2']);
+const EQUIPMENT_ACTIVE_SLOTS=new Set(['neck','trinket1','trinket2','ring1','ring2']);
 // Re-applies every passive slot's current buff from scratch - used after
 // hydrating game.player.equipment from a save/session restore (where
 // activeBuffs comes back from a snapshot that could predate an admin
@@ -5798,6 +5809,7 @@ function syncEquipmentSlotPassive(slot){
  p.activeBuffs=(p.activeBuffs||[]).filter(b=>!String(b.id||'').startsWith(`equip:${slot}:`));
  if(!PASSIVE_EQUIPMENT_SLOTS.has(slot))return;
  const item=p.equipment?.[slot];
+ if(item?.slot==='weapon')return;
  (item?.effects||[]).forEach((comp,i)=>{
   if(comp.kind!=='buff')return;
   const stat=comp.stat||'strength',mode=comp.mode||'add',value=comp.value??(mode==='mult'?1.2:5);
@@ -5808,7 +5820,7 @@ function equipItem(id){
  const item=game.inventory.find(i=>i.id===id);if(!item)return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
  learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
- const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
+ const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 // Lets a weapon-slot dagger be equipped in the offhand slot instead of the
 // main weapon slot, for dual-wielding two real daggers - the item keeps its
@@ -5825,7 +5837,7 @@ function equipItemAsOffhand(id){
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
 function unequipItem(slot){
  const item=game.player.equipment?.[slot];if(!item)return;
- game.player.equipment[slot]=null;game.inventory.push(item);syncEquipmentSlotPassive(slot);
+ game.player.equipment[slot]=null;game.inventory.push(item);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);
  storyOverlay?.classList.add('hidden');
  log(`Desequipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw();
 }
@@ -6272,13 +6284,16 @@ function isPlayerInvisible(){return game.player.invisibleTurns>0}
 function drawPlayerStatusFrames(x,y){
  const p=game.player,frames=[];
  if(p.holyShield>0)frames.push('#4da6ff');
- if((p.activeBuffs||[]).length)frames.push('#4ddc7a');
+ if((p.activeBuffs||[]).some(b=>!String(b.id||'').startsWith('equip:')))frames.push('#4ddc7a');
  if(isPlayerInvisible())frames.push('#9a9a9a');
  let inset=0;
  for(const color of frames){
   ctx.strokeStyle=color;ctx.lineWidth=5;
   ctx.strokeRect(x+2.5+inset,y+2.5+inset,TILE-5-inset*2,TILE-5-inset*2);
   inset+=7;
+ }
+ if((p.activeBuffs||[]).some(b=>String(b.id||'').startsWith('equip:'))){
+  ctx.strokeStyle='#ffd45f';ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,TILE-2,TILE-2);
  }
 }
 // The 'transform' or 'ascend' stackable effect's own author-picked icon, if
@@ -6750,11 +6765,11 @@ function defaultComponentFor(kind){
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,commandResource:'mana',commandCost:0,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
- if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
+ if(kind==='summon')return {...base,target:'area',hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,commandResource:'mana',commandCost:0,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
+ if(kind==='summonturret')return {...base,target:'area',hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
- if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
- if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:''};
+ if(kind==='trap')return {...base,target:'area',dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
+ if(kind==='clones')return {...base,target:'area',count:2,hp:14,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:''};
  if(kind==='linkdamage')return {...base,dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,jumps:3,falloff:25,range:4};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
  if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
