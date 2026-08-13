@@ -28,7 +28,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.59.1';
+const APP_VERSION='0.61.0';
 let configItems=[];
 let configClasses=[];
 let configClassesLoaded=false,configClassesFetchInFlight=null;
@@ -1358,7 +1358,7 @@ function makeConfiguredLoot(level,minRarityName=null){if(!configItems.length)ret
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
  return configuredItemFromRow(row,lootRow,level)}
-function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];if(EQUIPMENT_ACTIVE_SLOTS.has(item.slot)&&item.effects.length)item.cooldown=Math.max(1,Number(item.cooldown)||1);item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
@@ -1445,12 +1445,21 @@ function setVisibleTiles(value){
 }
 
 function healEntity(entity,amount,x=entity.x??game.player.x,y=entity.y??game.player.y){
- const max=Number(entity.maxHp)||0,before=Number(entity.hp)||0;
+ const max=entity===game.player?companionResourceCap('hp'):Number(entity.maxHp)||0,before=Number(entity.hp)||0;
  if(max<=0||amount<=0)return 0;
  entity.hp=Math.min(max,before+Math.max(0,Math.round(amount)));
  const healed=Math.max(0,Math.round(entity.hp-before));
  if(healed>0)floating(`+${healed}`,x,y,'#70dc9b');
  return healed
+}
+function restoreEntityResource(entity,resource,amount,x=entity.x??game.player.x,y=entity.y??game.player.y){
+ if(resource==='hp')return healEntity(entity,amount,x,y);
+ const maxKey=resource==='mana'?'maxMana':'maxStamina',max=entity===game.player?companionResourceCap(resource):Number(entity[maxKey])||0,before=Number(entity[resource])||0;
+ if(max<=0||amount<=0)return 0;
+ entity[resource]=Math.min(max,before+Math.max(0,Math.round(amount)));
+ const restored=Math.max(0,Math.round(entity[resource]-before));
+ if(restored>0)floating(`+${restored} ${resource==='mana'?'M':'S'}`,x,y,resource==='mana'?'#72b9ff':'#ffd45f');
+ return restored
 }
 
 function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas.classList.add(cls)}
@@ -3475,13 +3484,14 @@ function kill(e){
 // that cast; this is specifically the weapon itself doing its own thing on
 // a plain swing/shot.
 function maybeProcWeaponEffects(target){
- const weapon=equippedWeapon();
- if(!weapon||!Array.isArray(weapon.effects)||!weapon.effects.length)return;
- const chance=Math.max(0,Math.min(100,Number(weapon.procChance)||0))/100;
- if(chance<=0||Math.random()>=chance)return;
- const castId=beginExternalEffectsCast('equip:weapon',weapon);
- applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
- endExternalEffectsCast();
+ const weapons=[['weapon',equippedWeapon()],['offhand',game.player.equipment?.offhand]].filter(([,item])=>item?.slot==='weapon'&&Array.isArray(item.effects)&&item.effects.length);
+ for(const [slot,weapon] of weapons){
+  const chance=Math.max(0,Math.min(100,Number(weapon.procChance)||0))/100;
+  if(chance<=0||Math.random()>=chance)continue;
+  const castId=beginExternalEffectsCast(`equip:${slot}:proc`,weapon);
+  applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
+  endExternalEffectsCast();
+ }
 }
 function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const originalAmount=amount;
@@ -4144,7 +4154,7 @@ function tickBuffs(){
 // neither has any other statuses array of its own.
 function tickEntityHots(entity){
  if(!entity?.hots?.length)return;
- for(const h of entity.hots){healEntity(entity,Math.max(1,Math.round(h.power)));h.turns--}
+ for(const h of entity.hots){restoreEntityResource(entity,h.resource||'hp',Math.max(1,Math.round(h.power)));h.turns--}
  entity.hots=entity.hots.filter(h=>h.turns>0);
 }
 function tickPlayerHots(){
@@ -4258,12 +4268,39 @@ function findFreeAdjacentToPlayer(){
  }
  return{x:game.player.x,y:game.player.y}
 }
+function findFreeNear(origin){
+ const center=origin&&Number.isFinite(origin.x)&&Number.isFinite(origin.y)?origin:game.player;
+ const offsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+ for(const [dx,dy] of offsets){
+  const x=center.x+dx,y=center.y+dy;
+  if(!blocked(x,y)&&!isSafeCell(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)&&!(game.companions||[]).some(c=>c.x===x&&c.y===y)&&!(game.player.x===x&&game.player.y===y))return{x,y}
+ }
+ return findFreeAdjacentToPlayer()
+}
+function companionReservationAmount(resource,pct){
+ const maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana';
+ return Math.max(1,Math.round((Number(game.player[maxKey])||0)*Math.max(1,Math.min(100,Number(pct)||20))/100))
+}
+function companionResourceCap(resource){
+ const p=game?.player;if(!p)return 0;const maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana',reserved=(game.companions||[]).reduce((sum,c)=>sum+(c.reserveResource===resource?(c.reservedAmount||0):0),0);
+ return Math.max(1,(Number(p[maxKey])||0)-reserved)
+}
+function clampCompanionReservedResources(){if(!game?.player)return;for(const resource of['hp','mana','stamina'])game.player[resource]=Math.min(game.player[resource],companionResourceCap(resource))}
+function reserveCompanionResource(c){
+ const resource=c.reserveResource||'mana',amount=companionReservationAmount(resource,c.reservePct);
+ if(game.player[resource]<=amount){log(`No puedes reservar ${amount} de ${resource}: debes conservar al menos 1 punto.`,'sys');return false}
+ game.player[resource]-=amount;c.reservedAmount=amount;c.reserveResource=resource;return true
+}
+function releaseCompanionResource(c){
+ const resource=c.reserveResource||'mana',maxKey=resource==='hp'?'maxHp':resource==='stamina'?'maxStamina':'maxMana';
+ game.player[resource]=Math.min(game.player[maxKey],game.player[resource]+Math.max(0,c.reservedAmount||0));c.reservedAmount=0
+}
 // `custom` (from a stackable 'summon' effect component) overrides the
 // hardcoded per-kind stat table with author-configured hp/atk/range/effect,
 // so admin-authored summons don't need a dedicated `kind` entry here.
 function summonCompanion(kind='companion',turns=8,power=1,custom=null){
- game.companions=game.companions||[];
- const pos=findFreeAdjacentToPlayer();
+ game.companions=game.companions||[];turns=Infinity;
+ const pos=findFreeNear(custom?.spawnAt);
  let stats,name;
  if(custom){
   stats={hp:Math.max(1,Math.round(custom.hp||20)),atk:custom.atk||'1d4',range:Math.max(1,custom.range||1),shape:'allyCompanion'};
@@ -4281,33 +4318,32 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   }[kind]||{hp:18,atk:'1d6',range:1,shape:'allyCompanion'};
   name=names[kind]||'Aliado';
  }
- game.companions.push({
+ const companion={
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
-  friendly:true,
+  friendly:true,permanent:true,reserveResource:'mana',reservePct:20,sourceName:name,
   // spawnTurn protects it from being picked as an enemy target for the rest
   // of the turn it was summoned on (see enemySingleAction) - a companion
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:true,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
    // Permanent companion (pet) command cost - what the player pays each time
    // they order it to act via issueCompanionCommand(), separate from
    // whatever the original summon itself cost. orderTarget starts empty:
    // the pet just follows until commanded (see companionTurn()).
-   commandResource:custom.commandResource==='stamina'?'stamina':'mana',commandCost:Math.max(0,custom.commandCost??0),orderTarget:null}:{})
- });
+   commandResource:custom.commandResource==='stamina'?'stamina':'mana',commandCost:Math.max(0,custom.commandCost??0),reserveResource:['hp','stamina'].includes(custom.reserveResource)?custom.reserveResource:'mana',reservePct:Math.max(1,Math.min(100,Number(custom.reservePct)||20)),sourceName:custom.sourceName||name,orderTarget:null}:{})
+ };
+ if(!reserveCompanionResource(companion))return null;
+ game.companions.push(companion);
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
+ return companion
 }
 function moveCompanionToward(c,target){
- const dx=Math.sign(target.x-c.x),dy=Math.sign(target.y-c.y);
- const options=[[dx,dy],[dx,0],[0,dy]].filter(([x,y])=>x||y);
- for(const [sx,sy] of options){
-  const nx=c.x+sx,ny=c.y+sy;
-  if(!blocked(nx,ny)&&!isSafeCell(nx,ny)&&!game.enemies.some(e=>e.hp>0&&e.x===nx&&e.y===ny)&&!(game.companions||[]).some(o=>o!==c&&o.x===nx&&o.y===ny)&&!(game.player.x===nx&&game.player.y===ny)){
-   c.x=nx;c.y=ny;return true
-  }
- }
+ const occupied=(x,y)=>game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)||(game.companions||[]).some(o=>o!==c&&o.x===x&&o.y===y)||(game.player.x===x&&game.player.y===y);
+ const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]],queue=[{x:c.x,y:c.y}],seen=new Set([`${c.x},${c.y}`]),parent=new Map(),goal=`${target.x},${target.y}`;let found=null;
+ while(queue.length&&seen.size<2500){const cur=queue.shift();for(const [dx,dy] of dirs){const nx=cur.x+dx,ny=cur.y+dy,key=`${nx},${ny}`;if(seen.has(key)||blocked(nx,ny))continue;if(occupied(nx,ny)&&key!==goal)continue;seen.add(key);parent.set(key,`${cur.x},${cur.y}`);if(key===goal||gridDistance({x:nx,y:ny},target)<=1){found=key;queue.length=0;break}queue.push({x:nx,y:ny})}}
+ if(found){let step=found;while(parent.get(step)&&parent.get(step)!==`${c.x},${c.y}`)step=parent.get(step);const [x,y]=step.split(',').map(Number);if(!occupied(x,y)){c.x=x;c.y=y;return true}}
  return false
 }
 // Idle behaviour: with no enemy to fight (or on a passive-stance companion,
@@ -4441,6 +4477,25 @@ function companionApproachOrStop(c){
 // resource cost (c.commandResource/c.commandCost) charged per command.
 // ============================================================================
 function permanentCompanionForSkill(id){return (game.companions||[]).find(c=>c.sourceSkillId===id&&c.permanent&&c.hp>0)}
+function dismissCompanion(id){
+ const idx=(game.companions||[]).findIndex(c=>c.id===id);if(idx<0)return;
+ const [c]=game.companions.splice(idx,1);releaseCompanionResource(c);c.orderTarget=null;c.reservedAmount=0;
+ game.player.dismissedCompanions=game.player.dismissedCompanions||[];game.player.dismissedCompanions.push(c);
+ log(`${c.name} ha sido desinvocado. Se libera su reserva.`,'good');updateUI();draw()
+}
+function callCompanion(id){
+ const list=game.player.dismissedCompanions||[],idx=list.findIndex(c=>c.id===id);if(idx<0)return;
+ if(!apCan('move',5))return;const c=list[idx];if(!reserveCompanionResource(c))return;
+ const pos=findFreeAdjacentToPlayer();c.x=pos.x;c.y=pos.y;c.hp=Math.max(1,c.hp);c.turns=Infinity;c.spawnTurn=game.turn||0;
+ list.splice(idx,1);game.companions=game.companions||[];game.companions.push(c);
+ log(`${c.name} vuelve a viajar junto a ti.`,'good');actionDone('move',5);updateUI();draw()
+}
+function renderCompanionsTab(){
+ const root=document.getElementById('companions');if(!root)return;
+ const active=(game.companions||[]).filter(c=>c.permanent),dismissed=game.player.dismissedCompanions||[],resourceLabel={hp:'vida',mana:'maná',stamina:'stamina'};
+ const card=(c,isActive)=>`<div class="skillCard"><b>${c.name}</b><span class="small">${c.sourceName||'Invocación'} · HP ${c.hp}/${c.maxHp} · ${c.effectType||'compañero'} · reserva ${c.reservePct||20}% de ${resourceLabel[c.reserveResource]||'maná'}${isActive?` (${c.reservedAmount||0})`:''}</span><div><button type="button" onclick="${isActive?`dismissCompanion('${c.id}')`:`callCompanion('${c.id}')`}">${isActive?'Desinvocar':'Llamar · 5 PA'}</button></div></div>`;
+ root.innerHTML=[...active.map(c=>card(c,true)),...dismissed.map(c=>card(c,false))].join('')||'<p class="small">No has vinculado ningún compañero.</p>'
+}
 function companionCommandKind(c){return c.effectType==='heal'?'heal':c.effectType==='damage'?'attack':'skill'}
 function companionCommandLabel(c){const k=companionCommandKind(c);return k==='heal'?'Curar':k==='attack'?'Atacar':'Habilidad'}
 function companionCommandIcon(c){const k=companionCommandKind(c);return k==='heal'?'✚':k==='attack'?'◆':'✦'}
@@ -4835,9 +4890,12 @@ function hasEffectsList(id){const d=effectSourceDef(id);return Array.isArray(d?.
 // overall target mode (enemy beats area beats none); an all-self skill
 // (pure buff/heal/move-self) needs no click at all, matching how the
 // existing self-cast classEffect skills behave.
+const GROUND_TARGET_EFFECT_KINDS=new Set(['aoe','trap','summon','summonturret','clones']);
+const ENEMY_TARGET_EFFECT_KINDS=new Set(['multihit','lineshot','linkdamage']);
 function effectsListTargetModeFor(list){
  if(list.some(c=>c.target==='enemy'))return'enemy';
- if(list.some(c=>c.target==='area'||(c.kind==='move'&&c.mode==='teleport')))return'area';
+ if(list.some(c=>ENEMY_TARGET_EFFECT_KINDS.has(c.kind)))return'enemy';
+ if(list.some(c=>c.target==='area'||(GROUND_TARGET_EFFECT_KINDS.has(c.kind)&&!c.permanent)||(c.kind==='move'&&c.mode==='teleport')))return'area';
  if(list.some(c=>c.target==='ally'))return'ally';
  return null
 }
@@ -4945,22 +5003,17 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='heal'){
-  const power=dicePowerFor(comp,8+lvl*3,p);
-  // d.resource is the enclosing skill's own resource (undefined for a
-  // potion "cast" - potions have no resource pool of their own), so the
-  // resource-restore side effect below only fires when there's a real one.
+  const power=dicePowerFor(comp,8+lvl*3,p),resource=comp.resource||'hp';
   if(comp.target==='area'){
-   healEntity(p,power*2);if(d.resource)p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
+   restoreEntityResource(p,resource,power*2);
    for(const ally of resolveComponentAllyTargets(comp,ctx)){
-    healEntity(ally,power*2,ally.x,ally.y);
-    if(ally.pjId)sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
+    restoreEntityResource(ally,resource,power*2,ally.x,ally.y);
+    if(ally.pjId)sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:resource==='hp'?power*2:0,resAmount:resource==='hp'?0:power*2,resType:resource,id:crypto.randomUUID()});
    }
   }else if(comp.target==='ally'&&ctx.clickedAlly){
-   healEntity(ctx.clickedAlly,power*2,ctx.clickedAlly.x,ctx.clickedAlly.y);
-   sendMpAction('ally_heal',{targetId:ctx.clickedAlly.pjId,hpAmount:power*2,resAmount:power,resType:d.resource,id:crypto.randomUUID()});
-  }else{
-   healEntity(p,power*2);if(d.resource)p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);
-  }
+   restoreEntityResource(ctx.clickedAlly,resource,power*2,ctx.clickedAlly.x,ctx.clickedAlly.y);
+   sendMpAction('ally_heal',{targetId:ctx.clickedAlly.pjId,hpAmount:resource==='hp'?power*2:0,resAmount:resource==='hp'?0:power*2,resType:resource,id:crypto.randomUUID()});
+  }else restoreEntityResource(p,resource,power*2);
   return true
  }
  if(comp.kind==='move'){
@@ -5031,6 +5084,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='summon'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
+  if([...(game.companions||[]),...(game.player.dismissedCompanions||[])].some(c=>c.sourceSkillId===id)){log(`${d.name} ya está invocado.`,'sys');return false}
   if(comp.permanent){
    // Permanent companion (pet): only one instance per skill. This branch
    // only ever runs for the FIRST cast - useSkill() intercepts every
@@ -5040,16 +5094,14 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion() stays only as a safety net).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
-   return true
+   return !!summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
-  return true
+  return !!summonCompanion('custom',Infinity,1,{hp:comp.hp??20,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y},permanent:true,sourceSkillId:id,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
-  summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||''});
-  return true
+  if([...(game.companions||[]),...(game.player.dismissedCompanions||[])].some(c=>c.sourceSkillId===id)){log(`${d.name} ya está invocado.`,'sys');return false}
+  return !!summonCompanion('custom',Infinity,1,{hp:comp.hp??16,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||'',spawnAt:{x:ctx.x,y:ctx.y},permanent:true,sourceSkillId:id,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
  }
  if(comp.kind==='utility'){
   const mode=comp.mode||'reveal';
@@ -5074,7 +5126,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='hot'){
   p.hots=p.hots||[];
   const power=dicePowerFor(comp,3+lvl,p),turns=comp.turns??4;
-  p.hots.push({turns,power});
+  const resource=comp.resource||'hp';p.hots.push({turns,power,resource});
   if(comp.target==='area'){
    for(const ally of resolveComponentAllyTargets(comp,ctx)){
     if(ally.pjId){
@@ -5086,7 +5138,7 @@ function applyEffectComponent(id,comp,ctx){
      sendMpAction('ally_heal',{targetId:ally.pjId,hpAmount:total,resAmount:0,resType:d.resource,id:crypto.randomUUID()});
     }else{
      ally.hots=ally.hots||[];
-     ally.hots.push({turns,power});
+     ally.hots.push({turns,power,resource});
     }
    }
   }
@@ -5145,7 +5197,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
   const count=Math.max(1,Math.min(4,comp.count||2));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:comp.hp??14,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value});
+  for(let i=0;i<count;i++)summonCompanion('custom',Infinity,1,{hp:comp.hp??14,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:`${d.name} ${i+1}`,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y},permanent:true,sourceSkillId:`${id}:clone:${i}`,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -5541,7 +5593,8 @@ function skillTargetMode(id){
  if(d.targetMode==='enemy')return 'enemy';
  if(isSelfHealSkill(id)&&game?.multiplayer&&(game.otherPlayers||[]).some(p=>p.hp>0))return 'ally';
  if(d.type==='utility')return null;
- if(AREA_SKILLS.has(id)||['aoe','ultimate','massive','multihit'].includes(d.classEffect))return 'area';
+ if(d.classEffect==='multihit')return'enemy';
+ if(AREA_SKILLS.has(id)||['aoe','ultimate','massive'].includes(d.classEffect))return 'area';
  if(ENEMY_TARGET_SKILLS.has(id)||d.classEffect==='ranged'||d.classEffect==='debuff'||d.classEffect==='execute'||isRangedSkill(id))return 'enemy';
  return null
 }
@@ -5617,7 +5670,9 @@ function resolveTargetedSkill(slot,x,y){
   if(used){}else{
   let mult=d.rarity==='legendary'?2.2:d.rarity==='epic'?1.75:d.rarity==='rare'?1.4:1.1;
   if(d.classEffect==='execute'||id==='execute')mult*=enemy.hp/enemy.maxHp<.4?2.35:1;
-  attack(enemy,0,{skillId:id,multiplier:mult*rangeMult});
+  if(d.classEffect==='multihit'){
+   const hits=Math.max(2,Number(d.hits)||3);for(let i=0;i<hits;i++)setTimeout(()=>{if(enemy.hp>0){attack(enemy,0,{skillId:id,multiplier:mult*rangeMult*.6});draw();updateUI()}},i*500)
+  }else attack(enemy,0,{skillId:id,multiplier:mult*rangeMult});
   if(d.classEffect==='debuff'||['shockTrap','ironHook'].includes(id)){const turns=d.debuffTurns??(2+Math.floor(skillLevel(id)/3));if(d.classEffect==='debuff'&&d.debuffStat){const mode=d.debuffStatMode||'add';applyEnemyStatDebuff(enemy,d.debuffStat,mode,d.debuffStatCoef??(mode==='mult'?.8:2),turns,d.name)}else enemy.weakened=turns;enemy.stunned=1}
   if(id==='quantumThief'){healEntity(game.player,6+skillLevel(id));game.player.mana=Math.min(game.player.maxMana,game.player.mana+5+skillLevel(id));game.player.gold+=3+skillLevel(id)}
   used=true}
@@ -5783,11 +5838,11 @@ function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)
 // lands in one of these slots, removed the moment that slot's item changes.
 // Weapon/trinket/ring slots use a different trigger (on-hit proc / active
 // click, see maybeProcWeaponEffects/useEquipmentActive) so they're excluded here.
-const PASSIVE_EQUIPMENT_SLOTS=new Set(['offhand','head','chest','hands','legs','boots','neck']);
+const PASSIVE_EQUIPMENT_SLOTS=new Set(['offhand','head','chest','hands','legs','boots']);
 // Trinkets/rings carry an effects[] that's manually activated (like a potion)
 // instead of passive or on-hit - gated by game.player.equipmentCooldowns[slot]
 // instead of being consumed, see useEquipmentActive/tickEquipmentCooldowns.
-const EQUIPMENT_ACTIVE_SLOTS=new Set(['trinket1','trinket2','ring1','ring2']);
+const EQUIPMENT_ACTIVE_SLOTS=new Set(['neck','trinket1','trinket2','ring1','ring2']);
 // Re-applies every passive slot's current buff from scratch - used after
 // hydrating game.player.equipment from a save/session restore (where
 // activeBuffs comes back from a snapshot that could predate an admin
@@ -5798,6 +5853,7 @@ function syncEquipmentSlotPassive(slot){
  p.activeBuffs=(p.activeBuffs||[]).filter(b=>!String(b.id||'').startsWith(`equip:${slot}:`));
  if(!PASSIVE_EQUIPMENT_SLOTS.has(slot))return;
  const item=p.equipment?.[slot];
+ if(item?.slot==='weapon')return;
  (item?.effects||[]).forEach((comp,i)=>{
   if(comp.kind!=='buff')return;
   const stat=comp.stat||'strength',mode=comp.mode||'add',value=comp.value??(mode==='mult'?1.2:5);
@@ -5808,7 +5864,7 @@ function equipItem(id){
  const item=game.inventory.find(i=>i.id===id);if(!item)return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
  learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
- const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
+ const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 // Lets a weapon-slot dagger be equipped in the offhand slot instead of the
 // main weapon slot, for dual-wielding two real daggers - the item keeps its
@@ -5825,7 +5881,7 @@ function equipItemAsOffhand(id){
 function equipSkill(id,slot){if(!game.player.knownSkills.includes(id))return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
 function unequipItem(slot){
  const item=game.player.equipment?.[slot];if(!item)return;
- game.player.equipment[slot]=null;game.inventory.push(item);syncEquipmentSlotPassive(slot);
+ game.player.equipment[slot]=null;game.inventory.push(item);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);
  storyOverlay?.classList.add('hidden');
  log(`Desequipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw();
 }
@@ -5864,7 +5920,7 @@ function updateObjectiveHud(){
 // that used to silently abort the rest of the skill-pick handler, including
 // the call that actually saves the new character to Supabase.
 function updateUI(){
- if(!game)return;const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;clampCompanionReservedResources();const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
@@ -5881,6 +5937,7 @@ function updateUI(){
    return `<div class="item${cd?' onCooldown':''}" ${cd?'':`onclick="useEquipmentActive('${slot}')"`}><canvas class="itemThumb" width="48" height="48" data-equipped-slot="${slot}"></canvas><div><b class="${item.rarity}">${item.name}</b><span class="itemLevel">${slotNames[slot]} · ${item.label} · Nivel ${item.itemLevel||1}</span>${describeItem(item)}</div>${cd?`<span class="cooldown">${cd}</span>`:''}</div>`;
   }).join(''):'<p class="small">No tienes objetos activables equipados.</p>';
  }
+ renderCompanionsTab();
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=c.dataset.equippedSlot?p.equipment[c.dataset.equippedSlot]:game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${[0,1,2,3].map(n=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
@@ -6272,13 +6329,16 @@ function isPlayerInvisible(){return game.player.invisibleTurns>0}
 function drawPlayerStatusFrames(x,y){
  const p=game.player,frames=[];
  if(p.holyShield>0)frames.push('#4da6ff');
- if((p.activeBuffs||[]).length)frames.push('#4ddc7a');
+ if((p.activeBuffs||[]).some(b=>!String(b.id||'').startsWith('equip:')))frames.push('#4ddc7a');
  if(isPlayerInvisible())frames.push('#9a9a9a');
  let inset=0;
  for(const color of frames){
   ctx.strokeStyle=color;ctx.lineWidth=5;
   ctx.strokeRect(x+2.5+inset,y+2.5+inset,TILE-5-inset*2,TILE-5-inset*2);
   inset+=7;
+ }
+ if((p.activeBuffs||[]).some(b=>String(b.id||'').startsWith('equip:'))){
+  ctx.strokeStyle='#ffd45f';ctx.lineWidth=2;ctx.strokeRect(x+1,y+1,TILE-2,TILE-2);
  }
 }
 // The 'transform' or 'ascend' stackable effect's own author-picked icon, if
@@ -6743,21 +6803,21 @@ function defaultComponentFor(kind){
  if(kind==='dot')return {...base,target:'enemy',dotDice:1,dotDie:6,dotStat:'strength',dotStatMode:'add',dotStatCoef:.5,turns:4,flavor:'dot'};
  if(kind==='buff')return {...base,target:'self',stat:'strength',mode:'add',value:5,turns:6};
  if(kind==='debuff')return {...base,target:'enemy',stat:'strength',mode:'add',value:2,turns:3};
- if(kind==='heal')return {...base,target:'self',dmgDice:2,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:1};
+ if(kind==='heal')return {...base,target:'self',resource:'hp',dmgDice:2,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='move')return {...base,mode:'dash',range:3};
  if(kind==='cc')return {...base,target:'enemy',type:'stun',turns:2};
  if(kind==='drain')return {...base,target:'enemy',resource:'hp',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
- if(kind==='multihit')return {...base,hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
+ if(kind==='multihit')return {...base,target:'enemy',hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
  if(kind==='mark')return {...base,target:'enemy',value:25,turns:4};
- if(kind==='summon')return {...base,hp:20,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,commandResource:'mana',commandCost:0,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
- if(kind==='summonturret')return {...base,hp:16,turns:8,ap:10,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
+ if(kind==='summon')return {...base,target:'area',hp:20,turns:8,ap:10,reserveResource:'mana',reservePct:20,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:'',permanent:false,commandResource:'mana',commandCost:0,reviveResource:'hp',reviveAmount:20,targetable:true,hitByAoe:true,stance:'aggressive'};
+ if(kind==='summonturret')return {...base,target:'area',hp:16,turns:8,ap:10,reserveResource:'mana',reservePct:20,range:7,effectType:'damage',damageMode:'nearest',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,stat:'strength',mode:'add',value:5,effectTurns:2,iconImage:''};
  if(kind==='lineshot')return {...base,dmgDice:2,dmgDie:6,dmgStat:'agility',dmgStatMode:'add',dmgStatCoef:1,range:6};
- if(kind==='trap')return {...base,dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
- if(kind==='clones')return {...base,count:2,hp:14,turns:8,ap:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:''};
+ if(kind==='trap')return {...base,target:'area',dmgDice:2,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:8,range:1};
+ if(kind==='clones')return {...base,target:'area',count:2,hp:14,turns:8,ap:10,reserveResource:'stamina',reservePct:10,effectType:'damage',dmgDice:1,dmgDie:6,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,effectTurns:2,stat:'strength',mode:'add',value:5,iconImage:''};
  if(kind==='linkdamage')return {...base,dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,jumps:3,falloff:25,range:4};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
- if(kind==='hot')return {...base,target:'self',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
+ if(kind==='hot')return {...base,target:'self',resource:'hp',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
  if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execMultiplier:2.5};
  if(kind==='pullroot')return {...base,target:'enemy',turns:2};
  if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
@@ -6772,6 +6832,7 @@ function effectComponentTargetOptions(kind){
  if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
  if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark'||kind==='execute'||kind==='pullroot')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
  if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'},{v:'area',l:'Área (aliados cercanos)'}];
+ if(kind==='multihit')return [{v:'enemy',l:'Enemigo'}];
  if(kind==='hot')return [{v:'self',l:'A ti mismo'},{v:'area',l:'Área (aliados cercanos)'}];
  return null
 }
@@ -6839,7 +6900,8 @@ function effectComponentCardHtml(comp,i){
  const targetOpts=effectComponentTargetOptions(comp.kind);
  const targetHtml=targetOpts?`<label>Objetivo <select data-effect-idx="${i}" data-effect-field="target">${targetOpts.map(o=>`<option value="${o.v}" ${comp.target===o.v?'selected':''}>${o.l}</option>`).join('')}</select></label>`:'';
  let fields='';
- if(comp.kind==='dmg'||comp.kind==='heal')fields=effectDiceFieldsHtml(comp,i);
+ if(comp.kind==='dmg')fields=effectDiceFieldsHtml(comp,i);
+ else if(comp.kind==='heal')fields=`<label>Recurso curado <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${!comp.resource||comp.resource==='hp'?'selected':''}>Vida</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='drain'){
   const resource=comp.resource||'hp';
   fields=`${effectDiceFieldsHtml(comp,i)}<label>Recurso que absorbes <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label><span class="small">El objetivo pierde vida por el golpe; tú ganas el recurso elegido (no hace falta que coincida con el coste de la skill).</span>`;
@@ -6854,7 +6916,9 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='summon'){
   const effectType=comp.effectType||'damage',permanent=!!comp.permanent;
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label><input type="checkbox" data-effect-idx="${i}" data-effect-field="permanent" ${permanent?'checked':''}> Compañero permanente (para clases con mascota - no expira por turnos)</label>
+  <label>STAT reservado <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${(!comp.reserveResource||comp.reserveResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.reserveResource==='stamina'?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
+  <label>Reserva (%) <input type="number" min="1" max="100" value="${comp.reservePct??20}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
+  <p class="small">Las invocaciones quedan vinculadas hasta desinvocarlas desde la pestaña Compañeros.</p>
   ${!permanent?`<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>`:`<div class="configForm">
    <label>Recurso de uso del compañero <select data-effect-idx="${i}" data-effect-field="commandResource"><option value="mana" ${(!comp.commandResource||comp.commandResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.commandResource==='stamina'?'selected':''}>Stamina</option></select></label>
@@ -6895,6 +6959,8 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='summonturret'){
   const effectType=comp.effectType||'damage',damageMode=comp.damageMode||'nearest';
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??16}" data-effect-idx="${i}" data-effect-field="hp"></label>
+  <label>STAT reservado <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${(!comp.reserveResource||comp.reserveResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.reserveResource==='stamina'?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
+  <label>Reserva (%) <input type="number" min="1" max="100" value="${comp.reservePct??20}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Tipo de torreta <select data-effect-idx="${i}" data-effect-field="effectType">
@@ -6939,6 +7005,8 @@ function effectComponentCardHtml(comp,i){
   const cloneEffectType=comp.effectType||'damage';
   fields=`<label>Nº de clones <input type="number" min="1" max="4" value="${comp.count??2}" data-effect-idx="${i}" data-effect-field="count"></label>
   <label>HP de cada clon <input type="number" min="1" value="${comp.hp??14}" data-effect-idx="${i}" data-effect-field="hp"></label>
+  <label>STAT reservado por clon <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${comp.reserveResource==='mana'?'selected':''}>Maná</option><option value="stamina" ${(!comp.reserveResource||comp.reserveResource==='stamina')?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
+  <label>Reserva por clon (%) <input type="number" min="1" max="100" value="${comp.reservePct??10}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de cada clon <select data-effect-idx="${i}" data-effect-field="effectType">
@@ -6977,7 +7045,7 @@ function effectComponentCardHtml(comp,i){
   ${mode==='resource'?`<label>Recurso a restaurar <select data-effect-idx="${i}" data-effect-field="resource"><option value="stamina" ${(!comp.resource||comp.resource==='stamina')?'selected':''}>Stamina</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option></select></label>`:''}
   ${mode!=='stealth'?`<label>${mode==='reveal'?'Radio':mode==='shield'?'Cantidad de escudo':'Cantidad restaurada'} <input type="number" min="1" value="${comp.value??10}" data-effect-idx="${i}" data-effect-field="value"></label>`:''}`;
  }
- else if(comp.kind==='hot')fields=`${effectDiceFieldsHtml(comp,i)}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='hot')fields=`<label>Recurso regenerado <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${!comp.resource||comp.resource==='hp'?'selected':''}>Vida</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='execute')fields=`${effectDiceFieldsHtml(comp,i)}<label>Umbral de vida del objetivo (%) <input type="number" min="1" max="99" value="${comp.threshold??35}" data-effect-idx="${i}" data-effect-field="threshold"></label><label>Multiplicador de ejecución (por debajo del umbral) <input type="number" step="0.1" min="1" value="${comp.execMultiplier??2.5}" data-effect-idx="${i}" data-effect-field="execMultiplier"></label>`;
  else if(comp.kind==='pullroot')fields=`<label>Turnos enraizado <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='counter')fields=`<label>Escudo otorgado <input type="number" min="0" value="${comp.shield??10}" data-effect-idx="${i}" data-effect-field="shield"></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos de ventana (hasta el próximo golpe) <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;

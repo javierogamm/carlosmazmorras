@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.59.1 MULTIPLAYER</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.59.1">
+<title>MAZMORRA // BOTÍN v0.61.0 COMPAÑEROS</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.61.0">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.59.1 MULTIPLAYER</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.61.0 COMPAÑEROS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -70,6 +70,7 @@
 <button class="active" data-tab="inventory">Mochila</button>
 <button data-tab="potions">Pociones</button>
 <button data-tab="activables">Activables</button>
+<button data-tab="companions">Compañeros</button>
 <button data-tab="equipment">Equipo</button>
 <button data-tab="shards">Shards</button>
 <button data-tab="skills">Habilidades</button>
@@ -79,6 +80,7 @@
 <div id="inventory" class="tabview"></div>
 <div id="potions" class="tabview hidden"></div>
 <div id="activables" class="tabview hidden"></div>
+<div id="companions" class="tabview hidden"></div>
 <div id="equipment" class="tabview hidden"></div>
 <div id="shards" class="tabview hidden"></div>
 <div id="skills" class="tabview hidden"></div>
@@ -172,7 +174,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.59.1 MULTIPLAYER</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.61.0 COMPAÑEROS</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -818,7 +820,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="./src/game.js?v=0.59.1"></script>
+<script src="./src/game.js?v=0.61.0"></script>
 
 </body>
 </html>
