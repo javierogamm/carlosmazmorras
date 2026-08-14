@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.67.0';
+const APP_VERSION='0.67.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -4640,14 +4640,17 @@ function companionTurn(){
    // gated on c.stationary so regular summons and clones keep behaving
    // exactly as before.
    c.ap=Math.max(10,(c.actionsPerTurn||1)*10);
-   while(c.ap>=10){
-    c.ap-=10;
+   while(c.ap>=5){
     // Passive stance: never fights, just stays near the player - checked
     // before any of the combat branches below. Every action either closes a
     // tile of distance or, once adjacent, stops - it doesn't burn the rest
     // of the turn's PA doing nothing.
-    if(c.stance==='passive'){if(companionApproachOrStop(c))break;continue}
+    if(c.stance==='passive'){
+     if(c.stationary||gridDistance(c,game.player)<=1)break;
+     c.ap-=5;moveCompanionToward(c,game.player);continue
+    }
     if(c.stationary&&c.effectType==='heal'){
+     if(c.ap<10)break;c.ap-=10;
      const power=companionDicePower(c),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
      for(const a of allies)healEntity(a,power,a.x,a.y);
@@ -4661,25 +4664,27 @@ function companionTurn(){
     // enemies, so it just stays near the player instead (stopping once
     // adjacent rather than idling through its remaining PA).
     if(c.effectType==='buff'){
+     if(c.ap<10)break;c.ap-=10;
      if(c.buffStat)applyBuff(`companionBuff:${c.id}`,c.name,3,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
-     if(!c.stationary&&companionApproachOrStop(c))break;
+     if(!c.stationary&&gridDistance(c,game.player)>1&&c.ap>=5){c.ap-=5;moveCompanionToward(c,game.player)}
      continue
     }
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
      const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
-     if(!targets.length)continue;
+     if(!targets.length||c.ap<10)break;c.ap-=10;
      for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
-    if(c.effectType==='heal'){healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
+    if(c.effectType==='heal'){if(c.ap<10)break;c.ap-=10;healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
     // Combat priority: only enemies within COMPANION_ENGAGE_RADIUS are ever
     // considered - anything farther is ignored outright rather than pulling
     // the companion off across the map. With no such target, fall back to
     // closing in on the player (and stop the turn once adjacent) instead of
     // standing still.
     const target=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-    if(!target){if(companionApproachOrStop(c))break;continue}
-    if(gridDistance(c,target)>c.range){if(c.stationary)break;moveCompanionToward(c,target);continue}
+    if(!target){if(c.stationary||gridDistance(c,game.player)<=1)break;c.ap-=5;moveCompanionToward(c,game.player);continue}
+    if(gridDistance(c,target)>c.range){if(c.stationary)break;c.ap-=5;moveCompanionToward(c,target);continue}
+    if(c.ap<10)break;c.ap-=10;
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
     // 'skill' invocations run their own inline stackable-effects list
@@ -7752,7 +7757,7 @@ function loadWorldObjectForEdit(objectKey){
  document.getElementById('configWorldObjectIconStatus').textContent=window.currentConfigWorldObjectIconHex?'Icono personalizado activo.':'Sin icono: usará el sprite por defecto.';
 }
 function setupConfigWorldObjectsMode(){
- setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto'});
+ setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto',maxSize:256});
  renderConfigWorldObjectsList();
  document.getElementById('saveConfigWorldObjectBtn').onclick=async()=>{
   const st=document.getElementById('configWorldObjectStatus'),objectKey=window.editingWorldObjectKey;
@@ -7878,7 +7883,7 @@ async function deleteConfigAsset(objectKey){
  }catch(e){if(st)st.textContent=e.message}
 }
 function setupConfigAssetsMode(){
- const assetIconEditor=setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset',onSave:renderConfigAssetGrid,aspect:()=>{const {cols,rows}=currentAssetGridDims();return{w:cols,h:rows}}});
+ const assetIconEditor=setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset',onSave:renderConfigAssetGrid,aspect:()=>{const {cols,rows}=currentAssetGridDims();return{w:cols,h:rows}},maxSize:512});
  renderConfigAssetsList();
  renderConfigAssetGrid();
  const onGridSizeChange=()=>{assetIconEditor?.reclamp?.();renderConfigAssetGrid()};
@@ -8331,7 +8336,11 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
   if(outline)addIconSilhouetteBorder(out,2);
   preview.width=o.w;preview.height=o.h;
   const pc=preview.getContext('2d');pc.clearRect(0,0,o.w,o.h);pc.drawImage(out,0,0);
-  fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} ${o.w}x${o.h} desde x:${rect.x}, y:${rect.y}`;if(onSave)onSave()})
+  const binary=atob(out.toDataURL('image/png').split(',')[1]||'');
+  let hex='';for(let i=0;i<binary.length;i++)hex+=binary.charCodeAt(i).toString(16).padStart(2,'0');
+  window[hexKey]=hex;
+  if(status)status.textContent=`${statusPrefix} ${o.w}x${o.h} desde x:${rect.x}, y:${rect.y}`;
+  if(onSave)onSave();
  }
  function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}
  function updateDrag(e){

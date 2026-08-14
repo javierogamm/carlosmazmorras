@@ -1,3 +1,10 @@
+## v0.67.1 - Guardado de iconos y costes de PA de invocaciones
+
+- Corregido el guardado de imágenes de Objetos del mundo, salas, shards y assets: el editor termina ahora la conversión PNG a hexadecimal de forma síncrona antes de permitir que el botón de guardado lea el icono.
+- Limitados preventivamente los iconos fijos a 256 px y los assets de decoración a 512 px en su lado mayor, conservando su proporción y evitando que una imagen original demasiado grande exceda el tamaño admitido por la petición o la base de datos.
+- Ajustado el turno autónomo de las invocaciones para que cada casilla de movimiento consuma 5 PA y cada ataque, curación, buff o habilidad consuma 10 PA.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.1`.
+
 ## v0.67.0 - Invocaciones autónomas y control de PA
 
 - Separadas las invocaciones temporales de los compañeros permanentes: las criaturas invocadas actúan de forma autónoma en el bando del personaje, eligen objetivos, atacan, curan o aplican su efecto configurado sin esperar órdenes.
