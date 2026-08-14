@@ -1,10 +1,3 @@
-## v0.67.2 - Guardado compatible de Objetos del mundo
-
-- Corregido el guardado de iconos fijos nuevos, incluido **Soul Spike**: la API ya no depende de que `object_key` tenga una restricción `UNIQUE` en instalaciones antiguas de `config_world_object`.
-- El guardado busca primero la fila por `object_key`; si existe la actualiza por su `id` y, si no existe, la crea explícitamente. Se mantiene así la compatibilidad sin exigir una migración de la base de datos.
-- Mejorada la lectura de errores al guardar iconos y assets para mostrar una respuesta legible aunque la infraestructura devuelva texto o HTML en lugar de JSON.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.2`.
-
 ## v0.67.1 - Guardado de iconos y costes de PA de invocaciones
 
 - Corregido el guardado de imágenes de Objetos del mundo, salas, shards y assets: el editor termina ahora la conversión PNG a hexadecimal de forma síncrona antes de permitir que el botón de guardado lea el icono.
