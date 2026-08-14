@@ -7765,7 +7765,7 @@ function setupConfigWorldObjectsMode(){
   st.textContent='Guardando icono...';
   try{
    const r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
-   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
+   const data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
    configWorldObjects[objectKey]=window.currentConfigWorldObjectIconHex||'';
    renderConfigWorldObjectsList();
    st.textContent='Icono guardado.';
@@ -7913,7 +7913,7 @@ function setupConfigAssetsMode(){
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
-   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el asset');
+   const data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar el asset');
    const row=Array.isArray(data)?data[0]:data;
    configWorldObjectRows[row.object_key]=row;configWorldObjects[row.object_key]=row.icon||'';
    window.editingAssetKey=row.object_key;
