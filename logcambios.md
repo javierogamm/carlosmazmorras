@@ -1,3 +1,34 @@
+## v0.64.3 - Hotfix de inicio y guardado racial
+
+- Corregido el fallo crítico de sintaxis introducido en `0.64.2` que detenía por completo la carga de JavaScript y, por tanto, impedía iniciar sesión.
+- Retirada la compactación de iconos ya guardados durante la grabación de una raza: el payload vuelve a construirse directamente desde el estado del formulario, sin reescribir datos existentes antes del guardado.
+- Conservado únicamente el límite preventivo al generar iconos raciales nuevos, evitando peticiones excesivas sin mutar las imágenes previamente persistidas.
+- Rehecho el tratamiento del error original mediante una lectura segura de la respuesta HTTP, aislada del flujo de login y sin asumir que los rechazos de infraestructura contienen JSON.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.3`.
+
+## v0.64.2 - Guardado de iconos raciales optimizado
+
+- Limitada a 128 px la dimensión máxima de cada icono racial, incluyendo la compactación de iconos antiguos al volver a guardar, para evitar que dos imágenes de alta resolución superen el límite de la petición.
+- Mejorado el manejo de respuestas no JSON al guardar razas, mostrando un error legible en lugar de `Unexpected token` cuando la infraestructura rechaza una petición.
+- Igualado el acabado visual del botón Volver del asistente de creación con el botón Siguiente.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.2`.
+
+## v0.64.1 - Iconos de raza por sexo
+
+- Añadido al configurador de razas el selector completo de icono masculino y femenino, cada uno con carga, recorte, zoom, Magic eraser y previsualización independientes.
+- Persistidos ambos iconos en la configuración de raza manteniendo compatibilidad con el campo de icono único anterior.
+- La creación de personaje muestra en las tarjetas raciales el icono correspondiente al sexo elegido; si falta el femenino, reutiliza el masculino.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.1`.
+
+## v0.64.0 - Sexo y creación de personaje por pasos
+
+- Añadida la elección estética de sexo masculino o femenino al personaje y persistida en su estado, sin modificar estadísticas, habilidades ni reglas de juego.
+- Ampliado el editor de clases de Configuración con un icono masculino y otro femenino; las configuraciones antiguas siguen usando su icono único y la variante femenina recurre al masculino cuando no existe.
+- Reorganizada la creación en cuatro pantallas horizontales: modos de clase/combate, clase, raza/sexo y nombre con resumen final.
+- Añadidos indicadores de progreso, navegación para volver a cualquier paso completado, transiciones laterales y un modal fijo sin scroll global; las listas extensas conservan desplazamiento interno.
+- Mejorada la claridad de las tarjetas y del resumen para mostrar descripción, atributos, raza, sexo y modos escogidos antes de crear el personaje.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.0`.
+
 ## v0.63.1 - Invisibilidad y teletransporte raciales
 
 - Corregido el orden del ciclo de invisibilidad apilable: sus turnos se consumen después de la respuesta enemiga, por lo que una invisibilidad propia de un turno evita correctamente una fase enemiga completa.

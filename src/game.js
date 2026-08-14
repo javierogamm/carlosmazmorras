@@ -9,6 +9,7 @@ applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
+let selectedGender='male';
 // 'hardcode' = the 16 built-in classes/skills; 'advanced' = only classes
 // created in the admin editor (config_class), never a hardcoded fallback.
 let selectedSkillMode='hardcode';
@@ -28,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.63.1';
+const APP_VERSION='0.64.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1630,7 +1631,7 @@ async function start(){
  const stats={...cls.stats},maxHp=30+stats.vitality*6;
  const maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,gender:selectedGender,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass,selectedGender),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -6533,7 +6534,10 @@ function enemyStatusOverlay(x,y,e){
 
 function normalizeClassName(name){return String(name||'').trim().toLowerCase()}
 function configClassRowForId(id){const def=classDefs[id];const wanted=normalizeClassName(def?.name||id);return configClasses.find(c=>String(c.class_json?.classId||'')===id)||configClasses.find(c=>normalizeClassName(c.nombre)===wanted)}
-function classIconForId(id){const row=configClassRowForId(id);return row?.class_json?.icon||row?.icon||''}
+function classIconForId(id,gender='male'){
+ const row=configClassRowForId(id),j=row?.class_json||{};
+ return gender==='female'?(j.iconFemale||j.icon||row?.icon||''):(j.iconMale||j.icon||row?.icon||'');
+}
 // A class def, whether hardcoded (classDefs) or a fully custom one that only
 // exists as a config_class row (no matching classDefs entry at all).
 function resolveClassDef(id){
@@ -7213,6 +7217,8 @@ function currentConfigClassJson(){
   name:document.getElementById('configClassName').value.trim()||id,
   desc:document.getElementById('configClassDesc').value.trim()||'Clase personalizada.',
   icon:window.currentConfigClassIconHex||'',
+  iconMale:window.currentConfigClassIconHex||'',
+  iconFemale:window.currentConfigClassFemaleIconHex||'',
   stats:{strength:Number(configClassStr.value)||0,vitality:Number(configClassVit.value)||0,agility:Number(configClassAgi.value)||0,luck:Number(configClassLuck.value)||0,intelligence:Number(configClassInt.value)||0,wisdom:Number(configClassWis.value)||0},
   starterSkills:base?.skills||[],
   resourceBias:base?.resourceBias||'stamina',
@@ -7248,7 +7254,7 @@ function loadSelectedConfigClass(){
  document.getElementById('configClassDesc').value=def?.desc||'';
  const stats=def?.stats||{};
  configClassStr.value=stats.strength??2;configClassVit.value=stats.vitality??2;configClassAgi.value=stats.agility??2;configClassLuck.value=stats.luck??2;configClassInt.value=stats.intelligence??2;configClassWis.value=stats.wisdom??2;
- window.currentConfigClassIconHex=row?.class_json?.icon||row?.icon||'';
+ window.currentConfigClassIconHex=row?.class_json?.iconMale||row?.class_json?.icon||row?.icon||'';
  renderConfigIconPreview(window.currentConfigClassIconHex,'configClassIconPreview','configClassIconStatus');
  configClassIconStatus.textContent=window.currentConfigClassIconHex?'Icono cargado para esta clase.':'Sin icono: usará los pixels por defecto.';
  // only fall back to the generic sprite preview when there's genuinely no
@@ -7256,6 +7262,9 @@ function loadSelectedConfigClass(){
  // renderConfigIconPreview's above and could clobber a real DB icon with
  // the default sprite while the (already-cached) image was still resolving
  if(!window.currentConfigClassIconHex)drawClassPreview(configClassIconPreview,id);
+ window.currentConfigClassFemaleIconHex=row?.class_json?.iconFemale||'';
+ renderConfigIconPreview(window.currentConfigClassFemaleIconHex,'configClassFemaleIconPreview','configClassFemaleIconStatus');
+ document.getElementById('configClassFemaleIconStatus').textContent=window.currentConfigClassFemaleIconHex?'Icono femenino cargado.':'Sin icono femenino: se reutilizará el masculino.';
  window.currentClassSkillsDraft=classSkillBagFor(id);
  renderClassSkillSelect();
  renderConfigClassStarterGearOptions(row?.class_json?.starterWeaponType||'',row?.class_json?.starterPotionIds||[]);
@@ -8215,25 +8224,32 @@ function drawShardTierIconToCanvas(canvas,tier){
 }
 
 const RACE_STAT_FIELDS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',maxHp:'Vida máxima',maxStamina:'Stamina máxima',maxMana:'Maná máximo',critChance:'Crítico %',critDamage:'Daño crítico %',dodge:'Evasión %',staminaRegen:'Regeneración stamina',manaRegen:'Regeneración maná',rarityFind:'Hallazgo rareza %',floorHeal:'Curación por piso',xpMult:'Multiplicador XP',apBonus:'PA adicionales',resourceCostPct:'Gasto de recursos %'};
-function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||`race_${row.id}`,bonuses={};for(const [k,v] of Object.entries(meta))if(!['raceKey','description','icon'].includes(k)&&typeof v==='number')bonuses[k]=v;const skill=row.skill&&typeof row.skill==='object'?{...row.skill,id:row.skill.id||`${key}_racial`,raceSkill:true,raceKey:key}:null;return{key,name:row.nombre||key,desc:meta.description||'',origin:'Raza configurable',trait:Object.entries(bonuses).map(([k,v])=>`${RACE_STAT_FIELDS[k]||k}: ${v}`).join(' · ')||'Skill racial',icon:meta.icon||'',bonuses,skill,rowId:row.id}}
+function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||`race_${row.id}`,bonuses={};for(const [k,v] of Object.entries(meta))if(!['raceKey','description','icon','iconMale','iconFemale'].includes(k)&&typeof v==='number')bonuses[k]=v;const skill=row.skill&&typeof row.skill==='object'?{...row.skill,id:row.skill.id||`${key}_racial`,raceSkill:true,raceKey:key}:null;const iconMale=meta.iconMale||meta.icon||'',iconFemale=meta.iconFemale||iconMale;return{key,name:row.nombre||key,desc:meta.description||'',origin:'Raza configurable',trait:Object.entries(bonuses).map(([k,v])=>`${RACE_STAT_FIELDS[k]||k}: ${v}`).join(' · ')||'Skill racial',icon:iconMale,iconMale,iconFemale,bonuses,skill,rowId:row.id}}
+function raceIconForId(id,gender=selectedGender){const race=raceDefs[id]||{};return gender==='female'?(race.iconFemale||race.iconMale||race.icon||''):(race.iconMale||race.icon||'')}
 function applyConfiguredRaces(){if(!configRaces.length)return;for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
 async function fetchConfigRaces(){try{const r=await fetch('/api/config-class?kind=races'),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar razas');configRaces=Array.isArray(data)?data:[];configRacesLoaded=true;applyConfiguredRaces();renderConfigRaces()}catch(e){const st=document.getElementById('configRaceStatus');if(st)st.textContent=e.message}}
 function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()})}
 function raceStatsFromForm(){let extra={};const raw=document.getElementById('configRaceExtraStats').value.trim();if(raw)extra=JSON.parse(raw);for(const k of Object.keys(RACE_STAT_FIELDS)){const v=Number(document.querySelector(`[data-race-stat="${k}"]`)?.value);if(v)extra[k]=v;else delete extra[k]}return extra}
-function currentRacePayload(){const key=slugifyClassName(configRaceKey.value||configRaceName.value);return{nombre:configRaceName.value.trim(),stats:{...raceStatsFromForm(),raceKey:key,description:configRaceDesc.value.trim(),icon:window.currentConfigRaceIconHex||''},skill:{id:`${key}_racial`,name:configRaceSkillName.value.trim()||'Skill racial',icon:configRaceSkillIcon.value||'✦',desc:configRaceSkillDesc.value.trim(),resource:configRaceSkillResource.value,cost:Number(configRaceSkillCost.value)||0,apCost:Number(configRaceSkillAp.value)||0,cd:Number(configRaceSkillCd.value)||0,range:Number(configRaceSkillRange.value)||0,type:'utility',tier:1,rarity:'racial',classEffect:'stackable',effects:JSON.parse(JSON.stringify(window.currentRaceEffectsDraft||[])),raceSkill:true,raceKey:key,targetMode:effectsListTargetModeFor(window.currentRaceEffectsDraft||[])}}}
-function loadConfigRace(id){const row=configRaces.find(x=>String(x.id)===String(id));window.editingConfigRaceId=row?.id||null;const d=row?raceDefFromRow(row):{key:'',name:'',desc:'',icon:'',bonuses:{},skill:{}};configRaceKey.value=d.key||'';configRaceName.value=d.name||'';configRaceDesc.value=d.desc||'';for(const k of Object.keys(RACE_STAT_FIELDS))document.querySelector(`[data-race-stat="${k}"]`).value=d.bonuses?.[k]||'';const extras=Object.fromEntries(Object.entries(d.bonuses||{}).filter(([k])=>!RACE_STAT_FIELDS[k]));configRaceExtraStats.value=Object.keys(extras).length?JSON.stringify(extras,null,2):'';const sk=d.skill||{};configRaceSkillName.value=sk.name||'';configRaceSkillIcon.value=sk.icon||'✦';configRaceSkillDesc.value=sk.desc||'';configRaceSkillResource.value=sk.resource||'stamina';configRaceSkillCost.value=sk.cost??10;configRaceSkillAp.value=sk.apCost??10;configRaceSkillCd.value=sk.cd??5;configRaceSkillRange.value=sk.range??1;window.currentRaceEffectsDraft=JSON.parse(JSON.stringify(sk.effects||[]));window.currentConfigRaceIconHex=d.icon||'';renderConfigIconPreview(d.icon||'','configRaceIconPreview','configRaceIconStatus');renderRaceEffects()}
+function currentRacePayload(){const key=slugifyClassName(configRaceKey.value||configRaceName.value),iconMale=window.currentConfigRaceIconHex||'';return{nombre:configRaceName.value.trim(),stats:{...raceStatsFromForm(),raceKey:key,description:configRaceDesc.value.trim(),icon:iconMale,iconMale,iconFemale:window.currentConfigRaceFemaleIconHex||''},skill:{id:`${key}_racial`,name:configRaceSkillName.value.trim()||'Skill racial',icon:configRaceSkillIcon.value||'✦',desc:configRaceSkillDesc.value.trim(),resource:configRaceSkillResource.value,cost:Number(configRaceSkillCost.value)||0,apCost:Number(configRaceSkillAp.value)||0,cd:Number(configRaceSkillCd.value)||0,range:Number(configRaceSkillRange.value)||0,type:'utility',tier:1,rarity:'racial',classEffect:'stackable',effects:JSON.parse(JSON.stringify(window.currentRaceEffectsDraft||[])),raceSkill:true,raceKey:key,targetMode:effectsListTargetModeFor(window.currentRaceEffectsDraft||[])}}}
+function loadConfigRace(id){const row=configRaces.find(x=>String(x.id)===String(id));window.editingConfigRaceId=row?.id||null;const d=row?raceDefFromRow(row):{key:'',name:'',desc:'',icon:'',iconMale:'',iconFemale:'',bonuses:{},skill:{}};configRaceKey.value=d.key||'';configRaceName.value=d.name||'';configRaceDesc.value=d.desc||'';for(const k of Object.keys(RACE_STAT_FIELDS))document.querySelector(`[data-race-stat="${k}"]`).value=d.bonuses?.[k]||'';const extras=Object.fromEntries(Object.entries(d.bonuses||{}).filter(([k])=>!RACE_STAT_FIELDS[k]));configRaceExtraStats.value=Object.keys(extras).length?JSON.stringify(extras,null,2):'';const sk=d.skill||{};configRaceSkillName.value=sk.name||'';configRaceSkillIcon.value=sk.icon||'✦';configRaceSkillDesc.value=sk.desc||'';configRaceSkillResource.value=sk.resource||'stamina';configRaceSkillCost.value=sk.cost??10;configRaceSkillAp.value=sk.apCost??10;configRaceSkillCd.value=sk.cd??5;configRaceSkillRange.value=sk.range??1;window.currentRaceEffectsDraft=JSON.parse(JSON.stringify(sk.effects||[]));window.currentConfigRaceIconHex=d.iconMale||d.icon||'';window.currentConfigRaceFemaleIconHex=row?.stats?.iconFemale||'';renderConfigIconPreview(window.currentConfigRaceIconHex,'configRaceIconPreview','configRaceIconStatus');renderConfigIconPreview(window.currentConfigRaceFemaleIconHex,'configRaceFemaleIconPreview','configRaceFemaleIconStatus');configRaceIconStatus.textContent=window.currentConfigRaceIconHex?'Icono masculino cargado.':'Sin icono masculino.';configRaceFemaleIconStatus.textContent=window.currentConfigRaceFemaleIconHex?'Icono femenino cargado.':'Sin icono femenino: se reutilizará el masculino.';renderRaceEffects()}
 function renderConfigRaces(){const sel=document.getElementById('configRaceSelect'),list=document.getElementById('configRacesList');if(!sel)return;sel.innerHTML='<option value="">— Nueva raza —</option>'+configRaces.map(r=>`<option value="${r.id}">${r.nombre||r.id}</option>`).join('');if(window.editingConfigRaceId)sel.value=window.editingConfigRaceId;if(list)list.innerHTML=configRaces.map(r=>{const d=raceDefFromRow(r);return `<div class="configItem"><div><b>${d.name}</b><span class="small">${d.key} · ${d.skill?.name||'sin skill'}</span><div class="configItemActions"><button data-edit-race="${r.id}">Editar</button></div></div></div>`}).join('')||'<p class="small">No hay razas configuradas.</p>';list?.querySelectorAll('[data-edit-race]').forEach(b=>b.onclick=()=>loadConfigRace(b.dataset.editRace))}
-function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono de raza'});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces();st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
+async function responseJson(response){
+ const text=await response.text();
+ if(!text)return{};
+ try{return JSON.parse(text)}
+ catch{return{error:response.ok?'El servidor devolvió una respuesta inválida.':`No se pudo completar la petición (${response.status}): ${text.trim().slice(0,180)}`}}
+}
+function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces();st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
-function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1}}){
+function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1},maxSize=0}){
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
  if(!imgInput||!crop)return null;
  let source=null,rect=null,drag=null,activePointerId=null,eraser=false;
  // Preserve every pixel in the selected source area. The former fixed 50px
  // export permanently discarded detail before the image reached the game.
- function outSize(){if(rect)return{w:Math.max(1,Math.round(rect.w)),h:Math.max(1,Math.round(rect.h))};const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);return ratio>=1?{w:50,h:Math.max(1,Math.round(50/ratio))}:{w:Math.max(1,Math.round(50*ratio)),h:50}}
+ function outSize(){let size;if(rect)size={w:Math.max(1,Math.round(rect.w)),h:Math.max(1,Math.round(rect.h))};else{const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);size=ratio>=1?{w:50,h:Math.max(1,Math.round(50/ratio))}:{w:Math.max(1,Math.round(50*ratio)),h:50}}if(maxSize&&Math.max(size.w,size.h)>maxSize){const scale=maxSize/Math.max(size.w,size.h);size={w:Math.max(1,Math.round(size.w*scale)),h:Math.max(1,Math.round(size.h*scale))}}return size}
  function canvasZoom(){const scale=(Number(zoom?.value)||100)/100;crop.style.width=`${Math.max(1,Math.round(crop.width*scale))}px`;crop.style.height=`${Math.max(1,Math.round(crop.height*scale))}px`}
  function clampRect(r){
   const a=typeof aspect==='function'?aspect():aspect,ratio=Math.max(a.w,1)/Math.max(a.h,1);
@@ -8283,6 +8299,7 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
 function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
  if(!editor)return;
+ setupImageIconEditor({inputId:'configClassFemaleImageInput',canvasId:'configClassFemaleCropCanvas',previewId:'configClassFemaleIconPreview',statusId:'configClassFemaleIconStatus',zoomId:'configClassFemaleCropZoom',eraserId:'configClassFemaleMagicEraserBtn',toleranceId:'configClassFemaleMagicTolerance',hexKey:'currentConfigClassFemaleIconHex',statusPrefix:'Icono femenino'});
  setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill'});
  setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación'});
  const summonExistingSel=document.getElementById('configSummonIconExisting');
@@ -8304,6 +8321,7 @@ function setupClassConfigMode(){
   configClassName.value=name;document.getElementById('configClassDesc').value='Clase personalizada.';
   configClassStr.value=configClassVit.value=configClassAgi.value=configClassLuck.value=configClassInt.value=configClassWis.value=2;
   window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');
+  window.currentConfigClassFemaleIconHex='';renderConfigIconPreview('','configClassFemaleIconPreview','configClassFemaleIconStatus');
   window.currentClassSkillsDraft={};renderClassSkillSelect();
   renderConfigClassStarterGearOptions('',[]);
   configClassStatus.textContent=`Nueva clase "${name}" lista para configurar. Añade skills y pulsa Guardar clase.`;
@@ -8384,7 +8402,7 @@ function setupClassConfigMode(){
  };
  rollbackConfigClassBtn.onclick=async()=>{
   configClassStatus.textContent='Restaurando pixels por defecto...';
-  try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
+  try{window.currentConfigClassIconHex='';window.currentConfigClassFemaleIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');renderConfigIconPreview('','configClassFemaleIconPreview','configClassFemaleIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
  };
 }
 // ---- Potion composable-effects editor (admin) -------------------------
@@ -8672,8 +8690,7 @@ function openCharacterCreation(){
  app.classList.remove('hidden');
  startOverlay.classList.remove('hidden');
  nameInput.value='';
- document.getElementById('raceAccordion')?.removeAttribute('open');
- document.getElementById('classAccordion')?.removeAttribute('open');
+ setWizardStep(0);
  fetchConfigClasses();
  if(!configGatesLoaded)fetchConfigGates();else{renderRaceChoices();renderClassChoices()}
 }
@@ -10585,6 +10602,41 @@ backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverla
 
 
 
+let characterWizardStep=0;
+const WIZARD_LABELS=['1 · MODOS','2 · CLASE','3 · IDENTIDAD','4 · NOMBRE'];
+function renderGenderChoices(){
+ document.querySelectorAll('[data-gender]').forEach(button=>{
+  const gender=button.dataset.gender;button.classList.toggle('selected',gender===selectedGender);
+  const canvas=button.querySelector('canvas'),icon=classIconForId(selectedClass,gender);
+  if(icon)drawSkillIconImg(canvas,icon);else drawClassPreview(canvas,selectedClass);
+ });
+}
+function renderCharacterSummary(){
+ const root=document.getElementById('characterSummary');if(!root)return;
+ const cls=resolveClassDef(selectedClass),race=raceDefs[selectedRace];
+ root.innerHTML=`<canvas width="96" height="96"></canvas><b>${cls?.name||selectedClass}</b><span>${race?.name||selectedRace} · ${selectedGender==='female'?'Femenino':'Masculino'}</span><small>${selectedSkillMode==='advanced'?'Advanced Classes':'Hardcode'} · ${selectedCombatMode==='ap'?'Puntos de Acción':'Clásico'}</small>`;
+ const canvas=root.querySelector('canvas'),icon=classIconForId(selectedClass,selectedGender);if(icon)drawSkillIconImg(canvas,icon);else drawClassPreview(canvas,selectedClass);
+}
+function setWizardStep(step){
+ characterWizardStep=Math.max(0,Math.min(3,Number(step)||0));
+ const track=document.getElementById('wizardTrack');if(!track)return;
+ track.style.transform=`translateX(-${characterWizardStep*100}%)`;
+ const progress=document.getElementById('wizardProgress');
+ progress.innerHTML=WIZARD_LABELS.map((label,i)=>`<button type="button" data-wizard-step="${i}" class="${i===characterWizardStep?'active':i<characterWizardStep?'done':''}" ${i>characterWizardStep?'disabled':''}>${label}</button>`).join('');
+ progress.querySelectorAll('[data-wizard-step]').forEach(b=>b.onclick=()=>setWizardStep(b.dataset.wizardStep));
+ document.getElementById('wizardBackBtn').disabled=characterWizardStep===0;
+ document.getElementById('wizardNextBtn').classList.toggle('hidden',characterWizardStep===3);
+ if(characterWizardStep===2)renderGenderChoices();
+ if(characterWizardStep===3){renderCharacterSummary();setTimeout(()=>document.getElementById('nameInput')?.focus(),380)}
+}
+document.querySelectorAll('[data-gender]').forEach(button=>button.onclick=()=>{selectedGender=button.dataset.gender;renderGenderChoices();renderRaceChoices()});
+document.getElementById('wizardBackBtn')?.addEventListener('click',()=>setWizardStep(characterWizardStep-1));
+document.getElementById('wizardNextBtn')?.addEventListener('click',()=>{
+ if(characterWizardStep===0&&!selectedCombatMode){alert('Elige un modo de combate para continuar.');return}
+ if(characterWizardStep===1&&!resolveClassDef(selectedClass)){alert('Elige una clase para continuar.');return}
+ setWizardStep(characterWizardStep+1);
+});
+
 function renderRaceChoices(){
  const root=document.getElementById('raceChoices');if(!root)return;
  const raceIds=sortByGate('race',Object.keys(raceDefs));
@@ -10594,11 +10646,11 @@ function renderRaceChoices(){
   // Locked races have no icon of their own today - the padlock takes that slot.
   const lockIcon=unlocked?'':`<canvas class="choiceLockIcon" width="40" height="40" data-gate-lock></canvas>`;
   const lockNote=unlocked?'':`<p class="small gateLockNote">Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</p>`;
-  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}">${lockIcon}${unlocked&&r.icon?`<canvas class="raceChoiceIcon" width="42" height="42" data-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div></div>`;
+  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}">${lockIcon}${unlocked&&raceIconForId(id)?`<canvas class="raceChoiceIcon" width="42" height="42" data-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div></div>`;
  }).join('');
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
- root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
- root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices()});
+ root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.raceIcon)));
+ root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices();renderGenderChoices()});
 }
 renderRaceChoices();
 
@@ -10639,7 +10691,7 @@ function renderClassChoices(){
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
- root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices()});
+ root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
  const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();
