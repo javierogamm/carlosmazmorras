@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.70.0';
+const APP_VERSION='0.71.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -6007,7 +6007,10 @@ function updateUI(){
 let animationFrame=0,lastAnimationTime=0;
 function animate(now=performance.now()){
  animationFrame=0;const dt=Math.min(50,Math.max(0,now-(lastAnimationTime||now)));lastAnimationTime=now;
- if(anim.t<1){anim.t=Math.min(1,anim.t+dt/140);draw();animationFrame=requestAnimationFrame(animate)}else draw()
+ const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone'].includes(o.kind)&&o.turns>0);
+ if(anim.t<1)anim.t=Math.min(1,anim.t+dt/140);
+ draw();
+ if(anim.t<1||hasAnimatedArea)animationFrame=requestAnimationFrame(animate)
 }
 function requestGameFrame(){if(!animationFrame)animationFrame=requestAnimationFrame(animate)}
 
@@ -6090,16 +6093,17 @@ function draw(){
 // bold anchor icon from skillObjectSprite still reads as the focal point.
 function drawSkillObjectGroundOverlay(sc){
  for(const o of game.skillObjects||[]){
-  if(!['totem','zone'].includes(o.kind)||(o.radius||0)<=1)continue;
+  if(!['totem','zone'].includes(o.kind)||o.turns<=0)continue;
+  const radius=Math.max(1,o.radius||1),pulse=.5+.5*Math.sin(performance.now()/360);
   const color=o.kind==='totem'?'#9f7bff':'#64e0a0';
   ctx.save();ctx.lineWidth=2;
-  for(let dy=-o.radius;dy<=o.radius;dy++)for(let dx=-o.radius;dx<=o.radius;dx++){
-   if(Math.max(Math.abs(dx),Math.abs(dy))>o.radius)continue;
+  for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))>radius)continue;
    const x=o.x+dx,y=o.y+dy;
    if(!game.seen?.[y]?.[x])continue;
    const p=sc(x,y);
-   ctx.fillStyle=color+'40';ctx.fillRect(p.x,p.y,TILE,TILE);
-   ctx.strokeStyle=color+'90';ctx.strokeRect(p.x+1,p.y+1,TILE-2,TILE-2);
+   ctx.globalAlpha=.2+pulse*.18;ctx.fillStyle=color;ctx.fillRect(p.x+2,p.y+2,TILE-4,TILE-4);
+   ctx.globalAlpha=.48+pulse*.32;ctx.strokeStyle=color;ctx.strokeRect(p.x+2,p.y+2,TILE-4,TILE-4);
   }
   ctx.restore();
  }
@@ -7687,6 +7691,7 @@ const WORLD_OBJECT_KINDS=[
 let configWorldObjects={};
 let configWorldObjectRows={};
 let configWorldObjectsLoaded=false;
+const pendingWorldObjectIcons=new Set();
 // Decoration assets: user-created rows in config_world_object whose
 // object_key starts with ASSET_KEY_PREFIX. Unlike the fixed WORLD_OBJECT_KINDS
 // catalog above (icon-only overrides for system props), these carry their
@@ -7750,6 +7755,12 @@ async function fetchConfigWorldObjectDetail(objectKey){
  if(!row)throw new Error('El objeto ya no existe');
  configWorldObjectRows[objectKey]=row;configWorldObjects[objectKey]=row.icon||'';
  return row;
+}
+function loadWorldObjectIconOnDemand(objectKey){
+ const row=configWorldObjectRows[objectKey];
+ if(!row||row.icon!==undefined||pendingWorldObjectIcons.has(objectKey))return;
+ pendingWorldObjectIcons.add(objectKey);
+ fetchConfigWorldObjectDetail(objectKey).then(()=>game&&requestGameFrame()).catch(()=>{}).finally(()=>pendingWorldObjectIcons.delete(objectKey));
 }
 function renderConfigWorldObjectsList(){
  const root=document.getElementById('configWorldObjectsList');if(!root)return;
@@ -8302,7 +8313,7 @@ function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
 // the icon across the asset's full cols x rows footprint in screen space.
 function drawAssetIcon(objectKey,x,y,w,h){
  const hex=configWorldObjects[objectKey];
- if(!hex){ctx.fillStyle='#5a4a6b';ctx.fillRect(x+2,y+2,w-4,h-4);return false}
+ if(!hex){loadWorldObjectIconOnDemand(objectKey);ctx.fillStyle='#5a4a6b';ctx.fillRect(x+2,y+2,w-4,h-4);return false}
  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
  if(img.complete){ctx.drawImage(img,x+2,y+2,w-4,h-4);return true}
  img.onload=()=>game&&draw();

@@ -1,3 +1,9 @@
+## v0.71.0 - Imágenes de assets y áreas persistentes animadas
+
+- Corregida la carga de imágenes de los assets del mundo cuando el catálogo se había solicitado en modo mínimo: cada asset colocado recupera su icono completo bajo demanda y repinta el tablero al recibirlo, en lugar de quedarse como un rectángulo gris.
+- Los efectos persistentes de área (zonas y tótems) mantienen resaltadas todas sus casillas durante sus turnos activos, incluido el radio mínimo de una casilla, con un pulso animado continuo que desaparece al finalizar el efecto.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.71.0`.
+
 ## v0.70.0 - Importación, exportación y guardado compatible de dungeons
 
 - Consolidado el ciclo de exportar, importar y guardar dungeons: los archivos importados se tratan siempre como copias nuevas y nunca reutilizan por accidente el identificador de la fila exportada.
