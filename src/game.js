@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.65.0';
+const APP_VERSION='0.65.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -3128,7 +3128,8 @@ function updateRestButton(){
 // enemy object from the current floor - stale once the floor changes, so
 // every companion goes back to just following instead of chasing a ghost.
 function clearCompanionOrders(){for(const c of game?.companions||[])c.orderTarget=null}
-function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,game?.player?.level||1);if(loadPrecomputedFloor())return;game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+function applyPreservedSoulReviveLoot(){const saved=game?.preservedSoulReviveLoot?.[String(game.floor)];if(saved)game.chests=JSON.parse(JSON.stringify(saved))}
+function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,game?.player?.level||1);if(loadPrecomputedFloor()){applyPreservedSoulReviveLoot();return}game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  busy=false;
  const params=worldParams();
  const overCap=Math.max(0,(game.floorEntryLevel||1)-BALANCE_LEVEL_CAP);
@@ -3146,6 +3147,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
   floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,
   objective:plan.objective,rewardRarityBonus:plan.rewardRarityBonus,precomputedEvent:plan.event||null,partyScaled:0
  });
+ applyPreservedSoulReviveLoot();
  game.player.x=plan.spawn.x;game.player.y=plan.spawn.y;anim.heroX=anim.targetX=plan.spawn.x;anim.heroY=anim.targetY=plan.spawn.y;anim.t=1;reveal(plan.spawn.x,plan.spawn.y);
  const extra=difficultyScale().count;
  for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
@@ -5395,19 +5397,20 @@ function configuredReviveSource(){
 function handlePlayerDeath(){
  const automatic=configuredReviveSource();
  if(automatic){automatic.consume();if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}reviveAtCurrentPosition(automatic.effect.hpPercent||50);banner('REVIVIR');return}
- if((game.player.souls||0)>=10&&!game.multiplayer){showSoulReviveModal();return}
+ if((game.player.souls||0)>0&&!game.multiplayer){showSoulReviveModal();return}
  permanentDeath();
 }
 function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){
- const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');
+ const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');modal.querySelectorAll('button').forEach(b=>b.disabled=false);
+ const staysHere=(game.player.souls||0)>=10,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Revivirás en esta misma casilla y los enemigos conservarán su estado actual.':'Volverás al inicio del piso 1. Todos los enemigos se regenerarán, pero el loot y los cofres conservarán su estado.';
  const render=n=>{count.innerHTML=`${soulIconHtml('soulMiniIcon')} <b>${n}</b>`};render(game.player.souls);
  document.getElementById('rejectSoulRevive').onclick=()=>{modal.classList.remove('open');permanentDeath()};
- document.getElementById('acceptSoulRevive').onclick=()=>{const from=game.player.souls,to=from>=50?10:1;modal.querySelectorAll('button').forEach(b=>b.disabled=true);const started=performance.now(),tick=now=>{const n=Math.round(from-(from-to)*Math.min(1,(now-started)/1200));render(n);if(n>to)requestAnimationFrame(tick);else setTimeout(()=>{game.player.souls=to;persistSouls();modal.classList.remove('open');restartDungeonAfterSoulRevive()},250)};requestAnimationFrame(tick)};
+ document.getElementById('acceptSoulRevive').onclick=()=>{const from=game.player.souls,to=from>=50?10:from>=10?1:0;modal.querySelectorAll('button').forEach(b=>b.disabled=true);const started=performance.now(),tick=now=>{const n=Math.round(from-(from-to)*Math.min(1,(now-started)/1200));render(n);if(n>to)requestAnimationFrame(tick);else setTimeout(()=>{game.player.souls=to;persistSouls();modal.classList.remove('open');if(from>=10){reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE')}else restartDungeonAfterSoulRevive()},250)};requestAnimationFrame(tick)};
 }
 function restartDungeonAfterSoulRevive(){
- const chestStates={};for(const [floor,snap] of Object.entries(game.sessionFloors||{}))chestStates[floor]=snap.chests;
- game.sessionFloors={};game.floor=1;game.turn=0;generateFloor();if(chestStates[1])game.chests=chestStates[1];reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE · PISO 1');
+ const loot={};for(const [floor,snap] of Object.entries(game.sessionFloors||{}))if(snap?.chests)loot[String(floor)]=JSON.parse(JSON.stringify(snap.chests));loot[String(game.floor)]=JSON.parse(JSON.stringify(game.chests||[]));
+ game.preservedSoulReviveLoot=loot;game.sessionFloors={};game.floor=1;game.turn=0;generateFloor();reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE · PISO 1');
 }
 function permanentDeath(){
  const p=game.player;game.over=true;

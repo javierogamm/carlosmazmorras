@@ -1,3 +1,11 @@
+## v0.65.1 - Rutas de resurrección por saldo de souls
+
+- Corregido el destino del Soul Revive: con 10-49 souls el personaje revive en la misma casilla y conserva 1; con 50 o más revive también en el mismo lugar y conserva 10, sin regenerar enemigos.
+- Los personajes con 1-9 souls pueden ahora aceptar el modal: consumen todo el saldo, regresan al inicio del piso 1 y regeneran los enemigos de la mazmorra.
+- El reinicio por saldo inferior a 10 conserva los cofres y su estado por piso para impedir que el loot se regenere o pueda volver a recogerse.
+- Actualizados los textos del modal según la ruta real de resurrección y restaurado el estado de sus botones para usos posteriores.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.1`.
+
 ## v0.65.0 - Sistema de Soul Spikes y revivir
 
 - Añadida la currency persistente **Soul Spikes** (`user_pj.souls`): cada enemigo concede 1 soul, los élites 2, los bosses 3 y los megabosses 5; el icono se puede editar desde Objetos del mundo.
