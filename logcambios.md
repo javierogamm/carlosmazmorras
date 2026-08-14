@@ -1,3 +1,30 @@
+## v0.65.2 - Umbrales definitivos de Soul Revive e iconos raciales
+
+- Soul Revive requiere ahora al menos 20 Soul Spikes: con 0-19 se aplica muerte permanente sin mostrar la oferta de resurrección.
+- Con 20-49 Soul Spikes se conserva 1 y el personaje vuelve al inicio del piso 1 con enemigos regenerados y loot/cofres preservados; con 50 o más se conservan 10 y revive en la misma casilla sin regenerar enemigos.
+- La creación guarda en el propio personaje el icono exacto de la combinación raza/sexo elegida, evitando depender de una selección global o de una carga posterior del catálogo.
+- Sustituidas las etiquetas de imagen directa de las miniaturas por canvases que decodifican el formato real de iconos del configurador; se corrigen así las imágenes rotas en la ficha y en el HUD.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.2`.
+
+## v0.65.1 - Rutas de resurrección por saldo de souls
+
+- Corregido el destino del Soul Revive: con 10-49 souls el personaje revive en la misma casilla y conserva 1; con 50 o más revive también en el mismo lugar y conserva 10, sin regenerar enemigos.
+- Los personajes con 1-9 souls pueden ahora aceptar el modal: consumen todo el saldo, regresan al inicio del piso 1 y regeneran los enemigos de la mazmorra.
+- El reinicio por saldo inferior a 10 conserva los cofres y su estado por piso para impedir que el loot se regenere o pueda volver a recogerse.
+- Actualizados los textos del modal según la ruta real de resurrección y restaurado el estado de sus botones para usos posteriores.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.1`.
+
+## v0.65.0 - Sistema de Soul Spikes y revivir
+
+- Añadida la currency persistente **Soul Spikes** (`user_pj.souls`): cada enemigo concede 1 soul, los élites 2, los bosses 3 y los megabosses 5; el icono se puede editar desde Objetos del mundo.
+- Incorporado el HUD de souls junto al nivel y la miniatura de raza/sexo tanto en el tablero como en la ficha del personaje.
+- Al morir con al menos 10 souls se ofrece revivir: desde 10 hasta 49 el saldo baja a 1 y desde 50 baja a 10, con cuenta atrás animada. El personaje vuelve al inicio del piso 1, se regeneran los enemigos y se conservan los estados de cofres disponibles.
+- Añadida la estancia **Mercader de Souls**, con suelo dorado e icono configurable; ofrece un objeto configurado no-poción por cada tier y aplica precios de 5/10/20/30/45 souls entre común y legendario.
+- Añadido el efecto apilable **Revivir** para skills, items y pociones, configurable por porcentaje de vida, cooldown y coste opcional de souls. Se dispara automáticamente al morir; las pociones se consumen en lugar de entrar en cooldown.
+- La subida de nivel muestra una animación de dos segundos antes del modal y exige confirmar la stat seleccionada.
+- Incluida la migración `supabase/add_souls_to_user_pj.sql` y sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.0`.
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.64.4 - Razas configuradas y modos predeterminados
 
 - Eliminado el catálogo racial legacy de la creación de personaje: las opciones proceden siempre de `config_razas` e incluyen la variante de icono correspondiente al sexo seleccionado.
