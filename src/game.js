@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.65.2';
+const APP_VERSION='0.66.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -8794,10 +8794,26 @@ async function openSessionContinue(){
    const owner=chars.find(c=>ids.map(String).includes(String(c.id)));
    const world=worlds.find(w=>String(w.id)===String(s.dungeon_world_id));
    const floor=s.dungeon_status?.currentFloor||1,turn=s.dungeon_status?.turn||0,totalFloors=world?.world_json?.params?.floors||world?.world_json?.floors?.length||'?';
-   return `<button type="button" class="worldCard" data-session-id="${s.id}"><b>${world?.world_name||('Mundo #'+s.dungeon_world_id)}</b><span>${owner?.pj_name||'Sesión'} · ${totalFloors} pisos</span><small>Piso actual ${floor} · Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button>`;
+   return `<div class="savedSessionRow"><button type="button" class="worldCard" data-session-id="${s.id}"><b>${world?.world_name||('Mundo #'+s.dungeon_world_id)}</b><span>${owner?.pj_name||'Sesión'} · ${totalFloors} pisos</span><small>Piso actual ${floor} · Turno ${turn} · Creada ${new Date(s.created_at).toLocaleString()}</small></button><button type="button" class="deleteSessionBtn" data-delete-session="${s.id}" aria-label="Eliminar sesión de ${owner?.pj_name||'personaje'}">ELIMINAR</button></div>`;
   }).join('');
   list.querySelectorAll('[data-session-id]').forEach(btn=>btn.onclick=()=>resumeSession(btn.dataset.sessionId));
+  list.querySelectorAll('[data-delete-session]').forEach(btn=>btn.onclick=()=>deleteSavedSession(btn.dataset.deleteSession));
  }catch(e){status.textContent=`Error: ${e.message}`}
+}
+
+async function deleteSavedSession(sessionId){
+ if(!confirm('¿Eliminar esta partida guardada? Esta acción no se puede deshacer.'))return;
+ const button=document.querySelector(`[data-delete-session="${CSS.escape(String(sessionId))}"]`);
+ if(button)button.disabled=true;
+ try{
+  const response=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`,{method:'DELETE'});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||data.message||'No se pudo eliminar la sesión');
+  await openSessionContinue();
+ }catch(e){
+  if(button)button.disabled=false;
+  alert('Error al eliminar la sesión: '+e.message);
+ }
 }
 
 async function resumeSession(sessionId){
@@ -8814,14 +8830,18 @@ async function resumeSession(sessionId){
   if(!pj||pj.pj_status!=='alive')throw new Error('El personaje de esta sesión ya no está vivo.');
   currentCharacter=pj;selectedDungeonWorld=world;
   const state=session.dungeon_status||{};
-  const bundle=pj.pj_json||{};
+  // Since v0.66 the session owns the latest in-run character snapshot. This
+  // keeps race/sex/icon and Soul Spikes in lockstep with the saved floor even
+  // though the heavier user_pj backup is deliberately written less often.
+  const savedCharacter=state.character||{};
+  const bundle=savedCharacter.bundle||pj.pj_json||{};
   const player=bundle.player;
   const floorNum=state.currentFloor||1;
   const overlay=state.floors?.[String(floorNum)]||null;
   game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(pj.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
- game.player.shards=pj.shards?normalizeShards(pj.shards):(game.player.shards||{});
- game.player.souls=Math.max(0,Number(pj.souls??game.player.souls)||0);
- game.player.customItems=pj.custom_items||game.player.customItems||[];
+ game.player.shards=normalizeShards(savedCharacter.shards??pj.shards??game.player.shards??{});
+ game.player.souls=Math.max(0,Number(savedCharacter.souls??pj.souls??game.player.souls)||0);
+ game.player.customItems=savedCharacter.customItems??pj.custom_items??game.player.customItems??[];
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
   if(overlay&&overlay.map){
@@ -8900,13 +8920,11 @@ function persistTurnState(){
  if(!game?.pjId)return;
  const bundle=characterBundleFromGame();
  game.maxFloorReached=bundle.maxFloorReached;
- // minimal:true - this fires every single turn and the response is never
- // read (fire-and-forget .catch below), so there's no reason to have Supabase
- // echo the whole character/floor blob back down on every write. See the
- // matching opt-in in api/user-pj.js and api/dungeon-status.js.
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,souls:game.player.souls||0,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
- const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
+ // One authoritative write per turn: the session includes the character data
+ // needed to resume newer features, avoiding the previous duplicate user_pj
+ // PATCH plus its aggregate queries on every action.
+ const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}},character:{bundle,souls:game.player.souls||0,shards:normalizeShards(game.player.shards),customItems:game.player.customItems||[]}};
  game.sessionFloors=dungeonState.floors;
  fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dungeon_status:dungeonState,minimal:true})}).catch(e=>console.error('No se pudo guardar la sesión',e));
 }
@@ -8919,29 +8937,10 @@ async function finalizeCharacterDeath(){
  }catch(e){console.error('No se pudo marcar el personaje como muerto',e)}
  if(game.multiplayer){
   if(mpGamePollTimer){clearInterval(mpGamePollTimer);mpGamePollTimer=null}
-  stopMpTradePolling();
-  const deadId=String(game.pjId);
-  mpClearLiveTimers();
-  mpResetActionQueues();
-  game.mpSeq=(game.mpSeq||0)+1; // death outranks any in-flight live turn
-  game.turnOrder=(game.turnOrder||[]).filter(id=>String(id)!==deadId);
-  // remove the dead player from the shared turn order and mark hp 0 so nobody waits on them
-  await mpSaveSession(game.dungeonStatusId,fresh=>{
-   const order=(fresh.turnOrder||[]).map(String);
-   const idx=order.indexOf(deadId);
-   const newOrder=(fresh.turnOrder||[]).filter(id=>String(id)!==deadId);
-   let active=fresh.activePlayerIndex||0,turn=fresh.turn||0;
-   if(idx>-1){
-    if(idx<active)active--;
-    else if(idx===active&&idx===order.length-1){active=0;turn++}
-   }
-   if(active<0||active>=newOrder.length)active=0;
-   const players={...fresh.players};
-   if(players[deadId])players[deadId]={...players[deadId],hp:0};
-   return {dungeon_status:{...fresh,turnOrder:newOrder,activePlayerIndex:active,turn,players,seq:Math.max(Number(fresh.seq)||0,game.mpSeq||0)}};
-  });
-  return;
+  stopMpTradePolling();mpClearLiveTimers();mpResetActionQueues();
  }
+ // A dead character can never resume its run. Delete the Supabase session for
+ // both solo and multiplayer instead of retaining an orphaned heavy snapshot.
  if(game.dungeonStatusId){
   try{await fetch(`/api/dungeon-status?id=${encodeURIComponent(game.dungeonStatusId)}`,{method:'DELETE'})}catch(e){console.error('No se pudo borrar la sesión',e)}
  }

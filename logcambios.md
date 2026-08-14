@@ -1,3 +1,12 @@
+## v0.66.0 - Sesiones compatibles y más ligeras
+
+- Añadido un botón **ELIMINAR** a cada partida guardada del jugador, con confirmación y refresco inmediato del listado tras borrar la fila de `dungeon_status` en Supabase.
+- La muerte permanente elimina ahora siempre la fila de sesión en Supabase, tanto en partidas individuales como multijugador, evitando partidas huérfanas que ya no pueden retomarse.
+- El snapshot de sesión guarda junto al piso el bundle actual del personaje, Soul Spikes, shards y objetos personalizados; al continuar se prioriza esta copia y se mantiene compatibilidad con sesiones antiguas que solo disponen de `user_pj`.
+- Reducida la carga de Supabase durante las partidas individuales de dos escrituras por turno a una: `dungeon_status` pasa a ser la fuente autoritativa de la partida en curso y se elimina el `PATCH` duplicado por turno sobre `user_pj` y los recálculos de agregados que provocaba.
+- La restauración conserva las nuevas propiedades de raza, sexo e icono al cargar el bundle exacto incluido en la sesión.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.66.0`.
+
 ## v0.65.2 - Umbrales definitivos de Soul Revive e iconos raciales
 
 - Soul Revive requiere ahora al menos 20 Soul Spikes: con 0-19 se aplica muerte permanente sin mostrar la oferta de resurrección.
