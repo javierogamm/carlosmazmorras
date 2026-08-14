@@ -1,3 +1,10 @@
+## v0.64.4 - Razas configuradas y modos predeterminados
+
+- Eliminado el catálogo racial legacy de la creación de personaje: las opciones proceden siempre de `config_razas` e incluyen la variante de icono correspondiente al sexo seleccionado.
+- La creación carga explícitamente las razas configuradas, informa cuando el catálogo está vacío y bloquea la creación hasta seleccionar una raza válida de la base de datos.
+- Marcados por defecto **Advanced Classes** y el modo de combate **Puntos de Acción (PA)**, conservando la posibilidad de elegir manualmente las alternativas.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.4`.
+
 ## v0.64.3 - Hotfix de inicio y guardado racial
 
 - Corregido el fallo crítico de sintaxis introducido en `0.64.2` que detenía por completo la carga de JavaScript y, por tanto, impedía iniciar sesión.

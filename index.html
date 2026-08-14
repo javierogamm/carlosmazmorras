@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.64.3 HOTFIX LOGIN</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.64.3">
+<title>MAZMORRA // BOTÍN v0.64.4 RAZAS CONFIGURADAS</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.64.4">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.64.3 HOTFIX LOGIN</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.64.4 RAZAS CONFIGURADAS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -175,7 +175,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.3 HOTFIX LOGIN</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.4 RAZAS CONFIGURADAS</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -830,13 +830,13 @@
 <div class="wizardViewport"><div class="wizardTrack" id="wizardTrack">
 <section class="wizardStep"><h3>1. Reglas de juego</h3><p class="small">Elige qué catálogo de clases usarás y cómo se resuelven los turnos.</p><h4>Clases</h4>
 <div class="skillModeChoice">
- <label><input type="radio" name="skillMode" id="skillModeHardcode" value="hardcode" checked> Hardcode <span class="small">Las 16 clases y skills clásicas del juego.</span></label>
- <label><input type="radio" name="skillMode" id="skillModeAdvanced" value="advanced"> Advanced Classes <span class="small">Solo clases y skills creadas en Configuración &gt; Clases (BDD), sin nada hardcodeado.</span></label>
+ <label><input type="radio" name="skillMode" id="skillModeHardcode" value="hardcode"> Hardcode <span class="small">Las 16 clases y skills clásicas del juego.</span></label>
+ <label><input type="radio" name="skillMode" id="skillModeAdvanced" value="advanced" checked> Advanced Classes <span class="small">Solo clases y skills creadas en Configuración &gt; Clases (BDD), sin nada hardcodeado.</span></label>
 </div>
 <h4>Combate</h4>
 <div class="skillModeChoice" id="combatModeChoice">
  <label><input type="radio" name="combatMode" id="combatModeClassic" value="classic"> Clásico <span class="small">Una acción por turno.</span></label>
- <label><input type="radio" name="combatMode" id="combatModeAp" value="ap"> Puntos de Acción (PA) <span class="small">Pool de PA por turno (30+AGI/2): varias acciones antes de pasar turno.</span></label>
+ <label><input type="radio" name="combatMode" id="combatModeAp" value="ap" checked> Puntos de Acción (PA) <span class="small">Pool de PA por turno (30+AGI/2): varias acciones antes de pasar turno.</span></label>
 </div>
 </section>
 <section class="wizardStep"><h3>2. Clase</h3><p class="small">Compara atributos y estilo. Selecciona una tarjeta para ver todos sus detalles.</p>
@@ -865,7 +865,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.64.3"></script>
+<script src="./src/game.js?v=0.64.4"></script>
 
 </body>
 </html>

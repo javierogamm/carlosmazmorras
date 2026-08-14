@@ -8,15 +8,15 @@ function applyCanvasSize(){CANVAS_SIZE=TILE*visibleTiles;canvas.width=CANVAS_SIZ
 applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
-let selectedRace='humano';
+let selectedRace=null;
 let selectedGender='male';
 // 'hardcode' = the 16 built-in classes/skills; 'advanced' = only classes
 // created in the admin editor (config_class), never a hardcoded fallback.
-let selectedSkillMode='hardcode';
-// Mandatory at character creation, no default: 'classic' (one action/turn)
-// or 'ap' (action-point pool). Mirrors/feeds worldParams().apMode via
+let selectedSkillMode='advanced';
+// 'classic' (one action/turn) or 'ap' (action-point pool), with PA selected
+// by default. Mirrors/feeds worldParams().apMode via
 // apModeOn() once the character exists - see start() and apModeOn().
-let selectedCombatMode=null;
+let selectedCombatMode='ap';
 let selectedDungeonWorld=null;
 let currentCharacter=null;
 let multiSessionId=null;
@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.64.3';
+const APP_VERSION='0.64.4';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -45,7 +45,10 @@ const DEFAULT_WORLD_PARAMS={damageReceivedPct:125,damageDealtPct:100,lifePct:125
 const ENEMY_DAMAGE_BASE_MULT=.55;
 const ENEMY_HP_BASE_MULT=.5;
 const tierDefs={common:{label:'Común',color:'#ddd'},uncommon:{label:'Infrecuente',color:'#75e39d'},rare:{label:'Raro',color:'#71b4ff'},epic:{label:'Épico',color:'#d68cff'},legendary:{label:'Legendario',color:'#ffb746'},artifact:{label:'Artefacto',color:'#ff4d4d'}};
-const raceDefs={"humano": {"name": "Humano Desafortunado", "origin": "Canalla", "desc": "No destaca en nada salvo en meterse donde no debe.", "trait": "+10% de experiencia.", "bonuses": {"xpMult": 1.1}}, "enano": {"name": "Enano de la Forja Negra", "origin": "Alta fantasía", "desc": "Terco, blindado y convencido de que todo problema admite un martillo.", "trait": "+3 de armadura y +8 de vida.", "bonuses": {"armor": 3, "maxHp": 8}}, "elfoNocturno": {"name": "Elfo de la Luna Rota", "origin": "Alta fantasía", "desc": "Un exiliado de los bosques plateados con demasiados enemigos y muy pocas disculpas.", "trait": "+2 AGI, +1 SAB y +4% de evasión.", "bonuses": {"agility": 2, "wisdom": 1, "dodge": 4}}, "orcoLibre": {"name": "Orco de Compañía Libre", "origin": "Alta fantasía", "desc": "Mercenario, duelista y saqueador profesional. Cobra por adelantado.", "trait": "+2 FUE y +1 VIT.", "bonuses": {"strength": 2, "vitality": 1}}, "draconido": {"name": "Dracónido de Brasa Azul", "origin": "Alta fantasía", "desc": "Su linaje promete dragones. De momento aporta humo, escamas y mal carácter.", "trait": "+1 FUE, +2 VIT y resistencia convertida en +2 armadura.", "bonuses": {"strength": 1, "vitality": 2, "armor": 2}}, "mediano": {"name": "Mediano Rompebolsas", "origin": "Canalla", "desc": "Pequeño, rápido y absolutamente incapaz de dejar un bolsillo sin revisar.", "trait": "+2 SUE, +1 AGI y +12% de hallazgo de rareza.", "bonuses": {"luck": 2, "agility": 1, "rarityFind": 12}}, "tiefling": {"name": "Tiefling de Taberna", "origin": "Alta fantasía", "desc": "Sangre infernal, sonrisa impecable y una deuda en cada reino conocido.", "trait": "+2 INT y +1 SUE.", "bonuses": {"intelligence": 2, "luck": 1}}, "silvano": {"name": "Silvano de Corteza Férrea", "origin": "Alta fantasía", "desc": "Un espíritu del bosque que aprendió que la diplomacia funciona mejor con raíces gruesas.", "trait": "+2 VIT, +1 SAB y regeneración de vida al cambiar de piso.", "bonuses": {"vitality": 2, "wisdom": 1, "floorHeal": 10}}, "sintetico": {"name": "Sintético de Callejón", "origin": "Ciberpunk", "desc": "Construido con piezas legales, ilegales y varias que niegan haberlo conocido.", "trait": "+1 INT, +1 AGI, +10 stamina y +8 maná.", "bonuses": {"intelligence": 1, "agility": 1, "maxStamina": 10, "maxMana": 8}}, "neonita": {"name": "Neonita del Subnivel", "origin": "Ciberpunk", "desc": "Mutante urbano criado bajo anuncios luminosos y tuberías que nunca dejaron de gotear.", "trait": "+2 AGI, +1 SUE y +6% de crítico.", "bonuses": {"agility": 2, "luck": 1, "critChance": 6}}, "gnomoCable": {"name": "Gnomo Cableado", "origin": "Ciberpunk", "desc": "Ingeniero diminuto con seis herramientas, tres implantes y cero respeto por las garantías.", "trait": "+2 INT, +1 SAB y regeneración superior de maná.", "bonuses": {"intelligence": 2, "wisdom": 1, "manaRegen": 3}}, "cambiapieles": {"name": "Cambiapieles de los Bajos Fondos", "origin": "Canalla", "desc": "Imita caras, voces y firmas. El problema es recordar cuál era la suya.", "trait": "+1 a AGI, SUE e INT; +5% de evasión.", "bonuses": {"agility": 1, "luck": 1, "intelligence": 1, "dodge": 5}}};
+// Character creation is fed exclusively by config_razas. There is no
+// built-in racial catalog: every selectable race includes its configured
+// male/female presentation and persisted rules.
+const raceDefs={};
 
 const classDefs={
  yunque:{name:'Yunque de Guerra',desc:'Tanque ofensivo que convierte armadura en daño y aguanta combates prolongados.',stats:{strength:4,vitality:5,agility:1,luck:2,intelligence:1,wisdom:3},skills:['smash','fortify'],resourceBias:'stamina'},
@@ -1612,6 +1615,8 @@ function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkill
 
 async function start(){
  if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
+ if(!configRacesLoaded)await fetchConfigRaces();
+ if(!selectedRace||!raceDefs[selectedRace]){alert('Selecciona una raza configurada antes de crear el personaje.');return}
  if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
  if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
  // Character creation can be reached while the catalog requests started by
@@ -8226,7 +8231,7 @@ function drawShardTierIconToCanvas(canvas,tier){
 const RACE_STAT_FIELDS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',maxHp:'Vida máxima',maxStamina:'Stamina máxima',maxMana:'Maná máximo',critChance:'Crítico %',critDamage:'Daño crítico %',dodge:'Evasión %',staminaRegen:'Regeneración stamina',manaRegen:'Regeneración maná',rarityFind:'Hallazgo rareza %',floorHeal:'Curación por piso',xpMult:'Multiplicador XP',apBonus:'PA adicionales',resourceCostPct:'Gasto de recursos %'};
 function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||`race_${row.id}`,bonuses={};for(const [k,v] of Object.entries(meta))if(!['raceKey','description','icon','iconMale','iconFemale'].includes(k)&&typeof v==='number')bonuses[k]=v;const skill=row.skill&&typeof row.skill==='object'?{...row.skill,id:row.skill.id||`${key}_racial`,raceSkill:true,raceKey:key}:null;const iconMale=meta.iconMale||meta.icon||'',iconFemale=meta.iconFemale||iconMale;return{key,name:row.nombre||key,desc:meta.description||'',origin:'Raza configurable',trait:Object.entries(bonuses).map(([k,v])=>`${RACE_STAT_FIELDS[k]||k}: ${v}`).join(' · ')||'Skill racial',icon:iconMale,iconMale,iconFemale,bonuses,skill,rowId:row.id}}
 function raceIconForId(id,gender=selectedGender){const race=raceDefs[id]||{};return gender==='female'?(race.iconFemale||race.iconMale||race.icon||''):(race.iconMale||race.icon||'')}
-function applyConfiguredRaces(){if(!configRaces.length)return;for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
+function applyConfiguredRaces(){for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
 async function fetchConfigRaces(){try{const r=await fetch('/api/config-class?kind=races'),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar razas');configRaces=Array.isArray(data)?data:[];configRacesLoaded=true;applyConfiguredRaces();renderConfigRaces()}catch(e){const st=document.getElementById('configRaceStatus');if(st)st.textContent=e.message}}
 function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()})}
 function raceStatsFromForm(){let extra={};const raw=document.getElementById('configRaceExtraStats').value.trim();if(raw)extra=JSON.parse(raw);for(const k of Object.keys(RACE_STAT_FIELDS)){const v=Number(document.querySelector(`[data-race-stat="${k}"]`)?.value);if(v)extra[k]=v;else delete extra[k]}return extra}
@@ -8692,6 +8697,7 @@ function openCharacterCreation(){
  nameInput.value='';
  setWizardStep(0);
  fetchConfigClasses();
+ fetchConfigRaces();
  if(!configGatesLoaded)fetchConfigGates();else{renderRaceChoices();renderClassChoices()}
 }
 
@@ -10640,6 +10646,7 @@ document.getElementById('wizardNextBtn')?.addEventListener('click',()=>{
 function renderRaceChoices(){
  const root=document.getElementById('raceChoices');if(!root)return;
  const raceIds=sortByGate('race',Object.keys(raceDefs));
+ if(!raceIds.length){selectedRace=null;root.innerHTML=`<p class="small">${configRacesLoaded?'No hay razas configuradas. Crea al menos una en Configuración → Razas.':'Cargando razas configuradas desde la base de datos...'}</p>`;return}
  if(!raceIds.includes(selectedRace))selectedRace=raceIds.find(id=>gateUnlocked('race',id))||raceIds[0];
  root.innerHTML=raceIds.map(id=>{
   const r=raceDefs[id],unlocked=gateUnlocked('race',id),g=gateFor('race',id);
