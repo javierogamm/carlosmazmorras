@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.66.0';
+const APP_VERSION='0.67.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -4302,20 +4302,20 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  const companion={
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
-  friendly:true,permanent:true,reserveResource:'mana',reservePct:20,sourceName:name,
+  friendly:true,permanent:!!custom?.permanent,reserveResource:'mana',reservePct:20,sourceName:name,
   // spawnTurn protects it from being picked as an enemy target for the rest
   // of the turn it was summoned on (see enemySingleAction) - a companion
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:true,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),ap:Math.max(10,(custom.actionsPerTurn||1)*10),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
    // Permanent companion (pet) command cost - what the player pays each time
    // they order it to act via issueCompanionCommand(), separate from
    // whatever the original summon itself cost. orderTarget starts empty:
    // the pet just follows until commanded (see companionTurn()).
    commandResource:custom.commandResource==='stamina'?'stamina':'mana',commandCost:Math.max(0,custom.commandCost??0),reserveResource:['hp','stamina'].includes(custom.reserveResource)?custom.reserveResource:'mana',reservePct:Math.max(1,Math.min(100,Number(custom.reservePct)||20)),sourceName:custom.sourceName||name,orderTarget:null}:{})
  };
- if(!reserveCompanionResource(companion))return null;
+ if(companion.permanent&&!reserveCompanionResource(companion))return null;
  game.companions.push(companion);
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
  return companion
@@ -4639,7 +4639,9 @@ function companionTurn(){
    // branches on top of the mobile-summon damage/heal-self/root ones below,
    // gated on c.stationary so regular summons and clones keep behaving
    // exactly as before.
-   for(let n=0;n<(c.actionsPerTurn||1);n++){
+   c.ap=Math.max(10,(c.actionsPerTurn||1)*10);
+   while(c.ap>=10){
+    c.ap-=10;
     // Passive stance: never fights, just stays near the player - checked
     // before any of the combat branches below. Every action either closes a
     // tile of distance or, once adjacent, stops - it doesn't burn the rest
@@ -5273,7 +5275,7 @@ function startPlayerAP(){
  if(game?.player)game.player.ap=playerMaxAP();
  for(const c of game?.companions||[]){
   if(c.hp<=0)continue;
-  c.ap=companionMaxAp();
+  c.ap=c.permanent?companionMaxAp():Math.max(10,(c.actionsPerTurn||1)*10);
   if(c.permanent&&c.effectType&&c.orderTarget)companionResolveOrder(c);
  }
 }
@@ -5281,7 +5283,7 @@ function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
  if(game.player.ap==null)startPlayerAP();
  if(game.player.ap>=cost)return true;
- log(`Sin puntos de acción para ${kind==='move'?'moverte':'esa acción'} (${game.player.ap} PA). Pasa turno.`,'sys');
+ log('No tienes PA suficientes.','sys');
  return false;
 }
 // Replaces the old per-action playerFinished(): spends points and keeps the turn.
@@ -5688,6 +5690,7 @@ function validateTargetCell(x,y,range,minRange=1){const dist=gridDistance(game.p
 function targetedSkillDamage(id){const d=skillDefs[id],lvl=skillLevel(id),stat=d.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3;return Math.round((5+lvl*2+stat)*skillPowerMultiplier(id))}
 function resolveTargetedSkill(slot,x,y){
  const id=game.player.equippedSkills[slot],d=skillDefs[id];if(!id||!d)return false;
+ if(!apCan('skill',skillApCost(id)))return false;
  const range=effectiveSkillRange(id)||1,mode0=skillTargetMode(id);
  if(!validateTargetCell(x,y,range,mode0==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
@@ -5738,7 +5741,6 @@ function resolveTargetedSkill(slot,x,y){
   used=true;
  }
  if(!used)return false;
- if(!apCan('skill',skillApCost(id)))return false;
  game.player[d.resource]-=targetedCost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
 }
 function beginBasicAttack(){
@@ -5768,6 +5770,7 @@ function useSkill(slot){
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
  if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
+ if(!apCan('skill',skillApCost(id)))return;
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:effectiveSkillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  if(hasEffectsList(id)){
@@ -5777,7 +5780,6 @@ function useSkill(slot){
   const visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
   const used=applySkillEffectsList(id,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
   if(!used){log('No hay un objetivo válido.','sys');return}
-  if(!apCan('skill',skillApCost(id)))return;
   game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
   return
  }
@@ -5865,7 +5867,6 @@ function useSkill(slot){
  }
 
  if(!used){log('No hay un objetivo válido.','sys');return}
- if(!apCan('skill',skillApCost(id)))return;
  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
