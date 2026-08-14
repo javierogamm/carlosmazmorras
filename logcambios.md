@@ -1,17 +1,3 @@
-## v0.67.3 - Acceso estable tras autenticar
-
-- Corregido el bucle que devolvía al formulario después de introducir credenciales válidas: la sincronización secundaria de nivel y puntuación ya no puede invalidar el login si Supabase responde al `PATCH` sin cuerpo, con una lista vacía o con una política RLS restrictiva.
-- Los agregados se calculan y se devuelven inmediatamente con el usuario autenticado; su persistencia queda como una actualización secundaria tolerante a fallos, sin bloquear el acceso.
-- El formulario de login interpreta ahora también respuestas vacías, de texto o HTML y presenta un mensaje legible en lugar de fallar al forzar `response.json()`.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.3`.
-
-## v0.67.2 - Guardado compatible de Objetos del mundo
-
-- Corregido el guardado de iconos fijos nuevos, incluido **Soul Spike**: la API ya no depende de que `object_key` tenga una restricción `UNIQUE` en instalaciones antiguas de `config_world_object`.
-- El guardado busca primero la fila por `object_key`; si existe la actualiza por su `id` y, si no existe, la crea explícitamente. Se mantiene así la compatibilidad sin exigir una migración de la base de datos.
-- Mejorada la lectura de errores al guardar iconos y assets para mostrar una respuesta legible aunque la infraestructura devuelva texto o HTML en lugar de JSON.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.2`.
-
 ## v0.67.1 - Guardado de iconos y costes de PA de invocaciones
 
 - Corregido el guardado de imágenes de Objetos del mundo, salas, shards y assets: el editor termina ahora la conversión PNG a hexadecimal de forma síncrona antes de permitir que el botón de guardado lea el icono.
