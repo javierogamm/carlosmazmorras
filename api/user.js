@@ -14,15 +14,19 @@ function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config,
 // aggregates went stale (character saved before this feature existed, a
 // write that raced/failed, etc.) without needing a manual backfill.
 async function syncUserAggregates(url,key,nombre,row){
- const r=await fetch(`${url}/rest/v1/${USER_PJ_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
- const chars=await r.json();
- if(!r.ok||!Array.isArray(chars))return row;
- const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.pj_json?.player?.level)||1),0);
- const totalScore=chars.reduce((s,c)=>s+(Number(c.pj_score)||0),0);
- const patched=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify({max_pj_lv:maxLevel,accumulated_points:totalScore})});
- const data=await patched.json();
- if(!patched.ok)return row;
- return Array.isArray(data)?data[0]:data;
+ try{
+  const r=await fetch(`${url}/rest/v1/${USER_PJ_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
+  const chars=await r.json();
+  if(!r.ok||!Array.isArray(chars))return row;
+  const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.pj_json?.player?.level)||1),0);
+  const totalScore=chars.reduce((s,c)=>s+(Number(c.pj_score)||0),0);
+  const fresh={...row,max_pj_lv:maxLevel,accumulated_points:totalScore};
+  // Aggregate persistence is best-effort and must never invalidate valid
+  // credentials. Supabase may return 204/empty data (or [] under restrictive
+  // RLS) even when the PATCH succeeds, so do not parse or return that body.
+  await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=minimal'},body:JSON.stringify({max_pj_lv:maxLevel,accumulated_points:totalScore})});
+  return fresh;
+ }catch{return row}
 }
 
 module.exports=async(req,res)=>{

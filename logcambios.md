@@ -1,3 +1,32 @@
+## v0.67.3 - Acceso estable tras autenticar
+
+- Corregido el bucle que devolvía al formulario después de introducir credenciales válidas: la sincronización secundaria de nivel y puntuación ya no puede invalidar el login si Supabase responde al `PATCH` sin cuerpo, con una lista vacía o con una política RLS restrictiva.
+- Los agregados se calculan y se devuelven inmediatamente con el usuario autenticado; su persistencia queda como una actualización secundaria tolerante a fallos, sin bloquear el acceso.
+- El formulario de login interpreta ahora también respuestas vacías, de texto o HTML y presenta un mensaje legible en lugar de fallar al forzar `response.json()`.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.3`.
+
+## v0.67.2 - Guardado compatible de Objetos del mundo
+
+- Corregido el guardado de iconos fijos nuevos, incluido **Soul Spike**: la API ya no depende de que `object_key` tenga una restricción `UNIQUE` en instalaciones antiguas de `config_world_object`.
+- El guardado busca primero la fila por `object_key`; si existe la actualiza por su `id` y, si no existe, la crea explícitamente. Se mantiene así la compatibilidad sin exigir una migración de la base de datos.
+- Mejorada la lectura de errores al guardar iconos y assets para mostrar una respuesta legible aunque la infraestructura devuelva texto o HTML en lugar de JSON.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.2`.
+
+## v0.67.1 - Guardado de iconos y costes de PA de invocaciones
+
+- Corregido el guardado de imágenes de Objetos del mundo, salas, shards y assets: el editor termina ahora la conversión PNG a hexadecimal de forma síncrona antes de permitir que el botón de guardado lea el icono.
+- Limitados preventivamente los iconos fijos a 256 px y los assets de decoración a 512 px en su lado mayor, conservando su proporción y evitando que una imagen original demasiado grande exceda el tamaño admitido por la petición o la base de datos.
+- Ajustado el turno autónomo de las invocaciones para que cada casilla de movimiento consuma 5 PA y cada ataque, curación, buff o habilidad consuma 10 PA.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.1`.
+
+## v0.67.0 - Invocaciones autónomas y control de PA
+
+- Separadas las invocaciones temporales de los compañeros permanentes: las criaturas invocadas actúan de forma autónoma en el bando del personaje, eligen objetivos, atacan, curan o aplican su efecto configurado sin esperar órdenes.
+- Cada invocación dispone ahora de su propia reserva de PA, calculada desde el valor configurado, y consume 10 PA por cada acción autónoma durante su turno.
+- Los compañeros permanentes conservan su sistema de órdenes y reserva de recursos; las invocaciones temporales ya no se registran erróneamente como permanentes ni reservan recursos del personaje.
+- Todas las habilidades, incluidas las raciales y las que requieren seleccionar objetivo, comprueban los PA antes de ejecutar cualquier efecto. Si faltan PA se muestra `No tienes PA suficientes.` y la habilidad no se lanza ni consume recursos.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.67.0`.
+
 ## v0.66.0 - Sesiones compatibles y más ligeras
 
 - Añadido un botón **ELIMINAR** a cada partida guardada del jugador, con confirmación y refresco inmediato del listado tras borrar la fila de `dungeon_status` en Supabase.

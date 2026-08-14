@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.66.0';
+const APP_VERSION='0.67.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -4302,20 +4302,20 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  const companion={
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
   turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
-  friendly:true,permanent:true,reserveResource:'mana',reservePct:20,sourceName:name,
+  friendly:true,permanent:!!custom?.permanent,reserveResource:'mana',reservePct:20,sourceName:name,
   // spawnTurn protects it from being picked as an enemy target for the rest
   // of the turn it was summoned on (see enemySingleAction) - a companion
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:true,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),ap:Math.max(10,(custom.actionsPerTurn||1)*10),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
    // Permanent companion (pet) command cost - what the player pays each time
    // they order it to act via issueCompanionCommand(), separate from
    // whatever the original summon itself cost. orderTarget starts empty:
    // the pet just follows until commanded (see companionTurn()).
    commandResource:custom.commandResource==='stamina'?'stamina':'mana',commandCost:Math.max(0,custom.commandCost??0),reserveResource:['hp','stamina'].includes(custom.reserveResource)?custom.reserveResource:'mana',reservePct:Math.max(1,Math.min(100,Number(custom.reservePct)||20)),sourceName:custom.sourceName||name,orderTarget:null}:{})
  };
- if(!reserveCompanionResource(companion))return null;
+ if(companion.permanent&&!reserveCompanionResource(companion))return null;
  game.companions.push(companion);
  reveal(pos.x,pos.y,2);draw();log(`${name} aparece en (${pos.x}, ${pos.y}) y luchará a tu lado ${turns===Infinity?'de forma permanente':`durante ${turns} turnos`}.`,'good')
  return companion
@@ -4639,13 +4639,18 @@ function companionTurn(){
    // branches on top of the mobile-summon damage/heal-self/root ones below,
    // gated on c.stationary so regular summons and clones keep behaving
    // exactly as before.
-   for(let n=0;n<(c.actionsPerTurn||1);n++){
+   c.ap=Math.max(10,(c.actionsPerTurn||1)*10);
+   while(c.ap>=5){
     // Passive stance: never fights, just stays near the player - checked
     // before any of the combat branches below. Every action either closes a
     // tile of distance or, once adjacent, stops - it doesn't burn the rest
     // of the turn's PA doing nothing.
-    if(c.stance==='passive'){if(companionApproachOrStop(c))break;continue}
+    if(c.stance==='passive'){
+     if(c.stationary||gridDistance(c,game.player)<=1)break;
+     c.ap-=5;moveCompanionToward(c,game.player);continue
+    }
     if(c.stationary&&c.effectType==='heal'){
+     if(c.ap<10)break;c.ap-=10;
      const power=companionDicePower(c),radius=c.range||3;
      const allies=[game.player,...(game.companions||[]).filter(o=>o!==c&&o.hp>0)].filter(a=>gridDistance(c,a)<=radius);
      for(const a of allies)healEntity(a,power,a.x,a.y);
@@ -4659,25 +4664,27 @@ function companionTurn(){
     // enemies, so it just stays near the player instead (stopping once
     // adjacent rather than idling through its remaining PA).
     if(c.effectType==='buff'){
+     if(c.ap<10)break;c.ap-=10;
      if(c.buffStat)applyBuff(`companionBuff:${c.id}`,c.name,3,{[c.buffStat]:{mode:c.buffMode||'add',value:c.buffValue??5}});
-     if(!c.stationary&&companionApproachOrStop(c))break;
+     if(!c.stationary&&gridDistance(c,game.player)>1&&c.ap>=5){c.ap-=5;moveCompanionToward(c,game.player)}
      continue
     }
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
      const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
-     if(!targets.length)continue;
+     if(!targets.length||c.ap<10)break;c.ap-=10;
      for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
-    if(c.effectType==='heal'){healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
+    if(c.effectType==='heal'){if(c.ap<10)break;c.ap-=10;healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
     // Combat priority: only enemies within COMPANION_ENGAGE_RADIUS are ever
     // considered - anything farther is ignored outright rather than pulling
     // the companion off across the map. With no such target, fall back to
     // closing in on the player (and stop the turn once adjacent) instead of
     // standing still.
     const target=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-    if(!target){if(companionApproachOrStop(c))break;continue}
-    if(gridDistance(c,target)>c.range){if(c.stationary)break;moveCompanionToward(c,target);continue}
+    if(!target){if(c.stationary||gridDistance(c,game.player)<=1)break;c.ap-=5;moveCompanionToward(c,game.player);continue}
+    if(gridDistance(c,target)>c.range){if(c.stationary)break;c.ap-=5;moveCompanionToward(c,target);continue}
+    if(c.ap<10)break;c.ap-=10;
     if(c.effectType==='root'){addEnemyStatus(target,'root',c.effectTurns||2,0,c.name);floating('◆',c.x,c.y,'#b26bff')}
     else if(c.effectType==='debuff'){if(c.buffStat)applyEnemyStatDebuff(target,c.buffStat,c.buffMode||'add',c.buffValue??2,c.effectTurns||2,c.name);floating('▼',c.x,c.y,'#ff8a8a')}
     // 'skill' invocations run their own inline stackable-effects list
@@ -5273,7 +5280,7 @@ function startPlayerAP(){
  if(game?.player)game.player.ap=playerMaxAP();
  for(const c of game?.companions||[]){
   if(c.hp<=0)continue;
-  c.ap=companionMaxAp();
+  c.ap=c.permanent?companionMaxAp():Math.max(10,(c.actionsPerTurn||1)*10);
   if(c.permanent&&c.effectType&&c.orderTarget)companionResolveOrder(c);
  }
 }
@@ -5281,7 +5288,7 @@ function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
  if(game.player.ap==null)startPlayerAP();
  if(game.player.ap>=cost)return true;
- log(`Sin puntos de acción para ${kind==='move'?'moverte':'esa acción'} (${game.player.ap} PA). Pasa turno.`,'sys');
+ log('No tienes PA suficientes.','sys');
  return false;
 }
 // Replaces the old per-action playerFinished(): spends points and keeps the turn.
@@ -5688,6 +5695,7 @@ function validateTargetCell(x,y,range,minRange=1){const dist=gridDistance(game.p
 function targetedSkillDamage(id){const d=skillDefs[id],lvl=skillLevel(id),stat=d.resource==='mana'?game.player.stats.intelligence+game.player.stats.wisdom/2:game.player.stats.strength+game.player.stats.agility/3;return Math.round((5+lvl*2+stat)*skillPowerMultiplier(id))}
 function resolveTargetedSkill(slot,x,y){
  const id=game.player.equippedSkills[slot],d=skillDefs[id];if(!id||!d)return false;
+ if(!apCan('skill',skillApCost(id)))return false;
  const range=effectiveSkillRange(id)||1,mode0=skillTargetMode(id);
  if(!validateTargetCell(x,y,range,mode0==='ally'?0:1)){log(`Objetivo fuera de alcance o sin línea de visión (${range}).`,'sys');return false}
  const cd=game.player.cooldowns[id]||0;
@@ -5738,7 +5746,6 @@ function resolveTargetedSkill(slot,x,y){
   used=true;
  }
  if(!used)return false;
- if(!apCan('skill',skillApCost(id)))return false;
  game.player[d.resource]-=targetedCost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
 }
 function beginBasicAttack(){
@@ -5768,6 +5775,7 @@ function useSkill(slot){
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
  if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
+ if(!apCan('skill',skillApCost(id)))return;
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:effectiveSkillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
  if(hasEffectsList(id)){
@@ -5777,7 +5785,6 @@ function useSkill(slot){
   const visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
   const used=applySkillEffectsList(id,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
   if(!used){log('No hay un objetivo válido.','sys');return}
-  if(!apCan('skill',skillApCost(id)))return;
   game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
   return
  }
@@ -5865,7 +5872,6 @@ function useSkill(slot){
  }
 
  if(!used){log('No hay un objetivo válido.','sys');return}
- if(!apCan('skill',skillApCost(id)))return;
  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
 function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
@@ -7751,7 +7757,7 @@ function loadWorldObjectForEdit(objectKey){
  document.getElementById('configWorldObjectIconStatus').textContent=window.currentConfigWorldObjectIconHex?'Icono personalizado activo.':'Sin icono: usará el sprite por defecto.';
 }
 function setupConfigWorldObjectsMode(){
- setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto'});
+ setupImageIconEditor({inputId:'configWorldObjectImageInput',canvasId:'configWorldObjectCropCanvas',previewId:'configWorldObjectIconPreview',statusId:'configWorldObjectIconStatus',zoomId:'configWorldObjectCropZoom',eraserId:'configWorldObjectMagicEraserBtn',toleranceId:'configWorldObjectMagicTolerance',hexKey:'currentConfigWorldObjectIconHex',statusPrefix:'Icono objeto',maxSize:256});
  renderConfigWorldObjectsList();
  document.getElementById('saveConfigWorldObjectBtn').onclick=async()=>{
   const st=document.getElementById('configWorldObjectStatus'),objectKey=window.editingWorldObjectKey;
@@ -7759,7 +7765,7 @@ function setupConfigWorldObjectsMode(){
   st.textContent='Guardando icono...';
   try{
    const r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({object_key:objectKey,icon:window.currentConfigWorldObjectIconHex||''})});
-   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
+   const data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar el icono');
    configWorldObjects[objectKey]=window.currentConfigWorldObjectIconHex||'';
    renderConfigWorldObjectsList();
    st.textContent='Icono guardado.';
@@ -7877,7 +7883,7 @@ async function deleteConfigAsset(objectKey){
  }catch(e){if(st)st.textContent=e.message}
 }
 function setupConfigAssetsMode(){
- const assetIconEditor=setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset',onSave:renderConfigAssetGrid,aspect:()=>{const {cols,rows}=currentAssetGridDims();return{w:cols,h:rows}}});
+ const assetIconEditor=setupImageIconEditor({inputId:'configAssetImageInput',canvasId:'configAssetCropCanvas',previewId:'configAssetIconPreview',statusId:'configAssetIconStatus',zoomId:'configAssetCropZoom',eraserId:'configAssetMagicEraserBtn',toleranceId:'configAssetMagicTolerance',hexKey:'currentConfigAssetIconHex',statusPrefix:'Icono asset',onSave:renderConfigAssetGrid,aspect:()=>{const {cols,rows}=currentAssetGridDims();return{w:cols,h:rows}},maxSize:512});
  renderConfigAssetsList();
  renderConfigAssetGrid();
  const onGridSizeChange=()=>{assetIconEditor?.reclamp?.();renderConfigAssetGrid()};
@@ -7907,7 +7913,7 @@ function setupConfigAssetsMode(){
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
-   const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar el asset');
+   const data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar el asset');
    const row=Array.isArray(data)?data[0]:data;
    configWorldObjectRows[row.object_key]=row;configWorldObjects[row.object_key]=row.icon||'';
    window.editingAssetKey=row.object_key;
@@ -8330,7 +8336,11 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
   if(outline)addIconSilhouetteBorder(out,2);
   preview.width=o.w;preview.height=o.h;
   const pc=preview.getContext('2d');pc.clearRect(0,0,o.w,o.h);pc.drawImage(out,0,0);
-  fetch(out.toDataURL('image/png')).then(r=>r.arrayBuffer()).then(buf=>{window[hexKey]=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');if(status)status.textContent=`${statusPrefix} ${o.w}x${o.h} desde x:${rect.x}, y:${rect.y}`;if(onSave)onSave()})
+  const binary=atob(out.toDataURL('image/png').split(',')[1]||'');
+  let hex='';for(let i=0;i<binary.length;i++)hex+=binary.charCodeAt(i).toString(16).padStart(2,'0');
+  window[hexKey]=hex;
+  if(status)status.textContent=`${statusPrefix} ${o.w}x${o.h} desde x:${rect.x}, y:${rect.y}`;
+  if(onSave)onSave();
  }
  function eraseAt(p){const c=source.getContext('2d'),dataObj=c.getImageData(0,0,source.width,source.height),data=dataObj.data,x=Math.max(0,Math.min(source.width-1,Math.round(p.x))),y=Math.max(0,Math.min(source.height-1,Math.round(p.y))),idx=(y*source.width+x)*4,base=[data[idx],data[idx+1],data[idx+2]],tol=Number(tolerance?.value||38);for(let i=0;i<data.length;i+=4){if(Math.hypot(data[i]-base[0],data[i+1]-base[1],data[i+2]-base[2])<=tol)data[i+3]=0}c.putImageData(dataObj,0,0);drawCrop();saveIcon();if(status)status.textContent=`Magic eraser aplicado con sutileza ${tol}.`}
  function updateDrag(e){
@@ -10657,7 +10667,7 @@ document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
 menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
-loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
 backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
 
