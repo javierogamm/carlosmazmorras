@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.67.1';
+const APP_VERSION='0.68.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -7780,6 +7780,23 @@ function setupConfigWorldObjectsMode(){
 }
 // ---- Decoration assets (config_world_object, object_key prefix asset_) ----
 function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
+function configAssetEnvironmentJson(ambiente,assets){
+ const rows=assets.map(a=>{
+  const blockedTiles=a.mask.flat().filter(Boolean).length,totalTiles=a.cols*a.rows;
+  return {objectKey:a.key,name:a.name,tiles:{columns:a.cols,rows:a.rows,total:totalTiles},collision:{encoding:'boolean-matrix (true=bloqueado, false=transitable)',blockedTiles,walkableTiles:totalTiles-blockedTiles,mask:a.mask.map(row=>[...row])}};
+ });
+ const totalTiles=rows.reduce((sum,a)=>sum+a.tiles.total,0),blockedTiles=rows.reduce((sum,a)=>sum+a.collision.blockedTiles,0);
+ return {schemaVersion:1,type:'world-object-environment',appVersion:APP_VERSION,ambiente:ambiente==='Sin ambiente'?null:ambiente,assetCount:rows.length,summary:{totalTiles,blockedTiles,walkableTiles:totalTiles-blockedTiles,maxColumns:Math.max(0,...rows.map(a=>a.tiles.columns)),maxRows:Math.max(0,...rows.map(a=>a.tiles.rows))},assets:rows};
+}
+function downloadConfigAssetEnvironments(selectedEnvironment){
+ const assets=listConfigAssets(),grouped=assets.reduce((acc,a)=>{const key=a.ambiente||'Sin ambiente';(acc[key]??=[]).push(a);return acc},{});
+ const keys=selectedEnvironment===undefined?Object.keys(grouped).sort((a,b)=>a.localeCompare(b,'es')):[selectedEnvironment];
+ const environments=keys.filter(key=>grouped[key]?.length).map(key=>configAssetEnvironmentJson(key,grouped[key]));
+ const payload=selectedEnvironment===undefined?{schemaVersion:1,type:'world-object-environments',appVersion:APP_VERSION,environmentCount:environments.length,environments}:environments[0];
+ if(!payload){document.getElementById('configAssetStatus').textContent='Ese ambiente ya no contiene assets.';return}
+ const safeName=(selectedEnvironment||'todos-los-ambientes').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9_-]+/gi,'-').replace(/^-+|-+$/g,'').toLowerCase()||'sin-ambiente';
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`objetos-mundo-${safeName}.json`;a.click();URL.revokeObjectURL(a.href);
+}
 function renderConfigAssetsList(){
  const root=document.getElementById('configAssetsList');if(!root)return;
  const assets=listConfigAssets();
@@ -7789,10 +7806,11 @@ function renderConfigAssetsList(){
   const orderedKeys=Object.keys(grouped).sort((a,b)=>a==='Sin ambiente'?1:b==='Sin ambiente'?-1:a.localeCompare(b,'es'));
   // Collapsed by default (unlike other config accordions): with many
   // ambientes the saved-assets panel would otherwise open fully expanded.
-  root.innerHTML=orderedKeys.map(key=>`<details class="configSlotGroup"><summary><span>${key}</span><b>${grouped[key].length}</b></summary><div class="configSlotItems">${grouped[key].map(renderConfigAssetRow).join('')}</div></details>`).join('');
+  root.innerHTML=orderedKeys.map(key=>`<details class="configSlotGroup"><summary><span>${key}</span><b>${grouped[key].length}</b><button type="button" data-export-asset-environment="${encodeURIComponent(key)}">Exportar JSON</button></summary><div class="configSlotItems">${grouped[key].map(renderConfigAssetRow).join('')}</div></details>`).join('');
  }
  root.querySelectorAll('[data-edit-asset]').forEach(b=>b.onclick=()=>loadAssetForEdit(b.dataset.editAsset));
  root.querySelectorAll('[data-delete-asset]').forEach(b=>b.onclick=()=>deleteConfigAsset(b.dataset.deleteAsset));
+ root.querySelectorAll('[data-export-asset-environment]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();downloadConfigAssetEnvironments(decodeURIComponent(b.dataset.exportAssetEnvironment))});
  renderConfigAssetAmbienteOptions(assets);
 }
 // Datalist of every distinct ambiente already used across saved assets, so
@@ -7923,6 +7941,7 @@ function setupConfigAssetsMode(){
   }catch(e){st.textContent=e.message}
  };
  document.getElementById('newConfigAssetBtn').onclick=resetConfigAssetForm;
+ document.getElementById('exportConfigAssetEnvironmentsBtn').onclick=()=>downloadConfigAssetEnvironments();
 }
 
 // ============================================================================
