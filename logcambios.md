@@ -1,3 +1,11 @@
+## v0.70.0 - Importación, exportación y guardado compatible de dungeons
+
+- Consolidado el ciclo de exportar, importar y guardar dungeons: los archivos importados se tratan siempre como copias nuevas y nunca reutilizan por accidente el identificador de la fila exportada.
+- Al guardar una dungeon importada se conserva su JSON completo, incluidos mapas y geometría pregenerada, actualizando únicamente los parámetros editables, historias, nombre y versión de la app en lugar de regenerarla.
+- Ampliada la importación para reconocer tanto el formato exportado actual (`world_json`) como documentos raíz y envoltorios antiguos `world` o `dungeon`.
+- Añadido un fallback en la API para editar dungeons antiguas en instalaciones de Supabase que todavía no dispongan de la RPC `patch_dungeon_world_json`; se relee la versión autoritativa y se aplican los cambios antes del `PATCH` REST.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.70.0`.
+
 ## v0.69.0 - Carga mínima de assets y guardado de bloqueos
 
 - Reducida la carga inicial de Objetos del mundo en Configuración: el listado solicita únicamente metadatos y descarga la imagen pesada de cada objeto o asset solo al abrirlo para editar.
