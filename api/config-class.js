@@ -62,7 +62,17 @@ async function handleGates(req,res,url,key){
   const gateKey=String(req.body?.key||'');
   if(!['race','class'].includes(type)||!gateKey)return res.status(400).json({error:'Falta type (race/class) o key'});
   const row={type,key:gateKey,min_level:Number(req.body?.min_level)||0,min_points:Number(req.body?.min_points)||0};
-  const r=await fetch(`${url}/rest/v1/${GATES_TABLE}?on_conflict=type,key`,{method:'POST',headers:{...headers(key),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(row)});
+  // Older installations do not necessarily have the composite UNIQUE
+  // constraint required by PostgREST upsert. Locate the row explicitly so
+  // both the update and insert paths work with either database schema.
+  const lookup=await fetch(`${url}/rest/v1/${GATES_TABLE}?select=type&type=eq.${encodeURIComponent(type)}&key=eq.${encodeURIComponent(gateKey)}&limit=1`,{headers:headers(key)});
+  const matches=await lookup.json();
+  if(!lookup.ok)return res.status(lookup.status).json(matches);
+  const exists=Array.isArray(matches)&&matches.length>0;
+  const endpoint=exists
+   ?`${url}/rest/v1/${GATES_TABLE}?type=eq.${encodeURIComponent(type)}&key=eq.${encodeURIComponent(gateKey)}`
+   :`${url}/rest/v1/${GATES_TABLE}`;
+  const r=await fetch(endpoint,{method:exists?'PATCH':'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(Array.isArray(data)?data[0]:data);

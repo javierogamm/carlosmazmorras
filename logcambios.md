@@ -1,3 +1,10 @@
+## v0.69.0 - Carga mínima de assets y guardado de bloqueos
+
+- Reducida la carga inicial de Objetos del mundo en Configuración: el listado solicita únicamente metadatos y descarga la imagen pesada de cada objeto o asset solo al abrirlo para editar.
+- Añadida consulta individual de objetos del mundo para completar sus datos bajo demanda sin volver a descargar el catálogo completo.
+- Corregido exclusivamente el guardado `PUT` de bloqueos de unlock: ahora localiza la combinación raza/clase y clave, actualiza con `PATCH` si existe o crea con `POST` si falta, sin depender de una restricción única ausente en instalaciones antiguas.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.69.0`.
+
 ## v0.68.0 - Contrato de dungeons y exportación de ambientes
 
 - Añadida una guía exhaustiva para generación de dungeons JSON mediante IA, con el contrato raíz, parámetros, todos los tipos de sala y piso, geometrías, objetivos, enemigos, loot, cofres, tilesets, assets, validaciones y prompt recomendado.

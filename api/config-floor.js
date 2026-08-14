@@ -26,7 +26,10 @@ const ASSET_KEY_PREFIX='asset_';
 
 async function handleWorldObjects(req,res,url,key){
  if(req.method==='GET'){
-  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=id,object_key,icon,name,tiles_number,tiles_mask,ambiente&order=object_key.asc`,{headers:headers(key)});
+  const objectKey=req.query?.object_key;
+  const select=req.query?.minimal==='1'?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
+  const filter=objectKey?`&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`:'';
+  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(data);
