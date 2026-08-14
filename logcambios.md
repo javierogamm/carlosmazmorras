@@ -1,3 +1,10 @@
+## v0.64.2 - Guardado de iconos raciales optimizado
+
+- Limitada a 128 px la dimensión máxima de cada icono racial, incluyendo la compactación de iconos antiguos al volver a guardar, para evitar que dos imágenes de alta resolución superen el límite de la petición.
+- Mejorado el manejo de respuestas no JSON al guardar razas, mostrando un error legible en lugar de `Unexpected token` cuando la infraestructura rechaza una petición.
+- Igualado el acabado visual del botón Volver del asistente de creación con el botón Siguiente.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.2`.
+
 ## v0.64.1 - Iconos de raza por sexo
 
 - Añadido al configurador de razas el selector completo de icono masculino y femenino, cada uno con carga, recorte, zoom, Magic eraser y previsualización independientes.
