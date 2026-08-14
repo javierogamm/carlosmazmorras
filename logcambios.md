@@ -1,3 +1,11 @@
+## v0.65.2 - Umbrales definitivos de Soul Revive e iconos raciales
+
+- Soul Revive requiere ahora al menos 20 Soul Spikes: con 0-19 se aplica muerte permanente sin mostrar la oferta de resurrección.
+- Con 20-49 Soul Spikes se conserva 1 y el personaje vuelve al inicio del piso 1 con enemigos regenerados y loot/cofres preservados; con 50 o más se conservan 10 y revive en la misma casilla sin regenerar enemigos.
+- La creación guarda en el propio personaje el icono exacto de la combinación raza/sexo elegida, evitando depender de una selección global o de una carga posterior del catálogo.
+- Sustituidas las etiquetas de imagen directa de las miniaturas por canvases que decodifican el formato real de iconos del configurador; se corrigen así las imágenes rotas en la ficha y en el HUD.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.2`.
+
 ## v0.65.1 - Rutas de resurrección por saldo de souls
 
 - Corregido el destino del Soul Revive: con 10-49 souls el personaje revive en la misma casilla y conserva 1; con 50 o más revive también en el mismo lugar y conserva 10, sin regenerar enemigos.
