@@ -1,3 +1,10 @@
+## v0.64.1 - Iconos de raza por sexo
+
+- Añadido al configurador de razas el selector completo de icono masculino y femenino, cada uno con carga, recorte, zoom, Magic eraser y previsualización independientes.
+- Persistidos ambos iconos en la configuración de raza manteniendo compatibilidad con el campo de icono único anterior.
+- La creación de personaje muestra en las tarjetas raciales el icono correspondiente al sexo elegido; si falta el femenino, reutiliza el masculino.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.1`.
+
 ## v0.64.0 - Sexo y creación de personaje por pasos
 
 - Añadida la elección estética de sexo masculino o femenino al personaje y persistida en su estado, sin modificar estadísticas, habilidades ni reglas de juego.

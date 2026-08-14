@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.64.0 CREACIÓN POR PASOS</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.64.0">
+<title>MAZMORRA // BOTÍN v0.64.1 ICONOS DE RAZA</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.64.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.64.0 CREACIÓN POR PASOS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.64.1 ICONOS DE RAZA</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName">HÉROE</h2><div class="small build" id="buildLabel"></div>
@@ -175,7 +175,7 @@
 </div>
 
 <div class="configScreen hidden" id="configScreen">
- <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.0 CREACIÓN POR PASOS</div></header>
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.1 ICONOS DE RAZA</div></header>
  <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
@@ -335,8 +335,11 @@
      <div class="configItemActions"><select id="configRaceEffectKindPicker"></select><button type="button" id="addRaceEffectBtn">AÑADIR EFECTO →</button></div>
      <div id="configRaceEffectsList" class="effectsList"></div>
     </details>
-    <details class="configAccordion"><summary>Icono de raza</summary>
-     <label>Imagen <input type="file" id="configRaceImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceIconPreview" width="50" height="50"></canvas><span id="configRaceIconStatus" class="small">Sin icono.</span></div>
+    <details class="configAccordion"><summary>Iconos de raza por sexo</summary>
+     <h3>Icono masculino</h3>
+     <label>Imagen <input type="file" id="configRaceImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceIconPreview" width="50" height="50"></canvas><span id="configRaceIconStatus" class="small">Sin icono masculino.</span></div>
+     <h3>Icono femenino</h3>
+     <label>Imagen <input type="file" id="configRaceFemaleImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceFemaleCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceFemaleMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceFemaleMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceFemaleCropCanvas" width="320" height="320"></canvas><div class="small">Si no se configura, se reutiliza el icono masculino.</div></div><div class="configPreview"><canvas id="configRaceFemaleIconPreview" width="50" height="50"></canvas><span id="configRaceFemaleIconStatus" class="small">Sin icono femenino.</span></div>
     </details>
     <button class="start" id="saveConfigRaceBtn">GUARDAR RAZA</button><button id="newConfigRaceBtn">NUEVA RAZA</button><button id="deleteConfigRaceBtn">ELIMINAR</button><button id="exportConfigRacesBtn">EXPORTAR JSON</button><label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigRacesInput" accept="application/json,.json" multiple></label><div id="configRaceStatus" class="small"></div>
    </section><section class="panel"><h2>Razas guardadas</h2><div id="configRacesList" class="configItemsList"></div></section>
@@ -862,7 +865,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.64.0"></script>
+<script src="./src/game.js?v=0.64.1"></script>
 
 </body>
 </html>
