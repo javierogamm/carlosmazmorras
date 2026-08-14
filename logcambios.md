@@ -1,3 +1,11 @@
+## v0.64.3 - Hotfix de inicio y guardado racial
+
+- Corregido el fallo crítico de sintaxis introducido en `0.64.2` que detenía por completo la carga de JavaScript y, por tanto, impedía iniciar sesión.
+- Retirada la compactación de iconos ya guardados durante la grabación de una raza: el payload vuelve a construirse directamente desde el estado del formulario, sin reescribir datos existentes antes del guardado.
+- Conservado únicamente el límite preventivo al generar iconos raciales nuevos, evitando peticiones excesivas sin mutar las imágenes previamente persistidas.
+- Rehecho el tratamiento del error original mediante una lectura segura de la respuesta HTTP, aislada del flujo de login y sin asumir que los rechazos de infraestructura contienen JSON.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.3`.
+
 ## v0.64.2 - Guardado de iconos raciales optimizado
 
 - Limitada a 128 px la dimensión máxima de cada icono racial, incluyendo la compactación de iconos antiguos al volver a guardar, para evitar que dos imágenes de alta resolución superen el límite de la petición.
