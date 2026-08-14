@@ -1,3 +1,10 @@
+## v0.68.0 - Contrato de dungeons y exportación de ambientes
+
+- Añadida una guía exhaustiva para generación de dungeons JSON mediante IA, con el contrato raíz, parámetros, todos los tipos de sala y piso, geometrías, objetivos, enemigos, loot, cofres, tilesets, assets, validaciones y prompt recomendado.
+- Incorporada la exportación JSON individual de cada familia/ambiente de objetos del mundo y una exportación conjunta de todos los ambientes.
+- La exportación omite las imágenes e incluye nombres, claves, dimensiones, número total de tiles, conteos bloqueados/transitables y matrices completas de colisión.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.68.0`.
+
 ## v0.67.1 - Guardado de iconos y costes de PA de invocaciones
 
 - Corregido el guardado de imágenes de Objetos del mundo, salas, shards y assets: el editor termina ahora la conversión PNG a hexadecimal de forma síncrona antes de permitir que el botón de guardado lea el icono.
