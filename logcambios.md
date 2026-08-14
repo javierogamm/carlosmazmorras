@@ -1,3 +1,14 @@
+## v0.65.0 - Sistema de Soul Spikes y revivir
+
+- Añadida la currency persistente **Soul Spikes** (`user_pj.souls`): cada enemigo concede 1 soul, los élites 2, los bosses 3 y los megabosses 5; el icono se puede editar desde Objetos del mundo.
+- Incorporado el HUD de souls junto al nivel y la miniatura de raza/sexo tanto en el tablero como en la ficha del personaje.
+- Al morir con al menos 10 souls se ofrece revivir: desde 10 hasta 49 el saldo baja a 1 y desde 50 baja a 10, con cuenta atrás animada. El personaje vuelve al inicio del piso 1, se regeneran los enemigos y se conservan los estados de cofres disponibles.
+- Añadida la estancia **Mercader de Souls**, con suelo dorado e icono configurable; ofrece un objeto configurado no-poción por cada tier y aplica precios de 5/10/20/30/45 souls entre común y legendario.
+- Añadido el efecto apilable **Revivir** para skills, items y pociones, configurable por porcentaje de vida, cooldown y coste opcional de souls. Se dispara automáticamente al morir; las pociones se consumen en lugar de entrar en cooldown.
+- La subida de nivel muestra una animación de dos segundos antes del modal y exige confirmar la stat seleccionada.
+- Incluida la migración `supabase/add_souls_to_user_pj.sql` y sincronizadas las versiones de runtime, paquete y cache-busting en `0.65.0`.
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.64.4 - Razas configuradas y modos predeterminados
 
 - Eliminado el catálogo racial legacy de la creación de personaje: las opciones proceden siempre de `config_razas` e incluyen la variante de icono correspondiente al sexo seleccionado.

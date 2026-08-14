@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.64.4';
+const APP_VERSION='0.65.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1636,7 +1636,7 @@ async function start(){
  const stats={...cls.stats},maxHp=30+stats.vitality*6;
  const maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,gender:selectedGender,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass,selectedGender),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
+game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,gender:selectedGender,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass,selectedGender),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -1699,6 +1699,7 @@ const ROOM_TYPES={
  traproom:    {label:'Sala trampa',     size:[4,6],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
  shrine:      {label:'Altar',           size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
  creator:     {label:'Sala del Creador',size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
+ soulmerchant:{label:'Mercader de Souls',size:[4,5], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
  deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
  knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
  bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
@@ -1715,7 +1716,7 @@ const FLOOR_ARCHETYPES={
   layout:{rooms:[26,40], size:[3,8], corridors:'normal', loops:.15, pillars:1},
   enemies:{density:1, elite:1, tierBias:0, bossOnEven:true},
   rewards:{chests:1, rarity:0},
-  roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,creator:2,deadend:4,knot:4}
+  roomWeights:{filler:26,combat:30,ambush:10,guardpost:8,eliteden:5,vault:4,hub:6,traproom:4,shrine:3,creator:2,soulmerchant:2,deadend:4,knot:4}
  },
  superboss:{
   label:'Piso de superjefe', minFloor:8, cooldown:7, objective:'bossKill', announce:true,
@@ -2094,7 +2095,7 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
    const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
    for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
   }
-  if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
+  if(T.altar&&(T.creatorRoom||T.soulMerchant||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.soulMerchant?'soulmerchant':T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
    const chestDef=pickChestDefForFloor(floor);
@@ -2449,7 +2450,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
    const n=T.trapCount?randBetween(T.trapCount[0],T.trapCount[1]):1+rng(2);
    for(let i=0;i<n;i++){const pos=freeIn(r);traps.push({...pos,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
   }
-  if(T.altar&&(T.creatorRoom||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
+  if(T.altar&&(T.creatorRoom||T.soulMerchant||Math.random()<.85)){const pos=freeIn(r);altars.push({...pos,kind:T.soulMerchant?'soulmerchant':T.creatorRoom?'disenchant':pick(['heal','shield','power']),used:false})}
   const chestCount=T.chests?randBetween(T.chests[0],T.chests[1]):(Math.random()<(T.chest||0)?1:0);
   for(let i=0;i<Math.round(chestCount*(R.chests||1));i++){
    const chestDef=pickChestDefForFloor(floor);
@@ -3424,6 +3425,9 @@ function kill(e){
  if(!game.enemies.includes(e))return;
  if(game?.multiplayer)sendMpAction('death_animation',{entityType:'enemy',entityId:e.eid,at:{x:e.x,y:e.y}});
  game.enemies=game.enemies.filter(x=>x!==e);
+ const soulGain=e.megaboss?5:e.boss?3:e.elite?2:1;
+ game.player.souls=Math.max(0,Number(game.player.souls)||0)+soulGain;
+ persistSouls();floating(`+${soulGain} SOUL`,e.x,e.y,'#c69cff');
  game.feats=normalizeFeats(game.feats);
  if(e.megaboss)game.feats.megabosses++;
  else if(e.boss)game.feats.bosses++;
@@ -3509,10 +3513,11 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  if(p.hp<=0&&p.cheatDeathTurns>0){p.hp=1;p.cheatDeathTurns=0;banner('TE NIEGAS A MORIR');log('La habilidad evita la muerte y te deja con 1 de vida.','good')}
  floating(d?`-${d}`:'EVITA',p.x,p.y,d?'#ff6666':'#70dc9b');effect(d?'shake':'flash');
  log(`${sourceName}: ${result}. 1d20 (${defenseDie}) + ${defenseBonus} contra CD ${attackDC}. ${d?`Recibes ${d} de daño.`:'No recibes daño.'} [base ${Math.round(originalAmount)} → ${amount}]`,'combat');
- if(p.hp<=0){p.hp=0;game.over=true;updateUI();draw();permanentDeath()}
+ if(p.hp<=0){p.hp=0;game.over=true;updateUI();draw();handlePlayerDeath()}
 }
 
 const statDescriptions={strength:'Aumenta daño físico y la stamina máxima.',vitality:'Aumenta vida y resistencia.',agility:'Aumenta evasión, movilidad y los Puntos de Acción (PA).',luck:'Mejora el % de crítico, botín y eventos.',intelligence:'Aumenta poder mágico y aporta algo de maná extra.',wisdom:'Aumenta el maná máximo y mejora regeneración y percepción.'};
+function animateLevelUpThen(done){const stage=document.getElementById('gameStage');stage?.classList.remove('levelUpPulse');void stage?.offsetWidth;stage?.classList.add('levelUpPulse');setTimeout(done,2000)}
 function queueStatPoint(level){
  const p=game.player;p.unspentStatPoints=(p.unspentStatPoints||0)+1;p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];
  const skillId=LEVEL_UP_RANDOM_SKILL_LEVELS.has(level)?randomClassSkillForLevelReward(level):null;
@@ -3528,7 +3533,7 @@ function showStatPointModal(){
  if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
  if(skill)skill.innerHTML=reward.skillId?levelRewardLabel(reward.level,reward.skillId):'';
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
- grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice,reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;if(reward.skillId)learnSkill(reward.skillId);recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(reward.skillId)log(`Recompensa aleatoria de nivel ${reward.level}: ${skillDefs[reward.skillId].name}.`,'loot');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
+ grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;if(reward.skillId)learnSkill(reward.skillId);recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(reward.skillId)log(`Recompensa aleatoria de nivel ${reward.level}: ${skillDefs[reward.skillId].name}.`,'loot');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 // Living participants in the run (1 in single player).
 function partySize(){
@@ -3608,7 +3613,7 @@ function grantXp(v){
   p.maxMana+=g.mana+Math.floor((p.stats.wisdom*2+p.stats.intelligence)/3);p.mana=p.maxMana;
   p.baseDamage+=g.damage;p.baseArmor+=g.armor;
   if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
-  banner(`NIVEL ${p.level}`);queueStatPoint(p.level);
+  banner(`NIVEL ${p.level}`);animateLevelUpThen(()=>queueStatPoint(p.level));
  }
  if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
  if(p.level>startLevel)rescaleBossOnLevelUp();
@@ -3771,6 +3776,7 @@ function useAltar(a){
  // shards), not a one-shot buff, so it never sets a.used and instead opens
  // the disenchant picker
  if(a.kind==='disenchant'){openCraftModal();return}
+ if(a.kind==='soulmerchant'){openSoulMerchant(a);return}
  a.used=true;
  if(game.multiplayer)sendMpAction('activate_altar',{at:{x:a.x,y:a.y}});
  const p=game.player;
@@ -3778,6 +3784,12 @@ function useAltar(a){
  else if(a.kind==='shield'){p.shield=(p.shield||0)+Math.round(12+game.floor*1.5);log('El altar te envuelve en un escudo.','good')}
  else{applyBuff('altarPower','Bendición del altar',8,{damage:.22,armor:.12});log('El altar potencia tu daño y tu armadura.','good')}
  floating('✦',a.x,a.y,'#9be8ff');
+}
+const SOUL_PRICES={common:5,uncommon:10,rare:20,epic:30,legendary:45};
+function openSoulMerchant(altar){
+ altar.stock=altar.stock||Object.keys(SOUL_PRICES).map(tier=>{const rows=configItems.map(r=>r.item_json||r).filter(i=>i.type!=='potion'&&(i.rarity||'common')===tier);return rows.length?{...pick(rows),merchantTier:tier}:null}).filter(Boolean);
+ storyTitle.textContent='MERCADER DE SOULS';storyBody.innerHTML=`<p>Souls disponibles: ${soulIconHtml()} <b>${game.player.souls||0}</b></p><div class="configItemsList">${altar.stock.map((item,i)=>`<div class="configItem"><div><b style="color:${tierColor(item.merchantTier)}">${item.name}</b><span class="small">${tierDefs[item.merchantTier]?.label} · ${SOUL_PRICES[item.merchantTier]} souls</span><button data-soul-buy="${i}" ${(game.player.souls||0)<SOUL_PRICES[item.merchantTier]?'disabled':''}>Comprar</button></div></div>`).join('')}</div><button id="closeSoulMerchant">Cerrar</button>`;storyOverlay.classList.remove('hidden');
+ storyBody.querySelectorAll('[data-soul-buy]').forEach(btn=>btn.onclick=()=>{const item=altar.stock[Number(btn.dataset.soulBuy)],price=SOUL_PRICES[item.merchantTier];if((game.player.souls||0)<price)return;game.player.souls-=price;addInventoryItem({...item,id:crypto.randomUUID()});altar.stock=altar.stock.filter(x=>x!==item);persistSouls();openSoulMerchant(altar)});document.getElementById('closeSoulMerchant').onclick=()=>storyOverlay.classList.add('hidden');
 }
 // ---- Creator's Room: dismantle items into tier shards ----------------------
 // Shards are keyed by item rarity (common/uncommon/rare/epic/legendary/
@@ -4858,7 +4870,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',revive:'Revivir automáticamente',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
 // Potions now run through the exact same composable-effects engine as
 // skills (applyEffectComponent/applySkillEffectsList below), instead of a
 // separate bespoke potionEffectType system - a potion "cast" just registers
@@ -5367,6 +5379,36 @@ async function mpCheckpoint(opts={}){
  await mpPersistTurnState({advance:false,includeOtherPlayers:true,checkpoint:true,...opts});
 }
 
+let soulsPersistChain=Promise.resolve();
+function persistSouls(){
+ if(!game?.pjId)return;
+ const souls=Math.max(0,Number(game.player.souls)||0);
+ soulsPersistChain=soulsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({souls,minimal:true})})).catch(e=>console.error('No se pudieron guardar las souls',e));
+}
+function configuredReviveSource(){
+ const p=game.player,candidates=[];
+ for(const id of p.equippedSkills||[]){const d=skillDefs[id];for(const effect of d?.effects||[])if(effect.kind==='revive'&&!(p.cooldowns?.[id]>0))candidates.push({effect,consume:()=>{p.cooldowns[id]=Math.max(1,effect.cooldown??d.cd??1)}})}
+ for(const [slot,item] of Object.entries(p.equipment||{}))for(const effect of item?.effects||[])if(effect.kind==='revive'&&!(p.equipmentCooldowns?.[slot]>0))candidates.push({effect,consume:()=>{p.equipmentCooldowns[slot]=Math.max(1,effect.cooldown??item.cooldown??1)}});
+ for(const item of game.inventory||[])if(item.type==='potion')for(const effect of item.effects||[])if(effect.kind==='revive')candidates.push({effect,consume:()=>{if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(x=>x!==item)}});
+ return candidates.find(x=>(x.effect.soulsCost||0)<=(p.souls||0))||null;
+}
+function handlePlayerDeath(){
+ const automatic=configuredReviveSource();
+ if(automatic){automatic.consume();if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}reviveAtCurrentPosition(automatic.effect.hpPercent||50);banner('REVIVIR');return}
+ if((game.player.souls||0)>=10&&!game.multiplayer){showSoulReviveModal();return}
+ permanentDeath();
+}
+function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
+function showSoulReviveModal(){
+ const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');
+ const render=n=>{count.innerHTML=`${soulIconHtml('soulMiniIcon')} <b>${n}</b>`};render(game.player.souls);
+ document.getElementById('rejectSoulRevive').onclick=()=>{modal.classList.remove('open');permanentDeath()};
+ document.getElementById('acceptSoulRevive').onclick=()=>{const from=game.player.souls,to=from>=50?10:1;modal.querySelectorAll('button').forEach(b=>b.disabled=true);const started=performance.now(),tick=now=>{const n=Math.round(from-(from-to)*Math.min(1,(now-started)/1200));render(n);if(n>to)requestAnimationFrame(tick);else setTimeout(()=>{game.player.souls=to;persistSouls();modal.classList.remove('open');restartDungeonAfterSoulRevive()},250)};requestAnimationFrame(tick)};
+}
+function restartDungeonAfterSoulRevive(){
+ const chestStates={};for(const [floor,snap] of Object.entries(game.sessionFloors||{}))chestStates[floor]=snap.chests;
+ game.sessionFloors={};game.floor=1;game.turn=0;generateFloor();if(chestStates[1])game.chests=chestStates[1];reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE · PISO 1');
+}
 function permanentDeath(){
  const p=game.player;game.over=true;
  if(game.testingMode){
@@ -5470,7 +5512,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   return 0;
  };
  const finishEnemyTurn=()=>{
-  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();permanentDeath();onDone?.();return}
+  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();handlePlayerDeath();onDone?.();return}
   onDone?.();
  };
  if(!apModeOn()){
@@ -5913,8 +5955,10 @@ function updateObjectiveHud(){
 // config_floor has no rows yet (by design, see pickFloorTilesetForLevel) -
 // that used to silently abort the rest of the skill-pick handler, including
 // the call that actually saves the new character to Supabase.
+function soulIconHtml(className='soulMiniIcon'){const icon=configWorldObjects.soul_spike;return icon?`<img class="${className}" src="${icon}" alt="Soul Spike">`:`<span class="${className}">✦</span>`}
+function raceIconHtml(p,className='raceMiniIcon'){const icon=raceIconForId(p.race,p.gender);return icon?`<img class="${className}" src="${icon}" alt="${p.raceName||'Raza'}">`:''}
 function updateUI(){
- if(!game)return;clampCompanionReservedResources();const p=game.player;heroName.textContent=p.name.toUpperCase();buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
+ if(!game)return;clampCompanionReservedResources();const p=game.player;const heroNameText=document.getElementById('heroNameText');if(heroNameText)heroNameText.textContent=p.name.toUpperCase();const heroRaceIcon=document.getElementById('heroRaceIcon');if(heroRaceIcon)heroRaceIcon.innerHTML=raceIconHtml(p);buildLabel.textContent=`${(p.raceName||raceDefs[p.race]?.name||p.race).toUpperCase()} · ${(p.className||resolveClassDef(p.cls)?.name||p.cls).toUpperCase()} · 🔑 ${p.keys}`;level.textContent=p.level;floor.textContent=game.floor;if(gameHudIdentity)gameHudIdentity.innerHTML=`<span class="hudSoulCount">${soulIconHtml()} <b>${p.souls||0}</b></span>${raceIconHtml(p)} <b>${p.name}</b> · Nv. ${p.level}`;damage.textContent=total('damage');armor.textContent=total('armor');gold.textContent=p.gold;const fs=p.derived?.finalStats||p.stats;strength.textContent=fs.strength;vitality.textContent=fs.vitality;agility.textContent=fs.agility;luck.textContent=fs.luck;intelligence.textContent=fs.intelligence;wisdom.textContent=fs.wisdom;if(game.floorTileset||game.map)themeLabel.textContent=`Zona: ${currentFloorTheme().name}${game.boss?' · PISO DE JEFE':''}`;updateObjectiveHud();renderTradeTab();renderShardsTab();
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDaggerWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda (dual wield)" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
@@ -6000,7 +6044,7 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26')}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
  for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  for(const a of game.assets||[]){
@@ -6824,6 +6868,7 @@ function defaultComponentFor(kind){
  if(kind==='pullroot')return {...base,target:'enemy',turns:2};
  if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
  if(kind==='cheatdeath')return {...base,turns:5};
+ if(kind==='revive')return {...base,hpPercent:50,cooldown:10,soulsCost:0};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
  if(kind==='ascend')return {...base,resource:'any',value:150,turns:6,allowSkills:true,iconImage:''};
@@ -6912,6 +6957,7 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='revive')fields=`<label>Vida al revivir (%) <input type="number" min="1" max="100" value="${comp.hpPercent??50}" data-effect-idx="${i}" data-effect-field="hpPercent"></label><label>Cooldown <input type="number" min="0" value="${comp.cooldown??10}" data-effect-idx="${i}" data-effect-field="cooldown"></label><label>Coste opcional de souls <input type="number" min="0" value="${comp.soulsCost??0}" data-effect-idx="${i}" data-effect-field="soulsCost"></label>`;
  else if(comp.kind==='summon'){
   const effectType=comp.effectType||'damage',permanent=!!comp.permanent;
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
@@ -7622,6 +7668,8 @@ const WORLD_OBJECT_KINDS=[
  {key:'stairsDown',label:'Escaleras de bajada'},
  {key:'trap',label:'Trampa'},
  {key:'reward_lock',label:'Bloqueos rewards'},
+ {key:'soul_spike',label:'Soul Spike (currency)'},
+ {key:'room_soulmerchant',label:'Sala: Mercader de Souls'},
  ...LOOT_RARITY_ORDER.map(t=>({key:`shard_${t}`,label:`Shard: ${tierDefs[t]?.label||t}`})),
  ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
 ];
@@ -8244,7 +8292,7 @@ async function responseJson(response){
  try{return JSON.parse(text)}
  catch{return{error:response.ok?'El servidor devolvió una respuesta inválida.':`No se pudo completar la petición (${response.status}): ${text.trim().slice(0,180)}`}}
 }
-function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces();st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
+function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces();st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects();if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
@@ -8645,7 +8693,7 @@ async function finishCharacterCreation(){
  const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,maxFloorReached:1};
  const score=computeScore(bundle);
  try{
-  const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,feats:bundle.feats,pj_status:'alive',pj_score:score,last_use:new Date().toISOString()})});
+  const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,feats:bundle.feats,pj_status:'alive',pj_score:score,souls:game.player.souls||0,last_use:new Date().toISOString()})});
   const data=await r.json().catch(()=>null);
   // api/user-pj.js forwards Supabase/PostgREST's response verbatim on error,
   // whose shape is {message, details, hint, code} - not {error} - so reading
@@ -8767,6 +8815,7 @@ async function resumeSession(sessionId){
   const overlay=state.floors?.[String(floorNum)]||null;
   game={floor:floorNum,themeIndex:0,turn:state.turn||0,dungeonWorldId:world.id,dungeonWorldName:world.world_name,worldParams:normalizeWorldParams(world.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(pj.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player,pjId:pj.id,dungeonStatusId:session.id,sessionFloors:state.floors||{}};
  game.player.shards=pj.shards?normalizeShards(pj.shards):(game.player.shards||{});
+ game.player.souls=Math.max(0,Number(pj.souls??game.player.souls)||0);
  game.player.customItems=pj.custom_items||game.player.customItems||[];
   singlePlayerOverlay.classList.add('hidden');
   app.classList.remove('hidden');
@@ -8804,6 +8853,7 @@ async function enterWorldWithCharacter(){
  // shards live in their own user_pj column (not pj_json) so they survive
  // independently of the rest of the character bundle - see persistShards()
  game.player.shards=currentCharacter.shards?normalizeShards(currentCharacter.shards):(game.player.shards||{});
+ game.player.souls=Math.max(0,Number(currentCharacter.souls??game.player.souls)||0);
  // custom-crafted items (Creator's Room) live in their own user_pj column too
  game.player.customItems=currentCharacter.custom_items||game.player.customItems||[];
  generateFloor();
@@ -8849,7 +8899,7 @@ function persistTurnState(){
  // read (fire-and-forget .catch below), so there's no reason to have Supabase
  // echo the whole character/floor blob back down on every write. See the
  // matching opt-in in api/user-pj.js and api/dungeon-status.js.
- fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,souls:game.player.souls||0,last_use:new Date().toISOString(),nombre:window.currentUser?.nombre,minimal:true})}).catch(e=>console.error('No se pudo guardar el personaje',e));
  if(!game.dungeonStatusId)return;
  const dungeonState={turn:game.turn,currentFloor:game.floor,floors:{[game.floor]:floorSnapshot()},players:{[game.pjId]:{x:game.player.x,y:game.player.y,floor:game.floor,facing:game.player.facing||1}}};
  game.sessionFloors=dungeonState.floors;
