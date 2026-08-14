@@ -9,6 +9,7 @@ applyCanvasSize();
 let game=null,busy=false,anim={heroX:0,heroY:0,targetX:0,targetY:0,t:1};
 let selectedClass='yunque';
 let selectedRace='humano';
+let selectedGender='male';
 // 'hardcode' = the 16 built-in classes/skills; 'advanced' = only classes
 // created in the admin editor (config_class), never a hardcoded fallback.
 let selectedSkillMode='hardcode';
@@ -28,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.63.1';
+const APP_VERSION='0.64.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1630,7 +1631,7 @@ async function start(){
  const stats={...cls.stats},maxHp=30+stats.vitality*6;
  const maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name:nameInput.value||'Sin nombre',race,gender:selectedGender,cls:selectedClass,className:cls.name,classIcon:classIconForId(selectedClass,selectedGender),skillMode:selectedSkillMode,combatMode:selectedCombatMode,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{}}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -6533,7 +6534,10 @@ function enemyStatusOverlay(x,y,e){
 
 function normalizeClassName(name){return String(name||'').trim().toLowerCase()}
 function configClassRowForId(id){const def=classDefs[id];const wanted=normalizeClassName(def?.name||id);return configClasses.find(c=>String(c.class_json?.classId||'')===id)||configClasses.find(c=>normalizeClassName(c.nombre)===wanted)}
-function classIconForId(id){const row=configClassRowForId(id);return row?.class_json?.icon||row?.icon||''}
+function classIconForId(id,gender='male'){
+ const row=configClassRowForId(id),j=row?.class_json||{};
+ return gender==='female'?(j.iconFemale||j.icon||row?.icon||''):(j.iconMale||j.icon||row?.icon||'');
+}
 // A class def, whether hardcoded (classDefs) or a fully custom one that only
 // exists as a config_class row (no matching classDefs entry at all).
 function resolveClassDef(id){
@@ -7213,6 +7217,8 @@ function currentConfigClassJson(){
   name:document.getElementById('configClassName').value.trim()||id,
   desc:document.getElementById('configClassDesc').value.trim()||'Clase personalizada.',
   icon:window.currentConfigClassIconHex||'',
+  iconMale:window.currentConfigClassIconHex||'',
+  iconFemale:window.currentConfigClassFemaleIconHex||'',
   stats:{strength:Number(configClassStr.value)||0,vitality:Number(configClassVit.value)||0,agility:Number(configClassAgi.value)||0,luck:Number(configClassLuck.value)||0,intelligence:Number(configClassInt.value)||0,wisdom:Number(configClassWis.value)||0},
   starterSkills:base?.skills||[],
   resourceBias:base?.resourceBias||'stamina',
@@ -7248,7 +7254,7 @@ function loadSelectedConfigClass(){
  document.getElementById('configClassDesc').value=def?.desc||'';
  const stats=def?.stats||{};
  configClassStr.value=stats.strength??2;configClassVit.value=stats.vitality??2;configClassAgi.value=stats.agility??2;configClassLuck.value=stats.luck??2;configClassInt.value=stats.intelligence??2;configClassWis.value=stats.wisdom??2;
- window.currentConfigClassIconHex=row?.class_json?.icon||row?.icon||'';
+ window.currentConfigClassIconHex=row?.class_json?.iconMale||row?.class_json?.icon||row?.icon||'';
  renderConfigIconPreview(window.currentConfigClassIconHex,'configClassIconPreview','configClassIconStatus');
  configClassIconStatus.textContent=window.currentConfigClassIconHex?'Icono cargado para esta clase.':'Sin icono: usará los pixels por defecto.';
  // only fall back to the generic sprite preview when there's genuinely no
@@ -7256,6 +7262,9 @@ function loadSelectedConfigClass(){
  // renderConfigIconPreview's above and could clobber a real DB icon with
  // the default sprite while the (already-cached) image was still resolving
  if(!window.currentConfigClassIconHex)drawClassPreview(configClassIconPreview,id);
+ window.currentConfigClassFemaleIconHex=row?.class_json?.iconFemale||'';
+ renderConfigIconPreview(window.currentConfigClassFemaleIconHex,'configClassFemaleIconPreview','configClassFemaleIconStatus');
+ document.getElementById('configClassFemaleIconStatus').textContent=window.currentConfigClassFemaleIconHex?'Icono femenino cargado.':'Sin icono femenino: se reutilizará el masculino.';
  window.currentClassSkillsDraft=classSkillBagFor(id);
  renderClassSkillSelect();
  renderConfigClassStarterGearOptions(row?.class_json?.starterWeaponType||'',row?.class_json?.starterPotionIds||[]);
@@ -8283,6 +8292,7 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
 function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
  if(!editor)return;
+ setupImageIconEditor({inputId:'configClassFemaleImageInput',canvasId:'configClassFemaleCropCanvas',previewId:'configClassFemaleIconPreview',statusId:'configClassFemaleIconStatus',zoomId:'configClassFemaleCropZoom',eraserId:'configClassFemaleMagicEraserBtn',toleranceId:'configClassFemaleMagicTolerance',hexKey:'currentConfigClassFemaleIconHex',statusPrefix:'Icono femenino'});
  setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill'});
  setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación'});
  const summonExistingSel=document.getElementById('configSummonIconExisting');
@@ -8304,6 +8314,7 @@ function setupClassConfigMode(){
   configClassName.value=name;document.getElementById('configClassDesc').value='Clase personalizada.';
   configClassStr.value=configClassVit.value=configClassAgi.value=configClassLuck.value=configClassInt.value=configClassWis.value=2;
   window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');
+  window.currentConfigClassFemaleIconHex='';renderConfigIconPreview('','configClassFemaleIconPreview','configClassFemaleIconStatus');
   window.currentClassSkillsDraft={};renderClassSkillSelect();
   renderConfigClassStarterGearOptions('',[]);
   configClassStatus.textContent=`Nueva clase "${name}" lista para configurar. Añade skills y pulsa Guardar clase.`;
@@ -8384,7 +8395,7 @@ function setupClassConfigMode(){
  };
  rollbackConfigClassBtn.onclick=async()=>{
   configClassStatus.textContent='Restaurando pixels por defecto...';
-  try{window.currentConfigClassIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
+  try{window.currentConfigClassIconHex='';window.currentConfigClassFemaleIconHex='';renderConfigIconPreview('','configClassIconPreview','configClassIconStatus');renderConfigIconPreview('','configClassFemaleIconPreview','configClassFemaleIconStatus');await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft||{});configClassStatus.textContent='Rollback aplicado: la clase vuelve al sprite original.'}catch(e){configClassStatus.textContent=e.message}
  };
 }
 // ---- Potion composable-effects editor (admin) -------------------------
@@ -8672,8 +8683,7 @@ function openCharacterCreation(){
  app.classList.remove('hidden');
  startOverlay.classList.remove('hidden');
  nameInput.value='';
- document.getElementById('raceAccordion')?.removeAttribute('open');
- document.getElementById('classAccordion')?.removeAttribute('open');
+ setWizardStep(0);
  fetchConfigClasses();
  if(!configGatesLoaded)fetchConfigGates();else{renderRaceChoices();renderClassChoices()}
 }
@@ -10585,6 +10595,41 @@ backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverla
 
 
 
+let characterWizardStep=0;
+const WIZARD_LABELS=['1 · MODOS','2 · CLASE','3 · IDENTIDAD','4 · NOMBRE'];
+function renderGenderChoices(){
+ document.querySelectorAll('[data-gender]').forEach(button=>{
+  const gender=button.dataset.gender;button.classList.toggle('selected',gender===selectedGender);
+  const canvas=button.querySelector('canvas'),icon=classIconForId(selectedClass,gender);
+  if(icon)drawSkillIconImg(canvas,icon);else drawClassPreview(canvas,selectedClass);
+ });
+}
+function renderCharacterSummary(){
+ const root=document.getElementById('characterSummary');if(!root)return;
+ const cls=resolveClassDef(selectedClass),race=raceDefs[selectedRace];
+ root.innerHTML=`<canvas width="96" height="96"></canvas><b>${cls?.name||selectedClass}</b><span>${race?.name||selectedRace} · ${selectedGender==='female'?'Femenino':'Masculino'}</span><small>${selectedSkillMode==='advanced'?'Advanced Classes':'Hardcode'} · ${selectedCombatMode==='ap'?'Puntos de Acción':'Clásico'}</small>`;
+ const canvas=root.querySelector('canvas'),icon=classIconForId(selectedClass,selectedGender);if(icon)drawSkillIconImg(canvas,icon);else drawClassPreview(canvas,selectedClass);
+}
+function setWizardStep(step){
+ characterWizardStep=Math.max(0,Math.min(3,Number(step)||0));
+ const track=document.getElementById('wizardTrack');if(!track)return;
+ track.style.transform=`translateX(-${characterWizardStep*100}%)`;
+ const progress=document.getElementById('wizardProgress');
+ progress.innerHTML=WIZARD_LABELS.map((label,i)=>`<button type="button" data-wizard-step="${i}" class="${i===characterWizardStep?'active':i<characterWizardStep?'done':''}" ${i>characterWizardStep?'disabled':''}>${label}</button>`).join('');
+ progress.querySelectorAll('[data-wizard-step]').forEach(b=>b.onclick=()=>setWizardStep(b.dataset.wizardStep));
+ document.getElementById('wizardBackBtn').disabled=characterWizardStep===0;
+ document.getElementById('wizardNextBtn').classList.toggle('hidden',characterWizardStep===3);
+ if(characterWizardStep===2)renderGenderChoices();
+ if(characterWizardStep===3){renderCharacterSummary();setTimeout(()=>document.getElementById('nameInput')?.focus(),380)}
+}
+document.querySelectorAll('[data-gender]').forEach(button=>button.onclick=()=>{selectedGender=button.dataset.gender;renderGenderChoices()});
+document.getElementById('wizardBackBtn')?.addEventListener('click',()=>setWizardStep(characterWizardStep-1));
+document.getElementById('wizardNextBtn')?.addEventListener('click',()=>{
+ if(characterWizardStep===0&&!selectedCombatMode){alert('Elige un modo de combate para continuar.');return}
+ if(characterWizardStep===1&&!resolveClassDef(selectedClass)){alert('Elige una clase para continuar.');return}
+ setWizardStep(characterWizardStep+1);
+});
+
 function renderRaceChoices(){
  const root=document.getElementById('raceChoices');if(!root)return;
  const raceIds=sortByGate('race',Object.keys(raceDefs));
@@ -10598,7 +10643,7 @@ function renderRaceChoices(){
  }).join('');
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
- root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices()});
+ root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices();renderGenderChoices()});
 }
 renderRaceChoices();
 
@@ -10639,7 +10684,7 @@ function renderClassChoices(){
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
- root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices()});
+ root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
  const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();

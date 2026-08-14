@@ -1,3 +1,12 @@
+## v0.64.0 - Sexo y creación de personaje por pasos
+
+- Añadida la elección estética de sexo masculino o femenino al personaje y persistida en su estado, sin modificar estadísticas, habilidades ni reglas de juego.
+- Ampliado el editor de clases de Configuración con un icono masculino y otro femenino; las configuraciones antiguas siguen usando su icono único y la variante femenina recurre al masculino cuando no existe.
+- Reorganizada la creación en cuatro pantallas horizontales: modos de clase/combate, clase, raza/sexo y nombre con resumen final.
+- Añadidos indicadores de progreso, navegación para volver a cualquier paso completado, transiciones laterales y un modal fijo sin scroll global; las listas extensas conservan desplazamiento interno.
+- Mejorada la claridad de las tarjetas y del resumen para mostrar descripción, atributos, raza, sexo y modos escogidos antes de crear el personaje.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.64.0`.
+
 ## v0.63.1 - Invisibilidad y teletransporte raciales
 
 - Corregido el orden del ciclo de invisibilidad apilable: sus turnos se consumen después de la respuesta enemiga, por lo que una invisibilidad propia de un turno evita correctamente una fase enemiga completa.
