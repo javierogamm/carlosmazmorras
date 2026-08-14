@@ -47,7 +47,18 @@ async function handleWorldObjects(req,res,url,key){
   if(req.body?.tiles_number!==undefined)row.tiles_number=req.body.tiles_number;
   if(req.body?.tiles_mask!==undefined)row.tiles_mask=req.body.tiles_mask;
   if(req.body?.ambiente!==undefined)row.ambiente=req.body.ambiente;
-  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?on_conflict=object_key`,{method:'POST',headers:{...headers(key),Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify(row)});
+  // Do not use PostgREST's on_conflict upsert here: older installations of
+  // config_world_object do not have a UNIQUE constraint on object_key, so
+  // that request rejects new fixed keys such as soul_spike. Locate the row
+  // first and explicitly PATCH it, or INSERT it when the key does not exist.
+  const lookup=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=id&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`,{headers:headers(key)});
+  const matches=await lookup.json();
+  if(!lookup.ok)return res.status(lookup.status).json(matches);
+  const existingId=Array.isArray(matches)?matches[0]?.id:null;
+  const endpoint=existingId!==undefined&&existingId!==null
+   ?`${url}/rest/v1/${WORLD_OBJECT_TABLE}?id=eq.${encodeURIComponent(existingId)}`
+   :`${url}/rest/v1/${WORLD_OBJECT_TABLE}`;
+  const r=await fetch(endpoint,{method:existingId!==undefined&&existingId!==null?'PATCH':'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(Array.isArray(data)?data[0]:data);
