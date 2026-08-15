@@ -29,13 +29,13 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.79.1';
+const APP_VERSION='0.79.2';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
 let configClasses=[];
 let configRaces=[],configRacesLoaded=false;
-let configClassesLoaded=false,configClassesFetchInFlight=null;
+let configClassesLoaded=false,configClassesFetchInFlight=null,configClassesFetchIsLight=false;
 let configFloors=[];
 let configEnemyFamilies=[];
 let configEnemyDetails=[];
@@ -1102,6 +1102,23 @@ function recomputeDerived(){
 function isConfiguredPotionRow(row){const item=row?.item_json||row||{};return item.type==='potion'||item.type==='consumable'||item.slot==='consumable'||row?.slot==='consumable'}
 function configuredPotionRows(){return configItems.filter(isConfiguredPotionRow)}
 function configItemsFullyLoaded(){return configItems.length>0&&configItems.every(row=>row?.item_json)}
+function hydrateInventoryPotionsFromConfig(){
+ if(!game?.inventory||!configItemsFullyLoaded())return;
+ for(const item of game.inventory){
+  if(item?.type!=='potion'&&item?.slot!=='consumable')continue;
+  const row=configItems.find(r=>String(r.id)===String(item.configItemId))||configItems.find(r=>{
+   const raw=r.item_json||r;
+   return isConfiguredPotionRow(r)&&(raw.name||r.nombre)===item.name&&(raw.rarity||r.tier||'common')===(item.rarity||'common');
+  });
+  if(!row)continue;
+  const raw=row.item_json||row,id=item.id,quantity=item.quantity||1;
+  Object.assign(item,raw,{id,quantity,configItemId:row.id,type:'potion',slot:'consumable'});
+  item.icon=raw.icon||row.icon||'';
+  item.effects=Array.isArray(raw.effects)?JSON.parse(JSON.stringify(raw.effects)):[];
+  item.iconShape=item.iconShape||'vial';
+  item.desc=raw.desc||describePotionEffects(item)||'Poción configurada.';
+ }
+}
 function configuredPotionFromRow(row,lootRow,level){
  const raw=row.item_json||row,potionRow={...row,item_json:{...raw,type:'potion',slot:'consumable'}};
  return configuredItemFromRow(potionRow,lootRow,level)
@@ -1351,7 +1368,7 @@ function makeConfiguredLoot(level,minRarityName=null){if(!configItems.length)ret
  const inBand=eligible.filter(r=>{const il=Number((r.item_json||r).itemLevel||r.ilvl)||1;return il>=lootRow.itemLevel.min-3&&il<=lootRow.itemLevel.max+3});
  const row=pick(inBand.length?inBand:eligible);
  return configuredItemFromRow(row,lootRow,level)}
-function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];if(EQUIPMENT_ACTIVE_SLOTS.has(item.slot)&&item.effects.length)item.cooldown=Math.max(1,Number(item.cooldown)||1);item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
+function configuredItemFromRow(row,lootRow,level){const raw=row.item_json||row,item={...raw};item.id=crypto.randomUUID();item.configItemId=row.id??item.configItemId??null;item.name=item.name||row.nombre||'Objeto configurado';item.slot=item.slot||row.slot||'trinket1';item.rarity=item.rarity||row.tier||'common';item.label=item.label||tierDefs[item.rarity]?.label||item.rarity;item.itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,Number(item.itemLevel||row.ilvl||level||1)));item.score=Number(item.score||item.itemLevel*8);item.icon=item.icon||row.icon||'';item.damageDice=item.slot==='weapon'?(item.damageDice||row.damageDice||'1d6'):null;if(item.slot==='weapon'){item.weaponType=item.weaponType||row.weaponType||row.weaponCategory||'Sin tipo de arma';item.weaponCategory=item.weaponCategory||configWeaponTypeCategories[item.weaponType]||row.weaponCategory||weaponCategories[0];item.weaponIconRow=Number.isInteger(item.weaponIconRow)?item.weaponIconRow:weaponRowForCategory(item.weaponCategory);item.weaponIconCol=Number.isInteger(item.weaponIconCol)?item.weaponIconCol:weaponPowerColumn(item.itemLevel,item.rarity,item.score);item.weaponIconPath=item.weaponIconPath||weaponIconPath(item.weaponIconRow,item.weaponIconCol);item.defenseStat=item.defenseStat||WEAPON_TYPE_STAT[item.weaponType]||weaponCategoryStats[item.weaponCategory]||'strength';const bounds=weaponRangeBounds(item);item.rangeMin=bounds.min;item.rangeMax=bounds.max}normalizeConfiguredPotion(item,row);item.skillIds=Array.isArray(item.skillIds)?item.skillIds:[];item.affixes=Array.isArray(item.affixes)?item.affixes:parseConfigStats(row.stats||item.stats);item.passives=item.passives||[];item.effects=item.effects||[];if(EQUIPMENT_ACTIVE_SLOTS.has(item.slot)&&item.effects.length)item.cooldown=Math.max(1,Number(item.cooldown)||1);item.desc=item.desc||`Configurado · Nivel ${item.itemLevel} · Poder ${item.score}`;item.flavor=item.flavor||'Objeto creado en modo configuración.';return applyOffhandGuarantee(item)}
 function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x.trim()).filter(Boolean).map(part=>{const m=part.match(/^([^:+-]+)\s*:?\s*([+-]?\d+)/);return m?{key:m[1].trim(),label:m[1].trim(),value:Number(m[2]),percent:false}:null}).filter(Boolean)}
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
@@ -1629,7 +1646,7 @@ async function start(){
  // (effects and icon included), not the light row that only says the item is
  // a consumable.
  if(!configItemsFullyLoaded())await fetchConfigItems();
- if(!configClasses.length)await fetchConfigClasses();
+ if(!configClasses.length||configClasses.some(row=>!row?.class_json))await fetchConfigClasses();
  const race=selectedRace,cls=resolveClassDef(selectedClass);
  // resolveClassDef returns null for a custom class whose config_class row
  // hasn't finished loading yet (fetchConfigClasses is async and the class-
@@ -6597,7 +6614,7 @@ function allClassIds(){
  return [...ids];
 }
 
-async function fetchConfigItems({light=false}={}){try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();renderConfigPotionsList();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+async function fetchConfigItems({light=false}={}){try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(light){const fullById=new Map(configItems.filter(row=>row?.item_json).map(row=>[String(row.id),row]));configItems=rows.map(row=>{const full=fullById.get(String(row.id));return full?{...row,icon:full.icon,item_json:full.item_json}:row})}else{configItems=rows;hydrateInventoryPotionsFromConfig()}renderConfigItems();renderConfigPotionsList();if(document.getElementById('configChestItemResults'))renderChestItemResults();if(game?.inventory)updateUI()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
 
@@ -6717,14 +6734,18 @@ function applyClassSkillOverrides(){
 // renderClassChoices() self-heal: fetch once, dedupe concurrent callers,
 // and tell "still loading" apart from "genuinely no rows yet".
 async function fetchConfigClasses({light=false}={}){
- if(configClassesFetchInFlight)return configClassesFetchInFlight;
+ if(configClassesFetchInFlight){
+  if(!light&&configClassesFetchIsLight){await configClassesFetchInFlight;return fetchConfigClasses()}
+  return configClassesFetchInFlight;
+ }
+ configClassesFetchIsLight=light;
  configClassesFetchInFlight=(async()=>{
-  try{const r=await fetch(`/api/config-class${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');configClasses=Array.isArray(data)?data:[];applyClassSkillOverrides();renderConfigClasses()}
+  try{const r=await fetch(`/api/config-class${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar clases');const rows=Array.isArray(data)?data:[];if(light){const fullById=new Map(configClasses.filter(row=>row?.class_json).map(row=>[String(row.id),row]));configClasses=rows.map(row=>fullById.get(String(row.id))||row)}else configClasses=rows;applyClassSkillOverrides();renderConfigClasses()}
   catch(e){const st=document.getElementById('configClassStatus')||document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_class: ${e.message}`}
   // set the "loaded" flag before the self-healing render below, or a
   // genuinely-empty result would re-trigger the loading state forever
   // (renderClassChoices only re-fetches while configClassesLoaded is false)
-  configClassesLoaded=true;configClassesFetchInFlight=null;
+  configClassesLoaded=true;configClassesFetchInFlight=null;configClassesFetchIsLight=false;
   renderClassChoices();
   renderTestClassChoices();
   if(configGatesLoaded)renderConfigGatesLists();
