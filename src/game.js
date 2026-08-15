@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.78.0';
+const APP_VERSION='0.79.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -989,7 +989,7 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=DUNGEON_FLOORS;p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.fine={story:String(p.fine?.story||''),lootPerFloor:Math.max(0,Number(p.fine?.lootPerFloor)||0),width:Math.max(15,Number(p.fine?.width)||49),height:Math.max(15,Number(p.fine?.height)||49),geometry:p.fine?.geometry||'rooms',roomDensityPct:Math.max(25,Number(p.fine?.roomDensityPct)||100)};p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,DUNGEON_FLOORS).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):'',archetype:row?.archetype?String(row.archetype):'',story:row?.story?String(row.story):''})):[];return p}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=DUNGEON_FLOORS;p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.fine={story:String(p.fine?.story||''),lootPerFloor:Math.max(0,Number(p.fine?.lootPerFloor)||0),width:COLS,height:ROWS,geometry:['rooms','caves','mixed','open'].includes(p.fine?.geometry)?p.fine.geometry:'rooms',roomDensityPct:Math.max(25,Math.min(200,Number(p.fine?.roomDensityPct)||100))};p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,DUNGEON_FLOORS).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):'',archetype:row?.archetype?String(row.archetype):'',story:row?.story?String(row.story):''})):[];return p}
 function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||'',ambiente:row.querySelector('[data-world-ambiente-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,enemyLootPct:document.getElementById('worldEnemyLootPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
@@ -1684,27 +1684,27 @@ function expectedTierForFloor(floor,total=20){
  return r<.25?1:r<.55?2:r<.8?3:4;
 }
 
-// Room dimension ranges are ~30% smaller than the original design (map grid
-// shrunk from 70x70 to 49x49 to match) - room/chest/enemy counts below are
-// untouched, so the same content packs into a smaller floor.
+// Room types deliberately reserve broader footprints for coherent scene assets.
+// Large architecture (houses, palaces and similar 3x3+ assets) belongs in the
+// largest rooms; statues, banners and other small props remain useful accents.
 const ROOM_TYPES={
- filler:      {label:'Sala vacía',      size:[3,5],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ filler:      {label:'Sala vacía',      size:[4,7],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
  combat:      {label:'Sala de combate', size:[4,7],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
- ambush:      {label:'Emboscada',       size:[4,6],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
- guardpost:   {label:'Puesto de guardia',size:[4,6], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
- eliteden:    {label:'Guarida de élite',size:[5,8], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
- vault:       {label:'Cámara acorazada',size:[3,5],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ ambush:      {label:'Emboscada',       size:[5,8],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[5,8], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[7,11], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[4,7],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
  arena:       {label:'Arena',           size:[7,11], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
- hub:         {label:'Encrucijada',     size:[4,6],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
- traproom:    {label:'Sala trampa',     size:[4,6],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
- shrine:      {label:'Altar',           size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
- creator:     {label:'Sala del Creador',size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
- soulmerchant:{label:'Mercader de Souls',size:[4,5], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
- deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
- knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
- bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[5,8],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
+ soulmerchant:{label:'Mercader de Souls',size:[5,7], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
+ deadend:     {label:'Callejón',        size:[4,6],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
+ knot:        {label:'Nudo de pasillos',size:[4,6],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
+ bossarena:   {label:'Arena del jefe',  size:[9,13], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
  megaboss:    {label:'Cámara del megajefe',size:[15,19],enemies:[0,0],tier:3, cover:.05, traps:0,   chest:.4,  exits:1, event:0,  boss:true, megaboss:true},
- prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+ prep:        {label:'Sala de preparación',size:[5,8],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
@@ -1940,7 +1940,7 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
   }
  }
  if(smallAssetDefs.length){
-  const target=Math.max(10,Math.round(assetPlacements.length*1.5));
+  const target=Math.max(14,Math.ceil(assetPlacements.length*1.5*1.35));
   let placed=0,guard=0;
   while(placed<target&&guard<800){
    guard++;
@@ -2171,13 +2171,23 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
   game.forcedFloorArchetype='bossrush';
  }
+ // The geometry selector applies only when the floor plan does not pin an
+ // archetype. `open` uses the city builder, `caves` the maze topology and
+ // `mixed` alternates deliberately between open, maze and normal layouts.
+ if(!game?.forcedFloorArchetype){
+  const geometry=params?.fine?.geometry||'rooms';
+  if(geometry==='open')game.forcedFloorArchetype='city';
+  else if(geometry==='caves')game.forcedFloorArchetype='laberinto';
+  else if(geometry==='mixed')game.forcedFloorArchetype=pick(['standard','laberinto','city']);
+ }
  // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
  // 33% chance on every floor that's a multiple of 3, regardless of recency/
  // cooldown or the other archetypes' weights.
  if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
- if(floor===DUNGEON_FLOORS&&game?.forcedFloorArchetype==='bossrush')delete game.forcedFloorArchetype;
+ // Forced geometry is resolved per floor; do not leak it into the next live floor.
+ if(game?.forcedFloorArchetype)delete game.forcedFloorArchetype;
  // City floors have no walled rooms at all (open district of building assets),
  // so they can't go through the shared room/corridor carving below - built by
  // its own dedicated generator instead, same pattern as buildMegabossFloorPlan.
@@ -2209,7 +2219,8 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const symmetryMode=pick(SYMMETRY_MODES);
  const overlapsRoom=(x,y,w,h)=>rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y);
  const roomInBounds=(x,y,w,h)=>x>=1&&y>=1&&x+w<=COLS-1&&y+h<=ROWS-1;
- const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
+ const roomDensity=pctMult(params?.fine?.roomDensityPct||100);
+ const targetRooms=Math.max(2,Math.round(randBetween(L.rooms[0],L.rooms[1])*roomDensity));
  for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
   const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
   const lo=Math.max(3,Math.min(T.size[0],layoutSizeMax)),hi=Math.max(lo,Math.min(T.size[1],layoutSizeMax));
@@ -2397,14 +2408,33 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
   // Hard cap so a floor never gets carpeted with decoration: a handful of
   // rooms at most, scaling gently with how many rooms the floor even has.
-  const maxAssets=Math.min(6,1+Math.floor(rooms.length/5));
+  const maxAssets=Math.min(9,Math.ceil((1+Math.floor(rooms.length/5))*1.35));
   for(const r of assetRoomPool){
    if(assetPlacements.length>=maxAssets)break;
-   if(Math.random()>=.25)continue; // not every eligible room gets one
+   if(Math.random()>=.3375)continue; // 35% more decorated rooms than the previous 25% density
    const fitting=assetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
    if(!fitting.length)continue;
    tryPlaceAsset(r,pick(fitting));
   }
+  // 3x3+ decorations may act as an interior room boundary. Prefer an edge
+  // placement so architecture partitions the scene coherently without sealing
+  // the clear border ring/corridor exits maintained by tryPlaceAsset().
+  const boundaryDefs=assetDefs.filter(a=>a.cols>=3||a.rows>=3);
+  if(boundaryDefs.length){
+   const boundaryRooms=[...assetRoomPool].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+   const boundaryTarget=Math.min(Math.ceil(maxAssets*.45),boundaryRooms.length);
+   let boundaries=0;
+   for(const r of boundaryRooms){
+    if(boundaries>=boundaryTarget||assetPlacements.length>=maxAssets)break;
+    const fitting=boundaryDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+    if(!fitting.length)continue;
+    // Candidate enumeration already keeps the outer walking ring open; using
+    // the largest fitting asset makes houses/palaces define the room mass.
+    const def=[...fitting].sort((a,b)=>(b.cols*b.rows)-(a.cols*a.rows))[0];
+    if(tryPlaceAsset(r,def,false))boundaries++;
+   }
+  }
+
   // Guarantee: any floor with at least one 2x2-or-larger asset defined always
   // lands that size in at least a handful of rooms (up to 3, or fewer on a
   // very small floor), regardless of how the ~25%-per-room roll above landed -
@@ -2547,35 +2577,43 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  };
 }
 
+function validateGeneratedFloor(plan,floor){
+ if(!plan||!Array.isArray(plan.map)||plan.map.length!==ROWS||plan.map.some(row=>!Array.isArray(row)||row.length!==COLS))throw new Error(`Piso ${floor}: mapa incompleto.`);
+ if(!Array.isArray(plan.rooms)||!plan.rooms.length)throw new Error(`Piso ${floor}: no contiene salas o zonas.`);
+ const inside=p=>p&&Number.isInteger(p.x)&&Number.isInteger(p.y)&&p.x>=0&&p.y>=0&&p.x<COLS&&p.y<ROWS;
+ if(!inside(plan.spawn)||!inside(plan.stairs)||plan.map[plan.spawn.y]?.[plan.spawn.x]!==0||plan.map[plan.stairs.y]?.[plan.stairs.x]!==0)throw new Error(`Piso ${floor}: entrada o salida inválida.`);
+ const reachable=floodFillOpen(plan.map,plan.spawn.x,plan.spawn.y);
+ if(!reachable.has(key(plan.stairs.x,plan.stairs.y)))throw new Error(`Piso ${floor}: la salida no es alcanzable.`);
+ for(const asset of plan.assets||[]){
+  if(!inside(asset)||asset.x+Math.max(1,asset.cols||1)>COLS||asset.y+Math.max(1,asset.rows||1)>ROWS)throw new Error(`Piso ${floor}: asset fuera del mapa.`);
+ }
+ return plan;
+}
+
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
  if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
  if(!normalizedSupabaseFloors().length)throw new Error('No hay floors en config_floor para generar floors aleatorios.');
- const floors=[],lootTable=createLootProgressionTable(params.floors);
- const oldGame=game;
+ const floors=[],lootTable=createLootProgressionTable(params.floors),oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
  const recent=[];
- for(let floor=1;floor<=params.floors;floor++){
-  game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
-  const configuredArchetype=worldPlanEntry(params,floor)?.archetype;if(configuredArchetype)game.forcedFloorArchetype=configuredArchetype;
-  let plan=null;
-  for(let attempt=0;attempt<3&&!plan;attempt++)plan=buildFloorPlan(floor,params,{recent});
-  if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
-  recent.push(plan.archetype);
-  floors.push({
-   floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
-   doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,
-   archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
-   objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
-   enemies:plan.enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),
-   enemyFamily:plan.enemyFamily,enemyFamilyId:plan.enemyFamilyId,
-   themeName:plan.themeName,floorTileset:compactFloorTilesetForWorld(plan.floorTileset),
-   boss:plan.boss?compactEnemyForWorld(plan.boss):null
-  });
- }
- game=oldGame;
- return {schemaVersion:4,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
+ try{
+  for(let floor=1;floor<=params.floors;floor++){
+   let plan=null,lastError=null;
+   for(let attempt=0;attempt<8&&!plan;attempt++){
+    game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
+    const configuredArchetype=worldPlanEntry(params,floor)?.archetype;
+    if(configuredArchetype)game.forcedFloorArchetype=configuredArchetype;
+    try{plan=validateGeneratedFloor(buildFloorPlan(floor,params,{recent}),floor)}catch(error){lastError=error;plan=null}
+   }
+   if(!plan)throw new Error(`No se pudo generar el piso ${floor} tras 8 intentos. ${lastError?.message||''}`.trim());
+   recent.push(plan.archetype);
+   floors.push({floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,enemies:plan.enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:plan.enemyFamily,enemyFamilyId:plan.enemyFamilyId,themeName:plan.themeName,floorTileset:compactFloorTilesetForWorld(plan.floorTileset),boss:plan.boss?compactEnemyForWorld(plan.boss):null});
+  }
+  return {schemaVersion:4,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
+ }finally{game=oldGame}
 }
+
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
@@ -3768,8 +3806,12 @@ function useAltar(a){
  floating('✦',a.x,a.y,'#9be8ff');
 }
 const SOUL_PRICES={common:5,uncommon:10,rare:20,epic:30,legendary:45};
-function openSoulMerchant(altar){
- altar.stock=altar.stock||Object.keys(SOUL_PRICES).map(tier=>{const rows=configItems.map(r=>r.item_json||r).filter(i=>i.type!=='potion'&&(i.rarity||'common')===tier);return rows.length?{...pick(rows),merchantTier:tier}:null}).filter(Boolean);
+async function openSoulMerchant(altar){
+ if(!configItems.length)await fetchConfigItems();
+ // The merchant sells the canonical config_items payload (including potions),
+ // not procedural loot. The purchased copy is inserted into game.inventory,
+ // which is the character's backpack persisted in the character bundle.
+ altar.stock=altar.stock||Object.keys(SOUL_PRICES).map(tier=>{const rows=configItems.map(r=>r.item_json||r).filter(i=>!i.hidden&&(i.rarity||i.tier||'common')===tier);return rows.length?{...structuredClone(pick(rows)),merchantTier:tier}:null}).filter(Boolean);
  storyTitle.textContent='MERCADER DE SOULS';storyBody.innerHTML=`<p>Souls disponibles: ${soulIconHtml()} <b>${game.player.souls||0}</b></p><div class="configItemsList">${altar.stock.map((item,i)=>`<div class="configItem"><div><b style="color:${tierColor(item.merchantTier)}">${item.name}</b><span class="small">${tierDefs[item.merchantTier]?.label} · ${SOUL_PRICES[item.merchantTier]} souls</span><button data-soul-buy="${i}" ${(game.player.souls||0)<SOUL_PRICES[item.merchantTier]?'disabled':''}>Comprar</button></div></div>`).join('')}</div><button id="closeSoulMerchant">Cerrar</button>`;storyOverlay.classList.remove('hidden');setTimeout(()=>renderIdentityMiniIcons(game.player),0);
  storyBody.querySelectorAll('[data-soul-buy]').forEach(btn=>btn.onclick=()=>{const item=altar.stock[Number(btn.dataset.soulBuy)],price=SOUL_PRICES[item.merchantTier];if((game.player.souls||0)<price)return;game.player.souls-=price;addInventoryItem({...item,id:crypto.randomUUID()});altar.stock=altar.stock.filter(x=>x!==item);persistSouls();openSoulMerchant(altar)});document.getElementById('closeSoulMerchant').onclick=()=>storyOverlay.classList.add('hidden');
 }
@@ -8906,11 +8948,17 @@ async function enterWorldWithCharacter(){
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(currentCharacter.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
  // shards live in their own user_pj column (not pj_json) so they survive
  // independently of the rest of the character bundle - see persistShards()
- game.player.shards=currentCharacter.shards?normalizeShards(currentCharacter.shards):(game.player.shards||{});
- game.player.souls=Math.max(0,Number(currentCharacter.souls??game.player.souls)||0);
+ const persistedShards=normalizeShards(currentCharacter.shards??game.player.shards??{});
+ const persistedSouls=Math.max(0,Number(currentCharacter.souls??game.player.souls??0)||0);
+ game.player.shards=persistedShards;
+ game.player.souls=persistedSouls;
  // custom-crafted items (Creator's Room) live in their own user_pj column too
  game.player.customItems=currentCharacter.custom_items||game.player.customItems||[];
  generateFloor();
+ // Floor generation/recalculation must never reset currencies loaded from the
+ // selected existing character (including zero-valued balances).
+ game.player.shards=persistedShards;
+ game.player.souls=persistedSouls;
  // New session with an existing character: start the run topped up,
  // regardless of what was persisted from a previous run. Resuming an
  // existing session (resumeSession()) must NOT do this - it keeps whatever
@@ -10688,7 +10736,7 @@ document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
 menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
-loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+// Authentication is installed next to the form in index.html before the game runtime.
 backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
 
