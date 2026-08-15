@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.80.0';
+const APP_VERSION='0.80.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -7266,7 +7266,7 @@ async function saveConfigClass(item,skillsBag){
  // classIdsForSkillMode('advanced') picks it up regardless of whether its
  // classId happens to reuse a hardcoded one (a reskinned/renamed class).
  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:row?.id,nombre:item.name,icon:item.icon,class_json:item,skills_json:skillsBag,advanced:true})});
- const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');
+ const data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar la clase');
  window.pendingNewClassId=null;
  await fetchConfigClasses();
  return data;
@@ -8409,11 +8409,11 @@ function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraser
  return{drawCrop,saveIcon,loadHex,reclamp:()=>{if(rect){rect=clampRect(rect);drawCrop();saveIcon()}}}
 }
 function setupClassConfigMode(){
- const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono'});
+ const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono',maxSize:128});
  if(!editor)return;
- setupImageIconEditor({inputId:'configClassFemaleImageInput',canvasId:'configClassFemaleCropCanvas',previewId:'configClassFemaleIconPreview',statusId:'configClassFemaleIconStatus',zoomId:'configClassFemaleCropZoom',eraserId:'configClassFemaleMagicEraserBtn',toleranceId:'configClassFemaleMagicTolerance',hexKey:'currentConfigClassFemaleIconHex',statusPrefix:'Icono femenino'});
- setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill'});
- setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación'});
+ setupImageIconEditor({inputId:'configClassFemaleImageInput',canvasId:'configClassFemaleCropCanvas',previewId:'configClassFemaleIconPreview',statusId:'configClassFemaleIconStatus',zoomId:'configClassFemaleCropZoom',eraserId:'configClassFemaleMagicEraserBtn',toleranceId:'configClassFemaleMagicTolerance',hexKey:'currentConfigClassFemaleIconHex',statusPrefix:'Icono femenino',maxSize:128});
+ setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill',maxSize:128});
+ setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación',maxSize:128});
  const summonExistingSel=document.getElementById('configSummonIconExisting');
  if(summonExistingSel)summonExistingSel.onchange=()=>{
   if(!summonExistingSel.value)return;

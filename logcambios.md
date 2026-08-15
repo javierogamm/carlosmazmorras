@@ -1,3 +1,10 @@
+## v0.80.1 - 2026-08-15
+
+- Limitados a 128 px los iconos masculino, femenino, de skills e invocaciones generados por el editor de clases, evitando que las imágenes originales grandes excedan el tamaño admitido por la petición al guardar.
+- El guardado de clases interpreta ahora también las respuestas de error no JSON del servidor y muestra un mensaje legible en lugar del fallo `Unexpected token`.
+- Actualizada la versión de la app y del paquete a `0.80.1` (`v0.80.1 ICONOS GUARDABLES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.80.0 - 2026-08-15
 
 - Corregida la transición del catálogo ligero de objetos a su carga completa antes de entrar en un piso, crear un personaje, reanudar una partida o iniciar una sesión multijugador.
