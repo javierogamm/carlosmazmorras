@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.77.0';
+const APP_VERSION='0.78.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2580,7 +2580,9 @@ function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
- Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:data.chests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
+ const preservedChests=game?.preservedSoulReviveLoot?.[String(game.floor)];
+ const floorChests=preservedChests?JSON.parse(JSON.stringify(preservedChests)):(data.chests||[]).map(c=>initializeChestTier({...c,chestDef:c.chestDef?{...c.chestDef}:null},game.player.level));
+ Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
@@ -3120,7 +3122,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
  game.recentArchetypes.push(plan.archetype);
  Object.assign(game,{
   map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
-  chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],enemies:plan.enemies,enemyFamily:plan.enemyFamily,
+  chests:game?.preservedSoulReviveLoot?.[String(game.floor)]?JSON.parse(JSON.stringify(game.preservedSoulReviveLoot[String(game.floor)])):(plan.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel)),traps:plan.traps,altars:plan.altars,assets:plan.assets||[],enemies:plan.enemies,enemyFamily:plan.enemyFamily,
   floorTileset:plan.floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:plan.boss,
   floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,
   objective:plan.objective,rewardRarityBonus:plan.rewardRarityBonus,precomputedEvent:plan.event||null,partyScaled:0
@@ -4009,11 +4011,35 @@ function craftUpgradeStat(item,affix){
 }
 const CHEST_ITEM_RARITY_BY_TIER={1:'common',2:'uncommon',3:'rare',4:'epic',5:'legendary'};
 function chestItemRarity(tier){return CHEST_ITEM_RARITY_BY_TIER[Math.max(1,Math.min(5,Number(tier)||1))]}
+function chestTierWeightsForLevel(level){
+ const lv=Math.max(1,Math.floor(Number(level)||1));
+ if(lv<=5){
+  const t=(lv-1)/4;
+  return {1:60+(15-60)*t,2:35+(60-35)*t,3:5+(25-5)*t,4:0,5:0};
+ }
+ if(lv<=10){
+  const t=(lv-6)/4;
+  return {1:0,2:50+(10-50)*t,3:40+(35-40)*t,4:10+(45-10)*t,5:10*t};
+ }
+ const d=lv-10,uncommon=10*Math.pow(.9,d),rare=35*Math.pow(.95,d),epic=45*Math.pow(.98,d);
+ return {1:0,2:uncommon,3:rare,4:epic,5:100-uncommon-rare-epic};
+}
+function rollChestTierForLevel(level){
+ const weights=chestTierWeightsForLevel(level),roll=Math.random()*100;
+ let cursor=0;
+ for(const tier of [1,2,3,4,5]){cursor+=weights[tier]||0;if(roll<cursor)return tier}
+ return 5;
+}
+function initializeChestTier(chest,level){
+ if(!chest||chest.lootTier)return chest;
+ chest.lootTier=rollChestTierForLevel(level);
+ return chest;
+}
 // Every generated chest is a snapshot of one real config_chest row. There is
 // no procedural, tier-progression or potion side-channel: the configured list
 // is the sole source of chest definitions.
 function pickChestDefForFloor(){
- const rows=configChests.filter(r=>r?.chest_json&&r.chest_json.type&&r.chest_json.tier);
+ const rows=configChests.filter(r=>r?.chest_json&&r.chest_json.type);
  if(!rows.length)return null;
  const row=pick(rows);
  return {...row.chest_json,configChestId:row.id};
@@ -4025,13 +4051,13 @@ function chestLootItem(c){
  const type=def.type;
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
  if(type==='skill'){
-  const rarity=chestItemRarity(def.tier);
+  const rarity=chestItemRarity(c.lootTier);
   const ids=Object.keys(skillDefs).filter(id=>skillDefs[id].rarity===rarity&&!(game.player.knownSkills||[]).includes(id));
   const id=ids.length?pick(ids):null;
   if(id)unlockSkillLoot(id);
   return null
  }
- const chestRarity=chestItemRarity(def.tier);
+ const chestRarity=chestItemRarity(c.lootTier);
  const pool=configItems.filter(r=>{
   const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
   if(rarity!==chestRarity)return false;
@@ -7450,8 +7476,8 @@ function renderEnemyConfig(){renderEnemySkillSelect();renderEnemySkillPool();if(
 function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageInput',canvasId:'configEnemyCropCanvas',previewId:'configEnemyIconPreview',statusId:'configEnemyIconStatus',zoomId:'configEnemyCropZoom',eraserId:'configEnemyMagicEraserBtn',toleranceId:'configEnemyMagicTolerance',hexKey:'currentConfigEnemyIconHex',statusPrefix:'Icono enemigo'});window.currentEnemySkillPool=window.currentEnemySkillPool||[];renderEnemyConfig();configEnemySkills.onchange=()=>addEnemySkillToPool(configEnemySkills.value);saveConfigEnemyBtn.onclick=async()=>{configEnemyStatus.textContent='Guardando enemigo...';try{const row=currentEnemyRow(),id=window.editingConfigEnemyId,r=await fetch(id?`/api/enemy-detail?id=${encodeURIComponent(id)}`:'/api/enemy-detail',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar enemigo');await fetchEnemyConfig();configEnemyStatus.textContent='Enemigo guardado.'}catch(e){configEnemyStatus.textContent=e.message}};newConfigEnemyBtn.onclick=resetEnemyForm;saveEnemyFamilyBtn.onclick=async()=>{try{const name=configEnemyFamilyName.value.trim()||'Sin familia',json=familyJsonFromDetails(name),existing=configEnemyFamilies.find(r=>r.family_name===name),r=await fetch(existing?`/api/enemy-family?id=${existing.id}`:'/api/enemy-family',{method:existing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:json})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo consolidar');await fetchEnemyConfig();configEnemyStatus.textContent='Familia consolidada en enemy_family.'}catch(e){configEnemyStatus.textContent=e.message}};exportEnemyFamilyBtn.onclick=()=>{const blob=new Blob([JSON.stringify(familyJsonFromDetails(configEnemyFamilyName.value.trim()||'Sin familia'),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='enemy-family.json';a.click();URL.revokeObjectURL(a.href)};importEnemyFamilyInput.onchange=async()=>{try{let familyCount=0,enemyCount=0;const familiesRaw=await parseImportedJsonFiles([...importEnemyFamilyInput.files]);for(const raw of familiesRaw){const j=raw.family_json||raw,name=j.name||raw.family_name||'Familia importada',r=await fetch('/api/enemy-family',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:{...j,name}})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo importar familia');familyCount++;const enemies=Array.isArray(j.enemies)?j.enemies:[];if(enemies.length){const detailRows=enemies.map(e=>enemyDetailRowFromImportedEnemy(e,name));await postJsonRows('/api/enemy-detail',detailRows);enemyCount+=detailRows.length}}await fetchEnemyConfig();configEnemyStatus.textContent=`Importadas ${familyCount} familia(s) y ${enemyCount} enemigo(s) individuales en enemy_detail.`}catch(e){configEnemyStatus.textContent=e.message}finally{importEnemyFamilyInput.value=''}}}
 
 // ---- Treasure chest config (config_chest) --------------------------------
-// A chest definition = tier (1-5, exact item rarity) + type (equipment/
-// weapon/potion/skill) + optional class filters + icon. This is the
+// A chest definition = type (equipment/weapon/potion/skill) + optional class
+// filters + icon. The runtime tier is rolled from the player level. This is the
 // authoritative chest catalogue: dungeon generation snapshots only rows from
 // config_chest and opening resolves their type+tier against config_items.
 let configChests=[];
@@ -7470,9 +7496,9 @@ function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
 }
 function renderChestItemResults(){
  const summary=document.getElementById('configChestLootSummary');if(!summary)return;
- const tier=Number(document.getElementById('configChestTier')?.value)||1,type=document.getElementById('configChestType')?.value||'equipment';
+ const type=document.getElementById('configChestType')?.value||'equipment';
  const typeLabels={equipment:'equipo',weapon:'arma',potion:'poción',skill:'habilidad'};
- summary.textContent=`Tier ${['I','II','III','IV','V'][tier-1]}: soltará ${type==='skill'?'una':'un objeto'} ${tierDefs[chestItemRarity(tier)]?.label.toLowerCase()} aleatorio de ${typeLabels[type]||type}, decidido al abrir.`;
+ summary.textContent=`Cofre de ${typeLabels[type]||type}: su tier se sorteará al iniciar el piso según el nivel del personaje y el contenido se decidirá al abrir.`;
 }
 function toggleChestTypeFields(){
  const type=document.getElementById('configChestType')?.value||'equipment';
@@ -7482,7 +7508,6 @@ function toggleChestTypeFields(){
 function currentConfigChestJson(){
  return {
   name:document.getElementById('configChestName')?.value.trim()||'Cofre sin nombre',
-  tier:Number(document.getElementById('configChestTier')?.value)||1,
   type:document.getElementById('configChestType')?.value||'equipment',
   slotFilter:document.getElementById('configChestSlotFilter')?.value||'all',
   weaponTypeFilter:document.getElementById('configChestWeaponTypeFilter')?.value||'all',
@@ -7492,7 +7517,6 @@ function currentConfigChestJson(){
 function resetConfigChestForm(){
  window.editingConfigChestId=null;window.currentConfigChestIconHex='';
  document.getElementById('configChestName').value='';
- document.getElementById('configChestTier').value='1';
  document.getElementById('configChestType').value='equipment';
  document.getElementById('configChestSlotFilter').value='all';
  document.getElementById('configChestWeaponTypeFilter').value='all';
@@ -7506,7 +7530,6 @@ function loadConfigChestForEdit(id){
  const c=row.chest_json||{};
  window.editingConfigChestId=row.id;window.currentConfigChestIconHex=c.icon||'';
  document.getElementById('configChestName').value=c.name||'';
- document.getElementById('configChestTier').value=String(c.tier||1);
  document.getElementById('configChestType').value=c.type||'equipment';
  document.getElementById('configChestSlotFilter').value=c.slotFilter||'all';
  document.getElementById('configChestWeaponTypeFilter').value=c.weaponTypeFilter||'all';
@@ -7523,8 +7546,8 @@ function renderConfigChests(){
  const root=document.getElementById('configChestsList');if(!root)return;
  if(!configChests.length){root.innerHTML='<p class="small">No hay cofres configurados.</p>';return}
  const typeLabels={equipment:'Equipo',weapon:'Arma',potion:'Poción',skill:'Habilidad'};
- const sorted=[...configChests].sort((a,b)=>(a.chest_json?.tier||1)-(b.chest_json?.tier||1)||String(a.chest_json?.type||'').localeCompare(String(b.chest_json?.type||'')));
- root.innerHTML=sorted.map(r=>{const c=r.chest_json||{},rarity=chestItemRarity(c.tier);return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[rarity]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${tierDefs[rarity]?.label||rarity} · ${typeLabels[c.type]||c.type} · Aleatorio al abrir</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
+ const sorted=[...configChests].sort((a,b)=>String(a.chest_json?.type||'').localeCompare(String(b.chest_json?.type||'')));
+ root.innerHTML=sorted.map(r=>{const c=r.chest_json||{};return `<div class="configItem"><span class="tierDot" style="background:#ddd"></span><div><b>${c.name||'Cofre'}</b><span class="small">${typeLabels[c.type]||c.type} · Tier según nivel al iniciar piso · Aleatorio al abrir</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
  root.querySelectorAll('[data-chest-edit]').forEach(b=>b.onclick=()=>loadConfigChestForEdit(b.dataset.chestEdit));
  root.querySelectorAll('[data-chest-delete]').forEach(b=>b.onclick=()=>removeConfigChest(b.dataset.chestDelete));
 }
@@ -7537,7 +7560,6 @@ function setupChestConfigMode(){
  document.getElementById('configChestType').onchange=()=>{toggleChestTypeFields();renderChestItemResults()};
  document.getElementById('configChestSlotFilter').onchange=renderChestItemResults;
  document.getElementById('configChestWeaponTypeFilter').onchange=renderChestItemResults;
- document.getElementById('configChestTier').onchange=renderChestItemResults;
  document.getElementById('saveConfigChestBtn').onclick=async()=>{
   const st=document.getElementById('configChestStatus');st.textContent='Guardando cofre...';
   try{
@@ -8914,7 +8936,8 @@ function floorSnapshotDynamic(){
  return {stairs:game.stairs,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null};
 }
 function applyFloorSnapshot(overlay){
- Object.assign(game,{floorEntryLevel:overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:overlay.chests||[],doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
+ const restoredFloorEntryLevel=overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1;
+ Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
 }
 function persistTurnState(){
@@ -9096,12 +9119,11 @@ function buildDungeonPreviewText(worldJson){
   const enemyTiers={};for(const e of f.enemies||[]){const t=e.tier||'i';enemyTiers[t]=(enemyTiers[t]||0)+1}
   const enemyLine=Object.keys(ENEMY_TIER_LABELS).map(t=>`Tier ${ENEMY_TIER_LABELS[t]}: ${enemyTiers[t]||0}`).join(' · ');
   const bossLine=f.boss?` · Jefe: ${f.boss.name||'Jefe'}`:'';
-  const chestTiers={},chestNames=[];
-  for(const c of f.chests||[]){const t=c.chestDef?.tier||'?';chestTiers[t]=(chestTiers[t]||0)+1;if(c.chestDef?.name)chestNames.push(c.chestDef.name)}
-  const chestTierLine=[1,2,3,4,5].map(t=>`Tier ${t}: ${chestTiers[t]||0}`).join(' · ');
+  const chestNames=[];
+  for(const c of f.chests||[])if(c.chestDef?.name)chestNames.push(c.chestDef.name);
   const nameCounts=chestNames.reduce((acc,n)=>{acc[n]=(acc[n]||0)+1;return acc},{});
   const namesLine=Object.keys(nameCounts).length?Object.entries(nameCounts).map(([n,c])=>c>1?`${n} x${c}`:n).join(', '):'Ninguno';
-  return `PISO ${f.floor} (${f.themeName||''})\n Enemigos -> ${enemyLine}${bossLine}\n Cofres por tier -> ${chestTierLine}\n Cofres asignados -> ${namesLine}`;
+  return `PISO ${f.floor} (${f.themeName||''})\n Enemigos -> ${enemyLine}${bossLine}\n Tier de cofres -> Se sortea al iniciar según nivel\n Cofres asignados -> ${namesLine}`;
  }).join('\n\n');
 }
 function proceedAfterWorldChosen(){

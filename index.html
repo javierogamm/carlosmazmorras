@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.77.0 COFRES CONFIGURADOS</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.77.0">
+<title>MAZMORRA // BOTÍN v0.78.0 TIERS POR NIVEL</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.78.0">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.77.0 COFRES CONFIGURADOS</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.78.0 TIERS POR NIVEL</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -579,9 +579,8 @@
   <div class="configLayout">
    <section class="panel">
     <h2>Editor de cofres del tesoro</h2>
-    <p class="small">Cada cofre generado se elige exclusivamente de <code>config_chest</code>. Su tier fija la rareza exacta y su tipo fija la clase del objeto aleatorio que se sorteará solo al abrirlo.</p>
+    <p class="small">Cada cofre generado se elige exclusivamente de <code>config_chest</code>, que fija su tipo. El tier se sortea al iniciar el piso con pesos dependientes del nivel del personaje; el objeto concreto se sortea solo al abrir.</p>
     <div class="configForm">
-     <label>Tier de cofre <select id="configChestTier"><option value="1">I</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option><option value="5">V</option></select></label>
      <label>Tipo <select id="configChestType"><option value="equipment">Equipo</option><option value="weapon">Arma</option><option value="potion">Poción</option><option value="skill">Habilidad</option></select></label>
      <label id="configChestSlotFilterWrap">Slot <select id="configChestSlotFilter"><option value="all">Todas</option><option value="head">Cabeza</option><option value="chest">Pecho</option><option value="hands">Manos</option><option value="legs">Piernas</option><option value="boots">Botas</option><option value="neck">Cuello</option><option value="ring1">Anillo I</option><option value="ring2">Anillo II</option><option value="trinket1">Trinket I</option><option value="trinket2">Trinket II</option></select></label>
      <label id="configChestWeaponTypeFilterWrap">Tipo de arma <select id="configChestWeaponTypeFilter"><option value="all">Todas</option></select></label>
@@ -591,7 +590,7 @@
     <div class="cropTools"><label>Zoom imagen <input type="range" id="configChestCropZoom" min="25" max="400" value="100"></label><button type="button" id="configChestMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configChestMagicTolerance" min="0" max="160" value="38"></label></div>
     <div class="cropWrap"><canvas id="configChestCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono del cofre conservando su resolución.</div></div>
     <div class="configPreview"><canvas id="configChestIconPreview" width="50" height="50"></canvas><span id="configChestIconStatus" class="small">Sin icono</span></div>
-    <p id="configChestLootSummary" class="small">Tier I: soltará un objeto común aleatorio del tipo seleccionado.</p>
+    <p id="configChestLootSummary" class="small">El tipo queda configurado ahora; la rareza se decidirá al entrar en cada piso según el nivel del personaje.</p>
     <button class="start" id="saveConfigChestBtn" type="button">GUARDAR COFRE</button>
     <button id="newConfigChestBtn" type="button">NUEVO COFRE</button>
     <div id="configChestStatus" class="small"></div>
@@ -808,7 +807,7 @@
 <div class="overlay hidden" id="dungeonPreviewOverlay">
 <div class="modal">
 <h2>CARACTERÍSTICAS DE LA DUNGEON</h2>
-<p class="small">Resumen por piso antes de entrar: enemigos por tier, cofres por tier y qué cofres se han asignado.</p>
+<p class="small">Resumen por piso antes de entrar: enemigos por tier y tipos de cofre asignados. El tier de cada cofre se sortea al iniciar el piso según el nivel del personaje.</p>
 <pre id="dungeonPreviewText" class="dungeonPreviewText"></pre>
 <button class="start" id="dungeonPreviewContinueBtn">ENTRAR EN LA DUNGEON</button>
 <button id="dungeonPreviewBackBtn" type="button">VOLVER</button>
@@ -857,7 +856,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.77.0"></script>
+<script src="./src/game.js?v=0.78.0"></script>
 
 </body>
 </html>

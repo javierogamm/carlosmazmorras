@@ -1,3 +1,13 @@
+## v0.78.0 - 2026-08-15
+
+- Separada la identidad del cofre de su tier: `config_chest` sigue determinando el tipo y los filtros del objeto durante la generación de la dungeon, pero ya no fija su rareza.
+- El tier de cada cofre se sortea individualmente al iniciar el piso usando el nivel actual del personaje y queda persistido en ese cofre para que abrirlo o reanudar la partida no vuelva a sortearlo.
+- Entre los niveles 1 y 5 los pesos progresan linealmente de 60/35/5 % a 15/60/25 % para común/infrecuente/raro.
+- Entre los niveles 6 y 10 los pesos progresan linealmente de 50/40/10/0 % a 10/35/45/10 % para infrecuente/raro/épico/legendario.
+- Desde nivel 11 el peso infrecuente, raro y épico decrece progresivamente a favor de legendario, sin reintroducir común ni utilizar ningún fallback legacy.
+- Simplificados el editor y la vista previa de dungeons para no mostrar un tier de cofre antes de que el personaje inicie el piso.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.78.0`.
+
 ## v0.77.0 - 2026-08-15
 
 - Consolidado `config_chest` como única fuente para los cofres de las dungeons: cada cofre se selecciona de una fila configurada durante la generación y conserva el identificador y una copia de su definición.
