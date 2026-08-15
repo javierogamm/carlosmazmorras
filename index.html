@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.78.0 TIERS POR NIVEL</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.78.0">
+<title>MAZMORRA // BOTÍN v0.79.2 LOGIN AISLADO</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.79.2">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.78.0 TIERS POR NIVEL</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.79.2 LOGIN AISLADO</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -681,9 +681,9 @@
      <label>Loot/cofres por piso <input id="dungeonLootPerFloor" type="number" min="0" max="50" value="4"></label><label><input id="dungeonApMode" type="checkbox"> Combate por puntos de acción</label>
     </div></details>
     <details class="configAccordion"><summary>Geometría y dimensiones totales</summary><div class="configForm">
-     <label>Ancho (casillas) <input id="dungeonWidth" type="number" min="15" max="99" step="2" value="49"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" min="15" max="99" step="2" value="49"></label>
+     <label>Ancho (casillas) <input id="dungeonWidth" type="number" value="49" disabled title="El tablero utiliza 49 casillas"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" value="49" disabled title="El tablero utiliza 49 casillas"></label>
      <label>Geometría <select id="dungeonGeometry"><option value="rooms">Salas y corredores</option><option value="caves">Cuevas orgánicas</option><option value="mixed">Mixta</option><option value="open">Espacio abierto</option></select></label><label>Densidad de salas % <input id="dungeonRoomDensity" type="number" min="25" max="200" value="100"></label>
-    </div><p class="small">Las dimensiones y geometría son metadatos finos del diseño; el motor conserva su malla táctica compatible de 49×49 al consolidar los pisos.</p></details>
+    </div><p class="small">El motor utiliza una malla táctica fija de 49×49; la geometría y la densidad elegidas se aplican al consolidar cada piso.</p></details>
     <details class="configAccordion" open><summary>Tipos e historia de los 6 pisos</summary><div id="dungeonFloorEditor" class="configItemsList"></div></details>
     <div class="configItemActions"><button class="start" id="saveDungeonConfigBtn">GUARDAR DUNGEON</button><button id="newDungeonConfigBtn">NUEVA</button><button id="deleteDungeonConfigBtn">BORRAR</button></div>
     <div class="configItemActions"><button id="exportDungeonConfigBtn">EXPORTAR JSON</button><label class="importJsonBtn dungeonImportBtn">IMPORTAR JSON<input type="file" id="importDungeonConfigInput" accept=".json,application/json"></label></div>
@@ -856,7 +856,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.78.0"></script>
+<script src="./src/login.js?v=0.79.2"></script>
+<script src="./src/game.js?v=0.79.2"></script>
 
 </body>
 </html>
