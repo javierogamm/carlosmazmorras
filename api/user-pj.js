@@ -74,18 +74,22 @@ module.exports=async(req,res)=>{
    const id=req.query?.id||null;
    const nombre=req.query?.nombre||null;
    if(id){
-    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
+    const select='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,feats,shards,souls,custom_items';
+    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?withParsedShards(data[0])||null:withParsedShards(data));
    }
    if(nombre){
-    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&nombre=eq.${encodeURIComponent(nombre)}&order=last_use.desc.nullslast`,{headers:headers(key)});
+    const light=req.query?.light==='1';
+    const select=light?'id,pj_name,pj_status,pj_score,last_use,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName':'*';
+    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}&nombre=eq.${encodeURIComponent(nombre)}&order=last_use.desc.nullslast`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
    }
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,feats,shards,souls,custom_items&order=pj_score.desc.nullslast`,{headers:headers(key)});
+   const scoreSelect='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,feats,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${scoreSelect}&order=pj_score.desc.nullslast`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);

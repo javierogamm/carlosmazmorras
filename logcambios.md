@@ -1009,3 +1009,25 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - En los niveles 3, 5, 10, 15, 20, 25, 30, 35 y 40, el mismo popup añade una skill aleatoria de la clase.
 - Las skills aleatorias salen de cualquier tier disponible de la clase, pero las de tier III solo entran en el pool desde nivel 10.
 - Ajustado el loop posterior a ataques/skills para que, si el golpe mata a un enemigo y provoca subida de nivel, se atienda el popup antes de avanzar el turno enemigo.
+
+## v0.72.0 - 2026-08-15
+
+- Reducido el egress de los listados de items, pociones, clases, razas, floors, personajes y dungeons: las vistas de selección/configuración reciben solo metadatos y reservan los JSON completos para el detalle necesario.
+- La selección de personaje obtiene la ficha completa únicamente después de pulsar el personaje elegido.
+- Eliminado el guardado automático de partidas por turno y la creación automática de sesiones al entrar en una dungeon.
+- Añadido un botón **Guardar partida** bajo la ficha del personaje; solo una pulsación explícita crea o actualiza la partida recuperable.
+- Las partidas guardadas conservan únicamente el snapshot del piso actual en cada consolidación manual, evitando transportar el histórico completo de pisos.
+- Los listados de dungeons continúan usando metadatos ligeros y el mundo completo se obtiene solo al elegir, editar o continuar una dungeon concreta.
+- Actualizada la versión de la app y del paquete a `0.72.0` (`v0.72.0 EGRESS MÍNIMO`).
+
+## v0.73.0 - 2026-08-15
+
+- Auditado el stack real: frontend CSR estático sin framework y backend de funciones Serverless Vercel que consulta Supabase PostgREST.
+- Restaurado el contrato completo por defecto de los endpoints de configuración; el modo ligero ahora es explícito con `light=1`, evitando romper consumidores existentes.
+- Sustituidos los `select=*` restantes de detalle de personaje y sesión por listas exactas de columnas consumidas.
+- Eliminada la descarga de `pj_json` para login, progreso y puntuaciones mediante proyecciones `->>` de nivel, clase y raza.
+- Corregida la hidratación bajo demanda de personajes en los flujos multijugador y la identidad de clases/razas en listados ligeros.
+- Eliminadas las precargas pesadas al abrir el menú de un jugador; los catálogos se solicitan al entrar en el flujo que realmente los usa.
+- Documentadas las queries originales/nuevas, consumidores, equivalencia funcional y riesgos no modificados en `EGRESS_SUPABASE.md`.
+- No se alteraron polling ni Realtime por requerir confirmación previa al afectar datos en tiempo real.
+- Actualizada la versión de la app y del paquete a `0.73.0` (`v0.73.0 EGRESS AUDITADO`).

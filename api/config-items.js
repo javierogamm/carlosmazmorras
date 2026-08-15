@@ -29,10 +29,11 @@ module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,slot,tier,icon,stats,ilvl,item_json&order=created_at.desc`,{headers:headers(key)});
+   const id=req.query?.id||null,light=req.query?.light==='1',select=(id||!light)?'id,created_at,nombre,slot,tier,icon,stats,ilvl,item_json':'id,created_at,nombre,slot,tier,ilvl,type:item_json->>type,weapon_type:item_json->>weaponType',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=created_at.desc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(data);
+   return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
   }
   if(req.method==='POST'){
    const incoming=Array.isArray(req.body)?req.body:[req.body||{}];

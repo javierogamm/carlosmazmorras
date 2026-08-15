@@ -32,8 +32,9 @@ function requestId(req){return req.query?.id||req.body?.id||req.body?.class_id||
 async function handleRaces(req,res,url,key){
  const id=req.query?.id||req.body?.id||null;
  if(req.method==='GET'){
-  const r=await fetch(`${url}/rest/v1/${RACES_TABLE}?select=id,created_at,nombre,skill,stats&order=nombre.asc`,{headers:headers(key)}),data=await r.json();
-  return r.ok?res.status(200).json(data):res.status(r.status).json(data);
+  const light=req.query?.light==='1',select=(id||!light)?'id,created_at,nombre,skill,stats':'id,created_at,nombre,race_key:stats->>raceKey,description:stats->>description',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+  const r=await fetch(`${url}/rest/v1/${RACES_TABLE}?select=${select}${filter}&order=nombre.asc`,{headers:headers(key)}),data=await r.json();
+  return r.ok?res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data):res.status(r.status).json(data);
  }
  if(req.method==='POST'||req.method==='PUT'){
   if(req.method==='PUT'&&!id)return res.status(400).json({error:'Falta id para actualizar la raza'});
@@ -86,10 +87,11 @@ module.exports=async(req,res)=>{
   if(req.query?.kind==='gates')return handleGates(req,res,url,key);
   if(req.query?.kind==='races')return handleRaces(req,res,url,key);
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,icon,stats,skills,class_json,skills_json,advanced&order=nombre.asc`,{headers:headers(key)});
+   const id=requestId(req),light=req.query?.light==='1',select=(id||!light)?'id,created_at,nombre,icon,stats,skills,class_json,skills_json,advanced':'id,created_at,nombre,advanced,class_id:class_json->>classId',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=nombre.asc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(data);
+   return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
   }
   if(req.method==='POST'){
    const row=cleanClass(req.body||{});

@@ -83,10 +83,11 @@ module.exports=async(req,res)=>{
   const {url,key}=supabaseConfig();
   if(req.query?.kind==='object')return handleWorldObjects(req,res,url,key);
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,floor_name,floor_json&order=floor_name.asc`,{headers:headers(key)});
+   const id=requestId(req),light=req.query?.light==='1',select=(id||!light)?'id,created_at,floor_name,floor_json':'id,created_at,floor_name',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=floor_name.asc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   return res.status(200).json(data);
+   return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
   }
   if(req.method==='POST'){
    const row=cleanFloor(req.body||{});

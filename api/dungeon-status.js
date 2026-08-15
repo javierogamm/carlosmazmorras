@@ -22,7 +22,7 @@ module.exports=async(req,res)=>{
      if(!r.ok)return res.status(r.status).json(data);
      return res.status(200).json(Array.isArray(data)?data[0]||null:data);
     }
-    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
+    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,dungeon_world_id,"players_ID",dungeon_status&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?data[0]||null:data);
