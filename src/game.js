@@ -29,7 +29,8 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.79.2';
+const APP_VERSION='0.79.1';
+const APP_VERSION='0.79.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1688,23 +1689,23 @@ function expectedTierForFloor(floor,total=20){
 // Large architecture (houses, palaces and similar 3x3+ assets) belongs in the
 // largest rooms; statues, banners and other small props remain useful accents.
 const ROOM_TYPES={
- filler:      {label:'Sala vacía',      size:[4,7],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
- combat:      {label:'Sala de combate', size:[4,7],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
- ambush:      {label:'Emboscada',       size:[5,8],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
- guardpost:   {label:'Puesto de guardia',size:[5,8], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
- eliteden:    {label:'Guarida de élite',size:[7,11], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
- vault:       {label:'Cámara acorazada',size:[4,7],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
- arena:       {label:'Arena',           size:[7,11], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
- hub:         {label:'Encrucijada',     size:[5,8],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
- traproom:    {label:'Sala trampa',     size:[5,8],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ filler:      {label:'Sala vacía',      size:[6,10],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ combat:      {label:'Sala de combate', size:[6,10],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
+ ambush:      {label:'Emboscada',       size:[6,9],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[6,9], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[9,14], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[6,10],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ arena:       {label:'Arena',           size:[9,14], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
+ hub:         {label:'Encrucijada',     size:[6,9],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[6,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
  shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
  creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
- soulmerchant:{label:'Mercader de Souls',size:[5,7], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
+ soulmerchant:{label:'Mercader de Souls',size:[6,8], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
  deadend:     {label:'Callejón',        size:[4,6],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
  knot:        {label:'Nudo de pasillos',size:[4,6],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
- bossarena:   {label:'Arena del jefe',  size:[9,13], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ bossarena:   {label:'Arena del jefe',  size:[10,15], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
  megaboss:    {label:'Cámara del megajefe',size:[15,19],enemies:[0,0],tier:3, cover:.05, traps:0,   chest:.4,  exits:1, event:0,  boss:true, megaboss:true},
- prep:        {label:'Sala de preparación',size:[5,8],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+ prep:        {label:'Sala de preparación',size:[6,9],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
