@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.79.0';
+const APP_VERSION='0.79.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1101,6 +1101,7 @@ function recomputeDerived(){
 // loot or at character creation must originate in Supabase config_items.
 function isConfiguredPotionRow(row){const item=row?.item_json||row||{};return item.type==='potion'||item.type==='consumable'||item.slot==='consumable'||row?.slot==='consumable'}
 function configuredPotionRows(){return configItems.filter(isConfiguredPotionRow)}
+function configItemsFullyLoaded(){return configItems.length>0&&configItems.every(row=>row?.item_json)}
 function configuredPotionFromRow(row,lootRow,level){
  const raw=row.item_json||row,potionRow={...row,item_json:{...raw,type:'potion',slot:'consumable'}};
  return configuredItemFromRow(potionRow,lootRow,level)
@@ -1623,7 +1624,11 @@ async function start(){
  // openSinglePlayerScreen() are still in flight. Starter selections are row
  // ids, so creating before both catalogs arrive silently produced an empty
  // selection. Wait here, at the point where the data becomes mandatory.
- if(!configItems.length)await fetchConfigItems();
+ // The configuration screen deliberately loads a metadata-only catalog. It
+ // must never be reused here: starter potions need the canonical item_json
+ // (effects and icon included), not the light row that only says the item is
+ // a consumable.
+ if(!configItemsFullyLoaded())await fetchConfigItems();
  if(!configClasses.length)await fetchConfigClasses();
  const race=selectedRace,cls=resolveClassDef(selectedClass);
  // resolveClassDef returns null for a custom class whose config_class row

@@ -1,3 +1,9 @@
+## v0.79.1 - Pociones canónicas al crear personaje y en loot
+
+- La creación de personaje ya no reutiliza la vista ligera de Configuración: antes de entregar las pociones iniciales carga los JSON completos de los consumibles desde `config_items`, conservando exactamente sus efectos e iconos configurados.
+- El catálogo completo cargado al crear el personaje queda como única fuente de las pociones posteriores de loot; no se generan ni sustituyen pociones fuera de `config_items`.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.1`.
+
 ## v0.79.0 - Persistencia, mercader y composición de dungeons
 
 - Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
