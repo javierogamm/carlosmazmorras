@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.78.0';
+const APP_VERSION='0.79.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1684,27 +1684,27 @@ function expectedTierForFloor(floor,total=20){
  return r<.25?1:r<.55?2:r<.8?3:4;
 }
 
-// Room dimension ranges are ~30% smaller than the original design (map grid
-// shrunk from 70x70 to 49x49 to match) - room/chest/enemy counts below are
-// untouched, so the same content packs into a smaller floor.
+// Room types deliberately reserve broader footprints for coherent scene assets.
+// Large architecture (houses, palaces and similar 3x3+ assets) belongs in the
+// largest rooms; statues, banners and other small props remain useful accents.
 const ROOM_TYPES={
- filler:      {label:'Sala vacía',      size:[3,5],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
- combat:      {label:'Sala de combate', size:[4,7],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
- ambush:      {label:'Emboscada',       size:[4,6],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
- guardpost:   {label:'Puesto de guardia',size:[4,6], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
- eliteden:    {label:'Guarida de élite',size:[5,8], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
- vault:       {label:'Cámara acorazada',size:[3,5],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
- arena:       {label:'Arena',           size:[7,11], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
- hub:         {label:'Encrucijada',     size:[4,6],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
- traproom:    {label:'Sala trampa',     size:[4,6],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
- shrine:      {label:'Altar',           size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
- creator:     {label:'Sala del Creador',size:[3,4],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
- soulmerchant:{label:'Mercader de Souls',size:[4,5], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
- deadend:     {label:'Callejón',        size:[3,4],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
- knot:        {label:'Nudo de pasillos',size:[3,4],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
- bossarena:   {label:'Arena del jefe',  size:[8,11], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
+ filler:      {label:'Sala vacía',      size:[6,10],  enemies:[0,1], tier:0,  cover:.15, traps:0,   chest:.10, exits:2, event:.02},
+ combat:      {label:'Sala de combate', size:[6,10],  enemies:[2,4], tier:0,  cover:.30, traps:.10, chest:.20, exits:2, event:.05},
+ ambush:      {label:'Emboscada',       size:[6,9],  enemies:[3,6], tier:0,  cover:.20, traps:.25, chest:.15, exits:2, event:.08, place:'edges'},
+ guardpost:   {label:'Puesto de guardia',size:[6,9], enemies:[2,3], tier:1,  cover:.35, traps:.10, chest:.45, exits:2, event:.04, place:'chokepoint'},
+ eliteden:    {label:'Guarida de élite',size:[9,14], enemies:[1,3], tier:1,  cover:.30, traps:.05, chest:.65, exits:2, event:.06, elite:true},
+ vault:       {label:'Cámara acorazada',size:[6,10],  enemies:[0,2], tier:0,  cover:.10, traps:.45, chest:1,   exits:1, event:.05, chests:[2,4], locked:true},
+ arena:       {label:'Arena',           size:[9,14], enemies:[4,8], tier:0,  cover:.20, traps:.05, chest:.25, exits:2, event:.05, wave:true},
+ hub:         {label:'Encrucijada',     size:[6,9],  enemies:[0,2], tier:0,  cover:.25, traps:.10, chest:.15, exits:4, event:.04},
+ traproom:    {label:'Sala trampa',     size:[6,9],  enemies:[0,2], tier:0,  cover:.20, traps:.90, chest:.55, exits:2, event:.10, trapCount:[3,6]},
+ shrine:      {label:'Altar',           size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true},
+ creator:     {label:'Sala del Creador',size:[4,6],  enemies:[0,0], tier:0,  cover:.10, traps:0,   chest:.10, exits:2, event:.05, altar:true, creatorRoom:true},
+ soulmerchant:{label:'Mercader de Souls',size:[6,8], enemies:[0,0], tier:0, cover:.05,traps:0,chest:0,exits:2,event:0,altar:true,soulMerchant:true},
+ deadend:     {label:'Callejón',        size:[4,6],  enemies:[0,1], tier:0,  cover:.10, traps:.20, chest:.30, exits:1, event:.03},
+ knot:        {label:'Nudo de pasillos',size:[4,6],  enemies:[0,2], tier:0,  cover:.15, traps:.15, chest:.05, exits:3, event:.02},
+ bossarena:   {label:'Arena del jefe',  size:[10,15], enemies:[0,2], tier:1,  cover:.25, traps:0,   chest:.35, exits:1, event:0,  boss:true},
  megaboss:    {label:'Cámara del megajefe',size:[15,19],enemies:[0,0],tier:3, cover:.05, traps:0,   chest:.4,  exits:1, event:0,  boss:true, megaboss:true},
- prep:        {label:'Sala de preparación',size:[4,6],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
+ prep:        {label:'Sala de preparación',size:[6,9],enemies:[0,1],tier:0,  cover:.15, traps:0,   chest:.55, exits:2, event:.03, altar:true}
 };
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
@@ -1940,7 +1940,7 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
   }
  }
  if(smallAssetDefs.length){
-  const target=Math.max(10,Math.round(assetPlacements.length*1.5));
+  const target=Math.max(14,Math.ceil(assetPlacements.length*1.5*1.35));
   let placed=0,guard=0;
   while(placed<target&&guard<800){
    guard++;
@@ -2397,14 +2397,33 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   const assetRoomPool=rooms.filter(r=>r!==spawn&&r!==stairRoom&&r!==bossRoom&&!safeRooms.some(s=>s.x===r.x&&s.y===r.y)).sort(()=>Math.random()-.5);
   // Hard cap so a floor never gets carpeted with decoration: a handful of
   // rooms at most, scaling gently with how many rooms the floor even has.
-  const maxAssets=Math.min(6,1+Math.floor(rooms.length/5));
+  const maxAssets=Math.min(9,Math.ceil((1+Math.floor(rooms.length/5))*1.35));
   for(const r of assetRoomPool){
    if(assetPlacements.length>=maxAssets)break;
-   if(Math.random()>=.25)continue; // not every eligible room gets one
+   if(Math.random()>=.3375)continue; // 35% more decorated rooms than the previous 25% density
    const fitting=assetDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
    if(!fitting.length)continue;
    tryPlaceAsset(r,pick(fitting));
   }
+  // 3x3+ decorations may act as an interior room boundary. Prefer an edge
+  // placement so architecture partitions the scene coherently without sealing
+  // the clear border ring/corridor exits maintained by tryPlaceAsset().
+  const boundaryDefs=assetDefs.filter(a=>a.cols>=3||a.rows>=3);
+  if(boundaryDefs.length){
+   const boundaryRooms=[...assetRoomPool].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+   const boundaryTarget=Math.min(Math.ceil(maxAssets*.45),boundaryRooms.length);
+   let boundaries=0;
+   for(const r of boundaryRooms){
+    if(boundaries>=boundaryTarget||assetPlacements.length>=maxAssets)break;
+    const fitting=boundaryDefs.filter(a=>r.w>a.cols&&r.h>a.rows);
+    if(!fitting.length)continue;
+    // Candidate enumeration already keeps the outer walking ring open; using
+    // the largest fitting asset makes houses/palaces define the room mass.
+    const def=[...fitting].sort((a,b)=>(b.cols*b.rows)-(a.cols*a.rows))[0];
+    if(tryPlaceAsset(r,def,false))boundaries++;
+   }
+  }
+
   // Guarantee: any floor with at least one 2x2-or-larger asset defined always
   // lands that size in at least a handful of rooms (up to 3, or fewer on a
   // very small floor), regardless of how the ~25%-per-room roll above landed -
@@ -3768,8 +3787,12 @@ function useAltar(a){
  floating('✦',a.x,a.y,'#9be8ff');
 }
 const SOUL_PRICES={common:5,uncommon:10,rare:20,epic:30,legendary:45};
-function openSoulMerchant(altar){
- altar.stock=altar.stock||Object.keys(SOUL_PRICES).map(tier=>{const rows=configItems.map(r=>r.item_json||r).filter(i=>i.type!=='potion'&&(i.rarity||'common')===tier);return rows.length?{...pick(rows),merchantTier:tier}:null}).filter(Boolean);
+async function openSoulMerchant(altar){
+ if(!configItems.length)await fetchConfigItems();
+ // The merchant sells the canonical config_items payload (including potions),
+ // not procedural loot. The purchased copy is inserted into game.inventory,
+ // which is the character's backpack persisted in the character bundle.
+ altar.stock=altar.stock||Object.keys(SOUL_PRICES).map(tier=>{const rows=configItems.map(r=>r.item_json||r).filter(i=>!i.hidden&&(i.rarity||i.tier||'common')===tier);return rows.length?{...structuredClone(pick(rows)),merchantTier:tier}:null}).filter(Boolean);
  storyTitle.textContent='MERCADER DE SOULS';storyBody.innerHTML=`<p>Souls disponibles: ${soulIconHtml()} <b>${game.player.souls||0}</b></p><div class="configItemsList">${altar.stock.map((item,i)=>`<div class="configItem"><div><b style="color:${tierColor(item.merchantTier)}">${item.name}</b><span class="small">${tierDefs[item.merchantTier]?.label} · ${SOUL_PRICES[item.merchantTier]} souls</span><button data-soul-buy="${i}" ${(game.player.souls||0)<SOUL_PRICES[item.merchantTier]?'disabled':''}>Comprar</button></div></div>`).join('')}</div><button id="closeSoulMerchant">Cerrar</button>`;storyOverlay.classList.remove('hidden');setTimeout(()=>renderIdentityMiniIcons(game.player),0);
  storyBody.querySelectorAll('[data-soul-buy]').forEach(btn=>btn.onclick=()=>{const item=altar.stock[Number(btn.dataset.soulBuy)],price=SOUL_PRICES[item.merchantTier];if((game.player.souls||0)<price)return;game.player.souls-=price;addInventoryItem({...item,id:crypto.randomUUID()});altar.stock=altar.stock.filter(x=>x!==item);persistSouls();openSoulMerchant(altar)});document.getElementById('closeSoulMerchant').onclick=()=>storyOverlay.classList.add('hidden');
 }
@@ -8906,11 +8929,17 @@ async function enterWorldWithCharacter(){
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(currentCharacter.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
  // shards live in their own user_pj column (not pj_json) so they survive
  // independently of the rest of the character bundle - see persistShards()
- game.player.shards=currentCharacter.shards?normalizeShards(currentCharacter.shards):(game.player.shards||{});
- game.player.souls=Math.max(0,Number(currentCharacter.souls??game.player.souls)||0);
+ const persistedShards=normalizeShards(currentCharacter.shards??game.player.shards??{});
+ const persistedSouls=Math.max(0,Number(currentCharacter.souls??game.player.souls??0)||0);
+ game.player.shards=persistedShards;
+ game.player.souls=persistedSouls;
  // custom-crafted items (Creator's Room) live in their own user_pj column too
  game.player.customItems=currentCharacter.custom_items||game.player.customItems||[];
  generateFloor();
+ // Floor generation/recalculation must never reset currencies loaded from the
+ // selected existing character (including zero-valued balances).
+ game.player.shards=persistedShards;
+ game.player.souls=persistedSouls;
  // New session with an existing character: start the run topped up,
  // regardless of what was persisted from a previous run. Resuming an
  // existing session (resumeSession()) must NOT do this - it keeps whatever
