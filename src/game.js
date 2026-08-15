@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.80.2';
+const APP_VERSION='0.81.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -449,7 +449,7 @@ for(const skill of Object.values(skillDefs)){
 }
 
 const classSkillMilestones={1:1};
-const LEVEL_UP_RANDOM_SKILL_LEVELS=new Set([3,5,10,15,20,25,30,35,40]);
+function isClassSkillChoiceLevel(level){return level>=3&&level%2===1}
 
 
 
@@ -1501,7 +1501,7 @@ function classSkillIdsForTier(tier){
  return (classSkillTrees[game.player.cls]?.[roman]||[]).filter(id=>skillDefs[id]);
 }
 function classSkillIdsForLevelReward(level){
- const maxTier=level>=10?3:2,tree=classSkillTrees[game.player.cls]||{};
+ const maxTier=level>=10?3:level>=7?2:1,tree=classSkillTrees[game.player.cls]||{};
  return Object.entries(tree).flatMap(([roman,ids])=>{
   const tier={I:1,II:2,III:3}[roman]||0;
   return tier&&tier<=maxTier?ids:[];
@@ -1542,7 +1542,7 @@ function firstMissingClassSkillRequest(){
 function queueClassSkillChoice(level,initial=false){
  if(!game?.player)return;
  ensureSkillChoiceState();
- const tier=classTierForLevel(level);
+ const tier=initial?classTierForLevel(level):(level>=10?3:level>=7?2:1);
  if(!tier)return;
  const alreadyQueued=pendingClassSkillRequests.some(q=>q.level===level&&q.tier===tier);
  if(!alreadyQueued)pendingClassSkillRequests.push({level,tier,initial});
@@ -1565,7 +1565,7 @@ function levelRewardLabel(level,skillId){
 }
 function processClassSkillChoices(){
  if(!game?.player)return;
- if(game.player.unspentStatPoints>0||document.getElementById('statPointModal')?.classList.contains('open'))return;
+ if(document.getElementById('statPointModal')?.classList.contains('open'))return;
  const modal=document.getElementById('skillChoiceModal');
  if(!modal||modal.classList.contains('open'))return;
  if(!pendingClassSkillRequests.length){
@@ -1573,7 +1573,8 @@ function processClassSkillChoices(){
   if(missing)pendingClassSkillRequests.push(missing);
  }
  if(!pendingClassSkillRequests.length)return;
- const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier],choices=classSkillChoicesForTier(request.tier);
+ const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier];
+ const choices=request.initial?classSkillChoicesForTier(request.tier):classSkillIdsForLevelReward(request.level);
  // A custom class with no skills configured for this tier leaves nothing to
  // pick - mark it satisfied and move on instead of leaving the request
  // stuck forever, but if this WAS the initial character-creation request,
@@ -1582,33 +1583,33 @@ function processClassSkillChoices(){
  // the "click Crear, screen goes blank, character never saved" bug: no
  // choices meant the modal never opened, so finishCharacterCreation() (only
  // ever called from inside that modal's click handler) never ran.
- if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();processClassSkillChoices();return}
+ if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();else if(game.player.unspentStatPoints)showStatPointModal();processClassSkillChoices();return}
  document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
- document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${request.level}. Elige una habilidad del pool real de tu clase para tier ${roman}.`;
- document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id];return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
+ document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
+ document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
-  // Everything below (closing the modal, saving to Supabase on the initial
-  // pick) is a chain of synchronous statements - an exception thrown by any
-  // one of them silently aborted the rest, which for the initial pick meant
-  // finishCharacterCreation() never even got called and the click looked
-  // like it did nothing. One real example: updateUI() used to unconditionally
-  // compute the "Zona:" floor theme, which throws with no active floor/
-  // tileset yet (character creation) and no config_floor rows configured -
-  // entirely unrelated to whichever skill happened to be picked (see
-  // updateUI()'s game.floorTileset/game.map guard). Surface any such
-  // exception instead of swallowing it.
-  try{
-   learnSkill(b.dataset.pickSkill);
-   game.player.skillChoicesAwarded[request.level]='chosen';
-   modal.classList.remove('open');updateUI();
-   if(request.initial)finishCharacterCreation();
-   queueMissingClassSkillChoices();
-   processClassSkillChoices();
-  }catch(e){
-   console.error('Fallo al elegir la habilidad de clase:',e);
-   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
-  }
+  const skillId=b.dataset.pickSkill,chosen=skillDefs[skillId],skillRoman=['','I','II','III'][chosen?.tier]||chosen?.tier;
+  document.getElementById('skillChoiceTitle').textContent='CONFIRMAR HABILIDAD';
+  document.getElementById('skillChoiceText').textContent=`¿Quieres aprender ${chosen?.name||'esta habilidad'}?`;
+  document.getElementById('skillChoiceGrid').innerHTML=`<div class="skillChoiceCard"><b>${chosen?.icon||'✦'} ${chosen?.name||skillId}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${chosen?.desc||''}</p></div><div class="startActions"><button type="button" class="start" id="confirmSkillChoice">OK</button><button type="button" id="cancelSkillChoice">VOLVER</button></div>`;
+  document.getElementById('cancelSkillChoice').onclick=()=>{pendingClassSkillRequests.unshift(request);modal.classList.remove('open');processClassSkillChoices()};
+  document.getElementById('confirmSkillChoice').onclick=async e=>{
+   e.currentTarget.disabled=true;
+   try{
+    learnSkill(skillId);
+    game.player.skillChoicesAwarded[request.level]='chosen';
+    modal.classList.remove('open');updateUI();
+    if(request.initial){await finishCharacterCreation();return}
+    if(game.player.unspentStatPoints)showStatPointModal();
+    queueMissingClassSkillChoices();processClassSkillChoices();
+    if(!game.player.unspentStatPoints&&game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}
+   }catch(error){
+    console.error('Fallo al elegir la habilidad de clase:',error);
+    alert(`Error al elegir la habilidad "${chosen?.name||skillId}": ${error.message}`);
+    e.currentTarget.disabled=false;
+   }
+  };
  }))
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
@@ -3521,8 +3522,7 @@ const statDescriptions={strength:'Aumenta daño físico y la stamina máxima.',v
 function animateLevelUpThen(done){const stage=document.getElementById('gameStage');stage?.classList.remove('levelUpPulse');void stage?.offsetWidth;stage?.classList.add('levelUpPulse');setTimeout(done,2000)}
 function queueStatPoint(level){
  const p=game.player;p.unspentStatPoints=(p.unspentStatPoints||0)+1;p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];
- const skillId=LEVEL_UP_RANDOM_SKILL_LEVELS.has(level)?randomClassSkillForLevelReward(level):null;
- p.pendingLevelUpRewards.push({level,skillId});
+ p.pendingLevelUpRewards.push({level,skillChoice:isClassSkillChoiceLevel(level)});
  showStatPointModal()
 }
 function showStatPointModal(){
@@ -3532,9 +3532,9 @@ function showStatPointModal(){
  p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];const reward=p.pendingLevelUpRewards[0]||{};
  if(title)title.textContent=`SUBIDA DE NIVEL${reward.level?` · NIVEL ${reward.level}`:''}`;
  if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
- if(skill)skill.innerHTML=reward.skillId?levelRewardLabel(reward.level,reward.skillId):'';
+ if(skill)skill.innerHTML=reward.skillChoice?'<p class="small">Después de asignar la stat elegirás una nueva habilidad de tu clase.</p>':'';
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
- grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;if(reward.skillId)learnSkill(reward.skillId);recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');if(reward.skillId)log(`Recompensa aleatoria de nivel ${reward.level}: ${skillDefs[reward.skillId].name}.`,'loot');if(p.unspentStatPoints>0)showStatPointModal();else{modal.classList.remove('open');queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
+ grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 // Living participants in the run (1 in single player).
 function partySize(){
@@ -8097,10 +8097,9 @@ const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad
 function testStatPointsTotal(level){return Math.max(0,Math.round(level)-1)}
 function testMilestoneBonus(level){return Math.floor(Math.max(1,Math.round(level))/10)}
 function testStatPointsSpent(){return Object.values(tstStatAlloc).reduce((a,b)=>a+b,0)}
-// Mirrors classSkillIdsForLevelReward()'s maxTier rule (tier II unlocks at
-// the first reward level, III once level-up rewards reach level 10+).
-function testMaxSkillTierForLevel(level){return level>=10?3:level>=3?2:1}
-function testMaxSkillPicks(level){return 1+[...LEVEL_UP_RANDOM_SKILL_LEVELS].filter(l=>l<=level).length}
+// Mirrors classSkillIdsForLevelReward(): tier II unlocks at 7 and III at 10.
+function testMaxSkillTierForLevel(level){return level>=10?3:level>=7?2:1}
+function testMaxSkillPicks(level){return 1+Math.max(0,Math.floor((Math.max(1,level)-1)/2)-1)}
 function classSkillIdsForTierOf(classId,tier){const roman=['','I','II','III'][tier];return (classSkillTrees[classId]?.[roman]||[]).filter(id=>skillDefs[id])}
 function testEligibleSkillIds(){
  const max=testMaxSkillTierForLevel(tstLevel),ids=[];

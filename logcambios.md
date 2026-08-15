@@ -1,3 +1,21 @@
+## v0.81.1 - 2026-08-15
+
+- Sustituida la confirmación nativa por una pantalla explícita de confirmación dentro del modal de selección de skill, también para la skill inicial de nivel 1.
+- El botón **OK** de la skill inicial espera a que termine el guardado y finaliza el flujo de creación directamente en el menú de un jugador.
+- Evitada la reevaluación de elecciones pendientes después de confirmar la skill inicial, que podía volver a abrir el selector y pedir una segunda habilidad.
+- Actualizada la versión de la app y del paquete a `0.81.1` (`v0.81.1 CONFIRMACIÓN DE SKILL`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.81.0 - 2026-08-15
+
+- La evolución concede una elección de skill del pool de la clase en todos los niveles impares desde el 3.
+- Las skills de tier II entran en el pool a partir del nivel 7; las de tier III se mantienen disponibles desde el nivel 10.
+- El modal de subida muestra primero la elección de stat y, a continuación, la elección de skill cuando corresponde.
+- Tanto la skill de subida de nivel como la skill inicial de creación requieren confirmación antes de aprenderse.
+- Tras confirmar la skill inicial se guarda el personaje y se vuelve al menú de un jugador; al confirmar una skill de nivel se cierra el modal y continúa el flujo pendiente.
+- Actualizada la versión de la app y del paquete a `0.81.0` (`v0.81.0 EVOLUCIÓN DE SKILLS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.80.2 - 2026-08-15
 
 - Corregida la representación de las invocaciones-tótem para que carguen la imagen configurada en el efecto de la skill, usando el mismo decodificador tolerante y el mismo recorte transparente que los iconos de personaje.
