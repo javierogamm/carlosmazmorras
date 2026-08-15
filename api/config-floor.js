@@ -27,16 +27,26 @@ const ASSET_KEY_PREFIX='asset_';
 async function handleWorldObjects(req,res,url,key){
  if(req.method==='GET'){
   const objectKey=req.query?.object_key;
-  const select=req.query?.minimal==='1'?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
+  const minimal=req.query?.minimal==='1';
+  const select=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente,updated_at';
+  const legacySelect=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
   const filter=objectKey?`&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`:'';
-  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
-  const data=await r.json();
+  let r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
+  let data=await r.json();
+  // Some Supabase projects can briefly serve a stale PostgREST schema cache
+  // after adding updated_at. Keep the game operational with the established
+  // projection until PostgREST exposes the timestamp column.
+  if(!r.ok){
+   const fallback=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${legacySelect}${filter}&order=object_key.asc`,{headers:headers(key)});
+   const fallbackData=await fallback.json();
+   if(fallback.ok){r=fallback;data=(Array.isArray(fallbackData)?fallbackData:[]).map(row=>({...row,updated_at:null}))}
+  }
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(data);
  }
  if(req.method==='POST'){
   const objectKey=`${ASSET_KEY_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
-  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1',tiles_mask:req.body?.tiles_mask||'',ambiente:req.body?.ambiente||''};
+  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1',tiles_mask:req.body?.tiles_mask||'',ambiente:req.body?.ambiente||'',updated_at:new Date().toISOString()};
   const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
@@ -45,7 +55,7 @@ async function handleWorldObjects(req,res,url,key){
  if(req.method==='PUT'){
   const objectKey=req.body?.object_key;
   if(!objectKey)return res.status(400).json({error:'Falta object_key'});
-  const row={object_key:objectKey,icon:req.body?.icon??''};
+  const row={object_key:objectKey,icon:req.body?.icon??'',updated_at:new Date().toISOString()};
   if(req.body?.name!==undefined)row.name=req.body.name;
   if(req.body?.tiles_number!==undefined)row.tiles_number=req.body.tiles_number;
   if(req.body?.tiles_mask!==undefined)row.tiles_mask=req.body.tiles_mask;
