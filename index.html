@@ -104,11 +104,37 @@
  <div class="modal landingModal">
   <h2>MAZMORRA // BOTÍN</h2>
   <p class="small">Inicia sesión para entrar. Si el usuario no existe se crea automáticamente como jugador no admin.</p>
-  <form class="loginForm" id="loginForm">
+  <form class="loginForm" id="loginForm" onsubmit="window.handleLoginSubmit(event); return false;">
    <label>Usuario <input id="loginName" name="nombre" autocomplete="username" maxlength="80" required></label>
    <label>Contraseña <input id="loginPass" name="pass" type="password" autocomplete="current-password" maxlength="80" required></label>
    <button class="start" id="loginBtn" type="submit">SIGN IN</button>
   </form>
+  <script>
+  // Se instala junto al propio formulario: el submit nativo queda cancelado
+  // incluso si cualquier script posterior del juego falla al inicializarse.
+  window.handleLoginSubmit = async function handleLoginSubmit(event) {
+   event.preventDefault();
+   const form=event.currentTarget;
+   const button=document.getElementById('loginBtn');
+   const status=document.getElementById('loginStatus');
+   if(button.disabled)return false;
+   button.disabled=true;status.textContent='Entrando...';
+   try {
+    const response=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:document.getElementById('loginName').value,pass:document.getElementById('loginPass').value})});
+    const text=await response.text();let data={};
+    try { data=text?JSON.parse(text):{}; } catch (_) { data={error:text||`Respuesta inválida (HTTP ${response.status})`}; }
+    if(!response.ok)throw new Error(data.error||data.message||`No se pudo iniciar sesión (HTTP ${response.status})`);
+    window.currentUser=data;
+    try { localStorage.setItem('mazmorraUser',JSON.stringify(data)); } catch (_) {}
+    status.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;
+    const stats=document.getElementById('userProgressStats');
+    if(stats){stats.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;stats.classList.remove('hidden');}
+    document.getElementById('mainMenuActions').classList.remove('hidden');form.classList.add('hidden');
+   } catch (error) { status.textContent=error.message||'No se pudo iniciar sesión'; }
+   finally { button.disabled=false; }
+   return false;
+  };
+  </script>
   <div id="loginStatus" class="small"></div>
   <div id="userProgressStats" class="small userProgressStats hidden"></div>
   <div class="landingActions hidden" id="mainMenuActions">
