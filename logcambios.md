@@ -1,3 +1,17 @@
+## v0.79.2 - Iconos y efectos reales de pociones
+
+- Corregida la carrera entre la carga ligera de Configuración y la carga completa de `config_items`: una respuesta ligera tardía ya no puede borrar el `item_json`, el icono ni los efectos que ya se habían cargado.
+- La creación espera también el JSON completo de la clase aunque hubiera una petición ligera en curso, para respetar exactamente sus `starterPotionIds` en lugar de entregar por error los primeros consumibles del catálogo.
+- Cada poción creada desde `config_items` conserva el identificador de su fila de origen. Al cargar el catálogo completo también se reparan las pociones persistidas que llegaron sin icono o sin efectos, recuperando ambos campos desde su consumible canónico (con compatibilidad por nombre y tier para las pociones antiguas).
+- Las pociones iniciales y de loot vuelven a ser utilizables porque su array `effects` ya no se pierde, y muestran el icono configurado en lugar del vial genérico.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.2`.
+
+## v0.79.1 - Pociones canónicas al crear personaje y en loot
+
+- La creación de personaje ya no reutiliza la vista ligera de Configuración: antes de entregar las pociones iniciales carga los JSON completos de los consumibles desde `config_items`, conservando exactamente sus efectos e iconos configurados.
+- El catálogo completo cargado al crear el personaje queda como única fuente de las pociones posteriores de loot; no se generan ni sustituyen pociones fuera de `config_items`.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.1`.
+
 ## v0.79.0 - Persistencia, mercader y composición de dungeons
 
 - Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
