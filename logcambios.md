@@ -1,12 +1,3 @@
-## v0.79.1 - Generación robusta y parámetros coherentes
-
-- Corregido el loop completo de creación para reintentar cada piso hasta ocho veces, validar mapa, salas, entrada, salida alcanzable y límites de assets, y restaurar siempre el estado de juego aunque falle la generación.
-- La densidad de salas y las geometrías `rooms`, `caves`, `mixed` y `open` se aplican ahora durante la generación en vez de quedar guardadas sin efecto.
-- Ajustados los tamaños de sala ampliados para que sigan admitiendo arquitectura grande sin saturar el tablero de 49x49 ni impedir la colocación del número mínimo de salas.
-- Fijadas y deshabilitadas las dimensiones del editor en 49x49, el tamaño realmente soportado por el runtime, evitando guardar parámetros de ancho/alto que el tablero no podía representar.
-- La generación funciona con catálogos de assets vacíos y, cuando existen assets, valida que todas sus huellas permanezcan dentro del mapa.
-- Ejecutadas comprobaciones de sintaxis y un smoke test aislado de generación/visualización de seis pisos con y sin assets.
-
 ## v0.79.0 - Persistencia, mercader y composición de dungeons
 
 - Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
