@@ -1,27 +1,3 @@
-## v0.79.3 - Restauración estricta del login
-
-- Corregido el comportamiento observado de recarga del formulario: el propio `onsubmit` cancela siempre el submit nativo, por lo que introducir credenciales ya no puede vaciar las cajas ni volver al login inicial por una navegación del navegador.
-- Instalado el controlador de autenticación inmediatamente junto al formulario, antes de cargar cualquier dependencia o runtime del juego; el login deja de depender tanto de `game.js` como de que se descargue un segundo archivo de bootstrap.
-- Eliminado `src/login.js` y su carga externa para retirar la capa que no resolvía el fallo real y mantener una sola implementación de autenticación.
-- Conservados el manejo de errores HTTP/no JSON, la persistencia de usuario, las estadísticas y la apertura del menú después de autenticar.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.3`.
-
-## v0.79.2 - Login aislado del runtime de juego
-
-- Extraído el arranque del formulario de login a `src/login.js`, cargado antes del runtime principal, para que un fallo posterior en generación, configuración o gameplay no vuelva a dejar el botón SIGN IN sin respuesta.
-- Eliminado el segundo handler de autenticación de `game.js`, evitando peticiones duplicadas y manteniendo una única ruta de login.
-- El login aislado tolera respuestas vacías o no JSON, muestra el error HTTP útil, conserva la sesión local y habilita el menú y las estadísticas tras autenticar.
-- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.2`.
-
-## v0.79.1 - Generación robusta y parámetros coherentes
-
-- Corregido el loop completo de creación para reintentar cada piso hasta ocho veces, validar mapa, salas, entrada, salida alcanzable y límites de assets, y restaurar siempre el estado de juego aunque falle la generación.
-- La densidad de salas y las geometrías `rooms`, `caves`, `mixed` y `open` se aplican ahora durante la generación en vez de quedar guardadas sin efecto.
-- Ajustados los tamaños de sala ampliados para que sigan admitiendo arquitectura grande sin saturar el tablero de 49x49 ni impedir la colocación del número mínimo de salas.
-- Fijadas y deshabilitadas las dimensiones del editor en 49x49, el tamaño realmente soportado por el runtime, evitando guardar parámetros de ancho/alto que el tablero no podía representar.
-- La generación funciona con catálogos de assets vacíos y, cuando existen assets, valida que todas sus huellas permanezcan dentro del mapa.
-- Ejecutadas comprobaciones de sintaxis y un smoke test aislado de generación/visualización de seis pisos con y sin assets.
-
 ## v0.79.0 - Persistencia, mercader y composición de dungeons
 
 - Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
