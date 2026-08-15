@@ -10737,8 +10737,7 @@ document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
 menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
-// Authentication is bootstrapped independently by src/login.js so an error in
-// any gameplay/config initializer cannot disable the login form.
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
 backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
 
