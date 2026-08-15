@@ -1031,3 +1031,19 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Documentadas las queries originales/nuevas, consumidores, equivalencia funcional y riesgos no modificados en `EGRESS_SUPABASE.md`.
 - No se alteraron polling ni Realtime por requerir confirmación previa al afectar datos en tiempo real.
 - Actualizada la versión de la app y del paquete a `0.73.0` (`v0.73.0 EGRESS AUDITADO`).
+
+## v0.74.0 - 2026-08-15
+
+- Corregida la hidratación de imágenes de `config_world_object`: las cargas ligeras de metadatos ya no borran iconos previamente cargados y se distingue entre catálogo disponible e imágenes completas disponibles.
+- La entrada y reanudación de dungeons, tanto individuales como multijugador, espera ahora a que los iconos de objetos y assets de mundo estén cargados desde Supabase antes de dibujar el piso.
+- Eliminado el rectángulo gris provisional de los assets de mundo; mientras llega una imagen bajo demanda se conserva el propio tile de la dungeon.
+- Los objetos fijos también solicitan bajo demanda su imagen de `config_world_object` cuando todavía no está hidratada.
+- Actualizada la versión de la app y del paquete a `0.74.0`.
+
+## v0.75.0 - 2026-08-15
+
+- Añadida una caché persistente mediante la Cache API del navegador para las imágenes de `config_world_object`; se evita usar cookies porque no son apropiadas para payloads de imagen y se enviarían innecesariamente con las peticiones HTTP.
+- Tras la primera descarga completa, la app consulta únicamente los metadatos ligeros y reutiliza localmente los iconos que no hayan cambiado.
+- Los iconos nuevos o modificados se descargan individualmente comparando `updated_at`, y los objetos eliminados desaparecen de la caché al reconstruirla desde el catálogo actual.
+- El endpoint de objetos incluye ahora `updated_at` en sus proyecciones y actualiza esa marca temporal al crear o editar filas.
+- Actualizada la versión de la app y del paquete a `0.75.0`.

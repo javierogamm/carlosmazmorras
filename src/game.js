@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.73.0';
+const APP_VERSION='0.75.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -7693,7 +7693,12 @@ const WORLD_OBJECT_KINDS=[
 let configWorldObjects={};
 let configWorldObjectRows={};
 let configWorldObjectsLoaded=false;
+let configWorldObjectIconsLoaded=false;
+let configWorldObjectsRequest=null;
+let worldObjectCacheHydrationRequest=null;
 const pendingWorldObjectIcons=new Set();
+const WORLD_OBJECT_CACHE_NAME='mazmorra-world-objects-v1';
+const WORLD_OBJECT_CACHE_URL='/__cache/config-world-object-icons';
 // Decoration assets: user-created rows in config_world_object whose
 // object_key starts with ASSET_KEY_PREFIX. Unlike the fixed WORLD_OBJECT_KINDS
 // catalog above (icon-only overrides for system props), these carry their
@@ -7736,19 +7741,61 @@ function listConfigAssets(){
   return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
  });
 }
+function applyConfigWorldObjectRows(rows,{iconsComplete=false}={}){
+ for(const row of rows||[]){
+  const previous=configWorldObjectRows[row.object_key]||{};
+  configWorldObjectRows[row.object_key]={...previous,...row};
+  if(Object.prototype.hasOwnProperty.call(row,'icon'))configWorldObjects[row.object_key]=row.icon||'';
+ }
+ configWorldObjectsLoaded=true;
+ if(iconsComplete)configWorldObjectIconsLoaded=true;
+ renderConfigWorldObjectsList();renderConfigAssetsList();renderWorldFloorPlan();if(game)draw();
+}
+async function readWorldObjectIconCache(){
+ if(!('caches' in window))return null;
+ try{const response=await (await caches.open(WORLD_OBJECT_CACHE_NAME)).match(WORLD_OBJECT_CACHE_URL);if(!response)return null;const rows=await response.json();return Array.isArray(rows)?rows:null}catch(e){return null}
+}
+async function writeWorldObjectIconCache(rows){
+ if(!('caches' in window))return;
+ try{const cache=await caches.open(WORLD_OBJECT_CACHE_NAME);await cache.put(WORLD_OBJECT_CACHE_URL,new Response(JSON.stringify(rows),{headers:{'Content-Type':'application/json'}}))}catch(e){}
+}
 async function fetchConfigWorldObjects({minimal=false}={}){
+ if(configWorldObjectsRequest&&!minimal)return configWorldObjectsRequest;
+ const request=(async()=>{
  try{
   const r=await fetch(`/api/config-floor?kind=object${minimal?'&minimal=1':''}`);const data=await r.json();
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
   const rows=Array.isArray(data)?data:[];
-  configWorldObjects=Object.fromEntries(rows.map(row=>[row.object_key,row.icon||'']));
-  configWorldObjectRows=Object.fromEntries(rows.map(row=>[row.object_key,row]));
-  configWorldObjectsLoaded=true;
-  renderConfigWorldObjectsList();
-  renderConfigAssetsList();
-  renderWorldFloorPlan();
-  if(game)draw();
- }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`}
+  // A metadata-only admin request must never erase icons already hydrated by
+  // the game. Merge rows, and only write the icon map when the API actually
+  // returned that column.
+  applyConfigWorldObjectRows(rows,{iconsComplete:!minimal});
+  if(!minimal)writeWorldObjectIconCache(rows);
+  return rows;
+ }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`;return null}
+ })();
+ if(!minimal)configWorldObjectsRequest=request;
+ try{return await request}finally{if(!minimal)configWorldObjectsRequest=null}
+}
+async function ensureWorldObjectIcons(){
+ if(configWorldObjectIconsLoaded)return;
+ if(worldObjectCacheHydrationRequest)return worldObjectCacheHydrationRequest;
+ worldObjectCacheHydrationRequest=(async()=>{
+  const cached=await readWorldObjectIconCache();
+  if(!cached){const rows=await fetchConfigWorldObjects();if(!configWorldObjectIconsLoaded)throw new Error('La tabla config_world_object no está disponible');await writeWorldObjectIconCache(rows);return}
+  // Only the small metadata projection is downloaded on later visits. Icon
+  // payloads are requested again solely for new or updated database rows.
+  const r=await fetch('/api/config-floor?kind=object&minimal=1'),metadata=await responseJson(r);
+  if(!r.ok||!Array.isArray(metadata))throw new Error(metadata?.error||'No se pudo validar la caché de objetos del mundo');
+  const cachedByKey=new Map(cached.map(row=>[row.object_key,row]));
+  const changed=metadata.filter(row=>{const old=cachedByKey.get(row.object_key);return !old||String(old.updated_at||'')!==String(row.updated_at||'')});
+  const details=await Promise.all(changed.map(async row=>{const detail=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(row.object_key)}`),data=await responseJson(detail);if(!detail.ok)throw new Error(data?.error||`No se pudo actualizar ${row.object_key}`);return Array.isArray(data)?data[0]:data}));
+  const detailByKey=new Map(details.filter(Boolean).map(row=>[row.object_key,row]));
+  const rows=metadata.map(meta=>({...cachedByKey.get(meta.object_key),...meta,...detailByKey.get(meta.object_key)}));
+  applyConfigWorldObjectRows(rows,{iconsComplete:true});
+  await writeWorldObjectIconCache(rows);
+ })();
+ try{return await worldObjectCacheHydrationRequest}finally{worldObjectCacheHydrationRequest=null}
 }
 async function fetchConfigWorldObjectDetail(objectKey){
  const r=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(objectKey)}`),data=await responseJson(r);
@@ -8304,7 +8351,7 @@ function drawWorldObjectIconToCanvas(canvas,objectKey,fallbackGlyph='🔒'){
 // Shared draw helper: if object_key has a custom icon, draws it and returns
 // true; otherwise the caller falls back to its own procedural sprite.
 function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
- const hex=configWorldObjects[objectKey];if(!hex)return false;
+ const hex=configWorldObjects[objectKey];if(!hex){loadWorldObjectIconOnDemand(objectKey);return false}
  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
  if(img.complete){ctx.drawImage(img,x+offset,y+offset,size,size);return true}
  img.onload=()=>game&&draw();
@@ -8315,7 +8362,9 @@ function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
 // the icon across the asset's full cols x rows footprint in screen space.
 function drawAssetIcon(objectKey,x,y,w,h){
  const hex=configWorldObjects[objectKey];
- if(!hex){loadWorldObjectIconOnDemand(objectKey);ctx.fillStyle='#5a4a6b';ctx.fillRect(x+2,y+2,w-4,h-4);return false}
+ // Keep the actual dungeon tile visible while the database image hydrates;
+ // never substitute the old grey rectangle for a configured asset.
+ if(!hex){loadWorldObjectIconOnDemand(objectKey);return false}
  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
  if(img.complete){ctx.drawImage(img,x+2,y+2,w-4,h-4);return true}
  img.onload=()=>game&&draw();
@@ -8876,7 +8925,7 @@ async function deleteSavedSession(sessionId){
 
 async function resumeSession(sessionId){
  try{
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
   const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
@@ -8930,6 +8979,7 @@ async function resumeSession(sessionId){
 
 async function enterWorldWithCharacter(){
  if(!currentCharacter){banner('Selecciona un personaje primero.');return}
+ try{await ensureWorldObjectIcons()}catch(e){banner('No se pudieron cargar los assets del mundo.');return}
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(currentCharacter.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
@@ -9160,10 +9210,11 @@ function proceedAfterWorldChosen(){
  if(text)text.textContent=buildDungeonPreviewText(selectedDungeonWorld?.world_json);
  dungeonOverlay.classList.add('hidden');
  document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');
- document.getElementById('dungeonPreviewContinueBtn').onclick=()=>{
+ document.getElementById('dungeonPreviewContinueBtn').onclick=async()=>{
   document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
+  try{await ensureWorldObjectIcons()}catch(e){alert('No se pudieron cargar los objetos del mundo: '+e.message);document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');return}
   if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
-  enterWorldWithCharacter();
+  await enterWorldWithCharacter();
  };
  document.getElementById('dungeonPreviewBackBtn').onclick=()=>{
   document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
@@ -10325,7 +10376,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();
+  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
   await mpRealtimeConnect(session.id);
   const worldRes=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`);
   const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');
