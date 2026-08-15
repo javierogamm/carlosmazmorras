@@ -1,3 +1,10 @@
+## v0.80.2 - 2026-08-15
+
+- Corregida la representación de las invocaciones-tótem para que carguen la imagen configurada en el efecto de la skill, usando el mismo decodificador tolerante y el mismo recorte transparente que los iconos de personaje.
+- Las invocaciones-tótem de daño en área y curación muestran ahora durante toda su duración el área configurada con un pulso animado.
+- Actualizada la versión de la app y del paquete a `0.80.2` (`v0.80.2 TÓTEMS VISIBLES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.80.1 - 2026-08-15
 
 - Limitados a 128 px los iconos masculino, femenino, de skills e invocaciones generados por el editor de clases, evitando que las imágenes originales grandes excedan el tamaño admitido por la petición al guardar.
