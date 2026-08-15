@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.80.1';
+const APP_VERSION='0.80.2';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -5971,7 +5971,8 @@ function updateUI(){
 let animationFrame=0,lastAnimationTime=0;
 function animate(now=performance.now()){
  animationFrame=0;const dt=Math.min(50,Math.max(0,now-(lastAnimationTime||now)));lastAnimationTime=now;
- const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone'].includes(o.kind)&&o.turns>0);
+ const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone'].includes(o.kind)&&o.turns>0)
+  ||(game?.companions||[]).some(hasCompanionAreaPulse);
  if(anim.t<1)anim.t=Math.min(1,anim.t+dt/140);
  draw();
  if(anim.t<1||hasAnimatedArea)animationFrame=requestAnimationFrame(animate)
@@ -6065,6 +6066,26 @@ function drawSkillObjectGroundOverlay(sc){
    if(Math.max(Math.abs(dx),Math.abs(dy))>radius)continue;
    const x=o.x+dx,y=o.y+dy;
    if(!game.seen?.[y]?.[x])continue;
+   const p=sc(x,y);
+   ctx.globalAlpha=.2+pulse*.18;ctx.fillStyle=color;ctx.fillRect(p.x+2,p.y+2,TILE-4,TILE-4);
+   ctx.globalAlpha=.48+pulse*.32;ctx.strokeStyle=color;ctx.strokeRect(p.x+2,p.y+2,TILE-4,TILE-4);
+  }
+  ctx.restore();
+ }
+ drawCompanionAreaOverlays(sc);
+}
+function hasCompanionAreaPulse(c){
+ return c.hp>0&&c.turns>0&&c.stationary&&(c.effectType==='heal'||(c.effectType==='damage'&&c.damageMode==='area'))&&c.range>0
+}
+function drawCompanionAreaOverlays(sc){
+ for(const c of game.companions||[]){
+  if(!hasCompanionAreaPulse(c))continue;
+  const radius=Math.max(1,c.range||1),pulse=.5+.5*Math.sin(performance.now()/360);
+  const color=c.effectType==='heal'?'#64e0a0':'#9f7bff';
+  ctx.save();ctx.lineWidth=2;
+  for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+   if(Math.max(Math.abs(dx),Math.abs(dy))>radius)continue;
+   const x=c.x+dx,y=c.y+dy;if(!game.seen?.[y]?.[x])continue;
    const p=sc(x,y);
    ctx.globalAlpha=.2+pulse*.18;ctx.fillStyle=color;ctx.fillRect(p.x+2,p.y+2,TILE-4,TILE-4);
    ctx.globalAlpha=.48+pulse*.32;ctx.strokeStyle=color;ctx.strokeRect(p.x+2,p.y+2,TILE-4,TILE-4);
@@ -6474,12 +6495,11 @@ function companionSprite(x,y,c){
  ctx.shadowBlur=9;
  R(8,54,48,5,'#07140d99');
 
- if(c.iconImage){
-  // author-picked image for a stackable 'summon'/'summonturret' effect,
-  // takes over from the procedural allyX shapes below
-  let img=tileImageCache.get('companion:'+c.iconImage);
-  if(!img){img=tileImageFromHex(c.iconImage);tileImageCache.set('companion:'+c.iconImage,img)}
-  if(img.complete)ctx.drawImage(img,x+7,y+7,50,50);else img.onload=()=>game&&draw();
+ if(c.iconImage&&drawCharacterIcon(ctx,c.iconImage,x+7,y+7,50,50,0)){
+  // author-picked image for a stackable 'summon'/'summonturret' effect;
+  // use the same tolerant hex decoder and transparent-edge crop as the
+  // class icons so persisted images (including values prefixed with '#')
+  // render at their configured size instead of falling back to the sprite.
  }else if(shape==='allySkeleton'){
   R(20,6,24,18,'#ded8bc');R(24,11,5,5,'#18211c');R(36,11,5,5,'#18211c');
   R(27,24,10,16,'#c7c0a5');R(15,25,9,23,'#d8d1b7');R(41,25,9,23,'#d8d1b7');
