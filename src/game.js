@@ -29,6 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
+const APP_VERSION='0.79.1';
 const APP_VERSION='0.79.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
@@ -989,7 +990,7 @@ function worldLifeMultiplier(){return pctMult(worldParams().lifePct)}
 function worldPercentFlatAdjustment(percent,step=3){const p=Number(percent)||100;return Math.round((p-100)/100*step)}
 function incomingDamageBudget(){const p=game?.player||{};return Math.max(4,Math.round(5+(game?.floor||1)*.45+(p.level||1)*.18))}
 function normalizeIncomingDamage(amount,sourceName='Ataque enemigo'){const base=Math.max(1,Number(amount)||1),budget=incomingDamageBudget(),soft=base<=budget?base:budget+Math.sqrt(base-budget)*.65;const boss=/jefe|boss|campeón|rey/i.test(sourceName)?2:0,adjust=worldPercentFlatAdjustment(worldParams().damageReceivedPct,3);return Math.max(1,Math.round(soft*ENEMY_DAMAGE_BASE_MULT+boss+adjust))}
-function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=DUNGEON_FLOORS;p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.fine={story:String(p.fine?.story||''),lootPerFloor:Math.max(0,Number(p.fine?.lootPerFloor)||0),width:Math.max(15,Number(p.fine?.width)||49),height:Math.max(15,Number(p.fine?.height)||49),geometry:p.fine?.geometry||'rooms',roomDensityPct:Math.max(25,Number(p.fine?.roomDensityPct)||100)};p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,DUNGEON_FLOORS).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):'',archetype:row?.archetype?String(row.archetype):'',story:row?.story?String(row.story):''})):[];return p}
+function normalizeWorldParams(raw={}){const p={...DEFAULT_WORLD_PARAMS,...raw};for(const k of ['damageReceivedPct','damageDealtPct','lifePct','xpReceivedPct','enemyCountPct','enemyLootPct']){p[k]=Math.max(25,Math.min(500,Math.round(Number(p[k])||DEFAULT_WORLD_PARAMS[k])))}p.floors=DUNGEON_FLOORS;p.apMode=p.apMode===true||p.apMode==='true'||p.apMode===1;p.fine={story:String(p.fine?.story||''),lootPerFloor:Math.max(0,Number(p.fine?.lootPerFloor)||0),width:COLS,height:ROWS,geometry:['rooms','caves','mixed','open'].includes(p.fine?.geometry)?p.fine.geometry:'rooms',roomDensityPct:Math.max(25,Math.min(200,Number(p.fine?.roomDensityPct)||100))};p.floorPlan=Array.isArray(p.floorPlan)?p.floorPlan.slice(0,DUNGEON_FLOORS).map((row,i)=>({floor:i+1,floorId:row?.floorId?String(row.floorId):'',familyName:row?.familyName?String(row.familyName):'',ambiente:row?.ambiente?String(row.ambiente):'',archetype:row?.archetype?String(row.archetype):'',story:row?.story?String(row.story):''})):[];return p}
 function readWorldParamsForm(){const floors=Number(document.getElementById('worldFloorsInput')?.value)||DEFAULT_WORLD_PARAMS.floors,rows=[...document.querySelectorAll('[data-world-floor-row]')].map(row=>({floor:Number(row.dataset.worldFloorRow),floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||'',ambiente:row.querySelector('[data-world-ambiente-select]')?.value||''}));return normalizeWorldParams({damageReceivedPct:document.getElementById('worldDamageReceivedPct')?.value,damageDealtPct:document.getElementById('worldDamageDealtPct')?.value,lifePct:document.getElementById('worldLifePct')?.value,xpReceivedPct:document.getElementById('worldXpReceivedPct')?.value,enemyCountPct:document.getElementById('worldEnemyCountPct')?.value,enemyLootPct:document.getElementById('worldEnemyLootPct')?.value,apMode:!!document.getElementById('worldApMode')?.checked,floors,floorPlan:rows})}
 function worldPlanEntry(params,floor){return (params?.floorPlan||[]).find(r=>Number(r.floor)===Number(floor))||null}
 function pickConfiguredFamilyForFloorWithParams(floor,params){const wanted=worldPlanEntry(params,floor)?.familyName;if(wanted){const pool=normalizedEnemyFamilies();const found=pool.find(f=>f.name.toLowerCase()===wanted.toLowerCase());if(found)return found}return pickConfiguredFamilyForFloor(floor)}
@@ -2171,13 +2172,23 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
   game.forcedFloorArchetype='bossrush';
  }
+ // The geometry selector applies only when the floor plan does not pin an
+ // archetype. `open` uses the city builder, `caves` the maze topology and
+ // `mixed` alternates deliberately between open, maze and normal layouts.
+ if(!game?.forcedFloorArchetype){
+  const geometry=params?.fine?.geometry||'rooms';
+  if(geometry==='open')game.forcedFloorArchetype='city';
+  else if(geometry==='caves')game.forcedFloorArchetype='laberinto';
+  else if(geometry==='mixed')game.forcedFloorArchetype=pick(['standard','laberinto','city']);
+ }
  // Megaboss floors are rolled independently, not as a FLOOR_ARCHETYPES entry:
  // 33% chance on every floor that's a multiple of 3, regardless of recency/
  // cooldown or the other archetypes' weights.
  if(!game?.forcedFloorArchetype&&floor%3===0&&Math.random()<.33)return buildMegabossFloorPlan(floor,params);
  const total=params?.floors||DEFAULT_WORLD_PARAMS.floors;
  const archId=(game?.forcedFloorArchetype&&FLOOR_ARCHETYPES[game.forcedFloorArchetype])?game.forcedFloorArchetype:pickFloorArchetype(floor,total,recent);
- if(floor===DUNGEON_FLOORS&&game?.forcedFloorArchetype==='bossrush')delete game.forcedFloorArchetype;
+ // Forced geometry is resolved per floor; do not leak it into the next live floor.
+ if(game?.forcedFloorArchetype)delete game.forcedFloorArchetype;
  // City floors have no walled rooms at all (open district of building assets),
  // so they can't go through the shared room/corridor carving below - built by
  // its own dedicated generator instead, same pattern as buildMegabossFloorPlan.
@@ -2209,7 +2220,8 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const symmetryMode=pick(SYMMETRY_MODES);
  const overlapsRoom=(x,y,w,h)=>rooms.some(r=>x<r.x+r.w+2&&x+w+2>r.x&&y<r.y+r.h+2&&y+h+2>r.y);
  const roomInBounds=(x,y,w,h)=>x>=1&&y>=1&&x+w<=COLS-1&&y+h<=ROWS-1;
- const targetRooms=randBetween(L.rooms[0],L.rooms[1]);
+ const roomDensity=pctMult(params?.fine?.roomDensityPct||100);
+ const targetRooms=Math.max(2,Math.round(randBetween(L.rooms[0],L.rooms[1])*roomDensity));
  for(let tries=0;tries<2600&&rooms.length<targetRooms;tries++){
   const typeId=weightedRoomType(arch.roomWeights),T=ROOM_TYPES[typeId];
   const lo=Math.max(3,Math.min(T.size[0],layoutSizeMax)),hi=Math.max(lo,Math.min(T.size[1],layoutSizeMax));
@@ -2566,35 +2578,43 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  };
 }
 
+function validateGeneratedFloor(plan,floor){
+ if(!plan||!Array.isArray(plan.map)||plan.map.length!==ROWS||plan.map.some(row=>!Array.isArray(row)||row.length!==COLS))throw new Error(`Piso ${floor}: mapa incompleto.`);
+ if(!Array.isArray(plan.rooms)||!plan.rooms.length)throw new Error(`Piso ${floor}: no contiene salas o zonas.`);
+ const inside=p=>p&&Number.isInteger(p.x)&&Number.isInteger(p.y)&&p.x>=0&&p.y>=0&&p.x<COLS&&p.y<ROWS;
+ if(!inside(plan.spawn)||!inside(plan.stairs)||plan.map[plan.spawn.y]?.[plan.spawn.x]!==0||plan.map[plan.stairs.y]?.[plan.stairs.x]!==0)throw new Error(`Piso ${floor}: entrada o salida inválida.`);
+ const reachable=floodFillOpen(plan.map,plan.spawn.x,plan.spawn.y);
+ if(!reachable.has(key(plan.stairs.x,plan.stairs.y)))throw new Error(`Piso ${floor}: la salida no es alcanzable.`);
+ for(const asset of plan.assets||[]){
+  if(!inside(asset)||asset.x+Math.max(1,asset.cols||1)>COLS||asset.y+Math.max(1,asset.rows||1)>ROWS)throw new Error(`Piso ${floor}: asset fuera del mapa.`);
+ }
+ return plan;
+}
+
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
  if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
  if(!normalizedSupabaseFloors().length)throw new Error('No hay floors en config_floor para generar floors aleatorios.');
- const floors=[],lootTable=createLootProgressionTable(params.floors);
- const oldGame=game;
+ const floors=[],lootTable=createLootProgressionTable(params.floors),oldGame=game;
  const tempPlayer={level:1,stats:{strength:4,vitality:4,agility:3,luck:2,intelligence:2,wisdom:2},raceBonuses:{},derived:{floorShield:0},shield:0,hp:1,maxHp:1};
  const recent=[];
- for(let floor=1;floor<=params.floors;floor++){
-  game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
-  const configuredArchetype=worldPlanEntry(params,floor)?.archetype;if(configuredArchetype)game.forcedFloorArchetype=configuredArchetype;
-  let plan=null;
-  for(let attempt=0;attempt<3&&!plan;attempt++)plan=buildFloorPlan(floor,params,{recent});
-  if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
-  recent.push(plan.archetype);
-  floors.push({
-   floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
-   doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,
-   archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
-   objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
-   enemies:plan.enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),
-   enemyFamily:plan.enemyFamily,enemyFamilyId:plan.enemyFamilyId,
-   themeName:plan.themeName,floorTileset:compactFloorTilesetForWorld(plan.floorTileset),
-   boss:plan.boss?compactEnemyForWorld(plan.boss):null
-  });
- }
- game=oldGame;
- return {schemaVersion:4,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
+ try{
+  for(let floor=1;floor<=params.floors;floor++){
+   let plan=null,lastError=null;
+   for(let attempt=0;attempt<8&&!plan;attempt++){
+    game={floor,player:tempPlayer,worldParams:params,worldLootTable:lootTable};
+    const configuredArchetype=worldPlanEntry(params,floor)?.archetype;
+    if(configuredArchetype)game.forcedFloorArchetype=configuredArchetype;
+    try{plan=validateGeneratedFloor(buildFloorPlan(floor,params,{recent}),floor)}catch(error){lastError=error;plan=null}
+   }
+   if(!plan)throw new Error(`No se pudo generar el piso ${floor} tras 8 intentos. ${lastError?.message||''}`.trim());
+   recent.push(plan.archetype);
+   floors.push({floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,enemies:plan.enemies.map(e=>compactEnemyForWorld(assignEnemySkills(e))),enemyFamily:plan.enemyFamily,enemyFamilyId:plan.enemyFamilyId,themeName:plan.themeName,floorTileset:compactFloorTilesetForWorld(plan.floorTileset),boss:plan.boss?compactEnemyForWorld(plan.boss):null});
+  }
+  return {schemaVersion:4,appVersion:APP_VERSION,worldName:name,generatedAt:new Date().toISOString(),params,lootTable,floors};
+ }finally{game=oldGame}
 }
+
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
  if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
