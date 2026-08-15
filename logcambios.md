@@ -1,3 +1,21 @@
+## v0.79.1 - Generación robusta y parámetros coherentes
+
+- Corregido el loop completo de creación para reintentar cada piso hasta ocho veces, validar mapa, salas, entrada, salida alcanzable y límites de assets, y restaurar siempre el estado de juego aunque falle la generación.
+- La densidad de salas y las geometrías `rooms`, `caves`, `mixed` y `open` se aplican ahora durante la generación en vez de quedar guardadas sin efecto.
+- Ajustados los tamaños de sala ampliados para que sigan admitiendo arquitectura grande sin saturar el tablero de 49x49 ni impedir la colocación del número mínimo de salas.
+- Fijadas y deshabilitadas las dimensiones del editor en 49x49, el tamaño realmente soportado por el runtime, evitando guardar parámetros de ancho/alto que el tablero no podía representar.
+- La generación funciona con catálogos de assets vacíos y, cuando existen assets, valida que todas sus huellas permanezcan dentro del mapa.
+- Ejecutadas comprobaciones de sintaxis y un smoke test aislado de generación/visualización de seis pisos con y sin assets.
+
+## v0.79.0 - Persistencia, mercader y composición de dungeons
+
+- Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
+- El Mercader de Souls espera a cargar `config_items`, ofrece copias canónicas de los objetos y pociones visibles de la tabla por su tier y deposita cada compra en la mochila persistente del personaje.
+- Incrementada en un 35 % la densidad de assets decorativos del generador, tanto en ciudades como en pisos con salas.
+- Ampliados los rangos de tamaño de las tipologías de sala para integrar arquitectura grande de manera coherente y mantener estatuas, banners y decoración pequeña como acentos.
+- Los assets de 3x3 o más pueden colocarse como límites interiores de las salas grandes, priorizando las piezas arquitectónicas de mayor superficie y conservando un anillo transitable para no sellar accesos.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.79.0`.
+
 ## v0.78.0 - 2026-08-15
 
 - Separada la identidad del cofre de su tier: `config_chest` sigue determinando el tipo y los filtros del objeto durante la generación de la dungeon, pero ya no fija su rareza.
