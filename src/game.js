@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.79.0';
+const APP_VERSION='0.80.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1623,7 +1623,7 @@ async function start(){
  // openSinglePlayerScreen() are still in flight. Starter selections are row
  // ids, so creating before both catalogs arrive silently produced an empty
  // selection. Wait here, at the point where the data becomes mandatory.
- if(!configItems.length)await fetchConfigItems();
+ await ensureConfigItemsHydrated();
  if(!configClasses.length)await fetchConfigClasses();
  const race=selectedRace,cls=resolveClassDef(selectedClass);
  // resolveClassDef returns null for a custom class whose config_class row
@@ -3788,7 +3788,7 @@ function useAltar(a){
 }
 const SOUL_PRICES={common:5,uncommon:10,rare:20,epic:30,legendary:45};
 async function openSoulMerchant(altar){
- if(!configItems.length)await fetchConfigItems();
+ await ensureConfigItemsHydrated();
  // The merchant sells the canonical config_items payload (including potions),
  // not procedural loot. The purchased copy is inserted into game.inventory,
  // which is the character's backpack persisted in the character bundle.
@@ -6592,7 +6592,9 @@ function allClassIds(){
  return [...ids];
 }
 
-async function fetchConfigItems({light=false}={}){try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');configItems=Array.isArray(data)?data:[];renderConfigItems();renderConfigPotionsList();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+function configItemsNeedHydration(){return !configItems.length||configItems.some(row=>!row.item_json)}
+async function fetchConfigItems({light=false}={}){const startedHydrated=!configItemsNeedHydration();try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(light&&!startedHydrated&&!configItemsNeedHydration()){const fullById=new Map(configItems.map(row=>[String(row.id),row]));configItems=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configItems=rows;renderConfigItems();renderConfigPotionsList();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !configItemsNeedHydration()}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
 
@@ -8714,7 +8716,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();if(!configItems.length)await fetchConfigItems();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
+ try{if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();await ensureConfigItemsHydrated();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia en enemy_family antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -8869,7 +8871,7 @@ async function deleteSavedSession(sessionId){
 
 async function resumeSession(sessionId){
  try{
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
+  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
   const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
@@ -8923,6 +8925,7 @@ async function resumeSession(sessionId){
 
 async function enterWorldWithCharacter(){
  if(!currentCharacter){banner('Selecciona un personaje primero.');return}
+ await ensureConfigItemsHydrated();
  try{await ensureWorldObjectIcons()}catch(e){banner('No se pudieron cargar los assets del mundo.');return}
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
@@ -10326,7 +10329,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  if(!configItems.length)fetchConfigItems();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
+  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
   await mpRealtimeConnect(session.id);
   const worldRes=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`);
   const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');

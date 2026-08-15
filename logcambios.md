@@ -1,3 +1,10 @@
+## v0.80.0 - 2026-08-15
+
+- Corregida la transición del catálogo ligero de objetos a su carga completa antes de entrar en un piso, crear un personaje, reanudar una partida o iniciar una sesión multijugador.
+- Las pociones obtenidas desde `config_items` vuelven a conservar su icono y su lista real de efectos, evitando que aparezcan como no configuradas al usarlas.
+- Una respuesta ligera tardía ya no puede reemplazar un catálogo completo que ya esté hidratado en memoria.
+- Actualizada la versión de la app y del paquete a `0.80.0` (`v0.80.0 POCIONES HIDRATADAS`).
+
 ## v0.79.0 - Persistencia, mercader y composición de dungeons
 
 - Los personajes existentes conservan explícitamente sus shards y souls al iniciar una dungeon nueva, incluso cuando el saldo es cero, antes y después de la generación y el recálculo del piso.
