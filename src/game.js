@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.76.0';
+const APP_VERSION='0.77.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2108,15 +2108,6 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
   if(!chestDef)break;
   chests.push({...free(),opened:false,chestDef});
  }
- if(chests.length){
-  const bumpTier=Math.min(5,chestTierForFloor(floor)+1),bumpCount=Math.min(chests.length,1+(Math.random()<.5?1:0));
-  for(const c of [...chests].sort(()=>Math.random()-.5).slice(0,bumpCount)){
-   const bumpDef=pickChestDefAtTier(bumpTier);
-   if(bumpDef)c.chestDef=bumpDef;
-  }
- }
- addBonusPotionChests(chests,free,floor);
-
  // --- enemies: same budget/composition rules as the walled archetypes ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
  const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
@@ -2464,19 +2455,6 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
   chests.push({...free(),opened:false,chestDef});
  }
- // 1-2 chests per floor are deliberately bumped one tier above the floor's
- // cap (chestTierForFloor) so a floor doesn't hand out the exact same chest
- // tier every single time - left untouched if nothing is configured at that
- // higher tier.
- if(chests.length){
-  const bumpTier=Math.min(5,chestTierForFloor(floor)+1),bumpCount=Math.min(chests.length,1+(Math.random()<.5?1:0));
-  for(const c of [...chests].sort(()=>Math.random()-.5).slice(0,bumpCount)){
-   const bumpDef=pickChestDefAtTier(bumpTier);
-   if(bumpDef)c.chestDef=bumpDef;
-  }
- }
- addBonusPotionChests(chests,free,floor);
-
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
  const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
@@ -4031,95 +4009,32 @@ function craftUpgradeStat(item,affix){
 }
 const CHEST_ITEM_RARITY_BY_TIER={1:'common',2:'uncommon',3:'rare',4:'epic',5:'legendary'};
 function chestItemRarity(tier){return CHEST_ITEM_RARITY_BY_TIER[Math.max(1,Math.min(5,Number(tier)||1))]}
-function configuredRowsForChestDef(def){
- if(!def||def.type==='potion'||def.type==='skill')return [];
- const rarity=chestItemRarity(def.tier);
- return configItems.filter(row=>{const item=row.item_json||row;return !isConfiguredPotionRow(row)&&(item.rarity||row.tier||'common')===rarity&&chestItemMatchesType(item,def.type,def.slotFilter||'all',def.weaponTypeFilter||'all')})
+// Every generated chest is a snapshot of one real config_chest row. There is
+// no procedural, tier-progression or potion side-channel: the configured list
+// is the sole source of chest definitions.
+function pickChestDefForFloor(){
+ const rows=configChests.filter(r=>r?.chest_json&&r.chest_json.type&&r.chest_json.tier);
+ if(!rows.length)return null;
+ const row=pick(rows);
+ return {...row.chest_json,configChestId:row.id};
 }
-function chestDefHasLoot(def){
- if(def?.type==='skill')return Object.keys(skillDefs).length>0;
- return configuredRowsForChestDef(def).length>0
-}
-// Chest tier (1-5) max for a floor, kept consistent with the same floor
-// thresholds as the guaranteed floor-completion item
-// (FLOOR_REWARD_TIER_THRESHOLDS): común/1 -> tier 1, infrecuente/2-3 -> tier
-// 2, raro/4-7 -> tier 3, épico/8-10 -> tier 4 y legendario/11+ -> tier 5.
-function chestTierForFloor(floor){
- const f=Math.max(1,Number(floor)||1);
- if(f<=1)return 1;
- if(f<=3)return 2;
- if(f<=7)return 3;
- if(f<=10)return 4;
- return 5;
-}
-// Dungeons only ever place chests backed by a real config_chest row - never a
-// generic/procedural one. Picks the nearest configured tier AT OR BELOW the
-// given one - never above, so an early floor can never hand out a chest
-// whose tier is higher than it should be just because higher tiers happen to
-// be configured and lower ones aren't. Returns null when config_chest has
-// nothing at or below that tier (including when it's completely empty), in
-// which case no chest gets placed at all.
-function pickChestDefAtOrBelowTier(tier){
- if(!configChests.length)return null;
- for(let t=tier;t>=1;t--){const nonPotion=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type!=='potion');if(nonPotion.length)return pick(nonPotion).chest_json}
- return null;
-}
-// Exact-tier pick (no falling back to lower tiers), used to bump a couple of
-// chests per floor one tier above the floor's normal cap - see the bump step
-// in buildFloorPlan(). Returns null if nothing is configured at that tier.
-function pickChestDefAtTier(tier){
- if(!configChests.length)return null;
- const matches=configChests.filter(r=>Number(r.chest_json?.tier)===tier);
- const nonPotion=matches.filter(r=>r.chest_json?.type!=='potion');
- return nonPotion.length?pick(nonPotion).chest_json:null;
-}
-function pickPotionChestDefForFloor(floor){
- const tier=chestTierForFloor(floor);
- for(let t=tier;t>=1;t--){const rows=configChests.filter(r=>Number(r.chest_json?.tier)===t&&r.chest_json?.type==='potion');if(rows.length)return pick(rows).chest_json}
- return null
-}
-// Additive bonus: each regular chest grants an independent 15% chance to
-// place one extra potion chest. Existing loot chests are never replaced.
-function addBonusPotionChests(chests,freeCell,floor){
- const def=pickPotionChestDefForFloor(floor);if(!def)return;
- const regularCount=chests.length;
- for(let i=0;i<regularCount;i++)if(Math.random()<.15)chests.push({...freeCell(),opened:false,chestDef:def})
-}
-function pickChestDefForFloor(floor){
- return pickChestDefAtOrBelowTier(chestTierForFloor(floor));
-}
-// The chest definition determines the item type/category and its numeric tier
-// determines the exact rarity. Specific ids are honored only when they meet
-// both constraints; otherwise the same typed, exact-tier pool guarantees loot.
+// The selected config_chest definition fixes both item class and exact rarity.
+// The actual config_items row is not rolled until the chest is opened.
 function chestLootItem(c){
  const def=c.chestDef;if(!def)return null;
  const type=def.type;
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
  if(type==='skill'){
-  const ids=(def.itemIds||[]).filter(id=>id!==CHEST_RANDOM_PICK_ID),specific=ids.filter(id=>skillDefs[id]&&!(game.player.knownSkills||[]).includes(id));
-  const id=specific.length?pick(specific):randomLootableSkill();
+  const rarity=chestItemRarity(def.tier);
+  const ids=Object.keys(skillDefs).filter(id=>skillDefs[id].rarity===rarity&&!(game.player.knownSkills||[]).includes(id));
+  const id=ids.length?pick(ids):null;
   if(id)unlockSkillLoot(id);
   return null
  }
- // itemIds may mix specific config_items ids with the CHEST_RANDOM_PICK_ID
- // sentinel ("Aleatorio" checkbox); an empty list also means random
- const pickedId=def.itemIds?.length?pick(def.itemIds):CHEST_RANDOM_PICK_ID;
- if(pickedId!==CHEST_RANDOM_PICK_ID){
-  const row=configItems.find(r=>String(r.id)===String(pickedId));
-  const item=row&&(row.item_json||row);
-  if(row&&chestItemMatchesType(item,type,def.slotFilter||'all',def.weaponTypeFilter||'all'))return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level);
- }
- // The chest's own configured itemTiers is an upper bound the admin picked
- // for that chest tier, but never a substitute for the floor's own hard
- // progression cap (lootRow.allowedRarities, see PROGRESSION_REFERENCE_FLOORS) -
- // without also checking that here, a short dungeon (few total floors) could
- // still hand out floor-1 chests with rare+ items just because the chest
- // tier's own itemTiers allowed it, regardless of how many floors the
- // dungeon actually has.
+ const chestRarity=chestItemRarity(def.tier);
  const pool=configItems.filter(r=>{
   const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
-  if(!(def.itemTiers||['common']).includes(rarity))return false;
-  if(!lootRarityAllowed(rarity,lootRow))return false;
+  if(rarity!==chestRarity)return false;
   return chestItemMatchesType(j,type,def.slotFilter||'all',def.weaponTypeFilter||'all');
  });
  if(pool.length){const row=pick(pool);return type==='potion'?configuredPotionFromRow(row,lootRow,game.player.level):configuredItemFromRow(row,lootRow,game.player.level)}
@@ -4128,8 +4043,8 @@ function chestLootItem(c){
 function openChest(c){
  c.opened=true;game.chestsOpened++;
  if(game.multiplayer)sendMpAction('open_chest',{at:{x:c.x,y:c.y}});
- const n=1+(Math.random()<.20?1:0);
- for(let i=0;i<n;i++){const item=chestLootItem(c);if(item){addInventoryItem(item);setTimeout(()=>lootToast(item),i*220)}}
+ const n=1;
+ const item=chestLootItem(c);if(item){addInventoryItem(item);lootToast(item)}
  game.player.gold+=5+rng(14);floating('¡BOTÍN!',c.x,c.y,'#ffd45f');log(`Cofre: ${n} objeto(s).`,'loot');if(game.chestsOpened>=5)unlock('chest5','Coleccionista de basura','Abre 5 cofres.')
 }
 
@@ -7535,12 +7450,10 @@ function renderEnemyConfig(){renderEnemySkillSelect();renderEnemySkillPool();if(
 function setupEnemyConfigMode(){setupImageIconEditor({inputId:'configEnemyImageInput',canvasId:'configEnemyCropCanvas',previewId:'configEnemyIconPreview',statusId:'configEnemyIconStatus',zoomId:'configEnemyCropZoom',eraserId:'configEnemyMagicEraserBtn',toleranceId:'configEnemyMagicTolerance',hexKey:'currentConfigEnemyIconHex',statusPrefix:'Icono enemigo'});window.currentEnemySkillPool=window.currentEnemySkillPool||[];renderEnemyConfig();configEnemySkills.onchange=()=>addEnemySkillToPool(configEnemySkills.value);saveConfigEnemyBtn.onclick=async()=>{configEnemyStatus.textContent='Guardando enemigo...';try{const row=currentEnemyRow(),id=window.editingConfigEnemyId,r=await fetch(id?`/api/enemy-detail?id=${encodeURIComponent(id)}`:'/api/enemy-detail',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar enemigo');await fetchEnemyConfig();configEnemyStatus.textContent='Enemigo guardado.'}catch(e){configEnemyStatus.textContent=e.message}};newConfigEnemyBtn.onclick=resetEnemyForm;saveEnemyFamilyBtn.onclick=async()=>{try{const name=configEnemyFamilyName.value.trim()||'Sin familia',json=familyJsonFromDetails(name),existing=configEnemyFamilies.find(r=>r.family_name===name),r=await fetch(existing?`/api/enemy-family?id=${existing.id}`:'/api/enemy-family',{method:existing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:json})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo consolidar');await fetchEnemyConfig();configEnemyStatus.textContent='Familia consolidada en enemy_family.'}catch(e){configEnemyStatus.textContent=e.message}};exportEnemyFamilyBtn.onclick=()=>{const blob=new Blob([JSON.stringify(familyJsonFromDetails(configEnemyFamilyName.value.trim()||'Sin familia'),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='enemy-family.json';a.click();URL.revokeObjectURL(a.href)};importEnemyFamilyInput.onchange=async()=>{try{let familyCount=0,enemyCount=0;const familiesRaw=await parseImportedJsonFiles([...importEnemyFamilyInput.files]);for(const raw of familiesRaw){const j=raw.family_json||raw,name=j.name||raw.family_name||'Familia importada',r=await fetch('/api/enemy-family',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family_name:name,family_json:{...j,name}})}),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo importar familia');familyCount++;const enemies=Array.isArray(j.enemies)?j.enemies:[];if(enemies.length){const detailRows=enemies.map(e=>enemyDetailRowFromImportedEnemy(e,name));await postJsonRows('/api/enemy-detail',detailRows);enemyCount+=detailRows.length}}await fetchEnemyConfig();configEnemyStatus.textContent=`Importadas ${familyCount} familia(s) y ${enemyCount} enemigo(s) individuales en enemy_detail.`}catch(e){configEnemyStatus.textContent=e.message}finally{importEnemyFamilyInput.value=''}}}
 
 // ---- Treasure chest config (config_chest) --------------------------------
-// A chest definition = tier (1-5, chest rarity/quality) + type (equipment/
-// weapon/potion/skill) + icon + which item rarities it can drop + optionally
-// a hand-picked pool of specific items/skills (empty pool = fully random
-// within the selected item tiers). These replace the generic chests during
-// dungeon generation; the chest TIER actually rolled depends on the floor
-// (see chestTierForFloor()).
+// A chest definition = tier (1-5, exact item rarity) + type (equipment/
+// weapon/potion/skill) + optional class filters + icon. This is the
+// authoritative chest catalogue: dungeon generation snapshots only rows from
+// config_chest and opening resolves their type+tier against config_items.
 let configChests=[];
 async function fetchConfigChests(){try{const r=await fetch('/api/config-chest');const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar cofres');configChests=Array.isArray(data)?data:[];renderConfigChests()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=`Error cargando config_chest: ${e.message}`}}
 // offhand ("mano secundaria"/mano izquierda) counts as weapon type, not equipment
@@ -7555,34 +7468,11 @@ function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
  if(slotFilter&&slotFilter!=='all'&&j.slot!==slotFilter)return false;
  return true;
 }
-function chestSearchPool(type,slotFilter='all',weaponTypeFilter='all'){
- if(type==='skill')return Object.entries(skillDefs).map(([id,s])=>({id,label:s.name,rarity:s.rarity||'common'}));
- return configItems.filter(i=>chestItemMatchesType(i.item_json||i,type,slotFilter,weaponTypeFilter)).map(i=>({id:String(i.id),label:i.nombre||(i.item_json||i).name||'Sin nombre',rarity:(i.item_json||i).rarity||i.tier||'common',hidden:!!(i.item_json||i).hidden}));
-}
-function checkedChestItemTiers(){return [...document.querySelectorAll('#configChestItemTiers input[type=checkbox]:checked')].map(cb=>cb.value)}
-// A special "Aleatorio" pick sits alongside the concrete items: when it's
-// among the selected ids, the chest can also resolve to any item matching
-// the chest's own rarity+type instead of only the hand-picked ones.
-const CHEST_RANDOM_PICK_ID='__random__';
 function renderChestItemResults(){
- const root=document.getElementById('configChestItemResults'),summary=document.getElementById('configChestSpecificSummary');
- if(!root)return;
- const type=document.getElementById('configChestType')?.value||'equipment',q=(document.getElementById('configChestItemSearch')?.value||'').trim().toLowerCase();
- const slotFilter=document.getElementById('configChestSlotFilter')?.value||'all',weaponTypeFilter=document.getElementById('configChestWeaponTypeFilter')?.value||'all';
- window.currentChestItemIds=window.currentChestItemIds||[];
- const tiers=checkedChestItemTiers();
- // Hidden items/potions only surface in the results once the search text
- // actually matches - never in the default (empty-search) list.
- const pool=chestSearchPool(type,slotFilter,weaponTypeFilter).filter(x=>tiers.includes(x.rarity)).filter(x=>q?x.label.toLowerCase().includes(q):!x.hidden).slice(0,60);
- const randomRow=`<label class="configItem"><input type="checkbox" data-chest-item-pick="${CHEST_RANDOM_PICK_ID}" ${window.currentChestItemIds.includes(CHEST_RANDOM_PICK_ID)?'checked':''}><span>🎲 Aleatorio (cualquier item de la rareza y tipo definidos)</span></label>`;
- root.innerHTML=randomRow+(pool.length?pool.map(x=>`<label class="configItem"><input type="checkbox" data-chest-item-pick="${x.id}" ${window.currentChestItemIds.includes(x.id)?'checked':''}><span>${x.label}</span></label>`).join(''):'<p class="small">Sin resultados para esos tiers.</p>');
- const updateSummary=()=>{if(summary)summary.textContent=window.currentChestItemIds.length?`${window.currentChestItemIds.length} opción(es) posibles al abrir (incluye aleatorio si está marcado).`:'Nada seleccionado: el cofre no soltará objeto.'};
- root.querySelectorAll('[data-chest-item-pick]').forEach(cb=>cb.onchange=()=>{
-  const id=cb.dataset.chestItemPick;
-  window.currentChestItemIds=cb.checked?[...window.currentChestItemIds,id]:window.currentChestItemIds.filter(x=>x!==id);
-  updateSummary();
- });
- updateSummary();
+ const summary=document.getElementById('configChestLootSummary');if(!summary)return;
+ const tier=Number(document.getElementById('configChestTier')?.value)||1,type=document.getElementById('configChestType')?.value||'equipment';
+ const typeLabels={equipment:'equipo',weapon:'arma',potion:'poción',skill:'habilidad'};
+ summary.textContent=`Tier ${['I','II','III','IV','V'][tier-1]}: soltará ${type==='skill'?'una':'un objeto'} ${tierDefs[chestItemRarity(tier)]?.label.toLowerCase()} aleatorio de ${typeLabels[type]||type}, decidido al abrir.`;
 }
 function toggleChestTypeFields(){
  const type=document.getElementById('configChestType')?.value||'equipment';
@@ -7590,27 +7480,22 @@ function toggleChestTypeFields(){
  document.getElementById('configChestWeaponTypeFilterWrap')?.classList.toggle('hidden',type!=='weapon');
 }
 function currentConfigChestJson(){
- const itemTiers=checkedChestItemTiers();
  return {
   name:document.getElementById('configChestName')?.value.trim()||'Cofre sin nombre',
   tier:Number(document.getElementById('configChestTier')?.value)||1,
   type:document.getElementById('configChestType')?.value||'equipment',
   slotFilter:document.getElementById('configChestSlotFilter')?.value||'all',
   weaponTypeFilter:document.getElementById('configChestWeaponTypeFilter')?.value||'all',
-  icon:window.currentConfigChestIconHex||'',
-  itemTiers:itemTiers.length?itemTiers:['common'],
-  itemIds:[...(window.currentChestItemIds||[])]
+  icon:window.currentConfigChestIconHex||''
  };
 }
 function resetConfigChestForm(){
- window.editingConfigChestId=null;window.currentChestItemIds=[CHEST_RANDOM_PICK_ID];window.currentConfigChestIconHex='';
+ window.editingConfigChestId=null;window.currentConfigChestIconHex='';
  document.getElementById('configChestName').value='';
  document.getElementById('configChestTier').value='1';
  document.getElementById('configChestType').value='equipment';
  document.getElementById('configChestSlotFilter').value='all';
  document.getElementById('configChestWeaponTypeFilter').value='all';
- document.getElementById('configChestItemSearch').value='';
- document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=cb.value==='common');
  toggleChestTypeFields();
  renderConfigIconPreview('','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
@@ -7619,15 +7504,13 @@ function resetConfigChestForm(){
 function loadConfigChestForEdit(id){
  const row=configChests.find(r=>String(r.id)===String(id));if(!row)return;
  const c=row.chest_json||{};
- window.editingConfigChestId=row.id;window.currentChestItemIds=[...(c.itemIds||[])];window.currentConfigChestIconHex=c.icon||'';
+ window.editingConfigChestId=row.id;window.currentConfigChestIconHex=c.icon||'';
  document.getElementById('configChestName').value=c.name||'';
  document.getElementById('configChestTier').value=String(c.tier||1);
  document.getElementById('configChestType').value=c.type||'equipment';
  document.getElementById('configChestSlotFilter').value=c.slotFilter||'all';
  document.getElementById('configChestWeaponTypeFilter').value=c.weaponTypeFilter||'all';
- document.getElementById('configChestItemSearch').value='';
  toggleChestTypeFields();
- document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.checked=(c.itemTiers||['common']).includes(cb.value));
  renderConfigIconPreview(c.icon||'','configChestIconPreview','configChestIconStatus');
  renderChestItemResults();
  const st=document.getElementById('configChestStatus');if(st)st.textContent=`Editando ${c.name||'cofre'}.`;
@@ -7641,13 +7524,12 @@ function renderConfigChests(){
  if(!configChests.length){root.innerHTML='<p class="small">No hay cofres configurados.</p>';return}
  const typeLabels={equipment:'Equipo',weapon:'Arma',potion:'Poción',skill:'Habilidad'};
  const sorted=[...configChests].sort((a,b)=>(a.chest_json?.tier||1)-(b.chest_json?.tier||1)||String(a.chest_json?.type||'').localeCompare(String(b.chest_json?.type||'')));
- root.innerHTML=sorted.map(r=>{const c=r.chest_json||{},ids=c.itemIds||[],specificCount=ids.filter(id=>id!==CHEST_RANDOM_PICK_ID).length,hasRandom=!ids.length||ids.includes(CHEST_RANDOM_PICK_ID),parts=[specificCount?`${specificCount} concreto(s)`:null,hasRandom?'Aleatorio':null].filter(Boolean).join(' + ')||'Sin objetos';return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[(c.itemTiers||[])[0]]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${typeLabels[c.type]||c.type} · ${parts}</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
+ root.innerHTML=sorted.map(r=>{const c=r.chest_json||{},rarity=chestItemRarity(c.tier);return `<div class="configItem"><span class="tierDot" style="background:${tierDefs[rarity]?.color||'#ddd'}"></span><div><b>${c.name||'Cofre'}</b><span class="small">Tier ${c.tier||1} · ${tierDefs[rarity]?.label||rarity} · ${typeLabels[c.type]||c.type} · Aleatorio al abrir</span><div class="configItemActions"><button type="button" data-chest-edit="${r.id}">Editar</button><button type="button" data-chest-delete="${r.id}">Borrar</button></div></div></div>`}).join('');
  root.querySelectorAll('[data-chest-edit]').forEach(b=>b.onclick=()=>loadConfigChestForEdit(b.dataset.chestEdit));
  root.querySelectorAll('[data-chest-delete]').forEach(b=>b.onclick=()=>removeConfigChest(b.dataset.chestDelete));
 }
 function setupChestConfigMode(){
  setupImageIconEditor({inputId:'configChestImageInput',canvasId:'configChestCropCanvas',previewId:'configChestIconPreview',statusId:'configChestIconStatus',zoomId:'configChestCropZoom',eraserId:'configChestMagicEraserBtn',toleranceId:'configChestMagicTolerance',hexKey:'currentConfigChestIconHex',statusPrefix:'Icono cofre'});
- window.currentChestItemIds=window.currentChestItemIds||[];
  const weaponTypeSel=document.getElementById('configChestWeaponTypeFilter');
  if(weaponTypeSel&&weaponTypeSel.options.length<=1)weaponTypeSel.insertAdjacentHTML('beforeend',configWeaponTypes.map(c=>`<option value="${c}">${c}</option>`).join(''));
  toggleChestTypeFields();
@@ -7655,8 +7537,7 @@ function setupChestConfigMode(){
  document.getElementById('configChestType').onchange=()=>{toggleChestTypeFields();renderChestItemResults()};
  document.getElementById('configChestSlotFilter').onchange=renderChestItemResults;
  document.getElementById('configChestWeaponTypeFilter').onchange=renderChestItemResults;
- document.getElementById('configChestItemSearch').oninput=renderChestItemResults;
- document.querySelectorAll('#configChestItemTiers input[type=checkbox]').forEach(cb=>cb.onchange=renderChestItemResults);
+ document.getElementById('configChestTier').onchange=renderChestItemResults;
  document.getElementById('saveConfigChestBtn').onclick=async()=>{
   const st=document.getElementById('configChestStatus');st.textContent='Guardando cofre...';
   try{

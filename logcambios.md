@@ -1,3 +1,11 @@
+## v0.77.0 - 2026-08-15
+
+- Consolidado `config_chest` como única fuente para los cofres de las dungeons: cada cofre se selecciona de una fila configurada durante la generación y conserva el identificador y una copia de su definición.
+- Eliminados los cofres procedurales, la selección legacy por progresión del piso, los aumentos automáticos de tier y la generación paralela de cofres de pociones.
+- El loot deja de preseleccionar objetos concretos o combinar pools de rarezas: al abrir el cofre se sortea exactamente un objeto de `config_items` cuya clase coincide con el tipo/filtros del cofre y cuya rareza corresponde exactamente a su tier.
+- Simplificado el editor de cofres para expresar el contrato único tipo+tier, retirando la selección legacy de objetos y rarezas múltiples y mostrando el resultado aleatorio que se resolverá al abrir.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.77.0`.
+
 ## v0.71.0 - Imágenes de assets y áreas persistentes animadas
 
 - Corregida la carga de imágenes de los assets del mundo cuando el catálogo se había solicitado en modo mínimo: cada asset colocado recupera su icono completo bajo demanda y repinta el tablero al recibirlo, en lugar de quedarse como un rectángulo gris.
