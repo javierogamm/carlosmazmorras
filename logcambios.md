@@ -1047,3 +1047,11 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Los iconos nuevos o modificados se descargan individualmente comparando `updated_at`, y los objetos eliminados desaparecen de la caché al reconstruirla desde el catálogo actual.
 - El endpoint de objetos incluye ahora `updated_at` en sus proyecciones y actualiza esa marca temporal al crear o editar filas.
 - Actualizada la versión de la app y del paquete a `0.75.0`.
+
+## v0.76.0 - 2026-08-15
+
+- Corregido el bloqueo que impedía entrar en una dungeon cuando la consulta o validación de `config_world_object` fallaba: la caché de imágenes deja de ser un requisito fatal para iniciar la partida.
+- Si existe una copia local completa, la dungeon la utiliza aunque falle temporalmente la validación de metadatos y reintenta más adelante sin mostrar el error bloqueante.
+- Añadido un intervalo de reintento para evitar repetir inmediatamente una descarga fallida cuando no existe caché local.
+- El endpoint reintenta la lectura con la proyección compatible anterior cuando PostgREST todavía no expone `updated_at` en su caché de esquema.
+- Actualizada la versión de la app y del paquete a `0.76.0`.

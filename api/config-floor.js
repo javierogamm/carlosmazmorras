@@ -27,10 +27,20 @@ const ASSET_KEY_PREFIX='asset_';
 async function handleWorldObjects(req,res,url,key){
  if(req.method==='GET'){
   const objectKey=req.query?.object_key;
-  const select=req.query?.minimal==='1'?'id,object_key,name,tiles_number,tiles_mask,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente,updated_at';
+  const minimal=req.query?.minimal==='1';
+  const select=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente,updated_at';
+  const legacySelect=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
   const filter=objectKey?`&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`:'';
-  const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
-  const data=await r.json();
+  let r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
+  let data=await r.json();
+  // Some Supabase projects can briefly serve a stale PostgREST schema cache
+  // after adding updated_at. Keep the game operational with the established
+  // projection until PostgREST exposes the timestamp column.
+  if(!r.ok){
+   const fallback=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${legacySelect}${filter}&order=object_key.asc`,{headers:headers(key)});
+   const fallbackData=await fallback.json();
+   if(fallback.ok){r=fallback;data=(Array.isArray(fallbackData)?fallbackData:[]).map(row=>({...row,updated_at:null}))}
+  }
   if(!r.ok)return res.status(r.status).json(data);
   return res.status(200).json(data);
  }
