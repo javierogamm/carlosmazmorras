@@ -681,9 +681,9 @@
      <label>Loot/cofres por piso <input id="dungeonLootPerFloor" type="number" min="0" max="50" value="4"></label><label><input id="dungeonApMode" type="checkbox"> Combate por puntos de acción</label>
     </div></details>
     <details class="configAccordion"><summary>Geometría y dimensiones totales</summary><div class="configForm">
-     <label>Ancho (casillas) <input id="dungeonWidth" type="number" value="49" disabled title="El tablero utiliza 49 casillas"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" value="49" disabled title="El tablero utiliza 49 casillas"></label>
+     <label>Ancho (casillas) <input id="dungeonWidth" type="number" min="15" max="99" step="2" value="49"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" min="15" max="99" step="2" value="49"></label>
      <label>Geometría <select id="dungeonGeometry"><option value="rooms">Salas y corredores</option><option value="caves">Cuevas orgánicas</option><option value="mixed">Mixta</option><option value="open">Espacio abierto</option></select></label><label>Densidad de salas % <input id="dungeonRoomDensity" type="number" min="25" max="200" value="100"></label>
-    </div><p class="small">El motor utiliza una malla táctica fija de 49×49; la geometría y la densidad elegidas se aplican al consolidar cada piso.</p></details>
+    </div><p class="small">Las dimensiones y geometría son metadatos finos del diseño; el motor conserva su malla táctica compatible de 49×49 al consolidar los pisos.</p></details>
     <details class="configAccordion" open><summary>Tipos e historia de los 6 pisos</summary><div id="dungeonFloorEditor" class="configItemsList"></div></details>
     <div class="configItemActions"><button class="start" id="saveDungeonConfigBtn">GUARDAR DUNGEON</button><button id="newDungeonConfigBtn">NUEVA</button><button id="deleteDungeonConfigBtn">BORRAR</button></div>
     <div class="configItemActions"><button id="exportDungeonConfigBtn">EXPORTAR JSON</button><label class="importJsonBtn dungeonImportBtn">IMPORTAR JSON<input type="file" id="importDungeonConfigInput" accept=".json,application/json"></label></div>
