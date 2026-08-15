@@ -1,3 +1,21 @@
+## v0.78.0 - 2026-08-15
+
+- Separada la identidad del cofre de su tier: `config_chest` sigue determinando el tipo y los filtros del objeto durante la generación de la dungeon, pero ya no fija su rareza.
+- El tier de cada cofre se sortea individualmente al iniciar el piso usando el nivel actual del personaje y queda persistido en ese cofre para que abrirlo o reanudar la partida no vuelva a sortearlo.
+- Entre los niveles 1 y 5 los pesos progresan linealmente de 60/35/5 % a 15/60/25 % para común/infrecuente/raro.
+- Entre los niveles 6 y 10 los pesos progresan linealmente de 50/40/10/0 % a 10/35/45/10 % para infrecuente/raro/épico/legendario.
+- Desde nivel 11 el peso infrecuente, raro y épico decrece progresivamente a favor de legendario, sin reintroducir común ni utilizar ningún fallback legacy.
+- Simplificados el editor y la vista previa de dungeons para no mostrar un tier de cofre antes de que el personaje inicie el piso.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.78.0`.
+
+## v0.77.0 - 2026-08-15
+
+- Consolidado `config_chest` como única fuente para los cofres de las dungeons: cada cofre se selecciona de una fila configurada durante la generación y conserva el identificador y una copia de su definición.
+- Eliminados los cofres procedurales, la selección legacy por progresión del piso, los aumentos automáticos de tier y la generación paralela de cofres de pociones.
+- El loot deja de preseleccionar objetos concretos o combinar pools de rarezas: al abrir el cofre se sortea exactamente un objeto de `config_items` cuya clase coincide con el tipo/filtros del cofre y cuya rareza corresponde exactamente a su tier.
+- Simplificado el editor de cofres para expresar el contrato único tipo+tier, retirando la selección legacy de objetos y rarezas múltiples y mostrando el resultado aleatorio que se resolverá al abrir.
+- Sin ejecución de tests, conforme a la instrucción del usuario. Sincronizadas las versiones de runtime, paquete y cache-busting en `0.77.0`.
+
 ## v0.71.0 - Imágenes de assets y áreas persistentes animadas
 
 - Corregida la carga de imágenes de los assets del mundo cuando el catálogo se había solicitado en modo mínimo: cada asset colocado recupera su icono completo bajo demanda y repinta el tablero al recibirlo, en lugar de quedarse como un rectángulo gris.
