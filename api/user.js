@@ -15,10 +15,10 @@ function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config,
 // write that raced/failed, etc.) without needing a manual backfill.
 async function syncUserAggregates(url,key,nombre,row){
  try{
-  const r=await fetch(`${url}/rest/v1/${USER_PJ_TABLE}?select=pj_score,pj_json&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
+  const r=await fetch(`${url}/rest/v1/${USER_PJ_TABLE}?select=pj_score,level:pj_json->player->>level&nombre=eq.${encodeURIComponent(nombre)}`,{headers:headers(key)});
   const chars=await r.json();
   if(!r.ok||!Array.isArray(chars))return row;
-  const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.pj_json?.player?.level)||1),0);
+  const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.level)||1),0);
   const totalScore=chars.reduce((s,c)=>s+(Number(c.pj_score)||0),0);
   const fresh={...row,max_pj_lv:maxLevel,accumulated_points:totalScore};
   // Aggregate persistence is best-effort and must never invalidate valid
