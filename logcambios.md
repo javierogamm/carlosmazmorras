@@ -1,3 +1,12 @@
+## v0.86.11 - 2026-08-16
+
+- Revertidos todos los cambios ajenos a objetos de mundo realizados en las consolidaciones anteriores, restaurando intactos login, menús, HUD, gamepad, modales y respuestas de dungeons a la versión estable.
+- Conservada únicamente la separación de `config_world_object`: generación y configuración consultan metadatos ligeros sin `icon` y guardan tamaño, `object_key` y UUID `assetId` en las colocaciones.
+- Las imágenes de objetos y assets se solicitan solo al entrar/restaurar un piso o revivir, limitadas a las filas utilizadas por ese piso; el render nunca inicia peticiones.
+- En Configuración, las imágenes solo se descargan al editar un objeto o asset; crear uno nuevo comienza sin cargar ninguna imagen existente.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.11` (`v0.86.11 OBJETOS DE MUNDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.10 - 2026-08-16
 
 - Separados definitivamente los metadatos de generación de las imágenes de `config_world_object`: crear y configurar dungeons solo consulta `id`, `object_key`, tamaño, máscara, ambiente, nombre y fecha; las colocaciones consolidan también el UUID como `assetId`.
