@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.9';
+const APP_VERSION='0.86.10';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1935,7 +1935,7 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
    cellsCovered.push({x:px,y:py,blocked:def.mask?.[dy]?.[dx]!==false});
   }
   for(const c of cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
-  assetPlacements.push({key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
+  assetPlacements.push({assetId:def.id,key:def.key,name:def.name,x:ox,y:oy,cols:def.cols,rows:def.rows});
   return true;
  };
  const margin=5;
@@ -2403,7 +2403,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   if(!candidates.length)return false;
   const choice=pick(candidates);
   for(const c of choice.cellsCovered){if(c.blocked)map[c.y][c.x]=1;occ.add(key(c.x,c.y))}
-  assetPlacements.push({key:def.key,name:def.name,x:choice.ox,y:choice.oy,cols:def.cols,rows:def.rows});
+  assetPlacements.push({assetId:def.id,key:def.key,name:def.name,x:choice.ox,y:choice.oy,cols:def.cols,rows:def.rows});
   return true;
  };
  if(assetDefs.length){
@@ -2623,7 +2623,7 @@ function loadPrecomputedFloor(){
  announceFloorArchetype();
  grantFloorRewardPopup();
  log(`Mundo: ${selectedDungeonWorld.world_name} (#${selectedDungeonWorld.id}).`,'story');
- updateUI();draw();rollFloorEvent();return true;
+ loadCurrentFloorWorldObjectImages();updateUI();draw();rollFloorEvent();return true;
 }
 
 function carve(map,r){for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)map[y][x]=0}
@@ -3163,7 +3163,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
  scaleFloorForParty();
  announceFloorArchetype();
  grantFloorRewardPopup();
- updateUI();draw();rollFloorEvent();
+ loadCurrentFloorWorldObjectImages();updateUI();draw();rollFloorEvent();
 }
 
 // Banner + log describing the archetype and how this floor is completed.
@@ -5437,7 +5437,7 @@ function handlePlayerDeath(){
  if((game.player.souls||0)>=20&&!game.multiplayer){showSoulReviveModal();return}
  permanentDeath();
 }
-function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
+function reviveAtCurrentPosition(hpPercent=100){loadCurrentFloorWorldObjectImages();game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){
  const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');modal.querySelectorAll('button').forEach(b=>b.disabled=false);
  const staysHere=(game.player.souls||0)>=50,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Con 50 o más Soul Spikes revivirás en esta misma casilla, conservarás 10 y los enemigos mantendrán su estado.':'Con 20-49 Soul Spikes volverás al inicio del piso 1, conservarás 1 y los enemigos se regenerarán sin regenerar el loot.';
@@ -7779,7 +7779,7 @@ let configWorldObjects={};
 let configWorldObjectRows={};
 let configWorldObjectsLoaded=false;
 let configWorldObjectsRequest=null;
-const pendingWorldObjectIcons=new Set();
+const floorWorldObjectImageRequests=new Map();
 // Decoration assets: user-created rows in config_world_object whose
 // object_key starts with ASSET_KEY_PREFIX. Unlike the fixed WORLD_OBJECT_KINDS
 // catalog above (icon-only overrides for system props), these carry their
@@ -7819,7 +7819,7 @@ function assetPreviewDims(cols,rows){
 function listConfigAssets(){
  return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>{
   const {cols,rows}=parseTilesNumber(r.tiles_number);
-  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
+  return {id:r.id,key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
  });
 }
 function applyConfigWorldObjectRows(rows){
@@ -7841,9 +7841,9 @@ async function fetchConfigWorldObjects({minimal=false}={}){
  if(!minimal)configWorldObjectsRequest=request;
  try{return await request}finally{if(!minimal)configWorldObjectsRequest=null}
 }
-async function ensureWorldObjectIcons(){
- // Load only placement metadata up front. Images follow the enemy-icon pattern:
- // each visible object/asset requests its own row by object_key on demand.
+async function ensureWorldObjectMetadata(){
+ // Generation/configuration only need IDs, dimensions, masks and environment.
+ // Images are fetched later, at the explicit floor-entry/revive boundary.
  const rows=await fetchConfigWorldObjects({minimal:true});return Array.isArray(rows);
 }
 async function fetchConfigWorldObjectDetail(objectKey){
@@ -7854,15 +7854,30 @@ async function fetchConfigWorldObjectDetail(objectKey){
  configWorldObjectRows[objectKey]=row;configWorldObjects[objectKey]=row.icon||'';
  return row;
 }
-function loadWorldObjectIconOnDemand(objectKey){
- const row=configWorldObjectRows[objectKey];
- if(!row||row.icon!==undefined||pendingWorldObjectIcons.has(objectKey))return;
- pendingWorldObjectIcons.add(objectKey);
- fetchConfigWorldObjectDetail(objectKey).then(()=>game&&requestGameFrame()).catch(()=>{}).finally(()=>pendingWorldObjectIcons.delete(objectKey));
+function currentFloorWorldObjectKeys(){
+ const keys=new Set((game?.assets||[]).map(asset=>asset.key).filter(Boolean));
+ for(const room of game?.rooms||[])if(room.type)keys.add(`room_${room.type}`);
+ if(game?.stairs)keys.add('stairsDown');
+ if(game?.keys?.length)keys.add('key');
+ if(game?.traps?.length)keys.add('trap');
+ for(const altar of game?.altars||[])if(altar.kind)keys.add(`altar_${altar.kind}`);
+ return [...keys].filter(key=>configWorldObjectRows[key]);
+}
+async function loadCurrentFloorWorldObjectImages(){
+ // This is the sole gameplay image-loading boundary: after a floor has been
+ // entered/restored (and when reviving), fetch only rows actually used there.
+ const requests=currentFloorWorldObjectKeys().filter(key=>configWorldObjectRows[key]?.icon===undefined).map(key=>{
+  if(!floorWorldObjectImageRequests.has(key)){
+   const request=fetchConfigWorldObjectDetail(key).catch(()=>null).finally(()=>floorWorldObjectImageRequests.delete(key));
+   floorWorldObjectImageRequests.set(key,request);
+  }
+  return floorWorldObjectImageRequests.get(key);
+ });
+ await Promise.all(requests);if(game){requestGameFrame();renderIdentityMiniIcons(game.player)}
 }
 function renderConfigWorldObjectsList(){
  const root=document.getElementById('configWorldObjectsList');if(!root)return;
- root.innerHTML=WORLD_OBJECT_KINDS.map(k=>{const hex=configWorldObjects[k.key];return `<div class="configItem"><span class="tierDot" style="background:${hex?'#8c72e8':'#4d395a'}"></span><div><b>${k.label}</b><span class="small">${hex?'Icono personalizado':'Sprite por defecto'}</span><div class="configItemActions"><button type="button" data-edit-world-object="${k.key}">Editar</button></div></div></div>`}).join('');
+ root.innerHTML=WORLD_OBJECT_KINDS.map(k=>`<div class="configItem"><span class="tierDot" style="background:#4d395a"></span><div><b>${k.label}</b><span class="small">La imagen se carga al editar</span><div class="configItemActions"><button type="button" data-edit-world-object="${k.key}">Editar</button></div></div></div>`}).join('');
  root.querySelectorAll('[data-edit-world-object]').forEach(b=>b.onclick=()=>loadWorldObjectForEdit(b.dataset.editWorldObject));
 }
 async function loadWorldObjectForEdit(objectKey){
@@ -7901,7 +7916,7 @@ function setupConfigWorldObjectsMode(){
  };
 }
 // ---- Decoration assets (config_world_object, object_key prefix asset_) ----
-function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
+function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:#4d395a"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles · imagen al editar</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
 function configAssetEnvironmentJson(ambiente,assets){
  const rows=assets.map(a=>{
   const blockedTiles=a.mask.flat().filter(Boolean).length,totalTiles=a.cols*a.rows;
@@ -8399,7 +8414,7 @@ function drawWorldObjectIconToCanvas(canvas,objectKey,fallbackGlyph='🔒'){
 // Shared draw helper: if object_key has a custom icon, draws it and returns
 // true; otherwise the caller falls back to its own procedural sprite.
 function drawWorldObjectIcon(objectKey,x,y,size=TILE-14,offset=7){
- const hex=configWorldObjects[objectKey];if(!hex){loadWorldObjectIconOnDemand(objectKey);return false}
+ const hex=configWorldObjects[objectKey];if(!hex)return false
  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
  if(img.complete){ctx.drawImage(img,x+offset,y+offset,size,size);return true}
  img.onload=()=>game&&draw();
@@ -8412,7 +8427,7 @@ function drawAssetIcon(objectKey,x,y,w,h){
  const hex=configWorldObjects[objectKey];
  // Keep the actual dungeon tile visible while the database image hydrates;
  // never substitute the old grey rectangle for a configured asset.
- if(!hex){loadWorldObjectIconOnDemand(objectKey);return false}
+ if(!hex)return false
  let img=tileImageCache.get('wobj:'+hex);if(!img){img=tileImageFromHex(hex);tileImageCache.set('wobj:'+hex,img)}
  if(img.complete){ctx.drawImage(img,x+2,y+2,w-4,h-4);return true}
  img.onload=()=>game&&draw();
@@ -8791,7 +8806,7 @@ async function saveDungeonConfig(){
    await fetchConfigDungeons();status.textContent='Parámetros modificados consolidados; la geometría pregenerada no se reinsertó.';return
   }
   status.textContent=importedDungeonDraft?'Consolidando la dungeon importada...':'Generando los 6 pisos y su geometría para la nueva dungeon...';
-  if(!importedDungeonDraft){if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();await ensureWorldObjectIcons()}
+  if(!importedDungeonDraft){if(!configFloors.length)await fetchConfigFloors();if(!configEnemyFamilies.length)await fetchEnemyConfig();await ensureWorldObjectMetadata()}
   const world=importedDungeonDraft?structuredClone(dungeonPreviewWorld):createDungeonWorldJson(name,params);world.params=params;world.worldName=name;world.appVersion=APP_VERSION;world.story=params.fine.story;world.fine=params.fine;(world.floors||[]).forEach((f,i)=>f.story=params.floorPlan[i]?.story||f.story||'');
   const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json:world})}),data=await responseJson(r);if(!r.ok||data.error)throw new Error(data.error||'No se pudo guardar');
   editingDungeonWorldId=data.id;editingDungeonBaseline=JSON.parse(JSON.stringify(params));importedDungeonDraft=false;dungeonPreviewWorld=world;dungeonPreviewFloor=0;drawDungeonGeometryPreview();await fetchConfigDungeons();status.textContent='Dungeon nueva consolidada y vista previa actualizada.'
@@ -8821,7 +8836,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{await ensureConfigFloorsHydrated();await fetchEnemyConfig({throwOnError:true});await ensureConfigItemsHydrated();await ensureWorldObjectIcons();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia con enemigos en enemy_family y enemy_detail antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
+ try{await ensureConfigFloorsHydrated();await fetchEnemyConfig({throwOnError:true});await ensureConfigItemsHydrated();await ensureWorldObjectMetadata();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia con enemigos en enemy_family y enemy_detail antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -8976,7 +8991,7 @@ async function deleteSavedSession(sessionId){
 
 async function resumeSession(sessionId){
  try{
-  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
+  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectMetadata();
   const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
@@ -9031,7 +9046,7 @@ async function resumeSession(sessionId){
 async function enterWorldWithCharacter(){
  if(!currentCharacter){banner('Selecciona un personaje primero.');return}
  await ensureConfigItemsHydrated();
- try{await ensureWorldObjectIcons()}catch(e){banner('No se pudieron cargar los assets del mundo.');return}
+ try{await ensureWorldObjectMetadata()}catch(e){banner('No se pudieron cargar los assets del mundo.');return}
  dungeonOverlay.classList.add('hidden');
  const bundle=currentCharacter.pj_json||{};
  game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:bundle.inventory||[],achievements:bundle.achievements||{},feats:normalizeFeats(currentCharacter.feats||bundle.feats),bossesKilled:bundle.bossesKilled||0,chestsOpened:bundle.chestsOpened||0,maxFloorReached:bundle.maxFloorReached||1,player:bundle.player,pjId:currentCharacter.id};
@@ -9076,6 +9091,7 @@ function applyFloorSnapshot(overlay){
  const restoredFloorEntryLevel=overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1;
  Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
+ loadCurrentFloorWorldObjectImages();
 }
 function persistTurnState(){
  if(!game?.pjId)return;
@@ -9270,7 +9286,7 @@ function proceedAfterWorldChosen(){
  document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');
  document.getElementById('dungeonPreviewContinueBtn').onclick=async()=>{
   document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
-  try{await ensureWorldObjectIcons()}catch(e){alert('No se pudieron cargar los objetos del mundo: '+e.message);document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');return}
+  try{await ensureWorldObjectMetadata()}catch(e){alert('No se pudieron cargar los objetos del mundo: '+e.message);document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');return}
   if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
   await enterWorldWithCharacter();
  };
@@ -10434,7 +10450,7 @@ async function refreshMpLobby(){
 async function mpEnterStartedSession(session,starter=false){
  try{
   stopMultiHeartbeat();
-  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
+  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectMetadata();
   await mpRealtimeConnect(session.id);
   const worldRes=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(session.dungeon_world_id)}`);
   const world=await worldRes.json();if(!worldRes.ok)throw new Error(world.error||world.message||'No se pudieron cargar los mundos');

@@ -1,3 +1,12 @@
+## v0.86.10 - 2026-08-16
+
+- Separados definitivamente los metadatos de generación de las imágenes de `config_world_object`: crear y configurar dungeons solo consulta `id`, `object_key`, tamaño, máscara, ambiente, nombre y fecha; las colocaciones consolidan también el UUID como `assetId`.
+- Las imágenes se solicitan exclusivamente después de entrar o restaurar un piso y al revivir, limitadas a los objetos y assets que utiliza ese piso.
+- Eliminada la carga de imágenes disparada durante el dibujado: explorar una casilla ya no inicia peticiones y el render usa únicamente imágenes preparadas en la entrada del piso.
+- En Configuración, los listados de objetos y assets permanecen ligeros; la imagen completa solo se descarga al pulsar **Editar**, mientras un asset nuevo parte sin imagen almacenada.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.10` (`v0.86.10 IMÁGENES POR PISO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.9 - 2026-08-16
 
 - Corregida la regresión al abrir o crear dungeons: las respuestas de `dungeon-worlds` ya no se interpretan directamente como JSON y muestran un error controlado si el servidor devuelve HTML.
