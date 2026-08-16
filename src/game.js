@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.81.0';
+const APP_VERSION='0.82.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -3320,8 +3320,15 @@ function skillDiceExpr(id){
  return tier>=3?'4d8':tier===2?'3d8':'2d8+1'
 }
 function actorStatDamageBonus(){return 0}
-function offensiveSkillMultiplier(actor=game.player){return 1+statValueFor(actor,'intelligence')*INT_OFFENSIVE_SKILL_BONUS_PER_POINT}
-function utilitySkillMultiplier(actor=game.player){return 1+statValueFor(actor,'wisdom')*WIS_UTILITY_SKILL_BONUS_PER_POINT}
+// skilleffect is expressed as percentage points in additive sources (20 = +20%)
+// and as a raw factor in multiplicative buffs (1.2 = +20%). It amplifies every
+// offensive and utility skill magnitude, including stackable components.
+function skillEffectMultiplier(actor=game.player){
+ const base=actor===game.player?(1+(Number(actor?.raceBonuses?.skilleffect)||0)/100):Math.max(0,Number(actor?.skillEffectMult??1));
+ return actor===game.player?Math.max(0,base*activeBuffMultFactor('skilleffect')+activeBuffFlatBonus('skilleffect')/100):base
+}
+function offensiveSkillMultiplier(actor=game.player){return (1+statValueFor(actor,'intelligence')*INT_OFFENSIVE_SKILL_BONUS_PER_POINT)*skillEffectMultiplier(actor)}
+function utilitySkillMultiplier(actor=game.player){return (1+statValueFor(actor,'wisdom')*WIS_UTILITY_SKILL_BONUS_PER_POINT)*skillEffectMultiplier(actor)}
 function skillHasHealing(def){
  const healingKinds=new Set(['heal','hot']),healingEffects=new Set(['heal','healShield','cleanseHeal','bigHeal','regenHeal','survivalHeal','oakBuff']);
  return healingEffects.has(def?.classEffect)||(def?.effects||[]).some(effect=>healingKinds.has(effect.kind))
@@ -4191,6 +4198,10 @@ function applyEnemyStatDebuff(e,stat,mode,value,turns,label){
   const before=e.atk??e.damage??4;
   e.atk=e.damage=Math.max(1,Math.round(mode==='mult'?before*value:before-value));
   e.statuses.push({type:'statDebuff',stat,before,turns,label});
+ }else if(stat==='skilleffect'){
+  const before=e.skillEffectMult??1;
+  e.skillEffectMult=mode==='mult'?before*value:Math.max(0,before-value/100);
+  e.statuses.push({type:'statDebuff',stat,before,turns,label});
  }else if(stat==='ap'){
   const before=e.apDebuffMult??1;
   e.apDebuffMult=mode==='mult'?before*value:Math.max(0,before-value/100);
@@ -4220,7 +4231,7 @@ function tickEnemyStatuses(){
    if(s.turns<=0&&s.type==='doomCountdown'&&e.hp>0){const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d68cff');if(e.hp<=0){kill(e);break}}
    if(s.turns<=0&&s.type==='statDebuff'){
     if(s.stat==='damage')e.atk=e.damage=s.before;
-    else if(s.stat==='ap')e.apDebuffMult=s.before;
+    else if(s.stat==='ap')e.apDebuffMult=s.before;else if(s.stat==='skilleffect')e.skillEffectMult=s.before;
     else e.stats[s.stat]=s.before;
    }
   }
@@ -4276,7 +4287,7 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
   // that appears mid-round shouldn't immediately eat an attack before it's
   // even had a turn of its own.
   spawnTurn:game.turn||0,
-  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),ap:Math.max(10,(custom.actionsPerTurn||1)*10),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
+  ...(custom?{effectType:custom.effectType||'damage',skillName:custom.skillName||'',skillEffects:Array.isArray(custom.skillEffects)?custom.skillEffects:[],damageDice:Number(String(custom.atk||'').match(/^(\d+)d/)?.[1]??1),dmgStat:custom.dmgStat||'',dmgStatMode:custom.dmgStatMode||'add',dmgStatCoef:custom.dmgStatCoef??1,actionsPerTurn:Math.max(1,custom.actionsPerTurn||1),ap:Math.max(10,(custom.actionsPerTurn||1)*10),effectTurns:custom.effectTurns||2,stationary:!!custom.stationary,damageMode:custom.damageMode||'nearest',buffStat:custom.buffStat||'',buffMode:custom.buffMode||'add',buffValue:custom.buffValue??5,iconImage:custom.iconImage||'',permanent:!!custom.permanent,sourceSkillId:custom.sourceSkillId||'',reviveResource:custom.reviveResource||'hp',reviveAmount:custom.reviveAmount??20,targetable:custom.targetable!==false,hitByAoe:custom.hitByAoe!==false,stance:custom.stance==='passive'?'passive':'aggressive',
    // Permanent companion (pet) command cost - what the player pays each time
    // they order it to act via issueCompanionCommand(), separate from
    // whatever the original summon itself cost. orderTarget starts empty:
@@ -4490,7 +4501,7 @@ function executeCompanionOrder(c){
  const target=c.orderTarget;
  if(!target||target.hp<=0){c.orderTarget=null;return}
  if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target);floating('✦',c.x,c.y,'#d9a8ff')}
- else{attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
+ else if(c.damageDice!==0){attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
  c.orderTarget=null;
 }
 // A permanent pet's own PA pool for resolving an attack/skill order - kept
@@ -4640,7 +4651,7 @@ function companionTurn(){
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
      const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
      if(!targets.length||c.ap<10)break;c.ap-=10;
-     for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
+     if(c.damageDice!==0)for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
     if(c.effectType==='heal'){if(c.ap<10)break;c.ap-=10;healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
@@ -4662,7 +4673,7 @@ function companionTurn(){
     // idea as a real skill's effects[]. Falls back to the plain dice attack
     // if nothing was configured yet.
     else if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target);floating('✦',c.x,c.y,'#d9a8ff')}
-    else{attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
+    else if(c.damageDice!==0){attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
    }
    continue
   }
@@ -5054,7 +5065,7 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='summon'){
-  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4';
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'0d6';
   if([...(game.companions||[]),...(game.player.dismissedCompanions||[])].some(c=>c.sourceSkillId===id)){log(`${d.name} ya está invocado.`,'sys');return false}
   if(comp.permanent){
    // Permanent companion (pet): only one instance per skill. This branch
@@ -5071,7 +5082,7 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='summonturret'){
-  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d6+2';
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'0d6';
   summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??16)*utilitySkillMultiplier(p)),atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||'',spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
@@ -5167,7 +5178,7 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='clones'){
-  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'1d4+1';
+  const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'0d6';
   const count=Math.max(1,Math.min(4,Math.round((comp.count||2)*utilitySkillMultiplier(p))));
   for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??14)*utilitySkillMultiplier(p)),atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
   return true
@@ -5238,7 +5249,7 @@ const AP_COST_BY_EFFECT={
 };
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode||game.player?.combatMode==='ap'))}
-function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const base=30+Math.ceil((st.agility||0)/2)+(Number(game.player?.raceBonuses?.apBonus)||0);return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
+function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const itemAp=Object.values(game.player.equipment||{}).reduce((sum,item)=>sum+(item?.affixes||[]).filter(a=>a.key==='ap'||a.key==='apBonus').reduce((n,a)=>n+(Number(a.value)||0),0),0);const base=30+Math.ceil((st.agility||0)/2)+(Number(game.player?.raceBonuses?.apBonus)||0)+itemAp;return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
 // Also refills every companion's own PA pool and immediately resumes any
 // pending permanent-pet order (companionResolveOrder) with that fresh PA -
 // this runs at the very start of the new round, before the player takes any
@@ -6846,7 +6857,7 @@ function renderClassSkillsSummaryTable(){
 }
 // ---- Composable effects list editor (admin) --------------------------------
 const STAT_KEYS_CORE=['strength','vitality','agility','luck','intelligence','wisdom'];
-const STAT_LABELS_ES={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA',dodge:'Esquiva',critChance:'Crítico',blockChance:'Bloqueo',manaRegen:'Regen. maná',staminaRegen:'Regen. stamina'};
+const STAT_LABELS_ES={skilleffect:'Efecto de habilidades',strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',damage:'Daño',ap:'PA',dodge:'Esquiva',critChance:'Crítico',blockChance:'Bloqueo',manaRegen:'Regen. maná',staminaRegen:'Regen. stamina'};
 function statOptionsHtml(selected,extra=[]){return [...STAT_KEYS_CORE,...extra].map(s=>`<option value="${s}" ${selected===s?'selected':''}>${STAT_LABELS_ES[s]||s}</option>`).join('')}
 function defaultComponentFor(kind){
  const base={kind};
@@ -6918,7 +6929,7 @@ function subEffectFieldsHtml(comp,pIdx,j){
   return `${subEffectDiceFieldsHtml(comp,pIdx,j)}<label>Recurso que absorbe la invocación <select ${attr('resource')}><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label>`;
  }
  if(comp.kind==='dot')return `${subEffectDiceFieldsHtml(comp,pIdx,j,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" ${attr('turns')}></label>`;
- if(comp.kind==='buff'||comp.kind==='debuff')return `<label>Stat <select ${attr('stat')}>${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage']:['damage'])}</select></label><label>Modo <select ${attr('mode')}><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" ${attr('value')}></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" ${attr('turns')}></label>`;
+ if(comp.kind==='buff'||comp.kind==='debuff')return `<label>Stat <select ${attr('stat')}>${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','skilleffect']:['damage','skilleffect'])}</select></label><label>Modo <select ${attr('mode')}><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" ${attr('value')}></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" ${attr('turns')}></label>`;
  if(comp.kind==='cc')return `<label>Tipo <select ${attr('type')}><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" ${attr('turns')}></label>`;
  if(comp.kind==='mark')return `<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" ${attr('value')}></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" ${attr('turns')}></label>`;
  return '';
@@ -6956,7 +6967,7 @@ function effectComponentCardHtml(comp,i){
   fields=`${effectDiceFieldsHtml(comp,i)}<label>Recurso que absorbes <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${resource==='hp'?'selected':''}>Vida (HP)</option><option value="mana" ${resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${resource==='stamina'?'selected':''}>Stamina</option></select></label><span class="small">El objetivo pierde vida por el golpe; tú ganas el recurso elegido (no hace falta que coincida con el coste de la skill).</span>`;
  }
  else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
- else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
+ else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','skilleffect','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap','skilleffect'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
@@ -6989,11 +7000,11 @@ function effectComponentCardHtml(comp,i){
   ${['damage','skill'].includes(effectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
   ${effectType==='skill'?subEffectsListHtml(comp,i):''}
   ${effectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
-  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap','skilleffect'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
    <span class="small">El buff se mantiene mientras la invocación siga viva.</span>`:''}
-  ${effectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap'])}</select></label>
+  ${effectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap','skilleffect'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??2}" data-effect-idx="${i}" data-effect-field="value"></label>
    <label>Turnos de debuff por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
@@ -7032,7 +7043,7 @@ function effectComponentCardHtml(comp,i){
   ${effectType==='heal'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??3}" data-effect-idx="${i}" data-effect-field="range"></label>
    ${effectDiceFieldsHtml(comp,i)}
    <span class="small">Cura a ti y a tus invocaciones dentro del radio, cada turno que la torreta siga viva.</span>`:''}
-  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+  ${effectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap','skilleffect'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
    <span class="small">El buff se mantiene mientras la torreta siga viva.</span>`:''}
@@ -7070,11 +7081,11 @@ function effectComponentCardHtml(comp,i){
   ${['damage','skill'].includes(cloneEffectType)?`<label>Alcance (casillas, 0 o vacío = cuerpo a cuerpo) <input type="number" min="0" value="${comp.range??0}" data-effect-idx="${i}" data-effect-field="range"></label>`:''}
   ${cloneEffectType==='skill'?subEffectsListHtml(comp,i):''}
   ${cloneEffectType==='root'?`<label>Turnos de raíz por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
-  ${cloneEffectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap'])}</select></label>
+  ${cloneEffectType==='buff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['armor','damage','ap','skilleffect'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??5}" data-effect-idx="${i}" data-effect-field="value"></label>
    <span class="small">Cada clon suma su propio buff mientras viva.</span>`:''}
-  ${cloneEffectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap'])}</select></label>
+  ${cloneEffectType==='debuff'?`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,['damage','ap','skilleffect'])}</select></label>
    <label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label>
    <label>Valor <input type="number" step="0.1" value="${comp.value??2}" data-effect-idx="${i}" data-effect-field="value"></label>
    <label>Turnos de debuff por acción <input type="number" min="1" value="${comp.effectTurns??2}" data-effect-idx="${i}" data-effect-field="effectTurns"></label>`:''}
@@ -7116,13 +7127,21 @@ function effectComponentCardHtml(comp,i){
 function summonIconRowHtml(comp,i){
  return `<div class="effectIconRow">
   <canvas class="effectIconThumb" width="50" height="50" ${comp.iconImage?`data-summon-icon-idx="${i}"`:''}></canvas>
-  <button type="button" data-use-summon-icon="${i}">Usar imagen del editor de arriba →</button>
+  <label>Imagen propia <input type="file" accept="image/*" data-summon-icon-file="${i}"></label>
   ${comp.iconImage?`<button type="button" data-clear-summon-icon="${i}">Quitar imagen</button>`:'<span class="small">Sin imagen: usará el sprite genérico de aliado.</span>'}
  </div>`;
 }
 // Every already-uploaded custom icon in the system (items, enemies, classes,
 // skills), deduped by hex, so a summon effect can reuse one instead of the
 // admin having to crop the same image again.
+async function summonIconHexFromFile(file){
+ const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('No se pudo leer la imagen.'));reader.readAsDataURL(file)});
+ const img=await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('La imagen no es válida.'));image.src=data});
+ const size=128,scale=Math.min(1,size/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+ const binary=atob(canvas.toDataURL('image/png').split(',')[1]||'');return Array.from(binary,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('')
+}
+function bindSummonIconFiles(wrap,list,rerender){wrap.querySelectorAll('[data-summon-icon-file]').forEach(input=>input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{list[Number(input.dataset.summonIconFile)].iconImage=await summonIconHexFromFile(file);rerender()}catch(e){alert(e.message)}})}
+
 function summonIconOptionsList(){
  const seen=new Set(),opts=[];
  const add=(hex,label)=>{if(!hex||seen.has(hex))return;seen.add(hex);opts.push({hex,label})};
@@ -7195,6 +7214,7 @@ function renderSkillEffectsList(){
   if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación".');return}
   window.currentSkillEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderSkillEffectsList();
  }));
+ bindSummonIconFiles(wrap,list,renderSkillEffectsList);
  wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   window.currentSkillEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderSkillEffectsList();
@@ -8354,12 +8374,13 @@ function drawShardTierIconToCanvas(canvas,tier){
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
 
-const RACE_STAT_FIELDS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',maxHp:'Vida máxima',maxStamina:'Stamina máxima',maxMana:'Maná máximo',critChance:'Crítico %',critDamage:'Daño crítico %',dodge:'Evasión %',staminaRegen:'Regeneración stamina',manaRegen:'Regeneración maná',rarityFind:'Hallazgo rareza %',floorHeal:'Curación por piso',xpMult:'Multiplicador XP',apBonus:'PA adicionales',resourceCostPct:'Gasto de recursos %'};
+const RACE_STAT_FIELDS={skilleffect:'Efecto de habilidades %',strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',maxHp:'Vida máxima',maxStamina:'Stamina máxima',maxMana:'Maná máximo',critChance:'Crítico %',critDamage:'Daño crítico %',dodge:'Evasión %',staminaRegen:'Regeneración stamina',manaRegen:'Regeneración maná',rarityFind:'Hallazgo rareza %',floorHeal:'Curación por piso',xpMult:'Multiplicador XP',apBonus:'PA adicionales',resourceCostPct:'Gasto de recursos %'};
 function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||row.race_key||`race_${row.id}`,bonuses={};for(const [k,v] of Object.entries(meta))if(!['raceKey','description','icon','iconMale','iconFemale'].includes(k)&&typeof v==='number')bonuses[k]=v;const skill=row.skill&&typeof row.skill==='object'?{...row.skill,id:row.skill.id||`${key}_racial`,raceSkill:true,raceKey:key}:null;const iconMale=meta.iconMale||meta.icon||'',iconFemale=meta.iconFemale||iconMale;return{key,name:row.nombre||key,desc:meta.description||row.description||'',origin:'Raza configurable',trait:Object.entries(bonuses).map(([k,v])=>`${RACE_STAT_FIELDS[k]||k}: ${v}`).join(' · ')||'Skill racial',icon:iconMale,iconMale,iconFemale,bonuses,skill,rowId:row.id}}
 function raceIconForId(id,gender=selectedGender){const race=raceDefs[id]||{};return gender==='female'?(race.iconFemale||race.iconMale||race.icon||''):(race.iconMale||race.icon||'')}
 function applyConfiguredRaces(){for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
 async function fetchConfigRaces({light=false}={}){try{const r=await fetch(`/api/config-class?kind=races${light?'&light=1':''}`),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar razas');configRaces=Array.isArray(data)?data:[];configRacesLoaded=true;applyConfiguredRaces();renderConfigRaces()}catch(e){const st=document.getElementById('configRaceStatus');if(st)st.textContent=e.message}}
-function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()})}
+function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()});wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();if(!window.currentSummonIconHex){alert('Primero configura una imagen en el editor de invocación.');return}list[Number(btn.dataset.useSummonIcon)].iconImage=window.currentSummonIconHex;renderRaceEffects()});bindSummonIconFiles(wrap,list,renderRaceEffects);
+ wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();list[Number(btn.dataset.clearSummonIcon)].iconImage='';renderRaceEffects()});wrap.querySelectorAll('[data-summon-icon-idx]').forEach(canvas=>{const comp=list[Number(canvas.dataset.summonIconIdx)];if(comp?.iconImage)drawSkillIconImg(canvas,comp.iconImage)})}
 function raceStatsFromForm(){let extra={};const raw=document.getElementById('configRaceExtraStats').value.trim();if(raw)extra=JSON.parse(raw);for(const k of Object.keys(RACE_STAT_FIELDS)){const v=Number(document.querySelector(`[data-race-stat="${k}"]`)?.value);if(v)extra[k]=v;else delete extra[k]}return extra}
 function currentRacePayload(){const key=slugifyClassName(configRaceKey.value||configRaceName.value),iconMale=window.currentConfigRaceIconHex||'';return{nombre:configRaceName.value.trim(),stats:{...raceStatsFromForm(),raceKey:key,description:configRaceDesc.value.trim(),icon:iconMale,iconMale,iconFemale:window.currentConfigRaceFemaleIconHex||''},skill:{id:`${key}_racial`,name:configRaceSkillName.value.trim()||'Skill racial',icon:configRaceSkillIcon.value||'✦',desc:configRaceSkillDesc.value.trim(),resource:configRaceSkillResource.value,cost:Number(configRaceSkillCost.value)||0,apCost:Number(configRaceSkillAp.value)||0,cd:Number(configRaceSkillCd.value)||0,range:Number(configRaceSkillRange.value)||0,type:'utility',tier:1,rarity:'racial',classEffect:'stackable',effects:JSON.parse(JSON.stringify(window.currentRaceEffectsDraft||[])),raceSkill:true,raceKey:key,targetMode:effectsListTargetModeFor(window.currentRaceEffectsDraft||[])}}}
 async function loadConfigRace(id){let row=configRaces.find(x=>String(x.id)===String(id));if(row&&!row.stats){const r=await fetch(`/api/config-class?kind=races&id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar la raza');row=detail;configRaces=configRaces.map(x=>String(x.id)===String(id)?detail:x)}window.editingConfigRaceId=row?.id||null;const d=row?raceDefFromRow(row):{key:'',name:'',desc:'',icon:'',iconMale:'',iconFemale:'',bonuses:{},skill:{}};configRaceKey.value=d.key||'';configRaceName.value=d.name||'';configRaceDesc.value=d.desc||'';for(const k of Object.keys(RACE_STAT_FIELDS))document.querySelector(`[data-race-stat="${k}"]`).value=d.bonuses?.[k]||'';const extras=Object.fromEntries(Object.entries(d.bonuses||{}).filter(([k])=>!RACE_STAT_FIELDS[k]));configRaceExtraStats.value=Object.keys(extras).length?JSON.stringify(extras,null,2):'';const sk=d.skill||{};configRaceSkillName.value=sk.name||'';configRaceSkillIcon.value=sk.icon||'✦';configRaceSkillDesc.value=sk.desc||'';configRaceSkillResource.value=sk.resource||'stamina';configRaceSkillCost.value=sk.cost??10;configRaceSkillAp.value=sk.apCost??10;configRaceSkillCd.value=sk.cd??5;configRaceSkillRange.value=sk.range??1;window.currentRaceEffectsDraft=JSON.parse(JSON.stringify(sk.effects||[]));window.currentConfigRaceIconHex=d.iconMale||d.icon||'';window.currentConfigRaceFemaleIconHex=row?.stats?.iconFemale||'';renderConfigIconPreview(window.currentConfigRaceIconHex,'configRaceIconPreview','configRaceIconStatus');renderConfigIconPreview(window.currentConfigRaceFemaleIconHex,'configRaceFemaleIconPreview','configRaceFemaleIconStatus');configRaceIconStatus.textContent=window.currentConfigRaceIconHex?'Icono masculino cargado.':'Sin icono masculino.';configRaceFemaleIconStatus.textContent=window.currentConfigRaceFemaleIconHex?'Icono femenino cargado.':'Sin icono femenino: se reutilizará el masculino.';renderRaceEffects()}
@@ -8594,6 +8615,7 @@ function renderPotionEffectsList(){
   if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
   window.currentPotionEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderPotionEffectsList();
  }));
+ bindSummonIconFiles(wrap,list,renderPotionEffectsList);
  wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   window.currentPotionEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderPotionEffectsList();
@@ -8655,6 +8677,7 @@ function renderEquipmentEffectsList(){
   if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
   window.currentEquipmentEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderEquipmentEffectsList();
  }));
+ bindSummonIconFiles(wrap,list,renderEquipmentEffectsList);
  wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   window.currentEquipmentEffectsDraft[Number(btn.dataset.clearSummonIcon)].iconImage='';renderEquipmentEffectsList();
