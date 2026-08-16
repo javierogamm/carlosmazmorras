@@ -1,3 +1,14 @@
+## v0.86.2 - 2026-08-16
+
+- Replanteado el modo de pantalla completa para conservar la ficha del personaje, el tablero con su barra superior y todos los menús de mochila/equipo/habilidades, eliminando únicamente el encabezado global, el registro y controles redundantes.
+- Adaptada la cuadrícula de pantalla completa a tres columnas y al alto disponible, manteniendo scroll independiente en la ficha y los menús cuando la resolución es reducida.
+- Corregida la carga de familias para combinar `enemy_family.family_json` con las filas consolidadas en `enemy_detail`, usando estas últimas como fuente actualizada de los enemigos de cada familia.
+- Añadida compatibilidad al leer familias antiguas con `enemies` y el nuevo formato con colecciones separadas `bosses` y `megabosses`.
+- Conservado explícitamente el rango `normal`, `boss` o `megaboss` en la columna textual `enemy_detail.boss` y dentro de `stats_base`, sin degradar megaboss a un simple valor «sí».
+- La creación de dungeons vuelve a cargar conjuntamente `enemy_family` y `enemy_detail` antes de generar los pisos, evitando usar una familia parcial o desfasada por una petición anterior todavía en curso.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.2` (`v0.86.2 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.1 - 2026-08-16
 
 - Añadido el modo «Solo juego / pantalla completa», que oculta paneles, menús, controles auxiliares y registro para mostrar únicamente el tablero con su HUD superpuesto.
