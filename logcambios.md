@@ -1,3 +1,12 @@
+## v0.86.7 - 2026-08-16
+
+- Restaurado el ataque automático cuando solo existe un enemigo válido dentro del alcance y la línea de visión del arma.
+- Cuando existen dos o más objetivos válidos, **Atacar** abre el modo de selección en cuadrícula para mover el cursor con stick o cruceta y confirmar el enemigo deseado, igual que en las skills dirigidas.
+- La decisión entre ataque automático y selección manual respeta tanto el alcance mínimo como el máximo, también con armas a distancia.
+- Si no existe ningún objetivo válido, se mantiene el turno y se informa del rango disponible sin abrir un modo de ataque vacío.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.7` (`v0.86.7 SELECCIÓN DE ATAQUE`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.6 - 2026-08-16
 
 - El botón **Atacar** entra siempre en modo de apuntado, también con armas cuerpo a cuerpo y aunque solo haya un enemigo adyacente; el ataque no se ejecuta hasta confirmar el objetivo elegido.

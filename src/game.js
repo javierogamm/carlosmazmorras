@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.6';
+const APP_VERSION='0.86.7';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -5790,7 +5790,10 @@ function resolveTargetedSkill(slot,x,y){
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
  const bounds=weaponRangeBounds(equippedWeapon());
- beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min})
+ const targets=game.enemies.filter(enemy=>enemy.hp>0&&validateTargetCell(enemy.x,enemy.y,bounds.max,bounds.min));
+ if(targets.length===1){if(!apCan('attack'))return;attack(targets[0],0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(bounds.max,false)});actionDone('attack');return}
+ if(targets.length>1){beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min});return}
+ log(`No hay ningún enemigo al alcance del arma (${bounds.min}-${bounds.max}).`,'sys')
 }
 function resolveBasicAttack(x,y){
  const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=enemyAtCell(x,y);
