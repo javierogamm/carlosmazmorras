@@ -154,7 +154,7 @@ Puedes dejar `passives` vacío. Si lo usas, la estructura habitual es:
 
 ## Efectos apilables de equipo
 
-El equipo configurado (`type: "equipment"`) puede llevar exactamente la misma pila de efectos apilables (`effects[]`) que las skills y las pociones — mismos `kind`, mismos campos, mismo comportamiento. Aquí abajo se documenta primero cómo se disparan esos efectos según el `slot` del objeto, y luego el catálogo completo de los 27 `kind` disponibles.
+El equipo configurado (`type: "equipment"`) puede llevar exactamente la misma pila de efectos apilables (`effects[]`) que las skills y las pociones — mismos `kind`, mismos campos, mismo comportamiento. Aquí abajo se documenta primero cómo se disparan esos efectos según el `slot` del objeto, y luego el catálogo completo de los 29 `kind` disponibles.
 
 Cómo se activa `effects[]` depende del slot:
 
@@ -229,7 +229,7 @@ Nota: en un `buff` pasivo de equipo el campo `turns` es irrelevante para el juga
 
 ## Catálogo completo de efectos apilables (`effects[]`)
 
-Objetos, pociones y skills de clase comparten **exactamente el mismo motor de efectos apilables**: el mismo array `effects[]`, los mismos 27 `kind` disponibles, los mismos campos, el mismo comportamiento (`applySkillEffectsList`/`applyEffectComponent` en `src/game.js`). Lo único que cambia entre skill/poción/objeto es **cómo se dispara** la pila (pulsar una skill, beber/lanzar una poción, o pasiva/proc/activable según el slot del objeto — ver la sección correspondiente más arriba). Este catálogo es idéntico al de `skills-json-rules.md` §3-§5; si alguna vez difieren, `skills-json-rules.md` manda porque documenta también las fórmulas de daño completas (`attack()`, crítico, defensa) que aquí se omiten por brevedad.
+Objetos, pociones y skills de clase comparten **exactamente el mismo motor de efectos apilables**: el mismo array `effects[]`, los mismos 29 `kind` disponibles, los mismos campos, el mismo comportamiento (`applySkillEffectsList`/`applyEffectComponent` en `src/game.js`). Lo único que cambia entre skill/poción/objeto es **cómo se dispara** la pila (pulsar una skill, beber/lanzar una poción, o pasiva/proc/activable según el slot del objeto — ver la sección correspondiente más arriba). Este catálogo es idéntico al de `skills-json-rules.md` §3-§5; si alguna vez difieren, `skills-json-rules.md` manda porque documenta también las fórmulas de daño completas (`attack()`, crítico, defensa) que aquí se omiten por brevedad.
 
 ### Reglas generales de `effects[]`
 
@@ -252,7 +252,7 @@ Lo usan: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`,
 ### Resolución de `target`
 
 - `"enemy"`: el enemigo pulsado, o el más cercano visible si es autolanzado.
-- `"area"`: para kinds de daño/debuff (`dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `execute`, `pullroot`) — todos los enemigos dentro de `range` casillas (distancia Chebyshev) del punto pulsado/lanzado, con línea de visión. Para `heal`/`hot` — todos los aliados (compañeros + otros jugadores humanos) dentro de `range` casillas.
+- `"area"`: para kinds de daño/debuff (`dmg`, `dot`, `debuff`, `cc`, `fear`, `mesmer`, `drain`, `mark`, `execute`, `pullroot`) — todos los enemigos dentro de `range` casillas (distancia Chebyshev) del punto pulsado/lanzado, con línea de visión. Para `heal`/`hot` — todos los aliados (compañeros + otros jugadores humanos) dentro de `range` casillas.
 - `"self"`: el lanzador.
 - `"ally"`: aliado pulsado (solo multijugador).
 
@@ -260,7 +260,7 @@ Lo usan: `dmg`, `heal`, `drain`, `aoe`, `multihit`, `execute`, `hot`, `counter`,
 
 Prioridad: algún componente con `target:"enemy"` → toda la pila exige pulsar un enemigo. Si no, algún `target:"area"` (o un `move` con `mode:"teleport"`) → exige pulsar una casilla. Si no, algún `target:"ally"` → exige pulsar un aliado. Si no → se aplica al instante sin selección (p. ej. una pila solo con `buff`/`heal(self)`/`hot`/`cheatdeath`/`counter`).
 
-### Los 27 `kind` disponibles
+### Los 29 `kind` disponibles
 
 | kind | Target admitidos | Propósito |
 |---|---|---|
@@ -271,6 +271,8 @@ Prioridad: algún componente con `target:"enemy"` → toda la pila exige pulsar 
 | `heal` | self, ally, area | curación instantánea (+ recurso si self/area) |
 | `move` | — | dash o teletransporte |
 | `cc` | enemy, area | aturdir/congelar/silenciar/enraizar |
+| `fear` | enemy, area | huye y gasta todos sus PA moviéndose durante N turnos; resistencia por SAB, máximo 30% |
+| `mesmer` | enemy, area | cambia de bando durante N turnos; resistencia por INT, máximo 30% |
 | `drain` | enemy, area | daña al enemigo, cura+restaura recurso propio |
 | `aoe` | — (siempre área en torno al punto lanzado) | daño en área con radio explícito |
 | `multihit` | — (siempre el objetivo resuelto) | N impactos repetidos, espaciados 0.5s |

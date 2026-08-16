@@ -1,3 +1,12 @@
+## v0.83.0 - 2026-08-16
+
+- Añadidos los efectos apilables `fear` y `mesmer`, configurables como objetivo individual o de área en skills de clase, skills raciales, objetos y pociones.
+- Miedo obliga al afectado a gastar todos sus PA huyendo durante N turnos y muestra un recuadro negro; su resistencia usa SAB y queda limitada al 30%.
+- Mesmer cambia temporalmente al afectado de bando, hace que ataque a sus antiguos aliados y muestra un recuadro morado; su resistencia usa INT y queda limitada al 30%.
+- La IA enemiga, incluidos jefes y megabosses, puede lanzar ambos controles desde skills marcadas como utilizables por enemigos.
+- Actualizada la versión de la app y del paquete a `0.83.0` (`v0.83.0 MIEDO Y MESMER`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.82.1 - 2026-08-16
 
 - Añadidos `skilleffect` y `ap` al selector visual de bonos de Configuración → Objetos, disponibles para cualquier slot equipable sin incorporarlos al sorteo procedural de afijos.
