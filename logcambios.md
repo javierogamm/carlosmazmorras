@@ -1,3 +1,12 @@
+## v0.86.3 - 2026-08-16
+
+- Restablecida `enemy_detail` como fuente autoritativa de los datos e iconos usados para visualizar y generar enemigos; `enemy_family` queda limitada al catálogo de familias y a la consolidación de importación/exportación JSON.
+- Añadido el modo ligero `?light=1` al endpoint de familias para evitar descargar de forma rutinaria los JSON consolidados que duplican todos los iconos.
+- Eliminado el fallback visual a enemigos embebidos en `enemy_family`, que podía mostrar iconos antiguos cuando no coincidían con la fila vigente de `enemy_detail`.
+- Unificadas las solicitudes simultáneas de configuración de enemigos para impedir descargas duplicadas al entrar en Configuración o crear una dungeon.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.3` (`v0.86.3 ENEMIGOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.2 - 2026-08-16
 
 - Replanteado el modo de pantalla completa para conservar la ficha del personaje, el tablero con su barra superior y todos los menús de mochila/equipo/habilidades, eliminando únicamente el encabezado global, el registro y controles redundantes.
