@@ -1,3 +1,34 @@
+## v0.86.2 - 2026-08-16
+
+- Replanteado el modo de pantalla completa para conservar la ficha del personaje, el tablero con su barra superior y todos los menús de mochila/equipo/habilidades, eliminando únicamente el encabezado global, el registro y controles redundantes.
+- Adaptada la cuadrícula de pantalla completa a tres columnas y al alto disponible, manteniendo scroll independiente en la ficha y los menús cuando la resolución es reducida.
+- Corregida la carga de familias para combinar `enemy_family.family_json` con las filas consolidadas en `enemy_detail`, usando estas últimas como fuente actualizada de los enemigos de cada familia.
+- Añadida compatibilidad al leer familias antiguas con `enemies` y el nuevo formato con colecciones separadas `bosses` y `megabosses`.
+- Conservado explícitamente el rango `normal`, `boss` o `megaboss` en la columna textual `enemy_detail.boss` y dentro de `stats_base`, sin degradar megaboss a un simple valor «sí».
+- La creación de dungeons vuelve a cargar conjuntamente `enemy_family` y `enemy_detail` antes de generar los pisos, evitando usar una familia parcial o desfasada por una petición anterior todavía en curso.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.2` (`v0.86.2 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.1 - 2026-08-16
+
+- Añadido el modo «Solo juego / pantalla completa», que oculta paneles, menús, controles auxiliares y registro para mostrar únicamente el tablero con su HUD superpuesto.
+- Añadidos un botón en el HUD y un keybinding configurable para activar o abandonar el modo de pantalla completa.
+- Al cambiar de pestaña con los botones de hombro, la cruceta y el stick recorren ahora todos los objetos, skills, slots y botones visibles de esa pestaña; Atrás devuelve inmediatamente el mando al movimiento y combate.
+- Los botones de hombro cambian de zona en overlays y pantallas de configuración, incluyendo el bloque superior de creación de dungeon, la lista de dungeons guardadas y el acceso al Menú Principal.
+- Corregida la carga ligera de `config_floor`: ya no reemplaza floors hidratados por filas sin JSON y la creación de dungeons fuerza la hidratación completa antes de generar sus contenidos.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.1` (`v0.86.1 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.0 - 2026-08-16
+
+- Añadida compatibilidad con la API Gamepad para mandos Xbox, PlayStation y genéricos: el stick izquierdo mueve al personaje, los botones permiten atacar, usar las cuatro habilidades, esperar, confirmar y cancelar.
+- Los botones de hombro cambian de pestaña entre mochila, pociones, activables, compañeros, equipo, shards, habilidades y logros.
+- La cruceta navega por botones y menús; al apuntar ataques, habilidades, pociones o efectos de área mueve un cursor por tiles y permite confirmar o cancelar el objetivo desde el mando.
+- Añadido un menú de keybinding para reasignar todos los botones, restaurar la configuración inicial y persistir las preferencias en el navegador.
+- Añadido estado visible de conexión del mando y resaltado del control enfocado durante la navegación.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.0` (`v0.86.0 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.85.1 - 2026-08-16
 
 - Limitado el selector de skills de bosses y megabosses a las habilidades configuradas en `skills_json` de clases marcadas explícitamente como Advanced y habilitadas para enemigos.
