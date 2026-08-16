@@ -16,7 +16,11 @@ module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.method==='GET'){
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,family_name,family_json&order=family_name.asc`,{headers:headers(key)});
+   // El JSON consolidado puede contener todos los iconos y pesar varios MB.
+   // Las vistas de juego/configuracion solo necesitan el catalogo de familias:
+   // enemy_detail es la fuente autoritativa de cada enemigo y de su icono.
+   const select=req.query?.light==='1'?'id,created_at,family_name':'id,created_at,family_name,family_json';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}&order=family_name.asc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);

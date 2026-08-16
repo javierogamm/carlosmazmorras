@@ -1,3 +1,50 @@
+## v0.86.7 - 2026-08-16
+
+- Restaurado el ataque automático cuando solo existe un enemigo válido dentro del alcance y la línea de visión del arma.
+- Cuando existen dos o más objetivos válidos, **Atacar** abre el modo de selección en cuadrícula para mover el cursor con stick o cruceta y confirmar el enemigo deseado, igual que en las skills dirigidas.
+- La decisión entre ataque automático y selección manual respeta tanto el alcance mínimo como el máximo, también con armas a distancia.
+- Si no existe ningún objetivo válido, se mantiene el turno y se informa del rango disponible sin abrir un modo de ataque vacío.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.7` (`v0.86.7 SELECCIÓN DE ATAQUE`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.6 - 2026-08-16
+
+- El botón **Atacar** entra siempre en modo de apuntado, también con armas cuerpo a cuerpo y aunque solo haya un enemigo adyacente; el ataque no se ejecuta hasta confirmar el objetivo elegido.
+- Añadido un marco visible para el cursor del mando durante el apuntado, verde sobre una casilla válida y rojo fuera de alcance o sin línea de visión.
+- El cursor de ataque comparte el mismo desplazamiento por stick y cruceta que las habilidades dirigidas y confirma únicamente al enemigo seleccionado.
+- Reequilibrado el modo de pantalla completa para dar prioridad al tablero: ficha de personaje y panel lateral más estrechos, huecos y padding reducidos y área de juego extendida a todo el ancho central disponible.
+- Eliminado el límite de anchura del tablero basado en la altura de la ventana, que hacía que el juego se viera más pequeño al activar pantalla completa.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.6` (`v0.86.6 ATAQUE CON MANDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.5 - 2026-08-16
+
+- Al consumir una poción con mando, el foco pasa directamente al botón **Continuar** del mensaje de resultado; al confirmarlo se cierra el mensaje y se devuelve el control al tablero sin tener que pulsar un hombro.
+- Corregido el stick durante el apuntado de un ataque, habilidad o poción: ahora desplaza el cursor de selección por el tablero igual que la cruceta, en vez de navegar por botones.
+- Durante el turno enemigo o el fin de turno automático, el stick deja de sacar el foco fuera del área de juego y permanece inactivo hasta que vuelve el turno del jugador.
+- La navegación por botones durante la espera solo se activa de forma explícita al cambiar de pestaña o zona con los botones de hombro.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.5` (`v0.86.5 MANDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.4 - 2026-08-16
+
+- Corregida la carga fallida de `enemy_detail` al crear dungeons: el catálogo inicial solicita todas sus columnas de juego salvo `icon`, evitando que una respuesta única con todas las imágenes supere los límites del endpoint.
+- Añadido al endpoint de `enemy_detail` un modo ligero para el catálogo y una consulta de detalle por `id`; ambos contratos usan exclusivamente las columnas reales de la tabla facilitada.
+- Cada enemigo generado conserva ahora el `id` de su fila en `enemy_detail` y solicita su icono directamente de esa misma fila cuando debe dibujarse, sin consultar ni reutilizar el icono consolidado de `enemy_family`.
+- Las dungeons antiguas sin `enemyDetailId` resuelven la fila por los metadatos actuales, guardan el identificador recuperado y redibujan el icono al terminar su carga bajo demanda.
+- La edición de un enemigo carga primero su fila completa por `id`, de modo que el formulario continúa mostrando y guardando el icono aunque el listado inicial sea ligero.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.4` (`v0.86.4 ICONOS ENEMIGOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.3 - 2026-08-16
+
+- Restablecida `enemy_detail` como fuente autoritativa de los datos e iconos usados para visualizar y generar enemigos; `enemy_family` queda limitada al catálogo de familias y a la consolidación de importación/exportación JSON.
+- Añadido el modo ligero `?light=1` al endpoint de familias para evitar descargar de forma rutinaria los JSON consolidados que duplican todos los iconos.
+- Eliminado el fallback visual a enemigos embebidos en `enemy_family`, que podía mostrar iconos antiguos cuando no coincidían con la fila vigente de `enemy_detail`.
+- Unificadas las solicitudes simultáneas de configuración de enemigos para impedir descargas duplicadas al entrar en Configuración o crear una dungeon.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.3` (`v0.86.3 ENEMIGOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.2 - 2026-08-16
 
 - Replanteado el modo de pantalla completa para conservar la ficha del personaje, el tablero con su barra superior y todos los menús de mochila/equipo/habilidades, eliminando únicamente el encabezado global, el registro y controles redundantes.
