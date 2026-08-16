@@ -1,3 +1,21 @@
+## v0.82.1 - 2026-08-16
+
+- Añadidos `skilleffect` y `ap` al selector visual de bonos de Configuración → Objetos, disponibles para cualquier slot equipable sin incorporarlos al sorteo procedural de afijos.
+- Los valores `skilleffect:+N` de todos los objetos equipados se suman como puntos porcentuales y potencian efectivamente las magnitudes ofensivas y de utilidad de las habilidades.
+- Unificado el cálculo de stats especiales equipados para que tanto `skilleffect` como los bonus de PA lean los afijos guardados en los objetos.
+- Actualizada la versión de la app y del paquete a `0.82.1` (`v0.82.1 POTENCIA DE HABILIDADES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.82.0 - 2026-08-16
+
+- Añadido el modificador `skilleffect`, que potencia porcentualmente el daño, la curación y las demás magnitudes de las habilidades; está disponible en buffs y debuffs de todos los efectos apilables, buffs de armas/equipo y bonus raciales.
+- Los objetos aceptan ahora bonus `ap:+N` en sus stats y los suman a los PA máximos del personaje mientras están equipados.
+- Corregidas las invocaciones de daño para que utilicen exactamente el número de dados configurado; con cero dados no realizan ataques de daño ni reciben un dado de fallback.
+- Corregido el editor de skills raciales para asignar, previsualizar y retirar la imagen guardada en el propio efecto apilable de invocación, sin depender del icono general de clase o skill.
+- Actualizada la documentación JSON de skills y objetos con `skilleffect`, PA de objetos, dados de invocación e imágenes propias de los efectos de invocación.
+- Actualizada la versión de la app y del paquete a `0.82.0` (`v0.82.0 POTENCIA DE HABILIDADES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.81.0 - 2026-08-15
 
 - La evolución concede una elección de skill del pool de la clase en todos los niveles impares desde el 3.

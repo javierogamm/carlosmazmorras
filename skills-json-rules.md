@@ -70,7 +70,7 @@ power = max(1, round(roll + contribution))
 ```
 If `{p}Dice` is 0, a hand-tuned per-kind fallback (roughly `~8 + skillLevel*2..4`) is used instead.
 
-**Enemy-targeted damage** (`dmg` w/ target enemy/area, `aoe`, `multihit`, `execute`): the dice roll AND the stat scaling (via `{p}Stat`/`{p}StatMode`/`{p}StatCoef`) both apply through the normal `attack()` pipeline (§6.3). If `{p}Dice` is 0, a generic tier/resource-based dice expression is used instead (stat scaling in that fallback case comes from a generic type-based bonus, not `{p}Stat`).
+**Enemy-targeted damage** (`dmg` w/ target enemy/area, `aoe`, `multihit`, `execute`): the dice roll AND the stat scaling (via `{p}Stat`/`{p}StatMode`/`{p}StatCoef`) both apply through the normal `attack()` pipeline (§6.3). If `{p}Dice` is 0, a generic tier/resource-based dice expression is used instead (except damage summons, which deal no damage) (stat scaling in that fallback case comes from a generic type-based bonus, not `{p}Stat`).
 
 ### 3.2 Target resolution
 
@@ -137,7 +137,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 ```json
 { "kind":"buff", "target":"self", "stat":"strength", "mode":"add", "value":5, "turns":6 }
 ```
-- `stat`: any of §5 core stats, plus `armor`, `damage`, `ap`, `dodge`, `critChance`, `blockChance`, `manaRegen`, `staminaRegen`.
+- `stat`: any of §5 core stats, plus `armor`, `damage`, `ap`, `skilleffect`, `dodge`, `critChance`, `blockChance`, `manaRegen`, `staminaRegen`.
 - `mode`: `"add"` (flat +value) or `"mult"` (stat ×value — value is a raw multiplier, e.g. `1.2` = +20%, NOT a percentage number).
 - Defaults: `value` 5, `turns` 6.
 - `dodge`/`critChance`/`blockChance` only make sense in `"add"` mode — `value` there is **percentage points** (e.g. `10` = +10% dodge chance), not a multiplier. Total buff-derived `dodge` is capped at 60%; `critChance` (base ~4%+luck*1.5%, plus buffs) is capped at 75% overall. `blockChance` folds into `recomputeDerived()`'s existing block-chance total (no cap of its own beyond the normal derived-stat clamp).
@@ -148,9 +148,10 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 ```json
 { "kind":"debuff", "target":"enemy", "stat":"damage", "mode":"add", "value":2, "turns":3 }
 ```
-- `stat`: `damage` or `ap` only (no `armor` — enemies have no armor stat this system reads, so an armor debuff would be an inert no-op; the dodge/crit/block/regen stats added to `buff` are likewise not offered here for the same reason — enemies have no baseline value in any of those to subtract from). Any §5 core stat also works (mutates `e.stats[stat]` directly, reverted on expiry).
+- `stat`: `damage`, `ap` or `skilleffect` only (no `armor` — enemies have no armor stat this system reads, so an armor debuff would be an inert no-op; the dodge/crit/block/regen stats added to `buff` are likewise not offered here for the same reason — enemies have no baseline value in any of those to subtract from). Any §5 core stat also works (mutates `e.stats[stat]` directly, reverted on expiry).
 - `mode`/`value` same semantics as buff.
 - `stat==="damage"`: mutates the enemy's own `atk`/`damage` fields directly (both kept in sync), reverted on expiry.
+- `stat==="skilleffect"`: reduce la potencia de daño, curación y demás magnitudes de las habilidades enemigas; en modo `add`, `value` son puntos porcentuales (20 = -20%).
 - `stat==="ap"`: multiplies the enemy's AP-mode per-turn action pool (`e.apDebuffMult`) — only visible against enemies using the AP/PA turn system; **in `"add"` mode the value is percentage points of PA**, e.g. `value:15` = -15% PA (this only applies to `"add"` mode; the UI shows a hint about it). Reverted on expiry.
 - `stat` omitted → generic "weakened" flag instead of a specific stat debuff.
 - Defaults: `value` 2, `turns` 3.
@@ -226,7 +227,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
   - `"buff"`: grants the caster a buff (see `stat`/`mode`/`value` below) that is refreshed every action and lasts only while the companion is alive.
   - `"debuff"`: applies a stat debuff to the nearest enemy each action (see `stat`/`mode`/`value`/`effectTurns` below), same mechanics as the top-level `debuff` kind (§4.4).
 - `range` (only read when `effectType` is `"damage"` or `"skill"`, default/`0` = melee): how many tiles away the companion can act from without closing in further. `0` (or omitted) means melee — it must be adjacent, same as before this field existed. Any positive number makes it a ranged attacker/caster that stops advancing once within that distance and fights from there instead of walking all the way up to the target.
-- `stat`/`mode`/`value`: only read when `effectType` is `"buff"` (stat options: `armor`, `damage`, `ap`, plus any §5 core stat) or `"debuff"` (stat options: `damage`, `ap`, plus any §5 core stat) — same semantics as §4.3/§4.4.
+- `stat`/`mode`/`value`: only read when `effectType` is `"buff"` (stat options: `armor`, `damage`, `ap`, `skilleffect`, plus any §5 core stat) or `"debuff"` (stat options: `damage`, `ap`, `skilleffect`, plus any §5 core stat) — same semantics as §4.3/§4.4.
 - `effectTurns`: duration of the `root`/`debuff` application per action (default 2); irrelevant for `damage`/`skill`/`heal`/`buff`.
 - Targeting/movement priority (shared by `summon`/`summonturret`/`clones`): only enemies within 6 tiles are ever considered a valid target — anything farther is ignored outright instead of being chased across the map. With no such target in range, a mobile companion closes in on the player instead of idling, and **stops burning actions the moment it's already standing next to the player** (`companionFollowPlayer`/`companionApproachOrStop`) rather than creeping forward one tile per turn regardless of how many actions it has left.
 - `iconImage`: optional hex PNG (50x50) replacing the default procedural ally sprite; see §8.
@@ -501,3 +502,7 @@ No se configura categoría, atributo de scaling ni coeficiente por skill. El mot
 - Los efectos binarios no reciben una magnitud artificial.
 
 Se usa la INT o SAB total consolidada del actor que lanza la habilidad. Esto se aplica igualmente a jugadores, enemigos, élites y bosses. Los campos legacy `scaling`, `dmgStat`, `dotStat`, modos y coeficientes pueden existir en datos antiguos, pero no producen ningún efecto.
+
+### `skilleffect`
+
+Potencia las magnitudes de las habilidades. En buffs sumatorios, `value:20` equivale a +20%; en modo multiplicador, `value:1.2` equivale a ×1.2. También se admite como bonus racial (`stats.skilleffect`) y en buffs de armas/equipo.
