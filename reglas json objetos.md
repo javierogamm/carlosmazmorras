@@ -517,3 +517,7 @@ Referencia completa de fórmulas de daño, tabla de coste AP y heurística de IA
 ### Bonus de PA y efecto de habilidad
 
 Los objetos admiten `ap:+N` en `stats` para sumar PA máximos mientras estén equipados. Los buffs de equipo/arma admiten `stat:"skilleffect"`: en modo `add`, 20 representa +20% de potencia de habilidades; en modo `mult`, 1.2 representa ×1.2. Las invocaciones de tipo daño usan exactamente `dmgDice`; con `dmgDice:0` no atacan. La imagen se conserva en `iconImage` dentro del propio efecto `summon`/`summonturret`/`clones`, incluida una skill racial.
+
+#### Configuración visual de `skilleffect`
+
+En **Configuración → Objetos**, `skilleffect` aparece en «Bonos disponibles» y añade `skilleffect:+1` al campo Stats. Cada punto equivale a +1% de potencia de habilidades mientras el objeto esté equipado; los bonus de varios objetos se suman. `ap` aparece en el mismo selector y cada punto suma 1 PA máximo.

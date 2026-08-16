@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.82.0';
+const APP_VERSION='0.82.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -866,6 +866,13 @@ const secondaryAffixes=[
  // passives, buffs and potions) is the only gear-side source of it.
  {key:'staminaRegen',label:'Regeneración de stamina',min:1,max:3,slots:['offhand']},
  {key:'manaRegen',label:'Regeneración de maná',min:1,max:3,slots:['offhand']}
+];
+// Stats authored explicitly in Configuración → Objetos. They are deliberately
+// excluded from procedural affix rolls, but are available for every equipment
+// slot through the clickable helper and the free-form Stats field.
+const CONFIG_ONLY_ITEM_STATS=[
+ {key:'ap',label:'Puntos de Acción',percent:false},
+ {key:'skilleffect',label:'Efecto de habilidades',percent:true}
 ];
 const passivePool=[
  {id:'vampiric',name:'Circuito Vampírico',desc:'Cura un porcentaje del daño causado.',stat:'lifeSteal',min:2,max:8,percent:true},
@@ -3323,8 +3330,10 @@ function actorStatDamageBonus(){return 0}
 // skilleffect is expressed as percentage points in additive sources (20 = +20%)
 // and as a raw factor in multiplicative buffs (1.2 = +20%). It amplifies every
 // offensive and utility skill magnitude, including stackable components.
+function equippedAffixTotal(key){return Object.values(game.player?.equipment||{}).reduce((sum,item)=>sum+(item?.affixes||[]).filter(a=>a.key===key).reduce((n,a)=>n+(Number(a.value)||0),0),0)}
 function skillEffectMultiplier(actor=game.player){
- const base=actor===game.player?(1+(Number(actor?.raceBonuses?.skilleffect)||0)/100):Math.max(0,Number(actor?.skillEffectMult??1));
+ const itemBonus=actor===game.player?equippedAffixTotal('skilleffect'):0;
+ const base=actor===game.player?(1+((Number(actor?.raceBonuses?.skilleffect)||0)+itemBonus)/100):Math.max(0,Number(actor?.skillEffectMult??1));
  return actor===game.player?Math.max(0,base*activeBuffMultFactor('skilleffect')+activeBuffFlatBonus('skilleffect')/100):base
 }
 function offensiveSkillMultiplier(actor=game.player){return (1+statValueFor(actor,'intelligence')*INT_OFFENSIVE_SKILL_BONUS_PER_POINT)*skillEffectMultiplier(actor)}
@@ -5249,7 +5258,7 @@ const AP_COST_BY_EFFECT={
 };
 function skillApCost(id){const d=skillDefs[id];return d?.apCost??AP_COST_BY_EFFECT[d?.classEffect]??AP_COSTS.skill}
 function apModeOn(){return !!(game&&(game.multiplayer||worldParams().apMode||game.player?.combatMode==='ap'))}
-function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const itemAp=Object.values(game.player.equipment||{}).reduce((sum,item)=>sum+(item?.affixes||[]).filter(a=>a.key==='ap'||a.key==='apBonus').reduce((n,a)=>n+(Number(a.value)||0),0),0);const base=30+Math.ceil((st.agility||0)/2)+(Number(game.player?.raceBonuses?.apBonus)||0)+itemAp;return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
+function playerMaxAP(){const st=game.player.derived?.finalStats||game.player.stats||{};const itemAp=equippedAffixTotal('ap')+equippedAffixTotal('apBonus');const base=30+Math.ceil((st.agility||0)/2)+(Number(game.player?.raceBonuses?.apBonus)||0)+itemAp;return Math.max(1,Math.round(base*activeBuffMultFactor('ap')+activeBuffFlatBonus('ap')))}
 // Also refills every companion's own PA pool and immediately resumes any
 // pending permanent-pet order (companionResolveOrder) with that fresh PA -
 // this runs at the very start of the new round, before the player takes any
@@ -7396,8 +7405,8 @@ function renderConfigItems(){const root=document.getElementById('configItemsList
 // potions only and wired to the potion tab's own edit/duplicate/delete
 // handlers so the two tabs never touch each other's editingConfigId/form.
 function renderConfigPotionsList(){const root=document.getElementById('configPotionsList');if(!root)return;const potionRows=configuredPotionRows();if(!potionRows.length){root.innerHTML='<p class="small">No hay pociones configuradas.</p>';return}root.innerHTML=potionRows.map(renderConfigItemRow).join('');root.querySelectorAll('[data-config-edit]').forEach(b=>b.onclick=()=>loadConfigPotionForEdit(b.dataset.configEdit));root.querySelectorAll('[data-config-duplicate]').forEach(b=>b.onclick=()=>duplicateConfigPotion(b.dataset.configDuplicate));root.querySelectorAll('[data-config-delete]').forEach(b=>b.onclick=()=>removeConfigPotion(b.dataset.configDelete))}
-function configStatDefinitions(){const seen=new Set();return [...primaryAffixes,...secondaryAffixes].filter(def=>{if(seen.has(def.key))return false;seen.add(def.key);return true})}
-function renderConfigStatsHelp(){const root=document.getElementById('configStatsHelp');if(!root)return;root.innerHTML='<p class="small"><b>Bonos disponibles:</b> pulsa uno para añadirlo a Stats.</p>'+configStatDefinitions().map(def=>`<button type="button" class="statBonusButton" data-stat-bonus="${def.key}" title="${def.label}. Slots: ${def.slots.map(s=>slotNames[s]||s).join(', ')}"><b>${def.key}</b><span>${def.label}${def.percent?' %':''}</span></button>`).join('');root.querySelectorAll('[data-stat-bonus]').forEach(btn=>btn.onclick=()=>{const sep=configStats.value.trim()? ', ':'';configStats.value+=`${sep}${btn.dataset.statBonus}:+1`;configStats.focus()})}
+function configStatDefinitions(){const seen=new Set();return [...primaryAffixes,...secondaryAffixes,...CONFIG_ONLY_ITEM_STATS].filter(def=>{if(seen.has(def.key))return false;seen.add(def.key);return true})}
+function renderConfigStatsHelp(){const root=document.getElementById('configStatsHelp');if(!root)return;root.innerHTML='<p class="small"><b>Bonos disponibles:</b> pulsa uno para añadirlo a Stats.</p>'+configStatDefinitions().map(def=>`<button type="button" class="statBonusButton" data-stat-bonus="${def.key}" title="${def.label}${def.slots?`. Slots: ${def.slots.map(s=>slotNames[s]||s).join(', ')}`:' · disponible para cualquier objeto equipable'}"><b>${def.key}</b><span>${def.label}${def.percent?' %':''}</span></button>`).join('');root.querySelectorAll('[data-stat-bonus]').forEach(btn=>btn.onclick=()=>{const sep=configStats.value.trim()? ', ':'';configStats.value+=`${sep}${btn.dataset.statBonus}:+1`;configStats.focus()})}
 function addIconSilhouetteBorder(canvas,size=2,color=[0,0,0,255]){const q=canvas.getContext('2d'),w=canvas.width,h=canvas.height,orig=document.createElement('canvas');orig.width=w;orig.height=h;orig.getContext('2d').drawImage(canvas,0,0);const src=q.getImageData(0,0,w,h),border=q.createImageData(w,h),r=Math.max(1,Math.round(size));for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4;if(src.data[i+3]>8)continue;let near=false;for(let dy=-r;dy<=r&&!near;dy++)for(let dx=-r;dx<=r;dx++){if(dx*dx+dy*dy>r*r)continue;const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;if(src.data[(ny*w+nx)*4+3]>8){near=true;break}}if(near){border.data[i]=color[0];border.data[i+1]=color[1];border.data[i+2]=color[2];border.data[i+3]=color[3]}}q.putImageData(border,0,0);q.drawImage(orig,0,0);return canvas}
 function renderConfigIconPreview(hex,previewId='configIconPreview',statusId='configIconStatus',withBorder=!String(previewId).toLowerCase().includes('tile'),dims={w:50,h:50}){const preview=document.getElementById(previewId);if(!preview)return;preview.width=dims.w;preview.height=dims.h;const c=preview.getContext('2d');c.clearRect(0,0,dims.w,dims.h);if(!hex)return;try{const data='data:image/png;base64,'+hexToBase64(hex.startsWith('#')?hex.slice(1):hex),img=configIconImage(data);const draw=()=>{const out=document.createElement('canvas');out.width=dims.w;out.height=dims.h;const o=out.getContext('2d');o.imageSmoothingEnabled=true;o.imageSmoothingQuality='high';o.clearRect(0,0,dims.w,dims.h);o.drawImage(img,0,0,dims.w,dims.h);if(withBorder)addIconSilhouetteBorder(out,2);c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';c.clearRect(0,0,dims.w,dims.h);c.drawImage(out,0,0)};if(img.complete&&img.naturalWidth)draw();else img.onload=draw;preview._iconEditor?.loadHex(hex)}catch(e){const st=document.getElementById(statusId);if(st)st.textContent='No se pudo previsualizar el icono guardado.'}}
 function resetConfigForm(){window.editingConfigItemId=null;configNombre.value='';configTier.value='common';configSlot.value='weapon';configIlvl.value='1';if(document.getElementById('configItemHidden'))document.getElementById('configItemHidden').checked=false;configWeaponCategory.value=configWeaponTypes[0];configDamageDice.value='1d6';if(configRangeMin)configRangeMin.value='1';if(configRangeMax)configRangeMax.value='1';configStats.value='';window.currentConfigIconHex='';window.currentConfigItemSkillIds=[];configIconStatus.textContent='Sin icono';renderConfigIconPreview('');if(configProcChance)configProcChance.value='20';if(configEquipmentCooldown)configEquipmentCooldown.value='4';if(configEquipmentRange)configEquipmentRange.value='5';window.currentEquipmentEffectsDraft=[];renderEquipmentEffectsList();configStatus.textContent='Nuevo objeto.';configSlot.dispatchEvent(new Event('change'))}

@@ -1,3 +1,11 @@
+## v0.82.1 - 2026-08-16
+
+- Añadidos `skilleffect` y `ap` al selector visual de bonos de Configuración → Objetos, disponibles para cualquier slot equipable sin incorporarlos al sorteo procedural de afijos.
+- Los valores `skilleffect:+N` de todos los objetos equipados se suman como puntos porcentuales y potencian efectivamente las magnitudes ofensivas y de utilidad de las habilidades.
+- Unificado el cálculo de stats especiales equipados para que tanto `skilleffect` como los bonus de PA lean los afijos guardados en los objetos.
+- Actualizada la versión de la app y del paquete a `0.82.1` (`v0.82.1 POTENCIA DE HABILIDADES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.82.0 - 2026-08-16
 
 - Añadido el modificador `skilleffect`, que potencia porcentualmente el daño, la curación y las demás magnitudes de las habilidades; está disponible en buffs y debuffs de todos los efectos apilables, buffs de armas/equipo y bonus raciales.
