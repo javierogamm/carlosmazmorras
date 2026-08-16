@@ -1,3 +1,11 @@
+## v0.86.9 - 2026-08-16
+
+- Corregida la regresión al abrir o crear dungeons: las respuestas de `dungeon-worlds` ya no se interpretan directamente como JSON y muestran un error controlado si el servidor devuelve HTML.
+- Los objetos de mundo y assets cargan primero solo sus metadatos de generación; cada imagen se solicita después por `object_key` al hacerse visible, igual que los iconos de enemigos por identificador.
+- La generación desde Configuración y desde el selector de mundo espera los metadatos de assets sin descargar en bloque todas las imágenes, evitando respuestas demasiado grandes y manteniendo ambientes, máscaras y dimensiones disponibles.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.9` (`v0.86.9 DUNGEONS Y ASSETS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.8 - 2026-08-16
 
 - Restaurada la carga autoritativa completa de los objetos de mundo y assets desde Supabase, eliminando la dependencia de copias de imágenes potencialmente obsoletas en Cache API.
