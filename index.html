@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.84.1 BOSSES DE FAMILIA</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.84.1">
+<title>MAZMORRA // BOTÍN v0.84.2 BOSSES DE FAMILIA</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.84.2">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.84.1 BOSSES DE FAMILIA</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.84.2 BOSSES DE FAMILIA</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -569,8 +569,8 @@
      <label>Suerte <input id="configEnemyLuck" type="number" min="0" value="1"></label>
      <label>Inteligencia <input id="configEnemyIntelligence" type="number" min="0" value="1"></label>
      <label>Sabiduría <input id="configEnemyWisdom" type="number" min="0" value="1"></label>
-     <label class="configSkillSelectWrap">Añadir skill <select id="configEnemySkills" size="8"></select><span class="small">Al seleccionar una skill se añade al pool del enemigo. Puede usar más skills según su nivel y si es boss.</span><div id="configEnemySkillPool" class="enemySkillPool"></div></label>
-     <label class="configSkillSelectWrap">Equipo del boss / megaboss <span class="small">Selecciona objetos de <code>config_items</code>. Sus armas se usan en combate y, al derrotarlo, se garantiza uno de estos objetos como loot.</span><div id="configEnemyEquipment" class="enemyEquipmentPool"></div></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Añadir skill <select id="configEnemySkills" size="8"></select><span class="small">Al seleccionar una skill se añade al pool del enemigo. Puede usar más skills según su nivel y si es boss.</span><div id="configEnemySkillPool" class="enemySkillPool"></div></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Equipo del boss / megaboss <span class="small">Selecciona objetos de <code>config_items</code>. Sus armas se usan en combate y, al derrotarlo, se garantiza uno de estos objetos como loot.</span><div id="configEnemyEquipment" class="enemyEquipmentPool"></div></label>
     </div>
     <button class="start" id="saveConfigEnemyBtn" type="button">GUARDAR ENEMIGO</button>
     <button id="newConfigEnemyBtn" type="button">NUEVO ENEMIGO</button>
@@ -579,7 +579,7 @@
     <label class="importJsonBtn">IMPORTAR FAMILIA JSON<input type="file" id="importEnemyFamilyInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
     <div id="configEnemyStatus" class="small"></div>
    </section>
-   <section class="panel"><h2>Familias y enemigos</h2><div id="configEnemyFamiliesList" class="configItemsList"></div><hr><div id="configEnemiesList" class="configItemsList"></div></section>
+   <section class="panel"><h2>Familias y enemigos</h2><p class="small">Abre una familia para consultar y editar sus enemigos configurados.</p><div id="configEnemyFamiliesList" class="configItemsList"></div><div id="configEnemiesList" class="hidden"></div></section>
   </div>
  </div>
 
@@ -864,7 +864,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.84.1"></script>
+<script src="./src/game.js?v=0.84.2"></script>
 
 </body>
 </html>

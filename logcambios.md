@@ -1,3 +1,12 @@
+## v0.84.2 - 2026-08-16
+
+- Corregida la entrada a Configuración → Enemigos para solicitar en ese momento las familias y todos los detalles de enemigos, independientemente de la carga ligera inicial del resto del configurador.
+- Reorganizado el listado en acordeones por familia: al abrir cada familia se muestran sus enemigos configurados, rango, tier, PA, skills, equipo y acceso de edición.
+- Las familias consolidadas siguen mostrando sus enemigos desde `family_json` cuando todavía no existen filas individuales disponibles en `enemy_detail`.
+- Los selectores de skills y equipo permanecen ocultos para enemigos normales y solo aparecen al elegir rango boss o megaboss.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.2` (`v0.84.2 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.84.1 - 2026-08-16
 
 - Asegurado que los bosses configurados se generan a nivel del personaje +1 a +3 y los megabosses a nivel del personaje +2 a +4, aplicando sobre sus stats base configuradas los mismos multiplicadores de nivel, tipo, tier y mundo que al resto de enemigos.
