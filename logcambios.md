@@ -1,3 +1,12 @@
+## v0.84.0 - 2026-08-16
+
+- Ampliado el editor de familias de enemigos para definir explícitamente enemigos normales, bosses y megabosses.
+- Bosses y megabosses permiten configurar vida base, PA por turno, pool de skills y una selección de equipo procedente de `config_items`; toda la configuración se consolida dentro del JSON de la familia.
+- La generación de mazmorras selecciona el boss o megaboss configurado para la familia correspondiente, conservando compatibilidad con familias antiguas y usando bosses como fallback si aún no existe un megaboss específico.
+- El arma configurada pasa a ser el arma real del jefe durante el combate y el loot garantizado al derrotar un boss o megaboss es uno de sus objetos equipados.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.0` (`v0.84.0 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.83.0 - 2026-08-16
 
 - Añadidos los efectos apilables `fear` y `mesmer`, configurables como objetivo individual o de área en skills de clase, skills raciales, objetos y pociones.
