@@ -1,3 +1,13 @@
+## v0.86.1 - 2026-08-16
+
+- Añadido el modo «Solo juego / pantalla completa», que oculta paneles, menús, controles auxiliares y registro para mostrar únicamente el tablero con su HUD superpuesto.
+- Añadidos un botón en el HUD y un keybinding configurable para activar o abandonar el modo de pantalla completa.
+- Al cambiar de pestaña con los botones de hombro, la cruceta y el stick recorren ahora todos los objetos, skills, slots y botones visibles de esa pestaña; Atrás devuelve inmediatamente el mando al movimiento y combate.
+- Los botones de hombro cambian de zona en overlays y pantallas de configuración, incluyendo el bloque superior de creación de dungeon, la lista de dungeons guardadas y el acceso al Menú Principal.
+- Corregida la carga ligera de `config_floor`: ya no reemplaza floors hidratados por filas sin JSON y la creación de dungeons fuerza la hidratación completa antes de generar sus contenidos.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.1` (`v0.86.1 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.0 - 2026-08-16
 
 - Añadida compatibilidad con la API Gamepad para mandos Xbox, PlayStation y genéricos: el stick izquierdo mueve al personaje, los botones permiten atacar, usar las cuatro habilidades, esperar, confirmar y cancelar.
