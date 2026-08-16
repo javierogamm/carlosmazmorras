@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.84.0';
+const APP_VERSION='0.84.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -3632,7 +3632,9 @@ function scaleFloorForPlayerLevel(){
  for(const e of game.enemies||[])rescaleEnemyToLevel(e,enemyLevelForFloor(game.floor));
  if(game.boss)rescaleEnemyToLevel(game.boss,bossTargetLevel());
 }
-// A boss (or megaboss) always sits at playerLevel+1..3 (megaboss: +2..4),
+// Configured family bosses use their saved statsBase as the level-1 basis, then
+// receive the same level multipliers as every configured enemy. A boss (or
+// megaboss) always sits at playerLevel+1..3 (megaboss: +2..4),
 // independent of the floor - so unlike regular enemies it has to be
 // re-rolled and rescaled the instant the player levels up mid-floor, not
 // just when the floor (re)loads. See the grantXp() level-up loop.
@@ -5279,7 +5281,8 @@ const AP_COSTS={move:5,attack:10,skill:10};
 // and boss get a fixed edge over regular enemies, and elites get half that,
 // so tougher fights consistently get more actions per turn instead of just
 // more raw stats.
-function enemyBonusAp(e){return e.configuredAp!=null?Math.max(0,Number(e.configuredAp)-20-Math.ceil(e.stats?.agility||0)):e.megaboss?15:e.boss?10:e.elite?5:0}
+function enemyBonusAp(e){return e.megaboss?15:e.boss?10:e.elite?5:0}
+function enemyMaxAp(e){return Math.max(1,Math.round((Number(e.configuredAp??20)+Math.ceil(e.stats?.agility||0)+enemyBonusAp(e))*(e.apDebuffMult??1)))}
 // Per-skill AP variance on top of the flat 10 baseline: quick utility/mobility
 // costs a bit less, wide-hitting or execute/ultimate payoffs cost a bit more.
 // Keyed by classEffect so it covers both the 12 shared class-skill tags and
@@ -5592,7 +5595,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
    if(e.hp<=0)continue;
    if(isEnemyDormant(e))continue;
    enemySingleAction(e);
-   const bonusAp=enemyBonusAp(e),guaranteed=Math.floor(bonusAp/10),chance=(bonusAp%10)/10;
+   const bonusAp=Math.max(0,enemyMaxAp(e)-20),guaranteed=Math.floor(bonusAp/10),chance=(bonusAp%10)/10;
    for(let i=0;i<guaranteed&&e.hp>0&&!game.over;i++)enemySingleAction(e);
    if(chance>0&&e.hp>0&&!game.over&&Math.random()<chance)enemySingleAction(e);
   }
@@ -5609,7 +5612,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(idx>=queue.length){finishEnemyTurn();return}
   const e=queue[idx];
   if(e.hp<=0||isEnemyDormant(e)){stepEnemy(idx+1);return}
-  let ap=Math.round(((e.configuredAp!=null?Number(e.configuredAp):20+Math.ceil(e.stats?.agility||0)+enemyBonusAp(e)))*(e.apDebuffMult??1));
+  let ap=enemyMaxAp(e);
   const stepAction=()=>{
    if(game.over){finishEnemyTurn();return}
    if(ap<=0||e.hp<=0||!game.enemies.includes(e)){stepEnemy(idx+1);return}
@@ -7552,7 +7555,7 @@ function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTie
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=!!wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,configuredAp:template.ap,equipmentIds:[...(template.equipmentIds||[])],armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=!!wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,configuredAp:Math.max(1,Number(template.ap)||20),equipmentIds:[...(template.equipmentIds||[])],armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
 // Megaboss stat bump on top of the normal boss formula buildConfiguredEnemy
 // already applied above: double HP, +50% damage, +50% core stats (relative
 // to what a normal boss of the same level would have) - plus a visual/

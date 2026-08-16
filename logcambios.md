@@ -1,3 +1,11 @@
+## v0.84.1 - 2026-08-16
+
+- Asegurado que los bosses configurados se generan a nivel del personaje +1 a +3 y los megabosses a nivel del personaje +2 a +4, aplicando sobre sus stats base configuradas los mismos multiplicadores de nivel, tipo, tier y mundo que al resto de enemigos.
+- El PA configurado pasa a ser PA base: al generar el jefe se le suman su Agilidad y el bonus propio de boss o megaboss, conservando el crecimiento habitual sin ignorar la configuración familiar.
+- Las skills disponibles continúan limitándose según el nivel generado del jefe, mientras que el equipo y el loot garantizado configurados permanecen vinculados a su plantilla familiar.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.1` (`v0.84.1 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.84.0 - 2026-08-16
 
 - Ampliado el editor de familias de enemigos para definir explícitamente enemigos normales, bosses y megabosses.

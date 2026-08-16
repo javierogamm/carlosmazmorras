@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.84.0 BOSSES DE FAMILIA</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.84.0">
+<title>MAZMORRA // BOTÍN v0.84.1 BOSSES DE FAMILIA</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.84.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.84.0 BOSSES DE FAMILIA</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.84.1 BOSSES DE FAMILIA</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -559,7 +559,7 @@
      <label>Tier <select id="configEnemyTier"><option value="i">I</option><option value="ii">II</option><option value="iii">III</option><option value="iv">IV</option></select></label>
      <label>Arma <select id="configEnemyWeaponType"></select></label>
      <label>Vida base <input id="configEnemyHp" type="number" min="1" value="12"></label>
-     <label>PA por turno <input id="configEnemyAp" type="number" min="1" value="20"></label>
+     <label>PA base <input id="configEnemyAp" type="number" min="1" value="20"><span class="small">Al generarse suma Agilidad y el bonus de boss/megaboss.</span></label>
      <label>Ataque base <input id="configEnemyAtk" type="number" min="1" value="4"></label>
      <label>Armadura base <input id="configEnemyArmor" type="number" min="0" value="0"></label>
      <label>XP base <input id="configEnemyXp" type="number" min="1" value="8"></label>
@@ -864,7 +864,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.84.0"></script>
+<script src="./src/game.js?v=0.84.1"></script>
 
 </body>
 </html>
