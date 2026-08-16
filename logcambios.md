@@ -1,3 +1,37 @@
+## v0.84.3 - 2026-08-16
+
+- Agrupado el selector de skills del configurador de bosses y megabosses por clase, ordenando tanto las clases como las habilidades por nombre y manteniendo un grupo separado para skills generales o de botín.
+- Agrupado el selector de equipo por slot y añadido a cada objeto su tier visible, con el color correspondiente a su rareza.
+- Los cambios quedan limitados a los selectores exclusivos del configurador de enemigos.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.3` (`v0.84.3 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.84.2 - 2026-08-16
+
+- Corregida la entrada a Configuración → Enemigos para solicitar en ese momento las familias y todos los detalles de enemigos, independientemente de la carga ligera inicial del resto del configurador.
+- Reorganizado el listado en acordeones por familia: al abrir cada familia se muestran sus enemigos configurados, rango, tier, PA, skills, equipo y acceso de edición.
+- Las familias consolidadas siguen mostrando sus enemigos desde `family_json` cuando todavía no existen filas individuales disponibles en `enemy_detail`.
+- Los selectores de skills y equipo permanecen ocultos para enemigos normales y solo aparecen al elegir rango boss o megaboss.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.2` (`v0.84.2 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.84.1 - 2026-08-16
+
+- Asegurado que los bosses configurados se generan a nivel del personaje +1 a +3 y los megabosses a nivel del personaje +2 a +4, aplicando sobre sus stats base configuradas los mismos multiplicadores de nivel, tipo, tier y mundo que al resto de enemigos.
+- El PA configurado pasa a ser PA base: al generar el jefe se le suman su Agilidad y el bonus propio de boss o megaboss, conservando el crecimiento habitual sin ignorar la configuración familiar.
+- Las skills disponibles continúan limitándose según el nivel generado del jefe, mientras que el equipo y el loot garantizado configurados permanecen vinculados a su plantilla familiar.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.1` (`v0.84.1 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.84.0 - 2026-08-16
+
+- Ampliado el editor de familias de enemigos para definir explícitamente enemigos normales, bosses y megabosses.
+- Bosses y megabosses permiten configurar vida base, PA por turno, pool de skills y una selección de equipo procedente de `config_items`; toda la configuración se consolida dentro del JSON de la familia.
+- La generación de mazmorras selecciona el boss o megaboss configurado para la familia correspondiente, conservando compatibilidad con familias antiguas y usando bosses como fallback si aún no existe un megaboss específico.
+- El arma configurada pasa a ser el arma real del jefe durante el combate y el loot garantizado al derrotar un boss o megaboss es uno de sus objetos equipados.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.0` (`v0.84.0 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.83.0 - 2026-08-16
 
 - Añadidos los efectos apilables `fear` y `mesmer`, configurables como objetivo individual o de área en skills de clase, skills raciales, objetos y pociones.
