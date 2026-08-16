@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.84.3';
+const APP_VERSION='0.85.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2894,29 +2894,18 @@ const ENEMY_CLASS_SKILL_PREF={
  tanque:s=>['shield','buff','debuff'].includes(s.classEffect),
  warrior:s=>s.type==='physical'
 };
-// Bosses (and megabosses) get a real "classic" player class instead of the
-// generic archetype skill pool - one candidate matching the boss's archetype
-// (enemyClassOf), e.g. an arquero-archetype boss becomes a sniper or a
-// bountyHunter. Gear/weapon assignment (equipEnemy) still keys off the
-// generic archetype, only the skill kit comes from this real class.
-const BOSS_CLASS_BY_ARCHETYPE={
- arquero:['sniper','bountyHunter'],
- francotirador:['sniper','bountyHunter'],
- caster:['entropyMage','necromancer','seer'],
- invocador:['necromancer','engineer'],
- clerigo:['cleric','paladin'],
- chaman:['shaman','druid'],
- rogue:['thief','jester'],
- tanque:['yunque','beastGuardian'],
- warrior:['berserker','monk','yunque']
-};
-function pickBossClassId(e){return pick(BOSS_CLASS_BY_ARCHETYPE[enemyClassOf(e)]||allClassIds())}
-// Every classId-tagged skillDefs entry for a class, gated by tier the same
-// way a player's own skills unlock (tier2 at level>=10, tier3 at level>=30) -
-// using the BOSS's own level, not the player's.
+// Bosses only consume skills explicitly stored on classes marked Advanced.
+// This deliberately avoids both the hardcoded class trees and loot/general
+// skills: the admin catalogue is the single source for boss configuration.
+function advancedClassRows(){return configClasses.filter(row=>row.advanced===true&&row.class_json?.classId&&row.skills_json&&typeof row.skills_json==='object')}
+function advancedSkillEntries(){return advancedClassRows().flatMap(row=>Object.entries(row.skills_json).map(([id,skill])=>({id,skill:skillDefs[id]||skill,classId:row.class_json.classId,className:row.class_json.name||row.nombre||row.class_json.classId})))}
+function pickBossClassId(){return pick(advancedClassRows())?.class_json?.classId||null}
+// Tier gating uses the boss's own level while retaining the configured tier
+// from the Advanced class row.
 function bossSkillPool(classId,level){
  const maxTier=level>=30?3:level>=10?2:1;
- return Object.entries(skillDefs).filter(([,s])=>s.classId===classId&&(!s.tier||s.tier<=maxTier)).map(([id])=>id);
+ const row=advancedClassRows().find(r=>r.class_json.classId===classId);
+ return Object.entries(row?.skills_json||{}).filter(([,s])=>!s.tier||s.tier<=maxTier).map(([id])=>id);
 }
 function enemyClassOf(e){
  if(e.enemyClass)return e.enemyClass;
@@ -3010,19 +2999,13 @@ function equipEnemy(e,floor=game?.floor||1){
 function assignEnemySkills(e){
  e.skillCooldowns={};
  if(e.boss){
-  // Bosses (and megabosses) always run a 3-skill kit from a real class
-  // matching their archetype instead of the generic pool below - see
-  // BOSS_CLASS_BY_ARCHETYPE/bossSkillPool. An admin-configured boss with its
-  // own hand-picked skillIds still wins outright, same as before.
+  // Hand-picked skills and automatic kits both come exclusively from the
+  // skills_json bags of Advanced classes.
   if(Array.isArray(e.configuredSkillIds)&&e.configuredSkillIds.length){e.skills=[...e.configuredSkillIds];return e}
-  e.bossClassId=e.bossClassId||pickBossClassId(e);
+  e.bossClassId=e.bossClassId||pickBossClassId();
   e.enemyClassLabel=resolveClassDef(e.bossClassId)?.name||e.enemyClassLabel;
   const pool=bossSkillPool(e.bossClassId,e.level||1).sort(()=>Math.random()-.5);
   e.skills=pool.slice(0,3);
-  if(e.skills.length<3){ // thin kit at low level: top up from the generic archetype pool so a boss is never under-equipped
-   const fallback=enemySkillPool(e).filter(id=>!e.skills.includes(id));
-   while(e.skills.length<3&&fallback.length)e.skills.push(fallback.splice(rng(fallback.length),1)[0]);
-  }
   return e;
  }
  const cls=enemyClassOf(e);
@@ -7555,7 +7538,8 @@ function weightedFamilyEnemy(family,wantBoss=false,floor=1,totalFloors=20,minTie
  const bag=[];pool.forEach(e=>{const w=(wantBoss?2:1)*(tierWeights[e.tier]??12);for(let i=0;i<w;i++)bag.push(e)});
  return pick(bag)||pool[0];
 }
-function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=!!wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type),statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round((base.hp||12)*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round((base.atk||4)*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,configuredAp:Math.max(1,Number(template.ap)||20),equipmentIds:[...(template.equipmentIds||[])],armor:Math.round((base.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14));e.configuredSkillIds=(template.skillIds||[]).filter(id=>skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
+function configuredEnemyEquipmentBonuses(ids){const core={strength:0,vitality:0,agility:0,luck:0,intelligence:0,wisdom:0},direct={};for(const id of ids||[]){const row=configItems.find(r=>String(r.id)===String(id));if(!row)continue;const raw=row.item_json||row,affixes=Array.isArray(raw.affixes)?raw.affixes:parseConfigStats(row.stats||raw.stats);for(const a of affixes||[]){const value=Number(a.value)||0;if(a.key in core)core[a.key]+=value;else direct[a.key]=(direct[a.key]||0)+value}}return{core,direct}}
+function buildConfiguredEnemy(template,pos,floor,wantBoss=false,forcedLevel=null){const boss=!!wantBoss||template.boss,lvl=forcedLevel||(boss?bossLevelForPlayer():enemyLevelForFloor(floor)),t=enemyTypeStats[template.type]||enemyTypeStats.warrior,base=template.statsBase||{},gear=configuredEnemyEquipmentBonuses(template.equipmentIds),tierMult={i:1,ii:1.18,iii:1.38,iv:1.7}[template.tier]||1;const varMult=.88+Math.random()*.24,bossMult=boss?1.9:1;const stats=normalizeEnemyCoreStats(template.stats,template.type);for(const key of Object.keys(gear.core))stats[key]+=gear.core[key];const statHp=1+stats.vitality*.035,statAtk=1+actorStatDamageBonus({stats},template.type==='caster'||template.type==='invocador'||template.type==='clerigo'||template.type==='chaman'?'magic':'physical')*.018,statArmor=Math.floor(stats.vitality/5)+Math.floor(stats.wisdom/7);const hp=Math.round(((base.hp||12)+(gear.direct.maxHp||0))*(1+lvl*.13)*t.hp*tierMult*bossMult*varMult*statHp*worldLifeMultiplier()*ENEMY_HP_BASE_MULT),atk=Math.round(((base.atk||4)+(gear.direct.damage||0))*(1+lvl*.08)*t.atk*tierMult*(boss?1.35:1)*varMult*statAtk);let e={...pos,type:template.type,name:template.name||template.class||template.type,customEnemy:true,icon:template.icon,level:lvl,tier:template.tier,boss,stats,hp,maxHp:hp,atk,damage:atk,configuredAp:Math.max(1,(Number(template.ap)||20)+(gear.direct.ap||0)),equipmentIds:[...(template.equipmentIds||[])],armor:Math.round((base.armor||0)+(gear.direct.armor||0)+(t.armor||0)+lvl*.08+statArmor),xp:Math.round((base.xp||8)*(1+lvl*.08)*tierMult*(boss?2.5:1)),skills:[],skillCooldowns:{}};const maxSkills=boss?Math.min(3,1+Math.floor(lvl/8)):Math.min(2,1+Math.floor(lvl/14)),advancedIds=new Set(advancedSkillEntries().map(x=>x.id));e.configuredSkillIds=(template.skillIds||[]).filter(id=>boss?advancedIds.has(id):skillDefs[id]).slice(0,maxSkills);return assignEnemySkills(equipEnemy(e,floor))}
 // Megaboss stat bump on top of the normal boss formula buildConfiguredEnemy
 // already applied above: double HP, +50% damage, +50% core stats (relative
 // to what a normal boss of the same level would have) - plus a visual/
@@ -7620,11 +7604,10 @@ async function fetchEnemyConfig(){try{const [familyResponse,detailResponse]=awai
 function renderEnemySkillSelect(){
  const sel=document.getElementById('configEnemySkills');if(!sel)return;
  const groups=new Map();
- for(const [id,skill] of Object.entries(skillDefs).filter(([,d])=>d.enemyUsable)){
-  const classId=skill.classId||'general',className=classId==='general'?'Generales / Botín':(resolveClassDef(classId)?.name||classId);
+ for(const {id,skill,className} of advancedSkillEntries().filter(({skill})=>skill.enemyUsable)){
   if(!groups.has(className))groups.set(className,[]);groups.get(className).push({id,skill});
  }
- sel.innerHTML='<option value="">Selecciona para añadir...</option>'+[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([className,skills])=>`<optgroup label="${className}">${skills.sort((a,b)=>(a.skill.name||a.id).localeCompare(b.skill.name||b.id)).map(({id,skill})=>`<option value="${id}">${skill.icon||'•'} ${skill.name}</option>`).join('')}</optgroup>`).join('')
+ sel.innerHTML='<option value="">Selecciona una skill Advanced...</option>'+[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([className,skills])=>`<optgroup label="${className}">${skills.sort((a,b)=>(a.skill.name||a.id).localeCompare(b.skill.name||b.id)).map(({id,skill})=>`<option value="${id}">${skill.icon||'•'} ${skill.name}</option>`).join('')}</optgroup>`).join('')
 }
 function selectedEnemySkills(){return [...(window.currentEnemySkillPool||[])]}
 function renderEnemySkillPool(){const el=document.getElementById('configEnemySkillPool'),ids=selectedEnemySkills();if(!el)return;el.innerHTML=ids.length?ids.map(id=>{const d=skillDefs[id]||{};return`<button type="button" class="enemySkillChip" data-remove-enemy-skill="${id}">${d.icon||'•'} ${d.name||id} ×</button>`}).join(''):'<span class="small">Pool vacío.</span>';document.querySelectorAll('[data-remove-enemy-skill]').forEach(b=>b.onclick=()=>{window.currentEnemySkillPool=selectedEnemySkills().filter(id=>id!==b.dataset.removeEnemySkill);renderEnemySkillPool()})}
@@ -7632,10 +7615,15 @@ function addEnemySkillToPool(id){if(!id)return;const pool=selectedEnemySkills();
 function selectedEnemyEquipment(){return [...(window.currentEnemyEquipmentIds||[])].map(String)}
 function renderEnemyEquipment(){
  const root=document.getElementById('configEnemyEquipment');if(!root)return;
- const selected=new Set(selectedEnemyEquipment()),slotNames={weapon:'Arma',offhand:'Mano secundaria',head:'Cabeza',chest:'Pecho',hands:'Manos',legs:'Piernas',boots:'Botas',neck:'Cuello',ring1:'Anillo I',ring2:'Anillo II',trinket1:'Trinket I',trinket2:'Trinket II'},groups=new Map();
- for(const row of configItems.filter(r=>!isConfiguredPotionRow(r))){const item=row.item_json||row,slot=item.slot||row.slot||'equipment';if(!groups.has(slot))groups.set(slot,[]);groups.get(slot).push({row,item})}
- root.innerHTML=groups.size?[...groups.entries()].sort(([a],[b])=>(slots.includes(a)?slots.indexOf(a):99)-(slots.includes(b)?slots.indexOf(b):99)).map(([slot,items])=>`<details class="enemyEquipmentGroup" open><summary>${slotNames[slot]||slot} <b>${items.length}</b></summary>${items.sort((a,b)=>(a.item.name||a.row.nombre||'').localeCompare(b.item.name||b.row.nombre||'')).map(({row,item})=>{const id=String(row.id),name=item.name||row.nombre||'Objeto',tier=item.rarity||row.tier||'common',tierLabel=tierDefs[tier]?.label||tier;return `<label><input type="checkbox" data-enemy-equipment="${id}" ${selected.has(id)?'checked':''}><span>${name}<small style="color:${tierDefs[tier]?.color||'#ddd'}">${tierLabel}</small></span></label>`}).join('')}</details>`).join(''):'<span class="small">No hay equipo configurado.</span>';
- root.querySelectorAll('[data-enemy-equipment]').forEach(cb=>cb.onchange=()=>{const ids=new Set(selectedEnemyEquipment());cb.checked?ids.add(cb.dataset.enemyEquipment):ids.delete(cb.dataset.enemyEquipment);window.currentEnemyEquipmentIds=[...ids]})
+ const rows=configItems.filter(r=>!isConfiguredPotionRow(r)),byId=id=>rows.find(r=>String(r.id)===String(id)),equipped=new Map();
+ for(const id of selectedEnemyEquipment()){const row=byId(id),item=row?.item_json||row,slot=item?.slot||row?.slot;if(slot&&slots.includes(slot)&&!equipped.has(slot))equipped.set(slot,row)}
+ window.currentEnemyEquipmentIds=[...equipped.values()].map(r=>String(r.id));
+ const active=slots.includes(window.currentEnemyEquipmentSlot)?window.currentEnemyEquipmentSlot:'weapon';window.currentEnemyEquipmentSlot=active;
+ const doll=slots.map(slot=>{const row=equipped.get(slot),item=row?.item_json||row,name=item?.name||row?.nombre||'Vacío',tier=item?.rarity||row?.tier||'common';return `<button type="button" class="visualSlot vs-${slot} ${row?'':'empty'} ${slot===active?'active':''}" data-enemy-slot="${slot}"><span>${slotNames[slot]}</span><b style="color:${row?(tierDefs[tier]?.color||'#ddd'):''}">${name}</b></button>`}).join('');
+ const choices=rows.filter(row=>{const item=row.item_json||row;return (item.slot||row.slot)===active}).sort((a,b)=>((a.item_json||a).name||a.nombre||'').localeCompare((b.item_json||b).name||b.nombre||''));
+ root.innerHTML=`<div class="equipVisual enemyEquipmentDoll"><div class="paperdoll"><div class="head"></div><div class="body"></div><div class="armL"></div><div class="armR"></div><div class="legL"></div><div class="legR"></div></div>${doll}</div><div class="enemyEquipmentPicker"><h4>${slotNames[active]}</h4>${equipped.has(active)?'<button type="button" class="enemyEquipmentChoice enemyEquipmentRemove" data-enemy-item="">Dejar hueco vacío</button>':''}${choices.map(row=>{const item=row.item_json||row,tier=item.rarity||row.tier||'common';return `<button type="button" class="enemyEquipmentChoice" data-enemy-item="${row.id}"><b>${item.name||row.nombre||'Objeto'}</b><small style="color:${tierDefs[tier]?.color||'#ddd'}">${tierDefs[tier]?.label||tier} · objeto looteable</small></button>`}).join('')||'<span class="small">No hay objetos looteables para este slot.</span>'}</div>`;
+ root.querySelectorAll('[data-enemy-slot]').forEach(btn=>btn.onclick=()=>{window.currentEnemyEquipmentSlot=btn.dataset.enemySlot;renderEnemyEquipment()});
+ root.querySelectorAll('[data-enemy-item]').forEach(btn=>btn.onclick=()=>{const kept=[...equipped.entries()].filter(([slot])=>slot!==active).map(([,row])=>String(row.id));if(btn.dataset.enemyItem)kept.push(btn.dataset.enemyItem);window.currentEnemyEquipmentIds=kept;renderEnemyEquipment()})
 }
 function updateEnemyBossFields(){const show=configEnemyBoss?.value==='boss'||configEnemyBoss?.value==='megaboss';document.querySelectorAll('#configTabEnemies .enemyBossOnly').forEach(el=>el.classList.toggle('hidden',!show))}
 function setEnemySkills(ids){window.currentEnemySkillPool=[...(ids||[])];if(configEnemySkills)configEnemySkills.value='';renderEnemySkillPool()}
@@ -8507,7 +8495,7 @@ async function responseJson(response){
 }
 function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){fetchEnemyConfig();ensureConfigItemsHydrated().then(renderEnemyEquipment)}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){Promise.all([fetchEnemyConfig(),fetchConfigClasses(),ensureConfigItemsHydrated()]).then(()=>{renderEnemySkillSelect();renderEnemyEquipment()})}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1},maxSize=0}){
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);

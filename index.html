@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.84.3 BOSSES DE FAMILIA</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.84.3">
+<title>MAZMORRA // BOTÍN v0.85.1 SKILLS ADVANCED DE JEFES</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.85.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.84.3 BOSSES DE FAMILIA</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.85.1 SKILLS ADVANCED DE JEFES</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -569,8 +569,8 @@
      <label>Suerte <input id="configEnemyLuck" type="number" min="0" value="1"></label>
      <label>Inteligencia <input id="configEnemyIntelligence" type="number" min="0" value="1"></label>
      <label>Sabiduría <input id="configEnemyWisdom" type="number" min="0" value="1"></label>
-     <label class="configSkillSelectWrap enemyBossOnly hidden">Añadir skill <select id="configEnemySkills" size="8"></select><span class="small">Al seleccionar una skill se añade al pool del enemigo. Puede usar más skills según su nivel y si es boss.</span><div id="configEnemySkillPool" class="enemySkillPool"></div></label>
-     <label class="configSkillSelectWrap enemyBossOnly hidden">Equipo del boss / megaboss <span class="small">Selecciona objetos de <code>config_items</code>. Sus armas se usan en combate y, al derrotarlo, se garantiza uno de estos objetos como loot.</span><div id="configEnemyEquipment" class="enemyEquipmentPool"></div></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Añadir skill Advanced <select id="configEnemySkills" size="8"></select><span class="small">Solo aparecen skills utilizables por enemigos y configuradas en clases marcadas como Advanced. Al seleccionar una se añade al pool del jefe.</span><div id="configEnemySkillPool" class="enemySkillPool"></div></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Ficha de equipamiento del boss / megaboss <span class="small">Pulsa un hueco y elige un objeto looteable de <code>config_items</code>. Solo puede equiparse un objeto por slot; sus bonus se aplican a las estadísticas del jefe y cualquiera de ellos puede convertirse en su loot garantizado.</span><div id="configEnemyEquipment" class="enemyEquipmentPool"></div></label>
     </div>
     <button class="start" id="saveConfigEnemyBtn" type="button">GUARDAR ENEMIGO</button>
     <button id="newConfigEnemyBtn" type="button">NUEVO ENEMIGO</button>
@@ -864,7 +864,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.84.3"></script>
+<script src="./src/game.js?v=0.85.1"></script>
 
 </body>
 </html>
