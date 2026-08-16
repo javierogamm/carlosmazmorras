@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.7';
+const APP_VERSION='0.86.8';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -7775,13 +7775,8 @@ const WORLD_OBJECT_KINDS=[
 let configWorldObjects={};
 let configWorldObjectRows={};
 let configWorldObjectsLoaded=false;
-let configWorldObjectIconsLoaded=false;
 let configWorldObjectsRequest=null;
-let worldObjectCacheHydrationRequest=null;
-let worldObjectIconsRetryAfter=0;
 const pendingWorldObjectIcons=new Set();
-const WORLD_OBJECT_CACHE_NAME='mazmorra-world-objects-v1';
-const WORLD_OBJECT_CACHE_URL='/__cache/config-world-object-icons';
 // Decoration assets: user-created rows in config_world_object whose
 // object_key starts with ASSET_KEY_PREFIX. Unlike the fixed WORLD_OBJECT_KINDS
 // catalog above (icon-only overrides for system props), these carry their
@@ -7824,78 +7819,38 @@ function listConfigAssets(){
   return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
  });
 }
-function applyConfigWorldObjectRows(rows,{iconsComplete=false}={}){
+function applyConfigWorldObjectRows(rows){
  for(const row of rows||[]){
   const previous=configWorldObjectRows[row.object_key]||{};
   configWorldObjectRows[row.object_key]={...previous,...row};
   if(Object.prototype.hasOwnProperty.call(row,'icon'))configWorldObjects[row.object_key]=row.icon||'';
  }
  configWorldObjectsLoaded=true;
- if(iconsComplete)configWorldObjectIconsLoaded=true;
  renderConfigWorldObjectsList();renderConfigAssetsList();renderWorldFloorPlan();if(game)draw();
 }
-async function readWorldObjectIconCache(){
- if(!('caches' in window))return null;
- try{const response=await (await caches.open(WORLD_OBJECT_CACHE_NAME)).match(WORLD_OBJECT_CACHE_URL);if(!response)return null;const rows=await response.json();return Array.isArray(rows)?rows:null}catch(e){return null}
-}
-async function writeWorldObjectIconCache(rows){
- if(!('caches' in window))return;
- try{const cache=await caches.open(WORLD_OBJECT_CACHE_NAME);await cache.put(WORLD_OBJECT_CACHE_URL,new Response(JSON.stringify(rows),{headers:{'Content-Type':'application/json'}}))}catch(e){}
-}
-async function fetchConfigWorldObjects({minimal=false}={}){
- if(configWorldObjectsRequest&&!minimal)return configWorldObjectsRequest;
+async function fetchConfigWorldObjects(){
+ if(configWorldObjectsRequest)return configWorldObjectsRequest;
  const request=(async()=>{
  try{
-  const r=await fetch(`/api/config-floor?kind=object${minimal?'&minimal=1':''}`);const data=await r.json();
+  const r=await fetch('/api/config-floor?kind=object&light=1');const data=await r.json();
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
   const rows=Array.isArray(data)?data:[];
   // A metadata-only admin request must never erase icons already hydrated by
   // the game. Merge rows, and only write the icon map when the API actually
   // returned that column.
-  applyConfigWorldObjectRows(rows,{iconsComplete:!minimal});
-  if(!minimal)writeWorldObjectIconCache(rows);
+  applyConfigWorldObjectRows(rows);
   return rows;
  }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`;return null}
  })();
- if(!minimal)configWorldObjectsRequest=request;
- try{return await request}finally{if(!minimal)configWorldObjectsRequest=null}
+ configWorldObjectsRequest=request;
+ try{return await request}finally{configWorldObjectsRequest=null}
 }
 async function ensureWorldObjectIcons(){
- if(configWorldObjectIconsLoaded)return;
- if(Date.now()<worldObjectIconsRetryAfter)return false;
- if(worldObjectCacheHydrationRequest)return worldObjectCacheHydrationRequest;
- worldObjectCacheHydrationRequest=(async()=>{
-  const cached=await readWorldObjectIconCache();
-  try{
-  if(!cached){
-   const rows=await fetchConfigWorldObjects();
-   if(!configWorldObjectIconsLoaded){worldObjectIconsRetryAfter=Date.now()+30000;return false}
-   await writeWorldObjectIconCache(rows);return true
-  }
-  // Only the small metadata projection is downloaded on later visits. Icon
-  // payloads are requested again solely for new or updated database rows.
-  const r=await fetch('/api/config-floor?kind=object&minimal=1'),metadata=await responseJson(r);
-  if(!r.ok||!Array.isArray(metadata)){
-   // Network/schema validation must not prevent entering a dungeon. Use the
-   // last complete local copy and retry validation on a later visit.
-   applyConfigWorldObjectRows(cached,{iconsComplete:true});
-   worldObjectIconsRetryAfter=Date.now()+30000;
-   return true
-  }
-  const cachedByKey=new Map(cached.map(row=>[row.object_key,row]));
-  const changed=metadata.filter(row=>{const old=cachedByKey.get(row.object_key);return !old||String(old.updated_at||'')!==String(row.updated_at||'')});
-  const details=await Promise.all(changed.map(async row=>{try{const detail=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(row.object_key)}`),data=await responseJson(detail);if(!detail.ok)return null;return Array.isArray(data)?data[0]:data}catch(e){return null}}));
-  const detailByKey=new Map(details.filter(Boolean).map(row=>[row.object_key,row]));
-  const rows=metadata.map(meta=>({...cachedByKey.get(meta.object_key),...meta,...detailByKey.get(meta.object_key)}));
-  applyConfigWorldObjectRows(rows,{iconsComplete:true});
-  await writeWorldObjectIconCache(rows);return true
-  }catch(e){
-   if(cached)applyConfigWorldObjectRows(cached,{iconsComplete:true});
-   worldObjectIconsRetryAfter=Date.now()+30000;
-   return !!cached
-  }
- })();
- try{return await worldObjectCacheHydrationRequest}finally{worldObjectCacheHydrationRequest=null}
+ // Floor generation needs dimensions, masks and environments, never image
+ // payloads. Visible props/assets request their own detail from draw() after
+ // landing on the floor, exactly like enemy_detail icons do.
+ if(configWorldObjectsLoaded)return true;
+ return !!(await fetchConfigWorldObjects());
 }
 async function fetchConfigWorldObjectDetail(objectKey){
  const r=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(objectKey)}`),data=await responseJson(r);
