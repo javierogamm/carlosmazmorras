@@ -1,3 +1,20 @@
+## v0.85.1 - 2026-08-16
+
+- Limitado el selector de skills de bosses y megabosses a las habilidades configuradas en `skills_json` de clases marcadas explícitamente como Advanced y habilitadas para enemigos.
+- Eliminados del kit automático de los jefes los árboles hardcodeados, las skills generales/de botín y el relleno mediante pools genéricos.
+- Los kits automáticos de boss y megaboss eligen ahora exclusivamente una clase Advanced y respetan el tier de sus skills según el nivel generado del jefe.
+- El acceso al configurador de enemigos hidrata las clases Advanced antes de volver a renderizar el selector, evitando mostrar opciones antiguas o incompletas.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.85.1` (`v0.85.1 SKILLS ADVANCED DE JEFES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.85.0 - 2026-08-16
+
+- Sustituido el listado de checks del configurador de bosses y megabosses por una ficha visual de equipamiento como la del PJ: cada slot se pulsa para elegir o retirar un único objeto compatible.
+- Limitada la selección a objetos equipables y looteables de `config_items`, manteniendo cualquiera de las piezas equipadas como posible loot garantizado del jefe.
+- Aplicados al boss y megaboss los atributos primarios, vida, daño, armadura y PA aportados por los afijos de sus objetos, además del comportamiento de arma que ya existía.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.85.0` (`v0.85.0 EQUIPO DE JEFES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.84.3 - 2026-08-16
 
 - Agrupado el selector de skills del configurador de bosses y megabosses por clase, ordenando tanto las clases como las habilidades por nombre y manteniendo un grupo separado para skills generales o de botín.
