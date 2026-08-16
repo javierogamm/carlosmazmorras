@@ -1,3 +1,10 @@
+## v0.86.9 - 2026-08-16
+
+- Corregida la detección del mando cuando el navegador lo registra en un slot distinto del primero, algo habitual después de desconectarlo y volverlo a conectar o al haber usado otro dispositivo.
+- La app recorre ahora los slots de la API Gamepad y utiliza el primer mando realmente conectado, sin alterar sus controles, keybindings ni el flujo de juego.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.9` (`v0.86.9 DETECCIÓN DE MANDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.8 - 2026-08-16
 
 - Restaurado para `config_world_object` el patrón de catálogo ligero y detalle bajo demanda que ya utiliza `enemy_detail`: los listados y la generación de dungeons reciben dimensiones, máscara, ambiente y nombre sin descargar `icon`.
