@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.84.2';
+const APP_VERSION='0.84.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -7617,12 +7617,26 @@ function drawEnemyIconHex(hex,x,y,boss=false,mega=false){
  if(img.complete){paint();return true}img.onload=()=>game&&draw();return false
 }
 async function fetchEnemyConfig(){try{const [familyResponse,detailResponse]=await Promise.all([fetch('/api/enemy-family'),fetch('/api/enemy-detail')]);const [f,d]=await Promise.all([familyResponse.json(),detailResponse.json()]);if(!familyResponse.ok)throw new Error(f.error||'No se pudieron cargar las familias');if(!detailResponse.ok)throw new Error(d.error||'No se pudieron cargar los enemigos');configEnemyFamilies=Array.isArray(f)?f:[];configEnemyDetails=Array.isArray(d)?d:[];renderEnemyConfig();setupWorldSettings()}catch(e){configEnemyStatus&&(configEnemyStatus.textContent='No se pudo cargar configuración de enemigos: '+e.message)}}
-function renderEnemySkillSelect(){const sel=document.getElementById('configEnemySkills');if(sel)sel.innerHTML='<option value="">Selecciona para añadir...</option>'+Object.entries(skillDefs).filter(([,d])=>d.enemyUsable).map(([id,d])=>`<option value="${id}">${d.icon||'•'} ${d.name}</option>`).join('')}
+function renderEnemySkillSelect(){
+ const sel=document.getElementById('configEnemySkills');if(!sel)return;
+ const groups=new Map();
+ for(const [id,skill] of Object.entries(skillDefs).filter(([,d])=>d.enemyUsable)){
+  const classId=skill.classId||'general',className=classId==='general'?'Generales / Botín':(resolveClassDef(classId)?.name||classId);
+  if(!groups.has(className))groups.set(className,[]);groups.get(className).push({id,skill});
+ }
+ sel.innerHTML='<option value="">Selecciona para añadir...</option>'+[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([className,skills])=>`<optgroup label="${className}">${skills.sort((a,b)=>(a.skill.name||a.id).localeCompare(b.skill.name||b.id)).map(({id,skill})=>`<option value="${id}">${skill.icon||'•'} ${skill.name}</option>`).join('')}</optgroup>`).join('')
+}
 function selectedEnemySkills(){return [...(window.currentEnemySkillPool||[])]}
 function renderEnemySkillPool(){const el=document.getElementById('configEnemySkillPool'),ids=selectedEnemySkills();if(!el)return;el.innerHTML=ids.length?ids.map(id=>{const d=skillDefs[id]||{};return`<button type="button" class="enemySkillChip" data-remove-enemy-skill="${id}">${d.icon||'•'} ${d.name||id} ×</button>`}).join(''):'<span class="small">Pool vacío.</span>';document.querySelectorAll('[data-remove-enemy-skill]').forEach(b=>b.onclick=()=>{window.currentEnemySkillPool=selectedEnemySkills().filter(id=>id!==b.dataset.removeEnemySkill);renderEnemySkillPool()})}
 function addEnemySkillToPool(id){if(!id)return;const pool=selectedEnemySkills();if(!pool.includes(id))pool.push(id);window.currentEnemySkillPool=pool;configEnemySkills.value='';renderEnemySkillPool()}
 function selectedEnemyEquipment(){return [...(window.currentEnemyEquipmentIds||[])].map(String)}
-function renderEnemyEquipment(){const root=document.getElementById('configEnemyEquipment');if(!root)return;const selected=new Set(selectedEnemyEquipment());const rows=configItems.filter(r=>!isConfiguredPotionRow(r));root.innerHTML=rows.length?rows.map(r=>{const item=r.item_json||r,id=String(r.id),name=item.name||r.nombre||'Objeto';return `<label><input type="checkbox" data-enemy-equipment="${id}" ${selected.has(id)?'checked':''}><span>${name} · ${item.slot||r.slot||'equipo'}</span></label>`}).join(''):'<span class="small">No hay equipo configurado.</span>';root.querySelectorAll('[data-enemy-equipment]').forEach(cb=>cb.onchange=()=>{const ids=new Set(selectedEnemyEquipment());cb.checked?ids.add(cb.dataset.enemyEquipment):ids.delete(cb.dataset.enemyEquipment);window.currentEnemyEquipmentIds=[...ids]})}
+function renderEnemyEquipment(){
+ const root=document.getElementById('configEnemyEquipment');if(!root)return;
+ const selected=new Set(selectedEnemyEquipment()),slotNames={weapon:'Arma',offhand:'Mano secundaria',head:'Cabeza',chest:'Pecho',hands:'Manos',legs:'Piernas',boots:'Botas',neck:'Cuello',ring1:'Anillo I',ring2:'Anillo II',trinket1:'Trinket I',trinket2:'Trinket II'},groups=new Map();
+ for(const row of configItems.filter(r=>!isConfiguredPotionRow(r))){const item=row.item_json||row,slot=item.slot||row.slot||'equipment';if(!groups.has(slot))groups.set(slot,[]);groups.get(slot).push({row,item})}
+ root.innerHTML=groups.size?[...groups.entries()].sort(([a],[b])=>(slots.includes(a)?slots.indexOf(a):99)-(slots.includes(b)?slots.indexOf(b):99)).map(([slot,items])=>`<details class="enemyEquipmentGroup" open><summary>${slotNames[slot]||slot} <b>${items.length}</b></summary>${items.sort((a,b)=>(a.item.name||a.row.nombre||'').localeCompare(b.item.name||b.row.nombre||'')).map(({row,item})=>{const id=String(row.id),name=item.name||row.nombre||'Objeto',tier=item.rarity||row.tier||'common',tierLabel=tierDefs[tier]?.label||tier;return `<label><input type="checkbox" data-enemy-equipment="${id}" ${selected.has(id)?'checked':''}><span>${name}<small style="color:${tierDefs[tier]?.color||'#ddd'}">${tierLabel}</small></span></label>`}).join('')}</details>`).join(''):'<span class="small">No hay equipo configurado.</span>';
+ root.querySelectorAll('[data-enemy-equipment]').forEach(cb=>cb.onchange=()=>{const ids=new Set(selectedEnemyEquipment());cb.checked?ids.add(cb.dataset.enemyEquipment):ids.delete(cb.dataset.enemyEquipment);window.currentEnemyEquipmentIds=[...ids]})
+}
 function updateEnemyBossFields(){const show=configEnemyBoss?.value==='boss'||configEnemyBoss?.value==='megaboss';document.querySelectorAll('#configTabEnemies .enemyBossOnly').forEach(el=>el.classList.toggle('hidden',!show))}
 function setEnemySkills(ids){window.currentEnemySkillPool=[...(ids||[])];if(configEnemySkills)configEnemySkills.value='';renderEnemySkillPool()}
 function currentEnemyRow(){const stats=normalizeEnemyCoreStats({strength:+configEnemyStrength.value||0,vitality:+configEnemyVitality.value||0,agility:+configEnemyAgility.value||0,luck:+configEnemyLuck.value||0,intelligence:+configEnemyIntelligence.value||0,wisdom:+configEnemyWisdom.value||0},configEnemyType.value),rank=configEnemyBoss.value,statsBase={hp:+configEnemyHp.value||12,atk:+configEnemyAtk.value||4,armor:+configEnemyArmor.value||0,xp:+configEnemyXp.value||8,coreStats:stats,rank,ap:+configEnemyAp.value||20,equipmentIds:selectedEnemyEquipment()};return{family:configEnemyFamilyName.value.trim()||'Sin familia',icon:window.currentConfigEnemyIconHex||'',class:configEnemyClass.value.trim(),type:configEnemyType.value,boss:rank==='normal'?'no':'si',stats_base:JSON.stringify(statsBase),weapon_type:configEnemyWeaponType.value,tier:configEnemyTier.value,skill:selectedEnemySkills().join(',')}}

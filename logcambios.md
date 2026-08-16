@@ -1,3 +1,11 @@
+## v0.84.3 - 2026-08-16
+
+- Agrupado el selector de skills del configurador de bosses y megabosses por clase, ordenando tanto las clases como las habilidades por nombre y manteniendo un grupo separado para skills generales o de botín.
+- Agrupado el selector de equipo por slot y añadido a cada objeto su tier visible, con el color correspondiente a su rareza.
+- Los cambios quedan limitados a los selectores exclusivos del configurador de enemigos.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.84.3` (`v0.84.3 BOSSES DE FAMILIA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.84.2 - 2026-08-16
 
 - Corregida la entrada a Configuración → Enemigos para solicitar en ese momento las familias y todos los detalles de enemigos, independientemente de la carga ligera inicial del resto del configurador.
