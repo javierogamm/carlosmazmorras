@@ -1,3 +1,11 @@
+## v0.86.8 - 2026-08-16
+
+- Restaurado para `config_world_object` el patrón de catálogo ligero y detalle bajo demanda que ya utiliza `enemy_detail`: los listados y la generación de dungeons reciben dimensiones, máscara, ambiente y nombre sin descargar `icon`.
+- Los iconos de objetos de mundo y assets se solicitan individualmente por `object_key` únicamente al hacerse visibles tras aterrizar en un piso o al abrir su editor.
+- Eliminada la hidratación global y la caché completa de imágenes que provocaban descargas masivas antes de entrar en una dungeon; se mantiene la carga de metadatos necesaria para colocar assets y calcular colisiones.
+- Conservado el contrato anterior `minimal=1` del endpoint y aislado el cambio al modo GET de `config_world_object`, sin modificar login, escrituras ni otros endpoints.
+- Actualizada la versión de la app y del paquete a `0.86.8` (`v0.86.8 OBJETOS BAJO DEMANDA`).
+
 ## v0.86.7 - 2026-08-16
 
 - Restaurado el ataque automático cuando solo existe un enemigo válido dentro del alcance y la línea de visión del arma.

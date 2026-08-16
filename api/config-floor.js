@@ -27,7 +27,10 @@ const ASSET_KEY_PREFIX='asset_';
 async function handleWorldObjects(req,res,url,key){
  if(req.method==='GET'){
   const objectKey=req.query?.object_key;
-  const minimal=req.query?.minimal==='1';
+  // Match the light/detail contract used by the other image-heavy catalogs:
+  // catalog requests never select icon, while an object_key request is the
+  // explicit detail lookup used when the image is actually needed.
+  const minimal=req.query?.light==='1'||req.query?.minimal==='1'||!objectKey;
   const select=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente,updated_at';
   const legacySelect=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
   const filter=objectKey?`&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`:'';
