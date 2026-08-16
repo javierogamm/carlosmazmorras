@@ -1,3 +1,12 @@
+## v0.86.5 - 2026-08-16
+
+- Al consumir una poción con mando, el foco pasa directamente al botón **Continuar** del mensaje de resultado; al confirmarlo se cierra el mensaje y se devuelve el control al tablero sin tener que pulsar un hombro.
+- Corregido el stick durante el apuntado de un ataque, habilidad o poción: ahora desplaza el cursor de selección por el tablero igual que la cruceta, en vez de navegar por botones.
+- Durante el turno enemigo o el fin de turno automático, el stick deja de sacar el foco fuera del área de juego y permanece inactivo hasta que vuelve el turno del jugador.
+- La navegación por botones durante la espera solo se activa de forma explícita al cambiar de pestaña o zona con los botones de hombro.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.5` (`v0.86.5 MANDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.4 - 2026-08-16
 
 - Corregida la carga fallida de `enemy_detail` al crear dungeons: el catálogo inicial solicita todas sus columnas de juego salvo `icon`, evitando que una respuesta única con todas las imágenes supere los límites del endpoint.
