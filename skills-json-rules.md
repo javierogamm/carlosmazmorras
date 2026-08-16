@@ -76,7 +76,7 @@ If `{p}Dice` is 0, a hand-tuned per-kind fallback (roughly `~8 + skillLevel*2..4
 
 Per-component `target` field, where applicable (see §4 table for which kinds accept which target values):
 - `"enemy"`: the clicked enemy, or nearest visible enemy if the skill is self-cast.
-- `"area"`: for damage/debuff-style kinds (`dmg`, `dot`, `debuff`, `cc`, `drain`, `mark`, `execute`, `pullroot`) — all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight (`resolveComponentEnemyTargets`). For `heal`/`hot` — all allies (companions + other human players) within `range` tiles of the cast point, via the analogous `resolveComponentAllyTargets` (see §4.5/§4.16 for exactly who counts as an "ally" and how each is healed).
+- `"area"`: for damage/debuff-style kinds (`dmg`, `dot`, `debuff`, `cc`, `fear`, `mesmer`, `drain`, `mark`, `execute`, `pullroot`) — all enemies within `range` tiles (Chebyshev distance) of the clicked/cast tile, with line of sight (`resolveComponentEnemyTargets`). For `heal`/`hot` — all allies (companions + other human players) within `range` tiles of the cast point, via the analogous `resolveComponentAllyTargets` (see §4.5/§4.16 for exactly who counts as an "ally" and how each is healed).
 - `"self"`: the caster.
 - `"ally"`: clicked ally (multiplayer only).
 
@@ -97,6 +97,8 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
 | `heal` | self, ally, area | instant heal (+ resource restore if self/area) |
 | `move` | — | dash-and-hit or teleport |
 | `cc` | enemy, area | stun/freeze/silence/root |
+| `fear` | enemy, area | target flees and spends all AP moving for N turns; WIS resistance, capped at 30% |
+| `mesmer` | enemy, area | target changes sides for N turns; INT resistance, capped at 30% |
 | `drain` | enemy, area | damage enemy, heal+restore resource for self |
 | `aoe` | — (always area around cast point) | area damage with explicit radius |
 | `multihit` | — (always the resolved single target) | N repeated hits on one target, paced 0.5s apart |
@@ -221,7 +223,7 @@ Legend: **Target opts** = allowed `target` values (— = no target field, implic
   - `"damage"`: attacks the nearest qualifying enemy, dice via `dmgDice/dmgDie`, stat bonus from `dmgStat`/`dmgStatMode`/`dmgStatCoef` (§3.1) applied against **the player's own live stat** — same as every other stat-derived effect in the game, not a flat hit. `range` (below) controls whether it's melee or ranged.
   - `"skill"`: fires the invocation's **own inline stackable-effects list** at the nearest qualifying enemy each action, instead of a flat dice hit or a reference to an existing skill. Configured via two extra fields:
     - `skillName` (string, cosmetic only): a name for this ad-hoc "skill", not shown anywhere in-game yet.
-    - `skillEffects`: an array of components, same shape as the top-level `effects[]` (§3) but restricted to the kinds that make sense fired at a single already-engaged target: `dmg`, `dot`, `debuff`, `cc`, `drain`, `mark` (all hit/affect the target), plus `buff`/`heal` (affect the player instead — a companion's "heal" sub-effect heals the player, its "buff" sub-effect buffs the player). Every listed sub-effect fires in the same action (they stack); each one's own `dmgStat`/`dmgStatMode`/`dmgStatCoef` (where applicable) scales off the player's stat, exactly like `damage` above. An empty `skillEffects` falls back to a plain dice hit.
+    - `skillEffects`: an array of components, same shape as the top-level `effects[]` (§3) but restricted to the kinds that make sense fired at a single already-engaged target: `dmg`, `dot`, `debuff`, `cc`, `fear`, `mesmer`, `drain`, `mark` (all hit/affect the target), plus `buff`/`heal` (affect the player instead — a companion's "heal" sub-effect heals the player, its "buff" sub-effect buffs the player). Every listed sub-effect fires in the same action (they stack); each one's own `dmgStat`/`dmgStatMode`/`dmgStatCoef` (where applicable) scales off the player's stat, exactly like `damage` above. An empty `skillEffects` falls back to a plain dice hit.
   - `"heal"`: heals the player each action, magnitude = roll of `dmgDice`d`dmgDie` **plus** the `dmgStat`/`dmgStatMode`/`dmgStatCoef`-derived bonus off the player's stat.
   - `"root"`: applies `root` status to nearest enemy each action, duration = `effectTurns`.
   - `"buff"`: grants the caster a buff (see `stat`/`mode`/`value` below) that is refreshed every action and lasts only while the companion is alive.
@@ -506,3 +508,13 @@ Se usa la INT o SAB total consolidada del actor que lanza la habilidad. Esto se 
 ### `skilleffect`
 
 Potencia las magnitudes de las habilidades. En buffs sumatorios, `value:20` equivale a +20%; en modo multiplicador, `value:1.2` equivale a ×1.2. También se admite como bonus racial (`stats.skilleffect`) y en buffs de armas/equipo.
+
+### 4.29 `fear` / `mesmer` — Mind control
+```json
+{ "kind":"fear", "target":"area", "range":2, "turns":3 }
+{ "kind":"mesmer", "target":"enemy", "turns":2 }
+```
+- `fear`: the affected unit spends its complete AP pool moving away from the caster and is shown with a black frame.
+- `mesmer`: the affected unit changes sides, attacking its former allies when possible, and is shown with a purple frame.
+- Both accept `target:"enemy"` or `target:"area"`, work in class/race/item/potion stacks, and are resolved by enemy AI too (including bosses and megabosses when their configured skill is `enemyUsable`).
+- Resistance is `min(30%, WIS × 1%)` for `fear` and `min(30%, INT × 1%)` for `mesmer`.

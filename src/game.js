@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.82.1';
+const APP_VERSION='0.83.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -3051,6 +3051,17 @@ function enemyUseSkill(e,dist,target=game.player){
   if(target!==game.player&&target.hitByAoe===false&&['aoe','multihit','ultimate','massive'].includes(s.classEffect))continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
   if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
+   const controlEffects=(s.effects||[]).filter(c=>c.kind==='fear'||c.kind==='mesmer');
+   if(controlEffects.length){
+    let applied=false,attempted=false;
+    for(const comp of controlEffects){
+     const radius=Math.max(1,comp.range||2),inArea=comp.target!=='area'||gridDistance(e,target)<=radius;
+     if(!inArea)continue;
+     attempted=true;
+     applied=applyMindControlStatus(target,comp.kind,comp.turns??2,e,s.name)||applied;
+    }
+    if(attempted){if(applied)floating(controlEffects.some(c=>c.kind==='mesmer')?'◈':'!',target.x,target.y,controlEffects.some(c=>c.kind==='mesmer')?'#b45cff':'#111');log(`${e.name} usa ${s.name}.`,'combat');e.skillCooldowns[id]=Math.max(2,s.cd||5);return true}
+   }
    const mult=e.boss?1.35:e.elite?1.15:1,baseAmount=(e.atk||e.damage||4)*mult*(s.tier?1+s.tier*.12:1);
    const amount=Math.max(2,Math.round(baseAmount*(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)?utilitySkillMultiplier(e):offensiveSkillMultiplier(e))));
    if(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)){
@@ -4191,6 +4202,17 @@ function addEnemyStatus(e,type,turns,power=1,label=type){
  log(`${e.name}: ${label} durante ${turns} turnos.`,'combat')
 }
 function enemyHasStatus(e,type){return(e.statuses||[]).some(s=>s.type===type&&s.turns>0)}
+function mindControlResistance(entity,type){
+ const stats=entity===game.player?(entity.derived?.finalStats||entity.stats||{}):(entity.stats||{}),stat=type==='fear'?'wisdom':'intelligence';
+ return Math.min(.30,Math.max(0,(Number(stats[stat])||0)*.01));
+}
+function applyMindControlStatus(entity,type,turns,caster,sourceName=type){
+ const resistance=mindControlResistance(entity,type);
+ if(Math.random()<resistance){log(`${entity.name||'El objetivo'} resiste ${type==='fear'?'Miedo':'Mesmer'} (${Math.round(resistance*100)}%).`,'good');return false}
+ if(entity===game.player){entity.controlStatuses=entity.controlStatuses||[];const old=entity.controlStatuses.find(s=>s.type===type);if(old)old.turns=Math.max(old.turns,turns);else entity.controlStatuses.push({type,turns,sourceX:caster?.x,sourceY:caster?.y,label:sourceName});}
+ else{addEnemyStatus(entity,type,turns,0,type==='fear'?'Miedo':'Mesmer');const status=entity.statuses.find(s=>s.type===type);if(status)status.skipFirstTick=true;if(type==='fear'){entity.fearSourceX=caster?.x;entity.fearSourceY=caster?.y}}
+ return true;
+}
 // Debuff skills with a configured debuffStat lower that specific enemy stat
 // for the status' duration (instead of the generic weakened/stunned pair),
 // so "which stat" is a real, reversible mechanical choice rather than cosmetic.
@@ -4236,7 +4258,7 @@ function tickEnemyStatuses(){
    // ENEMY_HOT_HEAL_EFFECTS in enemyUseSkill) - genuine heal-over-time, not
    // the old blanket self-heal every utility/buff skill used to grant.
    if(s.type==='regen')healEntity(e,Math.max(1,Math.round(s.power)),e.x,e.y);
-   s.turns--;
+   if(s.skipFirstTick)delete s.skipFirstTick;else s.turns--;
    if(s.turns<=0&&s.type==='doomCountdown'&&e.hp>0){const dmg=Math.max(1,Math.round(s.power));e.hp-=dmg;floating(`-${dmg}`,e.x,e.y,'#d68cff');if(e.hp<=0){kill(e);break}}
    if(s.turns<=0&&s.type==='statDebuff'){
     if(s.stat==='damage')e.atk=e.damage=s.before;
@@ -4246,6 +4268,11 @@ function tickEnemyStatuses(){
   }
   e.statuses=(e.statuses||[]).filter(s=>s.turns>0)
  }
+}
+function tickPlayerControlStatuses(){
+ const p=game.player;if(!p?.controlStatuses)return;
+ for(const s of p.controlStatuses)s.turns--;
+ p.controlStatuses=p.controlStatuses.filter(s=>s.turns>0);
 }
 function findFreeAdjacentToPlayer(){
  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
@@ -4867,7 +4894,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',revive:'Revivir automáticamente',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',fear:'Miedo (huye y gasta todos sus PA)',mesmer:'Mesmer (cambia de bando)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',revive:'Revivir automáticamente',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
 // Potions now run through the exact same composable-effects engine as
 // skills (applyEffectComponent/applySkillEffectsList below), instead of a
 // separate bespoke potionEffectType system - a potion "cast" just registers
@@ -5031,6 +5058,11 @@ function applyEffectComponent(id,comp,ctx){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   for(const e of targets){attack(e,0,{skillId:id,multiplier:.75});addEnemyStatus(e,comp.type||'stun',comp.turns??2,0,d.name)}
   return true
+ }
+ if(comp.kind==='fear'||comp.kind==='mesmer'){
+  const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
+  let applied=false;for(const e of targets)applied=applyMindControlStatus(e,comp.kind,comp.turns??2,p,d.name)||applied;
+  return applied
  }
  if(comp.kind==='drain'){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
@@ -5271,6 +5303,20 @@ function startPlayerAP(){
   c.ap=c.permanent?companionMaxAp():Math.max(10,(c.actionsPerTurn||1)*10);
   if(c.permanent&&c.effectType&&c.orderTarget)companionResolveOrder(c);
  }
+ resolveForcedPlayerControl();
+}
+function resolveForcedPlayerControl(){
+ const p=game?.player,status=(p?.controlStatuses||[]).find(s=>s.turns>0);if(!status)return;
+ if(status.type==='fear'){
+  const source={x:status.sourceX??p.x,y:status.sourceY??p.y},dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  while(p.ap>=AP_COSTS.move){const occupied=(x,y)=>game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y)||(game.companions||[]).some(c=>c.hp>0&&c.x===x&&c.y===y);const step=dirs.map(([dx,dy])=>({x:p.x+dx,y:p.y+dy})).filter(q=>!blocked(q.x,q.y)&&!occupied(q.x,q.y)).sort((a,b)=>gridDistance(b,source)-gridDistance(a,source))[0];if(!step)break;p.x=step.x;p.y=step.y;p.ap-=AP_COSTS.move;reveal(p.x,p.y)}
+  p.ap=0;log('El Miedo te obliga a gastar todos tus PA huyendo.','combat');
+ }else if(status.type==='mesmer'){
+  const ally=[...(game.companions||[]),...(game.otherPlayers||[])].filter(a=>a.hp>0).sort((a,b)=>gridDistance(p,a)-gridDistance(p,b))[0];
+  if(ally&&gridDistance(p,ally)===1){const dmg=Math.max(1,Math.round(total('damage')));ally.hp-=dmg;floating(`-${dmg}`,ally.x,ally.y,'#b45cff');log(`Mesmer te obliga a atacar a ${ally.name}.`,'combat')}
+  p.ap=0;log('Mesmer te hace cambiar de bando y consume tu turno.','combat');
+ }
+ setTimeout(()=>{if(!busy&&p.ap===0&&!game.over)playerFinished()},0);
 }
 function apCan(kind,cost=AP_COSTS[kind]){
  if(!apModeOn())return true;
@@ -5296,7 +5342,7 @@ function playerFinished(){
   if(!game.myTurn){busy=true;return}
   playerFinishedMultiplayer();return;
  }
- busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;tickEquipmentCooldowns();if(game.player.shield>0)game.player.shield--;
+ busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerControlStatuses();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;tickEquipmentCooldowns();if(game.player.shield>0)game.player.shield--;
  updateUI();requestGameFrame();
  setTimeout(()=>{enemyTurn(()=>{tickPlayerInvisibility();startPlayerAP();busy=false;updateUI();draw()})},500);
 }
@@ -5463,6 +5509,16 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   if(game.over)return 0;
   if(!game.seen[e.y][e.x])return 0;
   if(enemyHasStatus(e,'freeze')||enemyHasStatus(e,'stun')||enemyHasStatus(e,'root')&&gridDistance(e,game.player)>1)return 0;
+  if(enemyHasStatus(e,'fear')){
+   const source={x:e.fearSourceX??game.player.x,y:e.fearSourceY??game.player.y},step=enemyPathStep(e,source,true);
+   if(!step)return 0;const from={x:e.x,y:e.y};e.x=step.x;e.y=step.y;combatFx('move',from.x,from.y,{to:step,color:'#222',icon:'!'});return AP_COSTS.move;
+  }
+  if(enemyHasStatus(e,'mesmer')){
+   const hostile=game.enemies.filter(o=>o!==e&&o.hp>0&&!enemyHasStatus(o,'mesmer')).sort((a,b)=>gridDistance(e,a)-gridDistance(e,b))[0];
+   if(!hostile)return 0;const hostileDist=gridDistance(e,hostile);
+   if(hostileDist===1){const dmg=enemyNormalAttackDamage(e);hostile.hp-=dmg;floating(`-${dmg}`,hostile.x,hostile.y,'#b45cff');log(`${e.name}, bajo Mesmer, ataca a ${hostile.name}.`,'combat');if(hostile.hp<=0)kill(hostile);return AP_COSTS.attack}
+   const step=enemyPathStep(e,hostile);if(step){const from={x:e.x,y:e.y};e.x=step.x;e.y=step.y;combatFx('move',from.x,from.y,{to:step,color:'#b45cff',icon:'◈'});return AP_COSTS.move}return 0;
+  }
   // A companion is only ever a valid target if its own "objeto de ataques"
   // toggle allows it (targetable!==false) and it wasn't summoned this same
   // turn (spawnTurn grace - see summonCompanion) - otherwise a pet could get
@@ -5470,7 +5526,8 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   // Permanent pets (c.permanent && c.effectType) are excluded outright: they
   // only follow now and are invulnerable, so enemies never consider them.
   const targetableCompanions=(game.companions||[]).filter(c=>c.hp>0&&c.targetable!==false&&game.turn-(c.spawnTurn??0)>1&&!(c.permanent&&c.effectType));
-  const possibleTargets=[game.player,...targetableCompanions,...(game.otherPlayers||[]).filter(pl=>pl.hp>0)];
+  const turnedEnemies=enemyHasStatus(e,'mesmer')?[]:game.enemies.filter(o=>o!==e&&o.hp>0&&enemyHasStatus(o,'mesmer'));
+  const possibleTargets=[game.player,...targetableCompanions,...(game.otherPlayers||[]).filter(pl=>pl.hp>0),...turnedEnemies];
   let chosen=possibleTargets.sort((a,b)=>(Math.abs(e.x-a.x)+Math.abs(e.y-a.y))-(Math.abs(e.x-b.x)+Math.abs(e.y-b.y)))[0];
   // Chebyshev (max-axis) distance, not Manhattan: a diagonal neighbor is
   // exactly as adjacent as an orthogonal one, matching gridDistance() and
@@ -6398,6 +6455,8 @@ function drawPlayerStatusFrames(x,y){
  if(p.holyShield>0)frames.push('#4da6ff');
  if((p.activeBuffs||[]).some(b=>!String(b.id||'').startsWith('equip:')))frames.push('#4ddc7a');
  if(isPlayerInvisible())frames.push('#9a9a9a');
+ if((p.controlStatuses||[]).some(s=>s.type==='fear'&&s.turns>0))frames.push('#050505');
+ if((p.controlStatuses||[]).some(s=>s.type==='mesmer'&&s.turns>0))frames.push('#9b45ff');
  let inset=0;
  for(const color of frames){
   ctx.strokeStyle=color;ctx.lineWidth=5;
@@ -6590,16 +6649,18 @@ function enemySprite(x,y,e){
 // path, which used to skip it entirely.
 function enemyStatusOverlay(x,y,e){
  const R=(ox,oy,w,h,col)=>px(x+ox,y+oy,w,h,col);
+ const mindFrame=()=>{const mesmer=enemyHasStatus(e,'mesmer'),fear=enemyHasStatus(e,'fear');if(!mesmer&&!fear)return;ctx.strokeStyle=mesmer?'#9b45ff':'#050505';ctx.lineWidth=5;ctx.strokeRect(x+1,y+1,(e.megaboss?TILE*2:64)-2,(e.megaboss?TILE*2:64)-2)};
  if(e.megaboss){
   // Red frame + health bar sized to the full 2x2 block instead of one tile.
   const box=TILE*2;ctx.strokeStyle='#ff4d4d';ctx.lineWidth=4;ctx.strokeRect(x+4,y+4,box-8,box-8);
   if(e.hp<e.maxHp){R(8,box-6,box-16,7,'#330d14');R(8,box-6,(box-16)*Math.max(0,e.hp/e.maxHp),7,'#e45c68')}
-  return;
+  mindFrame();return;
  }
  if(e.boss){ctx.strokeStyle='#ff4d4d';ctx.lineWidth=3;ctx.strokeRect(x+3,y+3,58,58)}
  else{ctx.strokeStyle=ENEMY_TIER_BORDER_COLORS[e.tier]||ENEMY_TIER_BORDER_COLORS.i;ctx.lineWidth=2;ctx.strokeRect(x+5,y+5,54,54)}
  if(e.elite){ctx.strokeStyle='#ff8c1a';ctx.lineWidth=2;ctx.strokeRect(x+9,y+9,46,46)}
  if(e.hp<e.maxHp){R(8,58,48,5,'#330d14');R(8,58,48*Math.max(0,e.hp/e.maxHp),5,'#e45c68')}
+ mindFrame();
 }
 
 
@@ -6877,6 +6938,7 @@ function defaultComponentFor(kind){
  if(kind==='heal')return {...base,target:'self',resource:'hp',dmgDice:2,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='move')return {...base,mode:'dash',range:3};
  if(kind==='cc')return {...base,target:'enemy',type:'stun',turns:2};
+ if(kind==='fear'||kind==='mesmer')return {...base,target:'enemy',turns:2};
  if(kind==='drain')return {...base,target:'enemy',resource:'hp',dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1};
  if(kind==='aoe')return {...base,dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,range:2};
  if(kind==='multihit')return {...base,target:'enemy',hits:3,dmgDice:1,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:.6};
@@ -6902,7 +6964,7 @@ function defaultComponentFor(kind){
 }
 function effectComponentTargetOptions(kind){
  if(kind==='dmg')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'},{v:'self',l:'A ti mismo (daño propio)'}];
- if(kind==='dot'||kind==='cc'||kind==='drain'||kind==='mark'||kind==='execute'||kind==='pullroot')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
+ if(kind==='dot'||kind==='cc'||kind==='fear'||kind==='mesmer'||kind==='drain'||kind==='mark'||kind==='execute'||kind==='pullroot')return [{v:'enemy',l:'Enemigo'},{v:'area',l:'Área'}];
  if(kind==='heal')return [{v:'self',l:'A ti mismo'},{v:'ally',l:'Aliado (multijugador)'},{v:'area',l:'Área (aliados cercanos)'}];
  if(kind==='multihit')return [{v:'enemy',l:'Enemigo'}];
  if(kind==='hot')return [{v:'self',l:'A ti mismo'},{v:'area',l:'Área (aliados cercanos)'}];
@@ -6979,6 +7041,7 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','skilleffect','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap','skilleffect'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='fear'||comp.kind==='mesmer')fields=`<p class="small">${comp.kind==='fear'?'El afectado huye y consume todos sus PA moviéndose. Resistencia por SAB, máximo 30%.':'El afectado cambia de bando mientras dure. Resistencia por INT, máximo 30%.'}</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
@@ -8400,7 +8463,7 @@ async function responseJson(response){
  try{return JSON.parse(text)}
  catch{return{error:response.ok?'El servidor devolvió una respuesta inválida.':`No se pudo completar la petición (${response.status}): ${text.trim().slice(0,180)}`}}
 }
-function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
+function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
