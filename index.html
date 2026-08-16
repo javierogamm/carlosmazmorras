@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.86.7 SELECCIÓN DE ATAQUE</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.86.7">
+<title>MAZMORRA // BOTÍN v0.86.8 HUD Y ASSETS</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.86.8">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.86.7 SELECCIÓN DE ATAQUE</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.86.8 HUD Y ASSETS</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -40,6 +40,7 @@
 <canvas id="game" width="512" height="512"></canvas>
 <div class="combatFxLayer" id="combatFxLayer" aria-hidden="true"></div>
 <div class="gameHudIdentity" id="gameHudIdentity"></div>
+<div class="gameHudAp hidden" id="gameHudAp"></div>
 <div class="vitalBars" id="vitalBars">
  <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
  <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★</span><span class="vbValue" id="hudXpText"></span></div>

@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.7';
+const APP_VERSION='0.86.8';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1595,7 +1595,8 @@ function processClassSkillChoices(){
  document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
- modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
+ setTimeout(()=>focusGamepadElement(modal.querySelector('[data-pick-skill]')),0);
+ modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',event=>{
   // Everything below (closing the modal, saving to Supabase on the initial
   // pick) is a chain of synchronous statements - an exception thrown by any
   // one of them silently aborted the rest, which for the initial pick meant
@@ -1608,7 +1609,7 @@ function processClassSkillChoices(){
   // exception instead of swallowing it.
   try{
    const chosen=skillDefs[b.dataset.pickSkill];
-   if(!confirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
+   if(event.detail!==0&&!confirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
    learnSkill(b.dataset.pickSkill);
    game.player.skillChoicesAwarded[request.level]='chosen';
    modal.classList.remove('open');updateUI();
@@ -3556,7 +3557,8 @@ function showStatPointModal(){
  if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
  if(skill)skill.innerHTML=reward.skillChoice?'<p class="small">Después de asignar la stat elegirás una nueva habilidad de tu clase.</p>':'';
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
- grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
+ setTimeout(()=>focusGamepadElement(grid.querySelector('[data-stat-choice]')),0);
+ grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',event=>{const stat=btn.dataset.statChoice;if(event.detail!==0&&!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 // Living participants in the run (1 in single player).
 function partySize(){
@@ -6213,6 +6215,7 @@ function updateGameHud(){
  set('hudXpFill','hudXpText',p.level>=LEVEL_CAP?1:p.xp,need,'hudXpBar');if(p.level>=LEVEL_CAP){const t=document.getElementById('hudXpText');if(t)t.textContent='MÁX'}
  set('hudStaminaFill','hudStaminaText',p.stamina,p.maxStamina,'hudStaminaBar');
  set('hudManaFill','hudManaText',p.mana,p.maxMana,'hudManaBar');
+ const ap=document.getElementById('gameHudAp');if(ap){const visible=apModeOn();ap.classList.toggle('hidden',!visible);ap.textContent=visible?`${Math.max(0,Math.floor(p.ap||0))} PA`:''}
  drawMinimap();
 }
 function drawMinimap(){
@@ -7775,13 +7778,8 @@ const WORLD_OBJECT_KINDS=[
 let configWorldObjects={};
 let configWorldObjectRows={};
 let configWorldObjectsLoaded=false;
-let configWorldObjectIconsLoaded=false;
 let configWorldObjectsRequest=null;
-let worldObjectCacheHydrationRequest=null;
-let worldObjectIconsRetryAfter=0;
 const pendingWorldObjectIcons=new Set();
-const WORLD_OBJECT_CACHE_NAME='mazmorra-world-objects-v1';
-const WORLD_OBJECT_CACHE_URL='/__cache/config-world-object-icons';
 // Decoration assets: user-created rows in config_world_object whose
 // object_key starts with ASSET_KEY_PREFIX. Unlike the fixed WORLD_OBJECT_KINDS
 // catalog above (icon-only overrides for system props), these carry their
@@ -7824,78 +7822,29 @@ function listConfigAssets(){
   return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
  });
 }
-function applyConfigWorldObjectRows(rows,{iconsComplete=false}={}){
+function applyConfigWorldObjectRows(rows){
  for(const row of rows||[]){
   const previous=configWorldObjectRows[row.object_key]||{};
   configWorldObjectRows[row.object_key]={...previous,...row};
   if(Object.prototype.hasOwnProperty.call(row,'icon'))configWorldObjects[row.object_key]=row.icon||'';
  }
  configWorldObjectsLoaded=true;
- if(iconsComplete)configWorldObjectIconsLoaded=true;
  renderConfigWorldObjectsList();renderConfigAssetsList();renderWorldFloorPlan();if(game)draw();
-}
-async function readWorldObjectIconCache(){
- if(!('caches' in window))return null;
- try{const response=await (await caches.open(WORLD_OBJECT_CACHE_NAME)).match(WORLD_OBJECT_CACHE_URL);if(!response)return null;const rows=await response.json();return Array.isArray(rows)?rows:null}catch(e){return null}
-}
-async function writeWorldObjectIconCache(rows){
- if(!('caches' in window))return;
- try{const cache=await caches.open(WORLD_OBJECT_CACHE_NAME);await cache.put(WORLD_OBJECT_CACHE_URL,new Response(JSON.stringify(rows),{headers:{'Content-Type':'application/json'}}))}catch(e){}
 }
 async function fetchConfigWorldObjects({minimal=false}={}){
  if(configWorldObjectsRequest&&!minimal)return configWorldObjectsRequest;
- const request=(async()=>{
- try{
-  const r=await fetch(`/api/config-floor?kind=object${minimal?'&minimal=1':''}`);const data=await r.json();
+ const request=(async()=>{try{
+  const r=await fetch(`/api/config-floor?kind=object${minimal?'&minimal=1':''}`),data=await r.json();
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar los objetos del mundo');
-  const rows=Array.isArray(data)?data:[];
-  // A metadata-only admin request must never erase icons already hydrated by
-  // the game. Merge rows, and only write the icon map when the API actually
-  // returned that column.
-  applyConfigWorldObjectRows(rows,{iconsComplete:!minimal});
-  if(!minimal)writeWorldObjectIconCache(rows);
-  return rows;
- }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`;return null}
- })();
+  const rows=Array.isArray(data)?data:[];applyConfigWorldObjectRows(rows);return rows;
+ }catch(e){const st=document.getElementById('configWorldObjectStatus');if(st)st.textContent=`Error cargando config_world_object: ${e.message}`;return null}})();
  if(!minimal)configWorldObjectsRequest=request;
  try{return await request}finally{if(!minimal)configWorldObjectsRequest=null}
 }
 async function ensureWorldObjectIcons(){
- if(configWorldObjectIconsLoaded)return;
- if(Date.now()<worldObjectIconsRetryAfter)return false;
- if(worldObjectCacheHydrationRequest)return worldObjectCacheHydrationRequest;
- worldObjectCacheHydrationRequest=(async()=>{
-  const cached=await readWorldObjectIconCache();
-  try{
-  if(!cached){
-   const rows=await fetchConfigWorldObjects();
-   if(!configWorldObjectIconsLoaded){worldObjectIconsRetryAfter=Date.now()+30000;return false}
-   await writeWorldObjectIconCache(rows);return true
-  }
-  // Only the small metadata projection is downloaded on later visits. Icon
-  // payloads are requested again solely for new or updated database rows.
-  const r=await fetch('/api/config-floor?kind=object&minimal=1'),metadata=await responseJson(r);
-  if(!r.ok||!Array.isArray(metadata)){
-   // Network/schema validation must not prevent entering a dungeon. Use the
-   // last complete local copy and retry validation on a later visit.
-   applyConfigWorldObjectRows(cached,{iconsComplete:true});
-   worldObjectIconsRetryAfter=Date.now()+30000;
-   return true
-  }
-  const cachedByKey=new Map(cached.map(row=>[row.object_key,row]));
-  const changed=metadata.filter(row=>{const old=cachedByKey.get(row.object_key);return !old||String(old.updated_at||'')!==String(row.updated_at||'')});
-  const details=await Promise.all(changed.map(async row=>{try{const detail=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(row.object_key)}`),data=await responseJson(detail);if(!detail.ok)return null;return Array.isArray(data)?data[0]:data}catch(e){return null}}));
-  const detailByKey=new Map(details.filter(Boolean).map(row=>[row.object_key,row]));
-  const rows=metadata.map(meta=>({...cachedByKey.get(meta.object_key),...meta,...detailByKey.get(meta.object_key)}));
-  applyConfigWorldObjectRows(rows,{iconsComplete:true});
-  await writeWorldObjectIconCache(rows);return true
-  }catch(e){
-   if(cached)applyConfigWorldObjectRows(cached,{iconsComplete:true});
-   worldObjectIconsRetryAfter=Date.now()+30000;
-   return !!cached
-  }
- })();
- try{return await worldObjectCacheHydrationRequest}finally{worldObjectCacheHydrationRequest=null}
+ // Restore the authoritative full-row loader: metadata and images always come
+ // from Supabase together instead of a potentially stale browser Cache entry.
+ const rows=await fetchConfigWorldObjects();return Array.isArray(rows);
 }
 async function fetchConfigWorldObjectDetail(objectKey){
  const r=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(objectKey)}`),data=await responseJson(r);
@@ -8872,7 +8821,7 @@ async function fetchDungeonWorlds(){
 async function createDungeonWorld(){
  const btn=document.getElementById('createWorldBtn'),status=document.getElementById('worldStatus'),name=(document.getElementById('worldNameInput')?.value||'Dungeon sin nombre').trim(),params=readWorldParamsForm();
  btn.disabled=true;status.textContent='Cargando floors y familias desde Supabase...';
- try{await ensureConfigFloorsHydrated();await fetchEnemyConfig({throwOnError:true});await ensureConfigItemsHydrated();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia con enemigos en enemy_family y enemy_detail antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
+ try{await ensureConfigFloorsHydrated();await fetchEnemyConfig({throwOnError:true});await ensureConfigItemsHydrated();await ensureWorldObjectIcons();if(!configChests.length)await fetchConfigChests();if(!normalizedEnemyFamilies().length)throw new Error('Debes consolidar al menos una familia con enemigos en enemy_family y enemy_detail antes de crear una dungeon.');if(!normalizedSupabaseFloors().length)throw new Error('Debes consolidar al menos un floor en config_floor antes de crear una dungeon.');const world_json=createDungeonWorldJson(name,params);const r=await fetch('/api/dungeon-worlds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({world_name:name,world_json})});const text=await r.text();let data;try{data=JSON.parse(text)}catch(e){throw new Error(text||'Respuesta no JSON al crear la dungeon')}if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la dungeon');
   selectedDungeonWorld=data;proceedAfterWorldChosen();
  }catch(e){status.textContent=`Error: ${e.message}`;btn.disabled=false}
 }
@@ -10997,7 +10946,7 @@ function openGamepadMenu(){gamepadListening=null;renderGamepadBindings();documen
 function closeGamepadMenu(){gamepadListening=null;document.getElementById('gamepadOverlay')?.classList.add('hidden')}
 document.getElementById('menuGamepadBtn')?.addEventListener('click',openGamepadMenu);document.getElementById('closeGamepadBtn')?.addEventListener('click',closeGamepadMenu);document.getElementById('resetGamepadBtn')?.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()});
 function cycleGameTab(direction){const tabs=[...document.querySelectorAll('.tabs [data-tab]')].filter(b=>!b.classList.contains('hidden'));if(!tabs.length)return;const current=Math.max(0,tabs.findIndex(b=>b.classList.contains('active')));tabs[(current+direction+tabs.length)%tabs.length].click()}
-function visibleGamepadScreen(){return [...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body}
+function visibleGamepadScreen(){return [...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden),.statPointModal.open,.skillChoiceModal.open')].pop()||document.body}
 function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden)')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
 function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const selector='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[tabindex],.item,.skillCard,.visualSlot';const elements=(scope.matches?.(selector)?[scope]:[]).concat([...scope.querySelectorAll(selector)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
 function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;const next=els[(i+direction+els.length)%els.length];document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));next.classList.add('gamepadFocus');next.focus({preventScroll:true});next.scrollIntoView({block:'nearest'})}

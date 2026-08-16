@@ -1,3 +1,12 @@
+## v0.86.8 - 2026-08-16
+
+- Restaurada la carga autoritativa completa de los objetos de mundo y assets desde Supabase, eliminando la dependencia de copias de imágenes potencialmente obsoletas en Cache API.
+- La generación de una dungeon espera ahora a que los objetos de mundo y assets estén cargados, por lo que los ambientes y decoraciones configurados vuelven a participar en sus pisos.
+- Pantalla completa conserva la barra de habilidades con sus cooldowns y añade un indicador superpuesto de los PA disponibles.
+- Los modales de subida de nivel y elección de habilidad pasan a ser la pantalla activa del mando y enfocan automáticamente su primera opción.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.8` (`v0.86.8 HUD Y ASSETS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.7 - 2026-08-16
 
 - Restaurado el ataque automático cuando solo existe un enemigo válido dentro del alcance y la línea de visión del arma.
