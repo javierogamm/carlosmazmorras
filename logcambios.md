@@ -1,3 +1,38 @@
+## v0.86.11 - 2026-08-16
+
+- Revertidos todos los cambios ajenos a objetos de mundo realizados en las consolidaciones anteriores, restaurando intactos login, menús, HUD, gamepad, modales y respuestas de dungeons a la versión estable.
+- Conservada únicamente la separación de `config_world_object`: generación y configuración consultan metadatos ligeros sin `icon` y guardan tamaño, `object_key` y UUID `assetId` en las colocaciones.
+- Las imágenes de objetos y assets se solicitan solo al entrar/restaurar un piso o revivir, limitadas a las filas utilizadas por ese piso; el render nunca inicia peticiones.
+- En Configuración, las imágenes solo se descargan al editar un objeto o asset; crear uno nuevo comienza sin cargar ninguna imagen existente.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.11` (`v0.86.11 OBJETOS DE MUNDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.10 - 2026-08-16
+
+- Separados definitivamente los metadatos de generación de las imágenes de `config_world_object`: crear y configurar dungeons solo consulta `id`, `object_key`, tamaño, máscara, ambiente, nombre y fecha; las colocaciones consolidan también el UUID como `assetId`.
+- Las imágenes se solicitan exclusivamente después de entrar o restaurar un piso y al revivir, limitadas a los objetos y assets que utiliza ese piso.
+- Eliminada la carga de imágenes disparada durante el dibujado: explorar una casilla ya no inicia peticiones y el render usa únicamente imágenes preparadas en la entrada del piso.
+- En Configuración, los listados de objetos y assets permanecen ligeros; la imagen completa solo se descarga al pulsar **Editar**, mientras un asset nuevo parte sin imagen almacenada.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.10` (`v0.86.10 IMÁGENES POR PISO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.9 - 2026-08-16
+
+- Corregida la regresión al abrir o crear dungeons: las respuestas de `dungeon-worlds` ya no se interpretan directamente como JSON y muestran un error controlado si el servidor devuelve HTML.
+- Los objetos de mundo y assets cargan primero solo sus metadatos de generación; cada imagen se solicita después por `object_key` al hacerse visible, igual que los iconos de enemigos por identificador.
+- La generación desde Configuración y desde el selector de mundo espera los metadatos de assets sin descargar en bloque todas las imágenes, evitando respuestas demasiado grandes y manteniendo ambientes, máscaras y dimensiones disponibles.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.9` (`v0.86.9 DUNGEONS Y ASSETS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.86.8 - 2026-08-16
+
+- Restaurada la carga autoritativa completa de los objetos de mundo y assets desde Supabase, eliminando la dependencia de copias de imágenes potencialmente obsoletas en Cache API.
+- La generación de una dungeon espera ahora a que los objetos de mundo y assets estén cargados, por lo que los ambientes y decoraciones configurados vuelven a participar en sus pisos.
+- Pantalla completa conserva la barra de habilidades con sus cooldowns y añade un indicador superpuesto de los PA disponibles.
+- Los modales de subida de nivel y elección de habilidad pasan a ser la pantalla activa del mando y enfocan automáticamente su primera opción.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.8` (`v0.86.8 HUD Y ASSETS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.7 - 2026-08-16
 
 - Restaurado el ataque automático cuando solo existe un enemigo válido dentro del alcance y la línea de visión del arma.
