@@ -1,3 +1,13 @@
+## v0.86.4 - 2026-08-16
+
+- Corregida la carga fallida de `enemy_detail` al crear dungeons: el catálogo inicial solicita todas sus columnas de juego salvo `icon`, evitando que una respuesta única con todas las imágenes supere los límites del endpoint.
+- Añadido al endpoint de `enemy_detail` un modo ligero para el catálogo y una consulta de detalle por `id`; ambos contratos usan exclusivamente las columnas reales de la tabla facilitada.
+- Cada enemigo generado conserva ahora el `id` de su fila en `enemy_detail` y solicita su icono directamente de esa misma fila cuando debe dibujarse, sin consultar ni reutilizar el icono consolidado de `enemy_family`.
+- Las dungeons antiguas sin `enemyDetailId` resuelven la fila por los metadatos actuales, guardan el identificador recuperado y redibujan el icono al terminar su carga bajo demanda.
+- La edición de un enemigo carga primero su fila completa por `id`, de modo que el formulario continúa mostrando y guardando el icono aunque el listado inicial sea ligero.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.4` (`v0.86.4 ICONOS ENEMIGOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.3 - 2026-08-16
 
 - Restablecida `enemy_detail` como fuente autoritativa de los datos e iconos usados para visualizar y generar enemigos; `enemy_family` queda limitada al catálogo de familias y a la consolidación de importación/exportación JSON.
