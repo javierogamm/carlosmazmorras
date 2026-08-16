@@ -1,3 +1,13 @@
+## v0.86.0 - 2026-08-16
+
+- Añadida compatibilidad con la API Gamepad para mandos Xbox, PlayStation y genéricos: el stick izquierdo mueve al personaje, los botones permiten atacar, usar las cuatro habilidades, esperar, confirmar y cancelar.
+- Los botones de hombro cambian de pestaña entre mochila, pociones, activables, compañeros, equipo, shards, habilidades y logros.
+- La cruceta navega por botones y menús; al apuntar ataques, habilidades, pociones o efectos de área mueve un cursor por tiles y permite confirmar o cancelar el objetivo desde el mando.
+- Añadido un menú de keybinding para reasignar todos los botones, restaurar la configuración inicial y persistir las preferencias en el navegador.
+- Añadido estado visible de conexión del mando y resaltado del control enfocado durante la navegación.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.0` (`v0.86.0 GAMEPAD`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.85.1 - 2026-08-16
 
 - Limitado el selector de skills de bosses y megabosses a las habilidades configuradas en `skills_json` de clases marcadas explícitamente como Advanced y habilitadas para enemigos.
