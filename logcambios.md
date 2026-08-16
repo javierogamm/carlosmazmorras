@@ -1,3 +1,13 @@
+## v0.86.6 - 2026-08-16
+
+- El botón **Atacar** entra siempre en modo de apuntado, también con armas cuerpo a cuerpo y aunque solo haya un enemigo adyacente; el ataque no se ejecuta hasta confirmar el objetivo elegido.
+- Añadido un marco visible para el cursor del mando durante el apuntado, verde sobre una casilla válida y rojo fuera de alcance o sin línea de visión.
+- El cursor de ataque comparte el mismo desplazamiento por stick y cruceta que las habilidades dirigidas y confirma únicamente al enemigo seleccionado.
+- Reequilibrado el modo de pantalla completa para dar prioridad al tablero: ficha de personaje y panel lateral más estrechos, huecos y padding reducidos y área de juego extendida a todo el ancho central disponible.
+- Eliminado el límite de anchura del tablero basado en la altura de la ventana, que hacía que el juego se viera más pequeño al activar pantalla completa.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.6` (`v0.86.6 ATAQUE CON MANDO`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.5 - 2026-08-16
 
 - Al consumir una poción con mando, el foco pasa directamente al botón **Continuar** del mensaje de resultado; al confirmarlo se cierra el mensaje y se devuelve el control al tablero sin tener que pulsar un hombro.

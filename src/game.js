@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.5';
+const APP_VERSION='0.86.6';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -5789,10 +5789,8 @@ function resolveTargetedSkill(slot,x,y){
 }
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
- const weapon=equippedWeapon();
- if(weaponIsRanged(weapon)){const bounds=weaponRangeBounds(weapon);beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min});return}
- const adjacent=game.enemies.filter(e=>gridDistance(game.player,e)<=1);
- if(adjacent.length===1){if(!apCan('attack'))return;attack(adjacent[0]);actionDone('attack')}else if(adjacent.length>1){beginTargeting({kind:'attack',mode:'enemy',range:1})}else log('No hay ningún enemigo al alcance del arma.','sys')
+ const bounds=weaponRangeBounds(equippedWeapon());
+ beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min})
 }
 function resolveBasicAttack(x,y){
  const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=enemyAtCell(x,y);
@@ -6058,7 +6056,8 @@ function drawTargetingOverlay(){
  if(!pendingTargetAction)return;const c=camera(),range=pendingTargetAction.range||1;
  ctx.save();ctx.globalAlpha=.28;
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const gx=c.x+sx,gy=c.y+sy;if(game.seen?.[gy]?.[gx]&&gridDistance(game.player,{x:gx,y:gy})>=(pendingTargetAction.minRange??1)&&gridDistance(game.player,{x:gx,y:gy})<=range&&hasLineOfSight(game.player,{x:gx,y:gy})){ctx.fillStyle=pendingTargetAction.mode==='area'?'#b26cff':'#ffca55';ctx.fillRect(sx*TILE+3,sy*TILE+3,TILE-6,TILE-6)}}
- ctx.restore()
+ ctx.restore();
+ if(gamepadTargetCursor){const sx=gamepadTargetCursor.x-c.x,sy=gamepadTargetCursor.y-c.y;if(sx>=0&&sy>=0&&sx<visibleTiles&&sy<visibleTiles){ctx.save();ctx.strokeStyle=validateTargetCell(gamepadTargetCursor.x,gamepadTargetCursor.y,range,pendingTargetAction.minRange??1)?'#7cffd4':'#ff6969';ctx.lineWidth=4;ctx.strokeRect(sx*TILE+4,sy*TILE+4,TILE-8,TILE-8);ctx.restore()}}
 }
 // Semi-transparent AoE footprint shading, centered on the locked-in candidate
 // (solid) or the live mouse hover (faint preview before locking in) for a
