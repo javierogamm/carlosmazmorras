@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.86.9';
+const APP_VERSION='0.86.10';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1019,6 +1019,13 @@ function assetDefsForFloor(floor,params){
 }
 function renderWorldFloorPlan(){const list=document.getElementById('worldFloorPlanList'),input=document.getElementById('worldFloorsInput');if(!list||!input)return;const count=Math.max(1,Math.min(100,Number(input.value)||DEFAULT_WORLD_PARAMS.floors)),floors=normalizedConfigFloors(),families=normalizedEnemyFamilies(),ambientes=[...new Set(listConfigAssets().map(a=>a.ambiente).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));const old=new Map([...list.querySelectorAll('[data-world-floor-row]')].map(row=>[Number(row.dataset.worldFloorRow),{floorId:row.querySelector('[data-world-floor-select]')?.value||'',familyName:row.querySelector('[data-world-family-select]')?.value||'',ambiente:row.querySelector('[data-world-ambiente-select]')?.value||''}]));const randomFloorOption='<option value="">Aleatorio</option>',randomFamilyOption='<option value="">Aleatoria</option>',randomAmbienteOption='<option value="">Cualquiera</option>',floorOptions=randomFloorOption+floors.map(f=>`<option value="${f.dbId||f.id||f.name}">${f.name}</option>`).join(''),familyOptions=randomFamilyOption+families.map(f=>`<option value="${f.name}">${f.name}</option>`).join(''),ambienteOptions=randomAmbienteOption+ambientes.map(a=>`<option value="${a}">${a}</option>`).join('');list.innerHTML=Array.from({length:count},(_,i)=>{const n=i+1;return `<div class="worldFloorPlanRow" data-world-floor-row="${n}"><b>Piso ${n}</b><label>Floor<select data-world-floor-select>${floorOptions}</select></label><label>Familia<select data-world-family-select>${familyOptions}</select></label><label>Ambiente<select data-world-ambiente-select>${ambienteOptions}</select></label></div>`}).join('');list.querySelectorAll('[data-world-floor-row]').forEach(row=>{const n=Number(row.dataset.worldFloorRow),o=old.get(n)||{};const fs=row.querySelector('[data-world-floor-select]'),fam=row.querySelector('[data-world-family-select]'),amb=row.querySelector('[data-world-ambiente-select]');if(o.floorId&&[...fs.options].some(x=>x.value===o.floorId))fs.value=o.floorId;else fs.value='';if(o.familyName&&[...fam.options].some(x=>x.value===o.familyName))fam.value=o.familyName;else fam.value='';if(o.ambiente&&[...amb.options].some(x=>x.value===o.ambiente))amb.value=o.ambiente;else amb.value=''});}
 function setupWorldSettings(){const input=document.getElementById('worldFloorsInput');if(input&&!input.dataset.ready){input.dataset.ready='1';input.addEventListener('change',renderWorldFloorPlan);input.addEventListener('input',renderWorldFloorPlan)}for(const [inputId,valueId] of [['worldDamageReceivedPct','worldDamageReceivedValue'],['worldDamageDealtPct','worldDamageDealtValue'],['worldLifePct','worldLifeValue'],['worldXpReceivedPct','worldXpReceivedValue'],['worldEnemyCountPct','worldEnemyCountValue'],['worldEnemyLootPct','worldEnemyLootValue']]){const el=document.getElementById(inputId),out=document.getElementById(valueId);if(el&&out){const sync=()=>out.textContent=`${el.value}%`;sync();if(!el.dataset.ready){el.dataset.ready='1';el.addEventListener('input',sync)}}}renderWorldFloorPlan()}
+// The dungeon form depends on three independent catalogues. Render it only
+// after all three metadata requests settle so a fast minimal response cannot
+// temporarily replace the family/floor/environment selectors with empty ones.
+async function loadDungeonOptionCatalogs(){
+ await Promise.all([fetchConfigFloors(),fetchEnemyConfig(),fetchConfigWorldObjects()]);
+ setupWorldSettings();
+}
 // Applies one buff/debuff effect entry to a numeric stat. The modern shape
 // is {mode:'add'|'mult',value} - a flat number added, or a straight
 // multiplier. A bare number is legacy shorthand for a percentage bonus
@@ -3556,6 +3563,7 @@ function showStatPointModal(){
  if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
  if(skill)skill.innerHTML=reward.skillChoice?'<p class="small">Después de asignar la stat elegirás una nueva habilidad de tu clase.</p>':'';
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
+ setTimeout(()=>focusGamepadElement(grid.querySelector('[data-stat-choice]')),0);
  grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 // Living participants in the run (1 in single player).
@@ -8934,7 +8942,7 @@ async function openCharacterSelection(){
    dungeonOverlay.classList.remove('hidden');
    const p=currentCharacter.pj_json?.player;
    document.getElementById('dungeonCharacterLabel').textContent=`Personaje: ${currentCharacter.pj_name} · ${p?.className||''} nivel ${p?.level||1}`;
-   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigRaces();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();setupWorldSettings();
+   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigRaces();loadDungeonOptionCatalogs();fetchConfigChests();
   });
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
@@ -9246,7 +9254,7 @@ async function mpStartCreateFlow(){
    app.classList.remove('hidden');
    dungeonOverlay.classList.remove('hidden');
    document.getElementById('dungeonCharacterLabel').textContent=`Personaje: ${currentCharacter.pj_name} (anfitrión multijugador)`;
-   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigRaces();fetchConfigFloors();fetchEnemyConfig();fetchConfigChests();if(!configWorldObjectsLoaded)fetchConfigWorldObjects();setupWorldSettings();
+   fetchDungeonWorlds();fetchConfigItems();fetchConfigClasses();fetchConfigRaces();loadDungeonOptionCatalogs();fetchConfigChests();
   });
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
@@ -10855,6 +10863,7 @@ function setWizardStep(step){
  characterWizardStep=Math.max(0,Math.min(3,Number(step)||0));
  const track=document.getElementById('wizardTrack');if(!track)return;
  track.style.transform=`translateX(-${characterWizardStep*100}%)`;
+ [...track.querySelectorAll('.wizardStep')].forEach((panel,i)=>{panel.toggleAttribute('inert',i!==characterWizardStep);panel.setAttribute('aria-hidden',i===characterWizardStep?'false':'true')});
  const progress=document.getElementById('wizardProgress');
  progress.innerHTML=WIZARD_LABELS.map((label,i)=>`<button type="button" data-wizard-step="${i}" class="${i===characterWizardStep?'active':i<characterWizardStep?'done':''}" ${i>characterWizardStep?'disabled':''}>${label}</button>`).join('');
  progress.querySelectorAll('[data-wizard-step]').forEach(b=>b.onclick=()=>setWizardStep(b.dataset.wizardStep));
@@ -10952,7 +10961,7 @@ function openGamepadMenu(){gamepadListening=null;renderGamepadBindings();documen
 function closeGamepadMenu(){gamepadListening=null;document.getElementById('gamepadOverlay')?.classList.add('hidden')}
 document.getElementById('menuGamepadBtn')?.addEventListener('click',openGamepadMenu);document.getElementById('closeGamepadBtn')?.addEventListener('click',closeGamepadMenu);document.getElementById('resetGamepadBtn')?.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()});
 function cycleGameTab(direction){const tabs=[...document.querySelectorAll('.tabs [data-tab]')].filter(b=>!b.classList.contains('hidden'));if(!tabs.length)return;const current=Math.max(0,tabs.findIndex(b=>b.classList.contains('active')));tabs[(current+direction+tabs.length)%tabs.length].click()}
-function visibleGamepadScreen(){return [...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body}
+function visibleGamepadScreen(){const blockingModal=document.querySelector('.statPointModal.open,.skillChoiceModal.open');return blockingModal||[...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body}
 function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden)')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
 function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const selector='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[tabindex],.item,.skillCard,.visualSlot';const elements=(scope.matches?.(selector)?[scope]:[]).concat([...scope.querySelectorAll(selector)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
 function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;const next=els[(i+direction+els.length)%els.length];document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));next.classList.add('gamepadFocus');next.focus({preventScroll:true});next.scrollIntoView({block:'nearest'})}

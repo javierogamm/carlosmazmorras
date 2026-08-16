@@ -1,3 +1,12 @@
+## v0.86.10 - 2026-08-16
+
+- Corregido el control con mando en el modal de subida de nivel: el foco entra directamente en la primera estadística y el modal activo pasa a ser el único ámbito navegable.
+- Corregido el bucle de navegación con mando durante la creación de personaje: los pasos fuera de pantalla quedan inertes y ya no entran en el recorrido de foco.
+- Sincronizada la preparación del formulario de creación de dungeons con la carga completa de los catálogos necesarios de floors, familias de enemigos y metadatos de ambientes, evitando que una respuesta mínima deje vacíos temporalmente los selectores.
+- La corrección queda limitada al flujo de selección; no modifica los contratos ni las cargas de otras tablas.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.86.10` (`v0.86.10 NAVEGACIÓN DE FLUJOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.86.9 - 2026-08-16
 
 - Corregida la detección del mando cuando el navegador lo registra en un slot distinto del primero, algo habitual después de desconectarlo y volverlo a conectar o al haber usado otro dispositivo.
