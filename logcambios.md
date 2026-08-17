@@ -1,3 +1,11 @@
+## v0.88.0 - 2026-08-17
+
+- El ataque básico consume ahora PA según el tipo de arma equipada: espadas y martillos 10; dagas, mazas, pistolas y garras 7; bastones, látigos y varitas 8; rifles y ballestas 10; arcos 12; y cualquier tipo no especificado 10 PA.
+- Añadido `Garras` al catálogo de tipos de arma configurables y consolidado `attackApCost` en el JSON de las armas nuevas o editadas.
+- El editor y el listado de armas muestran el coste de PA correspondiente; el valor se actualiza inmediatamente al cambiar el tipo seleccionado.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.88.0` (`v0.88.0 PA POR ARMA`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.87.0 - 2026-08-17
 
 - Recuperado el tipo de arma como dato normalizado en la columna `config_items.weapontype`; las altas y ediciones lo guardan junto al JSON.
