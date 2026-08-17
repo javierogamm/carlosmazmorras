@@ -34,14 +34,7 @@ module.exports=async(req,res)=>{
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=created_at.desc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
-   const result=id?(Array.isArray(data)?data[0]||null:data):data;
-   // Collection consumers need the item rules, but not every (large) image.
-   // Keep the full icon available only through the existing id detail route.
-   if(!id&&!light&&Array.isArray(result))for(const row of result){
-    row.icon=null;
-    if(row.item_json&&typeof row.item_json==='object')row.item_json={...row.item_json,icon:''};
-   }
-   return res.status(200).json(result);
+   return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
   }
   if(req.method==='POST'){
    const incoming=Array.isArray(req.body)?req.body:[req.body||{}];
