@@ -156,13 +156,14 @@ Puedes dejar `passives` vacío. Si lo usas, la estructura habitual es:
 
 El equipo configurado (`type: "equipment"`) puede llevar exactamente la misma pila de efectos apilables (`effects[]`) que las skills y las pociones — mismos `kind`, mismos campos, mismo comportamiento. Aquí abajo se documenta primero cómo se disparan esos efectos según el `slot` del objeto, y luego el catálogo completo de los 29 `kind` disponibles.
 
-Cómo se activa `effects[]` depende del slot:
+Los efectos apilables de equipo solo se muestran en el editor para los slots compatibles:
 
-- **Equipo general** (`offhand`, `head`, `chest`, `hands`, `legs`, `boots`, `neck`): los componentes de tipo `buff` se aplican de forma **pasiva** en cuanto el objeto está equipado (y se retiran al desequiparlo). Otros `kind` no tienen efecto en estos slots.
-- **`weapon`**: cada golpe conectado tiene una posibilidad de disparar la pila completa de `effects[]` sobre el objetivo golpeado (**proc on hit**). La posibilidad se controla con el campo `procChance` (0-100, entero, % por golpe).
-- **`trinket1`, `trinket2`, `ring1`, `ring2`**: los efectos son **activables a mano**, igual que una poción, desde un hueco propio ("Activables") junto a la mochila — si algún componente apunta a Enemigo/Área/Aliado hay que seleccionar objetivo al activarlo; si todos son sobre uno mismo, se aplica al instante. El objeto **no se consume** (sigue equipado); en su lugar queda en enfriamiento tras usarse, definido por el campo `cooldown` (turnos, entero ≥1). `range` define el alcance en casillas para seleccionar objetivo (por defecto 5), igual que `range` en una poción.
+- **`weapon`**: solo un ataque básico conectado hace una tirada de `procChance` (0-100, entero). Las skills no pueden disparar este proc. Si tiene éxito, ejecuta una vez la pila **completa** de `effects[]` sobre el objetivo golpeado.
+- **`chest` y escudos `offhand`**: cada vez que el personaje recibe daño efectivo de cualquier fuente (ataques, skills, trampas o entorno) hace una tirada de `procChance`. Si tiene éxito, dispara una vez la pila **completa** de `effects[]` como proc defensivo.
+- **`ring1`, `ring2`, `trinket1` y `trinket2`**: la pila es activable manualmente y utiliza `cooldown` y `range`.
+- **`neck`**: únicamente los componentes `buff` se mantienen pasivos mientras el colgante está equipado.
 
-`procChance`, `cooldown` y `range` se ignoran fuera de su slot correspondiente (ponlos a `null` o simplemente omítelos).
+Los demás slots no admiten efectos apilables. `procChance` se ignora fuera de `weapon`, `chest` y escudos `offhand`.
 
 ```json
 {

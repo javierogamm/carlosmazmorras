@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v0.88.0 PA POR ARMA</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.88.0">
+<title>MAZMORRA // BOTÍN v0.89.1 SKILLS DE EQUIPO</title>
+<link rel="stylesheet" href="./src/styles.css?v=0.89.1">
 
 </head>
 <body>
 <button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
 <div id="app" class="hidden">
-<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.88.0 PA POR ARMA</div></header>
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v0.89.1 SKILLS DE EQUIPO</div></header>
 <div class="layout">
 <section class="panel heroPanel">
 <h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
@@ -209,9 +209,9 @@
     <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
     <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
     <div id="configStatsHelp" class="configStatsHelp"></div>
-    <details class="configAccordion" style="grid-column:1/-1">
+    <details id="configEquipmentEffectsWrap" class="configAccordion" style="grid-column:1/-1">
      <summary>Efectos apilables</summary>
-     <p class="small">Igual que en pociones/skills: una pila de efectos independientes. Cómo se disparan depende del slot — Arma: cada efecto tiene una posibilidad de activarse al golpear (% de proc abajo). Trinket/Anillo I/II: se activan a mano desde el hueco "Activables" junto a la mochila, con su propio enfriamiento; si algún efecto apunta a Enemigo/Área/Aliado tendrás que seleccionar objetivo, igual que al lanzar una poción. Resto de slots (equipo general): los efectos de tipo Buff se aplican de forma pasiva mientras el objeto esté equipado.</p>
+     <p class="small">Igual que en pociones/skills: una pila de efectos independientes. Solo está disponible en slots compatibles — Arma: el proc se calcula únicamente con ataques básicos y dispara la pila completa. Pecho y escudo: proc defensivo al recibir daño. Anillos y trinkets: activables con enfriamiento. Colgante: buffs pasivos.</p>
      <div class="configItemActions">
       <select id="configEquipmentEffectKindPicker">
        <option value="dmg">Daño</option>
@@ -878,7 +878,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.88.0"></script>
+<script src="./src/game.js?v=0.89.1"></script>
 
 </body>
 </html>

@@ -1,3 +1,28 @@
+## v0.89.1 - 2026-08-17
+
+- Restringido el proc de arma a los ataques básicos; las skills ya no realizan la tirada de proc del arma.
+- Los efectos apilables de equipo quedan disponibles solo para armas, pecheras, escudos, anillos, trinkets y colgantes.
+- Los escudos comparten con la pechera el proc defensivo al recibir daño efectivo de cualquier fuente.
+- Los anillos y trinkets conservan sus skills activables con enfriamiento; los colgantes aplican únicamente buffs pasivos mientras están equipados.
+- Actualizada la versión de la app a `0.89.1`.
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.89.0 - 2026-08-17
+
+- Los golpes de skills ahora pueden activar el proc del arma igual que los ataques básicos.
+
+- Un proc de arma exitoso ejecuta la pila completa de efectos apilables y evita cadenas recursivas provocadas por sus propios efectos.
+
+- Se añadió el proc defensivo exclusivo del slot `chest`, evaluado al recibir daño efectivo de cualquier fuente.
+
+- El editor de objetos solo muestra los efectos apilables y el porcentaje de proc en los slots compatibles: `weapon` y `chest`.
+
+- Se actualizó la documentación de objetos para reflejar los disparadores ofensivo y defensivo.
+
+- Actualizada la versión de la app a `0.89.0`.
+
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.88.0 - 2026-08-17
 
 - El ataque básico consume ahora PA según el tipo de arma equipada: espadas y martillos 10; dagas, mazas, pistolas y garras 7; bastones, látigos y varitas 8; rifles y ballestas 10; arcos 12; y cualquier tipo no especificado 10 PA.
