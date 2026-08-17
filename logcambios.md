@@ -1,3 +1,11 @@
+## v0.89.2 - 2026-08-17
+
+- Corregida la primera entrada a una dungeon: el canvas reajusta su buffer y vuelve a dibujarse al cerrar la vista previa, sin obligar a cambiar el zoom para activar o alinear el tablero.
+- Restaurada la carga de los iconos consolidados de objetos y pociones en el catálogo completo de `config_items`; la optimización de `v0.87.0` vaciaba tanto `row.icon` como `item_json.icon` antes de que el loot llegara al inventario.
+- Revisadas las consolidaciones de hoy y aisladas ambas regresiones sin revertir los cambios de tipos de arma, costes de PA ni procs de equipo.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.89.2` (`v0.89.2 ENTRADA E ICONOS`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.89.1 - 2026-08-17
 
 - Restringido el proc de arma a los ataques básicos; las skills ya no realizan la tirada de proc del arma.

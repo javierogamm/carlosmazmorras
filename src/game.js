@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.89.1';
+const APP_VERSION='0.89.2';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -9088,6 +9088,14 @@ async function enterWorldWithCharacter(){
  game.player.hp=game.player.maxHp;
  game.player.stamina=game.player.maxStamina;
  game.player.mana=game.player.maxMana;
+ // The board was last painted while a full-screen overlay covered it. Reset
+ // its backing buffer after the overlay transition, just as the zoom control
+ // does, so the first visible frame and pointer coordinates are valid without
+ // forcing the player to touch zoom.
+ applyCanvasSize();
+ updateUI();
+ draw();
+ requestAnimationFrame(()=>{applyCanvasSize();draw()});
  banner(`ENTRAS EN ${selectedDungeonWorld.world_name} CON ${game.player.name}`);
 }
 
