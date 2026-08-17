@@ -1,3 +1,11 @@
+## v0.87.0 - 2026-08-17
+
+- Recuperado el tipo de arma como dato normalizado en la columna `config_items.weapontype`; las altas y ediciones lo guardan junto al JSON.
+- Durante la transición de filas antiguas, el editor sigue leyendo `weaponType` desde `item_json` y lo consolida en `weapontype` al guardar.
+- Los catálogos de objetos dejan de enviar sus iconos al cliente en bloque; el icono completo se solicita mediante el detalle individual justo al editar el objeto o la poción.
+- Las varitas, igual que las dagas, pueden equiparse en ambas manos: en la derecha conservan su ataque a distancia y en la izquierda aplican el bonus existente de regeneración de maná según rareza.
+- Actualizada la versión de la app y del paquete a `0.87.0` (`v0.87.0 TIPO DE ARMA Y VARITAS`).
+
 ## v0.86.10 - 2026-08-16
 
 - Corregido el control con mando en el modal de subida de nivel: el foco entra directamente en la primera estadística y el modal activo pasa a ser el único ámbito navegable.
