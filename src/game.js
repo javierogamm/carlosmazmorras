@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.90.1';
+const APP_VERSION='0.91.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2589,6 +2589,16 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors()})||plan;
 }
 
+function compactInteriorEntranceForWorld(entry){
+ const state=entry.interior?.state;if(!state)return entry;
+ const enemies=(state.enemies||[]).map(e=>compactEnemyForWorld(assignEnemySkills(e)));
+ const bossIndex=state.boss?(state.enemies||[]).indexOf(state.boss):-1;
+ return {...entry,interior:{...entry.interior,state:{...state,map:(state.map||[]).map(row=>row.join('')),mapEncoding:'digit-rows',enemies,boss:bossIndex>=0?enemies[bossIndex]:null,floorTileset:compactFloorTilesetForWorld(state.floorTileset),seen:undefined}}};
+}
+function hydrateInteriorEntrances(entries,level){
+ return (entries||[]).map(entry=>{const state=entry.interior?.state;if(!state)return entry;const enemies=(state.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e})));const boss=state.boss?enemies.find(e=>e.boss)||hydratePrecomputedEnemy({...state.boss}):null;return {...entry,interior:{...entry.interior,state:{...state,map:state.mapEncoding==='digit-rows'?(state.map||[]).map(row=>Array.from(row,Number)):state.map,enemies,boss,chests:(state.chests||[]).map(c=>initializeChestTier({...c},level)),floorTileset:hydrateFloorTilesetForWorld(state.floorTileset),seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))}}}})
+}
+
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
  params=normalizeWorldParams(params);
  if(!normalizedEnemyFamilies().length)throw new Error('No hay familias en enemy_family para generar enemigos por piso.');
@@ -2605,7 +2615,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
   if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
   recent.push(plan.archetype);
   floors.push({
-   floor,map:plan.map,rooms:plan.rooms,interiors:plan.interiors||[],safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
+   floor,map:plan.map,rooms:plan.rooms,interiors:plan.interiors||[],interiorEntrances:(plan.interiorEntrances||[]).map(compactInteriorEntranceForWorld),safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
    doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,
    archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
    objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
@@ -2624,7 +2634,7 @@ function loadPrecomputedFloor(){
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
  const preservedChests=game?.preservedSoulReviveLoot?.[String(game.floor)];
  const floorChests=preservedChests?JSON.parse(JSON.stringify(preservedChests)):(data.chests||[]).map(c=>initializeChestTier({...c,chestDef:c.chestDef?{...c.chestDef}:null},game.player.level));
- Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
+ Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
@@ -3113,6 +3123,28 @@ function isSafeCell(x,y){return(game.safeRooms||[]).some(r=>x>=r.x&&x<r.x+r.w&&y
 function roomTypeAt(x,y){return (game.rooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)?.type||null}
 function safeRoomAt(x,y){return(game.safeRooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)}
 function campAtPlayer(){return(game.safeRooms||[]).find(r=>r.cx===game.player.x&&r.cy===game.player.y)}
+function interiorEntranceAtPlayer(){return !game.activeInteriorId?(game.interiorEntrances||[]).find(e=>e.x===game.player.x&&e.y===game.player.y):null}
+function interiorExitAtPlayer(){return game.activeInteriorId?(game.doors||[]).find(d=>d.interiorExit&&d.x===game.player.x&&d.y===game.player.y):null}
+const INTERIOR_SCENE_FIELDS=['map','rooms','safeRooms','stairs','doors','keys','chests','traps','altars','assets','enemies','boss','floorTileset','seen','companions','skillObjects','interiorEntrances'];
+function captureInteriorScene(){return Object.fromEntries(INTERIOR_SCENE_FIELDS.map(field=>[field,game[field]]))}
+function applyInteriorScene(scene){for(const field of INTERIOR_SCENE_FIELDS)game[field]=scene[field]??(['map','seen'].includes(field)?game[field]:[])}
+function enterInteriorRoom(){
+ const entrance=interiorEntranceAtPlayer();if(!entrance)return;
+ if(game.multiplayer){log('Las salas interiores no están disponibles durante una sesión multijugador.','sys');return}
+ const interior=entrance.interior;if(!interior?.state)return;
+ clearCompanionOrders();game.exteriorScene=captureInteriorScene();game.exteriorPosition={x:entrance.x,y:entrance.y};game.activeInteriorId=interior.id;
+ applyInteriorScene(interior.state);game.interiorEntrances=[];game.companions=[];game.skillObjects=[];
+ game.player.x=interior.state.spawn.x;game.player.y=interior.state.spawn.y;anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
+ reveal(game.player.x,game.player.y);updateUI();draw();banner(`ENTRAS · ${interior.type.toUpperCase()}`);log(`Entras en ${interior.type}. La puerta queda a tu espalda.`,'story')
+}
+function leaveInteriorRoom(){
+ if(!interiorExitAtPlayer()||!game.exteriorScene)return;
+ const exterior=game.exteriorScene,position=game.exteriorPosition,entrance=(exterior.interiorEntrances||[]).find(e=>e.interiorId===game.activeInteriorId);
+ if(entrance?.interior)entrance.interior.state={...captureInteriorScene(),spawn:entrance.interior.state.spawn};
+ applyInteriorScene(exterior);game.exteriorScene=null;game.exteriorPosition=null;game.activeInteriorId=null;
+ game.player.x=position.x;game.player.y=position.y;anim.heroX=anim.targetX=position.x;anim.heroY=anim.targetY=position.y;anim.t=1;
+ reveal(position.x,position.y);updateUI();draw();banner('VUELVES AL PISO');log('Sales de la sala interior por la puerta.','story')
+}
 function restInSafeRoom(){
  const room=campAtPlayer();
  if(!room){log('Debes situarte junto al fuego de una sala segura.','sys');return}
@@ -3137,6 +3169,10 @@ function restInSafeRoom(){
 }
 function updateRestButton(){
  const btn=document.getElementById('waitBtn');if(!btn)return;
+ const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
+ if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;return}
+ if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;return}
+ delete btn.dataset.interior;
  const room=campAtPlayer();
  if(room){btn.textContent=room.rested?'DESCANSADO':'DESCANSAR';btn.disabled=!!room.rested;btn.dataset.rest='1'}
  else if(apModeOn()){if(game.player.ap==null)startPlayerAP();btn.textContent=`PASAR TURNO (${game.player.ap} PA)`;btn.disabled=!!(game.multiplayer&&!game.myTurn);delete btn.dataset.rest}
@@ -3160,7 +3196,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
  if(!plan)return;
  game.recentArchetypes.push(plan.archetype);
  Object.assign(game,{
-  map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
+  map:plan.map,rooms:plan.rooms,interiorEntrances:plan.interiorEntrances||[],safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
   chests:game?.preservedSoulReviveLoot?.[String(game.floor)]?JSON.parse(JSON.stringify(game.preservedSoulReviveLoot[String(game.floor)])):(plan.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel)),traps:plan.traps,altars:plan.altars,assets:plan.assets||[],enemies:plan.enemies,enemyFamily:plan.enemyFamily,
   floorTileset:plan.floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:plan.boss,
   floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,
@@ -6129,7 +6165,7 @@ function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
  for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
- for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
+ for(const r of game.rooms||[]){if(r.interior&&!game.activeInteriorId)continue;const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  for(const a of game.assets||[]){
   let visible=false;
   for(let dy=0;dy<a.rows&&!visible;dy++)for(let dx=0;dx<a.cols&&!visible;dx++)if(game.seen[a.y+dy]?.[a.x+dx])visible=true;
@@ -6299,7 +6335,7 @@ function normalizedConfigFloors(){const all=normalizedSupabaseFloors(),saved=all
 function pickFloorTilesetForLevel(level){const all=normalizedSupabaseFloors(),floors=all.filter(f=>!f.interior);if(!all.length)throw new Error('No hay floors consolidados en config_floor. Crea o importa floors antes de generar la dungeon.');return pick(floors.length?floors:all)}
 function compactTileForWorld(tile){const {icon,...rest}=tile||{};return rest}
 function compactFloorTilesetForWorld(floorTileset){if(!floorTileset)return null;return{...floorTileset,floorTiles:(floorTileset.floorTiles||[]).map(compactTileForWorld),wallTiles:(floorTileset.wallTiles||[]).map(compactTileForWorld),doorTiles:(floorTileset.doorTiles||[]).map(compactTileForWorld)}}
-function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedConfigFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
+function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedSupabaseFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
 function activeFloorTileset(){return game?.floorTileset||pickFloorTilesetForLevel(game?.floor||1)}
 function wallDirectionForCell(gx,gy){const open=(x,y)=>game?.map?.[y]?.[x]===0,up=open(gx,gy-1),down=open(gx,gy+1),left=open(gx-1,gy),right=open(gx+1,gy);if(up&&down&&!left&&!right)return'vertical';if(left&&right&&!up&&!down)return'horizontal';if(down&&!up)return'top';if(up&&!down)return'bottom';if(right&&!left)return'left';if(left&&!right)return'right';return'center'}
 function wallRotationForDirection(direction){return {top:0,right:90,bottom:180,left:270,horizontal:90,vertical:0,center:0}[direction]||0}
@@ -6595,18 +6631,6 @@ function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?
 // one is configured, falling back to it otherwise. Locked doors get a gold
 // glow hugging whatever silhouette actually gets drawn (icon or procedural).
 function drawDoorTile(x,y,d){
- // Interior entrances are seen from the exterior floor. Do not paint the
- // exterior tileset's door artwork over them: the configured asset already
- // defines which cell is its entrance, so that complete cell only receives a
- // clear cyan highlight.
- if(d.interiorId||d.assetKey){
-  ctx.save();
-  ctx.fillStyle=d.open?'rgba(133, 239, 255, .28)':'rgba(133, 239, 255, .62)';
-  ctx.fillRect(x,y,TILE,TILE);
-  ctx.strokeStyle='#c9f8ff';ctx.lineWidth=3;ctx.strokeRect(x+1.5,y+1.5,TILE-3,TILE-3);
-  ctx.restore();
-  return;
- }
  const doorTiles=activeFloorTileset().doorTiles;
  let painted=false;
  if(doorTiles?.length){
@@ -9146,7 +9170,7 @@ function decodeSeen(seen){
  return seen;
 }
 function floorSnapshot(){
- return {floorEntryLevel:game.floorEntryLevel,map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
+ return {floorEntryLevel:game.floorEntryLevel,map:game.map,rooms:game.rooms,interiorEntrances:game.interiorEntrances||[],activeInteriorId:game.activeInteriorId||null,exteriorScene:game.exteriorScene||null,exteriorPosition:game.exteriorPosition||null,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
 }
 // dynamic-only parts (the static map/rooms/tileset never change within a floor)
 function floorSnapshotDynamic(){
@@ -9154,7 +9178,7 @@ function floorSnapshotDynamic(){
 }
 function applyFloorSnapshot(overlay){
  const restoredFloorEntryLevel=overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1;
- Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
+ Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,interiorEntrances:overlay.interiorEntrances||[],activeInteriorId:overlay.activeInteriorId||null,exteriorScene:overlay.exteriorScene||null,exteriorPosition:overlay.exteriorPosition||null,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
 }
 function persistTurnState(){
@@ -10893,7 +10917,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
  startMultiHeartbeat();
 };
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.interior==='enter')enterInteriorRoom();else if(waitBtn.dataset.interior==='exit')leaveInteriorRoom();else if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
 document.getElementById('saveRunBtn')?.addEventListener('click',saveCurrentRun);
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
 const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupConfigPotionMode();setupClassConfigMode();setupRaceConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigAssetsMode();setupConfigGatesMode();setupDungeonConfigMode();setupTestingMode();fetchConfigItems({light:true});fetchConfigClasses({light:true});fetchConfigRaces({light:true});fetchConfigFloors({light:true});setupWorldSettings()};

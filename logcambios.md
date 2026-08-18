@@ -1,3 +1,15 @@
+## v0.91.0 - 2026-08-18
+
+- Replanteadas las salas interiores como mapas independientes: el piso exterior muestra el asset completo y conserva como acceso transitable la tile marcada como puerta.
+- Al situarse sobre la puerta exterior, el botón contextual cambia a `ENTRAR`; al activarlo se carga el mapa exclusivo de esa sala, con su propio floor interior, geometría, niebla y contenido.
+- La puerta del mapa interior utiliza una `doorTile` real del floor interior y ofrece `SALIR` al situarse encima, restaurando exactamente el mapa y la posición del piso exterior.
+- El contenido funcional de la sala original (enemigos, boss, cofres, trampas, altares, descanso, craft y comerciante) se traslada al mapa interior, manteniendo sus iconos y mecánicas.
+- Los assets usados como acceso deben tener la puerta en el borde; se evita convertir la sala inicial o la sala de escaleras para no bloquear entrada, salida ni objetivos del dungeon.
+- Las salas y accesos interiores se consolidan también en mundos pregenerados y snapshots; enemigos, cofres y tilesets interiores se compactan e hidratan mediante los flujos existentes.
+- Retirado el resaltado cyan del mapa: la puerta exterior vuelve a ser exclusivamente la casilla correspondiente dentro del propio asset, sin superponer una puerta del tileset exterior.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.91.0` (`v0.91.0 MAPAS INTERIORES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.90.1 - 2026-08-18
 
 - Cambiada la representación de las puertas de salas interiores vista desde el piso exterior: ya no utiliza el dibujo de puerta del tileset exterior y muestra únicamente un resaltado azul cyan claro que ocupa la tile completa.
