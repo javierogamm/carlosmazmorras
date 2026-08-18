@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.93.0';
+const APP_VERSION='0.93.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -3139,17 +3139,30 @@ function enterInteriorRoom(){
  const entrance=interiorEntranceAtPlayer();if(!entrance)return;
  if(game.multiplayer){log('Las salas interiores no están disponibles durante una sesión multijugador.','sys');return}
  const interior=entrance.interior;if(!interior?.state)return;
- clearCompanionOrders();game.exteriorScene=captureInteriorScene();game.exteriorPosition={x:entrance.x,y:entrance.y};game.activeInteriorId=interior.id;
- applyInteriorScene(interior.state);game.interiorEntrances=[];game.companions=[];game.skillObjects=[];
+ clearCompanionOrders();
+ // Companions travel with the player through the door instead of being left
+ // behind - carry the live array/objects (not a snapshot) so HP, remaining
+ // turns and orders keep ticking continuously across the transition.
+ const carriedCompanions=game.companions||[];
+ game.exteriorScene=captureInteriorScene();game.exteriorPosition={x:entrance.x,y:entrance.y};game.activeInteriorId=interior.id;
+ applyInteriorScene(interior.state);game.interiorEntrances=[];game.skillObjects=[];
  game.player.x=interior.state.spawn.x;game.player.y=interior.state.spawn.y;anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
+ game.companions=carriedCompanions;
+ for(const c of game.companions)Object.assign(c,findFreeNear(interior.state.spawn));
  reveal(game.player.x,game.player.y);updateUI();draw();banner(`ENTRAS · ${interior.type.toUpperCase()}`);log(`Entras en ${interior.type}. La puerta queda a tu espalda.`,'story')
 }
 function leaveInteriorRoom(){
  if(!interiorExitAtPlayer()||!game.exteriorScene)return;
  const exterior=game.exteriorScene,position=game.exteriorPosition,entrance=(exterior.interiorEntrances||[]).find(e=>e.interiorId===game.activeInteriorId);
- if(entrance?.interior)entrance.interior.state={...captureInteriorScene(),spawn:entrance.interior.state.spawn};
+ const carriedCompanions=game.companions||[];
+ // Companions never belong to the room's own stored state (they're the
+ // player's roster, not the interior's) - persist the visit's progress
+ // without them so a later re-entry can't resurrect a stale copy.
+ if(entrance?.interior)entrance.interior.state={...captureInteriorScene(),companions:[],spawn:entrance.interior.state.spawn};
  applyInteriorScene(exterior);game.exteriorScene=null;game.exteriorPosition=null;game.activeInteriorId=null;
  game.player.x=position.x;game.player.y=position.y;anim.heroX=anim.targetX=position.x;anim.heroY=anim.targetY=position.y;anim.t=1;
+ game.companions=carriedCompanions;
+ for(const c of game.companions)Object.assign(c,findFreeNear(position));
  reveal(position.x,position.y);updateUI();draw();banner('VUELVES AL PISO');log('Sales de la sala interior por la puerta.','story')
 }
 function restInSafeRoom(){
@@ -6170,7 +6183,19 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen?.[y]?.[x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){
+  const x=c.x+sx,y=c.y+sy;if(!game.seen?.[y]?.[x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}
+  drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);
+  // The creator/soulmerchant ground tint marks a room actually functioning as
+  // that type in the open - once its content moved behind an interior door
+  // (room.interior set), the exterior tile is plain floor around the asset
+  // and the building + door highlight below are the only markers left.
+  const roomHere=!game.map[y][x]&&(game.rooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h);
+  if(roomHere&&!roomHere.interior){
+   if(roomHere.type==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');
+   else if(roomHere.type==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42');
+  }
+ }
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
  for(const r of game.rooms||[]){if(r.interior&&!game.activeInteriorId)continue;const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  for(const a of game.assets||[]){

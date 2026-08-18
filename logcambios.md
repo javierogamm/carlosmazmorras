@@ -1,3 +1,10 @@
+## v0.93.1 - 2026-08-18
+
+- Quitado el tintado de suelo (azulado en salas de creador, dorado en salas de comerciante de souls) alrededor del asset con puerta cuando esa sala ya se convirtió en interior: en el piso exterior solo se ve el asset y el resaltado cyan de la puerta, sin ningún efecto de suelo asociado a la sala que hay dentro.
+- Los compañeros (invocaciones y mascotas permanentes) ahora entran y salen de las salas interiores junto con el personaje en vez de desaparecer mientras dura la visita: conservan vida, turnos restantes y órdenes pendientes, y se recolocan en una casilla libre junto al punto de entrada/salida. Nunca se guardan en el estado persistido de la sala interior (son del jugador, no de la sala).
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.1`.
+- `node --check` sobre `src/game.js` y `src/interiors.js`, `test/interiors.test.js`, y comprobación en navegador headless (generación real de decenas de pisos con interiores, entrada/salida de interior con compañero, `draw()` exterior e interior) sin errores.
+
 ## v0.93.0 - 2026-08-18
 
 - Las salas especiales (descanso/altar, creador, comerciante de souls, cámara acorazada, arena, arena del jefe, guarida de élite, sala trampa) ya no aparecen nunca a cielo abierto: en cuanto hay floors interiores y algún asset con puerta configurados, esas tipologías se generan siempre dentro de un interior, sin excepciones ni límite de 5 por piso (antes se limitaba a 2-5 interiores por piso de forma oportunista).
