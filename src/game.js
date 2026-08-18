@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.92.0';
+const APP_VERSION='0.93.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1930,7 +1930,10 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
  const occ=new Set();
 
  // --- buildings (2x2+) on a loose grid, then 1x1 props in the gaps ---
- const floorAssetDefs=assetDefsForFloor(floor,params);
+ // City floors have no walled rooms (see comment above) so DungeonInteriors
+ // never runs here - door-tagged assets are excluded up front instead of
+ // ever being drawn as an ordinary building with no interior behind them.
+ const floorAssetDefs=assetDefsForFloor(floor,params).filter(a=>!globalThis.DungeonInteriors?.isDoorAsset(a));
  const bigAssetDefs=floorAssetDefs.filter(a=>a.cols>=2&&a.rows>=2);
  const smallAssetDefs=floorAssetDefs.filter(a=>a.cols===1&&a.rows===1);
  const assetPlacements=[];
@@ -2382,7 +2385,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // (map[py][px]===0) before an asset can claim it, so assets only ever land
  // on floor - never on a wall, a pillar, or another asset/entity's tile.
  const assetPlacements=[];
- const assetDefs=floorAssetDefs;
+ // Door-tagged assets are reserved for DungeonInteriors below - a "house"
+ // with a door must always get an interior behind it, so it never enters
+ // this plain-decoration pool (which has no interior to attach).
+ const assetDefs=floorAssetDefs.filter(a=>!globalThis.DungeonInteriors?.isDoorAsset(a));
  // Shared placement attempt: enumerates every offset where `def` fits inside
  // room `r`'s interior (rather than randomly sampling offsets and retrying -
  // for a room whose interior is only barely bigger than the asset, the room's
@@ -2587,7 +2593,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
- return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),makeEnemy:(pos,type)=>{const preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length?pick(preferred):weightedFamilyEnemy(plan.family,false,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,false);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy}})||plan;
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy}})||plan;
 }
 
 function compactInteriorEntranceForWorld(entry){
@@ -4876,7 +4882,7 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  if(effect==='doomCountdown'){status(target,'doomCountdown',d.dotTurns??4,dotPowerFor(d,8+lvl*3),'Cuenta final');return true}
  if(effect==='repeatSkill'){p.repeatNextSkill=.60;return true}
  if(effect==='resetCooldowns'){for(const k of Object.keys(p.cooldowns))p.cooldowns[k]=0;p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+Math.ceil(d.cost*.30));return true}
- if(effect==='reveal'){const r=12+lvl;for(let yy=Math.max(0,p.y-r);yy<=Math.min(ROWS-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(COLS-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
+ if(effect==='reveal'){const r=12+lvl,dim=mapDimensions();for(let yy=Math.max(0,p.y-r);yy<=Math.min(dim.rows-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(dim.cols-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
  if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,d.buffTurns??4,{staminaRegen:{mode:'add',value:4+lvl}});return true}
  if(effect==='cleanseHeal'||effect==='purge'||effect==='absolution'){p.debuff=0;healEntity(p,dicePowerFor(d,10+lvl*4,p));if(effect!=='cleanseHeal')for(const e of area(3))hit(e,.75);return true}
  if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=dicePowerFor(d,5+lvl,p);healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
@@ -5188,8 +5194,8 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='utility'){
   const mode=comp.mode||'reveal';
   if(mode==='reveal'){
-   const radius=Math.max(1,Math.round((comp.value||10)*utilitySkillMultiplier(p)));
-   for(let y=Math.max(0,p.y-radius);y<Math.min(ROWS,p.y+radius+1);y++)for(let x=Math.max(0,p.x-radius);x<Math.min(COLS,p.x+radius+1);x++)if(Math.hypot(x-p.x,y-p.y)<=radius)game.seen[y][x]=true;
+   const radius=Math.max(1,Math.round((comp.value||10)*utilitySkillMultiplier(p))),dim=mapDimensions();
+   for(let y=Math.max(0,p.y-radius);y<Math.min(dim.rows,p.y+radius+1);y++)for(let x=Math.max(0,p.x-radius);x<Math.min(dim.cols,p.x+radius+1);x++)if(Math.hypot(x-p.x,y-p.y)<=radius)game.seen[y][x]=true;
    return true
   }
   if(mode==='stealth'){game.player.shadowVeil=1;return true}
@@ -5916,7 +5922,7 @@ function useSkill(slot){
   else if(def.classEffect==='aoe'){const a=near(2+Math.floor(lvl/5));if(a.length){a.forEach(e=>attack(e,Math.round(base*.8),{skillId:id}));used=true}}
   else if(def.classEffect==='heal'){healEntity(game.player,base*2);game.player[def.resource]=Math.min(game.player[def.resource==='mana'?'maxMana':'maxStamina'],game.player[def.resource]+base);used=true}
   else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7),{skillId:id});used=true}
-  else if(def.classEffect==='utility'){const radius=7+lvl;for(let y=Math.max(0,game.player.y-radius);y<Math.min(ROWS,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(COLS,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
+  else if(def.classEffect==='utility'){const radius=7+lvl,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
   else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25),{skillId:id}));used=true}
   else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)),{skillId:id});used=true}
   else if(def.classEffect==='buff'){const turns=def.buffTurns??(6+Math.floor(lvl/2));const stat=def.buffStat||'strength';const mode=def.buffStatMode||'add';const value=def.buffStatCoef??(mode==='mult'?1.2:5);applyBuff(id,def.name,turns,{[stat]:{mode,value}});game.player.shield+=5+lvl*2;used=true}
@@ -5926,13 +5932,13 @@ function useSkill(slot){
  if(!used&&def.type==='utility'){
   const lvl=skillLevel(id);
   if(id==='arcaneLantern'){
-   const radius=8+lvl*2;for(let y=Math.max(0,game.player.y-radius);y<Math.min(ROWS,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(COLS,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;
+   const radius=8+lvl*2,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;
    log('La luz arcana revela corredores y salas cercanas.','good');used=true
   }else if(id==='phaseKey'){
    let n=0;for(const d of game.doors)if(!d.open&&Math.abs(d.x-game.player.x)+Math.abs(d.y-game.player.y)<=4+lvl){d.open=true;d.locked=false;n++}
    used=n>0;if(used)log(`Abres ${n} puerta(s) con magia de fase.`,'good')
   }else if(id==='mistStep'){
-   const candidates=[];for(let y=Math.max(1,game.player.y-6);y<Math.min(ROWS-1,game.player.y+7);y++)for(let x=Math.max(1,game.player.x-6);x<Math.min(COLS-1,game.player.x+7);x++)if(game.seen[y][x]&&!blocked(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))candidates.push({x,y,d:Math.abs(x-game.player.x)+Math.abs(y-game.player.y)});
+   const dim=mapDimensions(),candidates=[];for(let y=Math.max(1,game.player.y-6);y<Math.min(dim.rows-1,game.player.y+7);y++)for(let x=Math.max(1,game.player.x-6);x<Math.min(dim.cols-1,game.player.x+7);x++)if(game.seen[y][x]&&!blocked(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))candidates.push({x,y,d:Math.abs(x-game.player.x)+Math.abs(y-game.player.y)});
    const dest=candidates.sort((a,b)=>b.d-a.d)[0];if(dest){game.player.x=dest.x;game.player.y=dest.y;anim.heroX=anim.targetX=dest.x;anim.heroY=anim.targetY=dest.y;reveal(dest.x,dest.y);used=true}
   }else if(id==='cleanse'){
    game.player.debuff=0;healEntity(game.player,8+lvl*3);used=true

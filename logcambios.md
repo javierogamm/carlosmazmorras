@@ -1,3 +1,14 @@
+## v0.93.0 - 2026-08-18
+
+- Las salas especiales (descanso/altar, creador, comerciante de souls, cámara acorazada, arena, arena del jefe, guarida de élite, sala trampa) ya no aparecen nunca a cielo abierto: en cuanto hay floors interiores y algún asset con puerta configurados, esas tipologías se generan siempre dentro de un interior, sin excepciones ni límite de 5 por piso (antes se limitaba a 2-5 interiores por piso de forma oportunista).
+- Se protege explícitamente cualquier sala que contenga al jefe (jefe único o arenas encadenadas de un piso de asalto de jefes): nunca se convierte en interior, para no esconder el objetivo «derrota al jefe» detrás de una puerta y dejar la salida desbloqueable sin combate.
+- Cualquier asset de decoración marcado con puerta deja de poder aparecer como simple decorado (incluidos los edificios del piso ciudad, que no tiene salas y por tanto nunca puede ofrecerles interior): solo se dibuja a través del sistema de interiores, así que toda puerta visible en el piso lleva siempre a una sala real.
+- Los minipisos interiores crecen de 9x9 hasta 50x50 (antes 9x9-23x23) según su tipología y lo profundo que esté el piso, y a partir de cierto tamaño generan su propia geometría interna con subsalas conectadas por pasillos en vez de una única sala.
+- Añadida población propia por subsala: la sala principal recibe el contenido real de su tipología (cofres, trampas, altar o un enemigo reforzado en las salas de tipo boss) y el resto de subsalas reciben una pasada más ligera, además del contenido ya trasladado desde la sala exterior original.
+- Corregidos varios efectos de revelado de mapa (objeto «revelador», linterna arcana, paso de niebla, utilidades de exploración) que asumían siempre las dimensiones del piso exterior (49x49) y podían fallar dentro de una sala interior más pequeña.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.0`.
+- Ampliado y ejecutado `test/interiors.test.js` (puertas, sala del jefe protegida, ausencia de límite de 5, rango 9x9-50x50, subsalas, población de la sala boss); `node --check` sobre `src/interiors.js`, `src/game.js` y `api/config-floor.js`.
+
 ## v0.92.0 - 2026-08-18
 
 - Corregida la entrada a interiores: cámara, revelado, render del tablero y escalera ausente usan ahora las dimensiones reales del minimapa, por lo que el personaje vuelve a verse y puede moverse al entrar.
