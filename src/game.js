@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.90.0';
+const APP_VERSION='0.90.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -6595,6 +6595,18 @@ function doorSprite(x,y,d){px(x+8,y+5,48,57,'#2b1a16');px(x+11,y+8,42,54,d.open?
 // one is configured, falling back to it otherwise. Locked doors get a gold
 // glow hugging whatever silhouette actually gets drawn (icon or procedural).
 function drawDoorTile(x,y,d){
+ // Interior entrances are seen from the exterior floor. Do not paint the
+ // exterior tileset's door artwork over them: the configured asset already
+ // defines which cell is its entrance, so that complete cell only receives a
+ // clear cyan highlight.
+ if(d.interiorId||d.assetKey){
+  ctx.save();
+  ctx.fillStyle=d.open?'rgba(133, 239, 255, .28)':'rgba(133, 239, 255, .62)';
+  ctx.fillRect(x,y,TILE,TILE);
+  ctx.strokeStyle='#c9f8ff';ctx.lineWidth=3;ctx.strokeRect(x+1.5,y+1.5,TILE-3,TILE-3);
+  ctx.restore();
+  return;
+ }
  const doorTiles=activeFloorTileset().doorTiles;
  let painted=false;
  if(doorTiles?.length){
@@ -8034,7 +8046,7 @@ function renderConfigAssetGrid(){
  if(preview)g.drawImage(preview,0,0,canvas.width,canvas.height);
  const cw=canvas.width/cols,ch=canvas.height/rows;
  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
-  g.fillStyle=door?.x===x&&door?.y===y?'rgba(55,145,255,.58)':mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
+  g.fillStyle=door?.x===x&&door?.y===y?'rgba(133,239,255,.62)':mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
   g.fillRect(x*cw,y*ch,cw,ch);
   g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=1;g.strokeRect(x*cw+.5,y*ch+.5,cw-1,ch-1);
  }

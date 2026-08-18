@@ -1,3 +1,11 @@
+## v0.90.1 - 2026-08-18
+
+- Cambiada la representación de las puertas de salas interiores vista desde el piso exterior: ya no utiliza el dibujo de puerta del tileset exterior y muestra únicamente un resaltado azul cyan claro que ocupa la tile completa.
+- El editor de assets utiliza el mismo cyan claro para identificar de forma consistente la tile marcada como puerta.
+- Las puertas normales de la mazmorra conservan intactos sus tiles configurados, estados de apertura y resaltado de bloqueo.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.90.1` (`v0.90.1 PUERTA INTERIOR CYAN`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.90.0 - 2026-08-18
 
 - Añadidas las salas interiores como postprocesado aditivo en `src/interiors.js`: conserva intacta la geometría, entidades y mecánicas del generador existente, y solo se activa cuando existen tanto floors interiores como assets con puerta configurada.
