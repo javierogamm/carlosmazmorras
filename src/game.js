@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.91.0';
+const APP_VERSION='0.92.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1423,7 +1423,8 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minR
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
-function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
+function mapDimensions(){return{rows:game?.map?.length||ROWS,cols:game?.map?.[0]?.length||COLS}}
+function camera(){const{rows,cols}=mapDimensions();return{x:Math.max(0,Math.min(Math.max(0,cols-visibleTiles),game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(Math.max(0,rows-visibleTiles),game.player.y-Math.floor(visibleTiles/2)))}}
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
 // GSAP effects are independent DOM particles: they keep canvas art crisp and
 // avoid spritesheets while still covering movement, attacks and every skill component.
@@ -1501,7 +1502,7 @@ function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas
 // base radius (4, matching the default character's own formula) instead.
 function reveal(cx,cy,r=game.player.vision){
  if(!Number.isFinite(r)||r<=0)r=4;
- for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
+ const{rows,cols}=mapDimensions();for(let y=Math.max(0,cy-r);y<=Math.min(rows-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(cols-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
 }
 
 
@@ -2586,7 +2587,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
- return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors()})||plan;
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),makeEnemy:(pos,type)=>{const preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length?pick(preferred):weightedFamilyEnemy(plan.family,false,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,false);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy}})||plan;
 }
 
 function compactInteriorEntranceForWorld(entry){
@@ -2596,7 +2597,7 @@ function compactInteriorEntranceForWorld(entry){
  return {...entry,interior:{...entry.interior,state:{...state,map:(state.map||[]).map(row=>row.join('')),mapEncoding:'digit-rows',enemies,boss:bossIndex>=0?enemies[bossIndex]:null,floorTileset:compactFloorTilesetForWorld(state.floorTileset),seen:undefined}}};
 }
 function hydrateInteriorEntrances(entries,level){
- return (entries||[]).map(entry=>{const state=entry.interior?.state;if(!state)return entry;const enemies=(state.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e})));const boss=state.boss?enemies.find(e=>e.boss)||hydratePrecomputedEnemy({...state.boss}):null;return {...entry,interior:{...entry.interior,state:{...state,map:state.mapEncoding==='digit-rows'?(state.map||[]).map(row=>Array.from(row,Number)):state.map,enemies,boss,chests:(state.chests||[]).map(c=>initializeChestTier({...c},level)),floorTileset:hydrateFloorTilesetForWorld(state.floorTileset),seen:Array.from({length:ROWS},()=>Array(COLS).fill(false))}}}})
+ return (entries||[]).map(entry=>{const state=entry.interior?.state;if(!state)return entry;const enemies=(state.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e})));const boss=state.boss?enemies.find(e=>e.boss)||hydratePrecomputedEnemy({...state.boss}):null;return {...entry,interior:{...entry.interior,state:{...state,map:state.mapEncoding==='digit-rows'?(state.map||[]).map(row=>Array.from(row,Number)):state.map,enemies,boss,chests:(state.chests||[]).map(c=>initializeChestTier({...c},level)),floorTileset:hydrateFloorTilesetForWorld(state.floorTileset),seen:Array.from({length:(state.mapEncoding==='digit-rows'?(state.map||[]):state.map||[]).length},(_,y)=>Array((state.mapEncoding==='digit-rows'?String(state.map?.[y]||'').length:state.map?.[y]?.length)||0).fill(false))}}}})
 }
 
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
@@ -6163,7 +6164,7 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen?.[y]?.[x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
  for(const r of game.rooms||[]){if(r.interior&&!game.activeInteriorId)continue;const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  for(const a of game.assets||[]){
@@ -6172,7 +6173,8 @@ function draw(){
   if(!visible)continue;
   const p=sc(a.x,a.y);drawAssetIcon(a.key,p.x,p.y,a.cols*TILE,a.rows*TILE);
  }
- if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
+ for(const entrance of game.interiorEntrances||[])if(game.seen?.[entrance.y]?.[entrance.x]){const p=sc(entrance.x,entrance.y);ctx.save();ctx.fillStyle='rgba(133,239,255,.56)';ctx.fillRect(p.x,p.y,TILE,TILE);ctx.strokeStyle='#c9f8ff';ctx.lineWidth=3;ctx.strokeRect(p.x+1.5,p.y+1.5,TILE-3,TILE-3);ctx.restore()}
+ if(game.stairs&&game.seen?.[game.stairs.y]?.[game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
  for(const a of game.altars||[])if(game.seen[a.y]?.[a.x]){let p=sc(a.x,a.y);altarSprite(p.x,p.y,a)}
@@ -6383,9 +6385,7 @@ const floorVisualThemes={
 function currentFloorTheme(f=activeFloorTileset()){return {name:f.name,story:f.story||f.desc||'Set de tiles configurado.',floor:f.floorTiles?.[0]?.color||'#263927',floorAlt:f.floorTiles?.[0]?.alt||'#314832',wall:f.wallTiles?.[0]?.color||'#1c2b1d',wallTop:f.wallTiles?.[0]?.top||'#304832',accent:f.floorTiles?.[0]?.accent||f.wallTiles?.[0]?.accent||'#8fbf63',fog:'#071009'}}
 
 function drawDungeonTile(x,y,wall,gx,gy){
- const interiorRoom=!wall&&(game.rooms||[]).find(r=>r.interior&&gx>=r.x&&gx<r.x+r.w&&gy>=r.y&&gy<r.y+r.h);
- const interiorRef=interiorRoom?.interior?.floorTileset;
- const floorSet=interiorRef?(normalizedInteriorFloors().find(f=>(interiorRef.dbId&&String(f.dbId)===String(interiorRef.dbId))||f.name===interiorRef.name)||activeFloorTileset()):activeFloorTileset(),seed=(gx*73856093^gy*19349663)>>>0;
+ const floorSet=activeFloorTileset(),seed=(gx*73856093^gy*19349663)>>>0;
  const t=currentFloorTheme(floorSet);
  if(wall){
   const wallTiles=floorSet.wallTiles?.length?floorSet.wallTiles:[{}],dir=wallDirectionForCell(gx,gy),wt=directionalWallTile(wallTiles,dir,seed),rot=wt.rotatable?wallRotationForDirection(dir):0;

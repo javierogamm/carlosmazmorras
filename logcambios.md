@@ -1,3 +1,14 @@
+## v0.92.0 - 2026-08-18
+
+- Corregida la entrada a interiores: cámara, revelado, render del tablero y escalera ausente usan ahora las dimensiones reales del minimapa, por lo que el personaje vuelve a verse y puede moverse al entrar.
+- Las salas interiores pasan a ser minipisos compactos de entre 9x9 y 23x23 tiles, sin rellenar hasta las dimensiones del piso exterior; cada dungeon genera entre 2 y 5 interiores según su número de salas y los assets compatibles disponibles.
+- Añadida población mínima propia por tipología: combate, tesoro, horda, boss, alquimista, cueva y laberinto reciben enemigos aunque la sala exterior original estuviera vacía; los alquimistas priorizan caster e invocadores.
+- El exterior conserva exclusivamente el floor normal alrededor del asset; se eliminó la sustitución visual por floors interiores en las tiles de la sala exterior.
+- La tile de puerta del asset se marca sobre el propio asset en cyan claro, sin añadir una door exterior ni cambiar el suelo que lo rodea.
+- Las puertas interiores siguen usando las `doorTiles` reales del floor interior y permiten volver al punto exacto del exterior.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.92.0` (`v0.92.0 MINIPISOS INTERIORES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.91.0 - 2026-08-18
 
 - Replanteadas las salas interiores como mapas independientes: el piso exterior muestra el asset completo y conserva como acceso transitable la tile marcada como puerta.
