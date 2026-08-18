@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.93.2';
+const APP_VERSION='0.93.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2257,30 +2257,29 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  }
  if(!rooms.length)return null;
 
- // Every floor needs at least 2 Creator's Room (craft) rooms so players can
- // always reach the shard/craft system - except archetypes that deliberately
- // omit 'creator' from their roomWeights (very special floors, e.g. 'horda').
- // One of the two is always forced onto the room closest to the entrance
- // (spawn), floor 1 included, so a craft room is never far from the start.
+ // At most 1-2 Creator's Room (craft) rooms per floor - now that every
+ // creator room becomes its own interior (see DungeonInteriors), more than
+ // that just clutters the floor with redundant craft doors. Any extra the
+ // weighted roll produced gets demoted back to a plain combat room; if none
+ // rolled at all, the room closest to the entrance is forced instead, so the
+ // shard/craft system is never completely unreachable on an unlucky floor.
+ // Skipped for archetypes that deliberately omit 'creator' from their
+ // roomWeights entirely (very special floors, e.g. 'horda').
  if('creator' in (arch.roomWeights||{})){
   const spawnRoom=rooms[0];
   const distFromSpawn=r=>Math.abs(r.cx-spawnRoom.cx)+Math.abs(r.cy-spawnRoom.cy);
-  const nonSpawn=rooms.filter(r=>r!==spawnRoom&&r.type!=='bossarena');
-  if(nonSpawn.length){
-   const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
-   nearest.type='creator';
+  // spawnRoom itself is excluded even if it happened to roll 'creator' above
+  // - it always gets reset to 'filler' once spawn is finalized further down.
+  let creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
+  if(creatorRooms.length>2){
+   const keep=new Set([...creatorRooms].sort(()=>Math.random()-.5).slice(0,2));
+   for(const r of creatorRooms)if(!keep.has(r))r.type='combat';
+   creatorRooms=creatorRooms.filter(r=>keep.has(r));
   }
-  // spawnRoom itself is excluded from this count even if it happened to roll
-  // 'creator' at random above - it always gets reset to 'filler' once spawn
-  // is finalized further down, so counting it here would let that reset
-  // silently drop the floor back to just 1 real creator room.
-  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
-  while(creatorRooms.length<2){
-   const candidates=rooms.filter(r=>r!==spawnRoom&&r.type!=='creator'&&r.type!=='bossarena');
-   if(!candidates.length)break;
-   const r=pick(candidates);
-   r.type='creator';
-   creatorRooms.push(r);
+  if(!creatorRooms.length){
+   const nonSpawn=rooms.filter(r=>r!==spawnRoom&&r.type!=='bossarena');
+   const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
+   if(nearest)nearest.type='creator';
   }
  }
 
@@ -2593,7 +2592,12 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
- return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy},makeChest:()=>pickChestDefForFloor(floor)})||plan;
+ // Door assets must match the floor's own ambiente pool (floorAssetDefs),
+ // same as the plain decoration below - only falling back to every ambiente
+ // if this floor's own ambiente happens to have no door-tagged asset at all.
+ const ambienteDoorAssets=floorAssetDefs.filter(a=>globalThis.DungeonInteriors?.isDoorAsset(a));
+ const interiorAssetPool=ambienteDoorAssets.length?floorAssetDefs:listConfigAssets();
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:interiorAssetPool,interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy},makeChest:()=>pickChestDefForFloor(floor)})||plan;
 }
 
 function compactInteriorEntranceForWorld(entry){

@@ -1,3 +1,10 @@
+## v0.93.3 - 2026-08-18
+
+- Los assets con puerta usados para las salas interiores ahora respetan el ambiente elegido para el piso (el mismo pool que ya usa la decoración normal), en vez de escoger entre todos los ambientes al azar; solo si el ambiente del piso no tiene ningún asset con puerta configurado se recurre a cualquier otro ambiente.
+- Las salas de creador (craft) se limitan a 1 o 2 por piso en los pisos normales: cualquier extra que saliera de la tirada por peso se reconvierte en sala de combate, y si no salió ninguna se sigue forzando la más cercana a la entrada para que el sistema de forja nunca quede inalcanzable.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.3`.
+- Comprobación en navegador headless: más de 100 puertas interiores generadas para un piso fijado a un ambiente con puerta propia (todas usan ese asset), más de 70 generadas para un ambiente sin asset con puerta (todas caen correctamente en el fallback), y muestreo de decenas de pisos «standard»/«laberinto»/«élites»/etc. confirmando entre 1 y 2 salas de creador siempre.
+
 ## v0.93.2 - 2026-08-18
 
 - Corregido un bloqueo permanente: morir dentro de una sala interior y revivir por debajo de 50 Soul Spikes (que reinicia la mazmorra en el piso 1) dejaba `activeInteriorId`/`exteriorScene` apuntando a una sala que ya no existía, así que la comprobación de "no estoy dentro de un interior" fallaba para siempre y ya no se podía entrar en ninguna sala interior de ningún piso. Generar un piso nuevo (normal o precomputado) limpia siempre ese estado.
