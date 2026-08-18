@@ -1,3 +1,10 @@
+## v0.93.2 - 2026-08-18
+
+- Corregido un bloqueo permanente: morir dentro de una sala interior y revivir por debajo de 50 Soul Spikes (que reinicia la mazmorra en el piso 1) dejaba `activeInteriorId`/`exteriorScene` apuntando a una sala que ya no existía, así que la comprobación de "no estoy dentro de un interior" fallaba para siempre y ya no se podía entrar en ninguna sala interior de ningún piso. Generar un piso nuevo (normal o precomputado) limpia siempre ese estado.
+- Los cofres generados dentro de una sala interior ahora usan los mismos `config_chest` configurados que el resto del piso (mismo `chestDef`, misma tirada de tier según nivel al entrar), en vez de un cofre sin definición ("legacy").
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.2`.
+- Ampliado `test/interiors.test.js` (chestDef en cofres interiores); `node --check` sobre `src/game.js` y `src/interiors.js`; comprobación en navegador headless reproduciendo exactamente el bloqueo (morir dentro, reiniciar en piso 1, volver a entrar) y verificando `chestDef` en más de 1400 cofres interiores generados.
+
 ## v0.93.1 - 2026-08-18
 
 - Quitado el tintado de suelo (azulado en salas de creador, dorado en salas de comerciante de souls) alrededor del asset con puerta cuando esa sala ya se convirtió en interior: en el piso exterior solo se ve el asset y el resaltado cyan de la puerta, sin ningún efecto de suelo asociado a la sala que hay dentro.

@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.93.1';
+const APP_VERSION='0.93.2';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2593,7 +2593,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
- return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy}})||plan;
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy},makeChest:()=>pickChestDefForFloor(floor)})||plan;
 }
 
 function compactInteriorEntranceForWorld(entry){
@@ -2641,7 +2641,13 @@ function loadPrecomputedFloor(){
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
  const preservedChests=game?.preservedSoulReviveLoot?.[String(game.floor)];
  const floorChests=preservedChests?JSON.parse(JSON.stringify(preservedChests)):(data.chests||[]).map(c=>initializeChestTier({...c,chestDef:c.chestDef?{...c.chestDef}:null},game.player.level));
- Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
+ // A fresh floor invalidates any interior the player was previously inside -
+ // without this, dying/restarting (or any other path that reaches a new
+ // floor without walking back out through the interior's own door first)
+ // leaves activeInteriorId pointing at a scene that no longer exists, and
+ // interiorEntranceAtPlayer()'s !game.activeInteriorId guard then blocks
+ // entering *any* interior, on *any* floor, for the rest of the run.
+ Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
@@ -3146,6 +3152,11 @@ function enterInteriorRoom(){
  const carriedCompanions=game.companions||[];
  game.exteriorScene=captureInteriorScene();game.exteriorPosition={x:entrance.x,y:entrance.y};game.activeInteriorId=interior.id;
  applyInteriorScene(interior.state);game.interiorEntrances=[];game.skillObjects=[];
+ // Same lazy tier roll the precomputed-world hydration path already does for
+ // interior chests (initializeChestTier no-ops once a chest already has a
+ // lootTier) - without it a chest generated straight into interior.state
+ // would default to the lowest rarity instead of scaling with the player.
+ game.chests=(game.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel||game.player.level||1));
  game.player.x=interior.state.spawn.x;game.player.y=interior.state.spawn.y;anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
  game.companions=carriedCompanions;
  for(const c of game.companions)Object.assign(c,findFreeNear(interior.state.spawn));
@@ -3215,8 +3226,11 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
  if(!plan){log('No se pudo generar el piso; reintentando con el diseño estándar.','sys');plan=buildFloorPlan(game.floor,params,{recent:['superboss','bossrush'],populationScale})}
  if(!plan)return;
  game.recentArchetypes.push(plan.archetype);
+ // See the matching comment in loadPrecomputedFloor(): a newly generated
+ // floor must never leave the player "stuck inside" a now-nonexistent
+ // interior from a previous floor/attempt.
  Object.assign(game,{
-  map:plan.map,rooms:plan.rooms,interiorEntrances:plan.interiorEntrances||[],safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
+  map:plan.map,rooms:plan.rooms,interiorEntrances:plan.interiorEntrances||[],activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
   chests:game?.preservedSoulReviveLoot?.[String(game.floor)]?JSON.parse(JSON.stringify(game.preservedSoulReviveLoot[String(game.floor)])):(plan.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel)),traps:plan.traps,altars:plan.altars,assets:plan.assets||[],enemies:plan.enemies,enemyFamily:plan.enemyFamily,
   floorTileset:plan.floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:plan.boss,
   floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,

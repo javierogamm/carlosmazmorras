@@ -38,12 +38,13 @@ const plan={
  safeRooms:[],family:{name:'Prueba'}
 };
 
-let bossEnemiesBuilt=0;
+let bossEnemiesBuilt=0,chestDefsBuilt=0;
 enhanceFloor(plan,{
  assets:[houseAsset],
  interiorFloors:[{id:7,name:'Madera'}],
  totalFloors:20,
  makeEnemy:(pos,type,opts)=>{if(opts?.wantBoss)bossEnemiesBuilt++;return {name:opts?.wantBoss?'Jefe interior':'Guardián',hp:10,maxHp:10,boss:!!opts?.wantBoss,...pos}},
+ makeChest:()=>{chestDefsBuilt++;return {type:'weapon',name:'Cofre de prueba',configChestId:1}},
  random:makeRng(20260818)
 });
 
@@ -71,6 +72,15 @@ const bossInterior=plan.interiorEntrances.find(e=>e.interior.type==='boss');
 assert.ok(bossInterior,'expected a boss-flavoured interior');
 assert.ok(bossInterior.interior.state.boss,'boss-flavoured interior should have a state.boss');
 assert.ok(bossEnemiesBuilt>=1);
+
+// every interior chest carries a real config_chest-backed def, same as the
+// exterior generator's own chests - never a def-less "legacy" chest.
+let interiorChestsSeen=0;
+for(const entry of plan.interiorEntrances){
+ for(const c of entry.interior.state.chests||[]){interiorChestsSeen++;assert.ok(c.chestDef,'interior chest missing chestDef')}
+}
+assert.ok(interiorChestsSeen>=1);
+assert.ok(chestDefsBuilt>=interiorChestsSeen);
 
 // --- forced-maximum-depth check: floor===totalFloors with an RNG pinned to
 // its top edge must be able to reach the full 50x50 ceiling.

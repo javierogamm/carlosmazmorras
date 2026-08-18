@@ -125,7 +125,7 @@
  // Per-room content pass, additive on top of whatever the original exterior
  // room already contributed via takeInRoom - this is what actually fills the
  // extra square footage a bigger interior/its sub-rooms bring in.
- function populateInterior(shape,type,floor,random,makeEnemy,occupied){
+ function populateInterior(shape,type,floor,random,makeEnemy,occupied,makeChest){
   const queues=new Map(shape.rooms.map(r=>[r,shuffledCells(r,shape.map,random)]));
   const take=room=>{const q=queues.get(room);while(q.length){const p=q.shift();if(!occupied.has(key(p.x,p.y))){occupied.add(key(p.x,p.y));return p}}return null};
   const state={chests:[],traps:[],altars:[],enemies:[],boss:null};
@@ -138,8 +138,18 @@
     for(let i=0;i<n;i++){const p=take(room);if(p)state.traps.push({...p,dmg:Math.max(3,Math.round(4+floor*1.6)),revealed:false,sprung:false})}
    }
    if(flavor.altar&&random()<.9){const p=take(room);if(p)state.altars.push({...p,kind:type==='merchant'?'soulmerchant':type==='craft'?'disenchant':['heal','shield','power'][rint(random,3)],used:false})}
-   const chestN=flavor.chests?between(random,flavor.chests[0],flavor.chests[1]):(random()<(flavor.chest||0)?1:0);
-   for(let i=0;i<chestN;i++){const p=take(room);if(p)state.chests.push({x:p.x,y:p.y,opened:false,locked:!!flavor.locked&&random()<.5})}
+   if(makeChest){
+    // Same config_chest-backed defs the exterior generator uses - if config
+    // is empty makeChest keeps returning null and this stops immediately,
+    // matching how the exterior floor also goes chest-less rather than
+    // falling back to some other, unconfigured chest shape.
+    const chestN=flavor.chests?between(random,flavor.chests[0],flavor.chests[1]):(random()<(flavor.chest||0)?1:0);
+    for(let i=0;i<chestN;i++){
+     const chestDef=makeChest();if(!chestDef)break;
+     const p=take(room);if(!p)break;
+     state.chests.push({x:p.x,y:p.y,opened:false,locked:!!flavor.locked&&random()<.5,chestDef});
+    }
+   }
    if(makeEnemy){
     const [eLo,eHi]=flavor.enemies||[0,0],eN=eHi>0?between(random,eLo,eHi):0;
     for(let i=0;i<eN;i++){
@@ -155,7 +165,7 @@
   return state;
  }
 
- function enhanceFloor(plan,{assets=[],interiorFloors=[],makeEnemy=null,random=Math.random,totalFloors}={}){
+ function enhanceFloor(plan,{assets=[],interiorFloors=[],makeEnemy=null,makeChest=null,random=Math.random,totalFloors}={}){
   if(!plan?.rooms||!plan?.map||!interiorFloors.length)return plan;
   const doorAssets=assets.map(a=>({...a,doorTile:parseDoor(a.door,a.cols,a.rows)})).filter(a=>a.doorTile&&isDoorAsset(a));
   if(!doorAssets.length)return plan;
@@ -195,7 +205,7 @@
    const orderedRooms=[shape.featureRoom,...shape.rooms.filter(r=>r!==shape.featureRoom)],flatPool=[];
    for(const r of orderedRooms)for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)if(shape.map[y][x]===0)flatPool.push({x,y});
    for(const field of ['chests','traps','altars','enemies'])for(const entity of state[field]){let p=flatPool.find(c=>!occupied.has(key(c.x,c.y)));if(!p)p=shape.spawn;entity.x=p.x;entity.y=p.y;occupied.add(key(p.x,p.y))}
-   const extra=populateInterior(shape,type,floor,random,makeEnemy,occupied);
+   const extra=populateInterior(shape,type,floor,random,makeEnemy,occupied,makeChest);
    state.chests.push(...extra.chests);state.traps.push(...extra.traps);state.altars.push(...extra.altars);state.enemies.push(...extra.enemies);
    if(extra.boss)state.boss=extra.boss;
    plan.assets=plan.assets.filter(a=>!inside(room,a));plan.doors=(plan.doors||[]).filter(d=>!inside(room,d));
