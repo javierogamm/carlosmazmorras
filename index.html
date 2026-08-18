@@ -535,6 +535,7 @@
     <div class="configForm">
      <label>Nombre floor <input id="configFloorName" maxlength="80" value="Caverna verdeante"></label>
      <label>Descripción <input id="configFloorStory" maxlength="160" value="Cavernas húmedas cubiertas de musgo, raíces y piedra viva."></label>
+     <label><input id="configFloorInterior" type="checkbox"> Suelo interior (solo salas interiores)</label>
      <label>Tiles de suelo del floor <select id="configFloorTiles" multiple size="5"></select></label>
      <label>Tiles de muro del floor <select id="configWallTiles" multiple size="5"></select></label>
      <label>Puertas del floor <select id="configDoorTiles" multiple size="5"></select></label>
@@ -658,7 +659,7 @@
     </section>
     <section class="panel">
      <h2>Vista previa a tamaño real</h2>
-     <p class="small" id="configAssetGridHint">Ajusta columnas/filas y haz clic en las casillas para marcarlas transitables o bloqueadas.</p>
+     <p class="small" id="configAssetGridHint">Ajusta columnas/filas y haz clic para alternar bloqueada, transitable o puerta (una por asset).</p>
      <div class="cropWrap"><canvas id="configAssetGridCanvas" width="64" height="64"></canvas></div>
      <hr>
      <h2>Assets guardados</h2>
@@ -878,7 +879,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/game.js?v=0.89.3"></script>
+<script src="./src/interiors.js?v=0.93.3"></script>
+<script src="./src/game.js?v=0.93.3"></script>
 
 </body>
 </html>

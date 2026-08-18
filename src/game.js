@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.89.3';
+const APP_VERSION='0.93.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1423,7 +1423,8 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minR
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
-function camera(){return{x:Math.max(0,Math.min(COLS-visibleTiles,game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(ROWS-visibleTiles,game.player.y-Math.floor(visibleTiles/2)))}}
+function mapDimensions(){return{rows:game?.map?.length||ROWS,cols:game?.map?.[0]?.length||COLS}}
+function camera(){const{rows,cols}=mapDimensions();return{x:Math.max(0,Math.min(Math.max(0,cols-visibleTiles),game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(Math.max(0,rows-visibleTiles),game.player.y-Math.floor(visibleTiles/2)))}}
 function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
 // GSAP effects are independent DOM particles: they keep canvas art crisp and
 // avoid spritesheets while still covering movement, attacks and every skill component.
@@ -1501,7 +1502,7 @@ function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas
 // base radius (4, matching the default character's own formula) instead.
 function reveal(cx,cy,r=game.player.vision){
  if(!Number.isFinite(r)||r<=0)r=4;
- for(let y=Math.max(0,cy-r);y<=Math.min(ROWS-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(COLS-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
+ const{rows,cols}=mapDimensions();for(let y=Math.max(0,cy-r);y<=Math.min(rows-1,cy+r);y++)for(let x=Math.max(0,cx-r);x<=Math.min(cols-1,cx+r);x++)if(Math.hypot(x-cx,y-cy)<=r+.4)game.seen[y][x]=true
 }
 
 
@@ -1929,7 +1930,10 @@ function buildCityFloorPlan(floor,params,{populationScale=1}={}){
  const occ=new Set();
 
  // --- buildings (2x2+) on a loose grid, then 1x1 props in the gaps ---
- const floorAssetDefs=assetDefsForFloor(floor,params);
+ // City floors have no walled rooms (see comment above) so DungeonInteriors
+ // never runs here - door-tagged assets are excluded up front instead of
+ // ever being drawn as an ordinary building with no interior behind them.
+ const floorAssetDefs=assetDefsForFloor(floor,params).filter(a=>!globalThis.DungeonInteriors?.isDoorAsset(a));
  const bigAssetDefs=floorAssetDefs.filter(a=>a.cols>=2&&a.rows>=2);
  const smallAssetDefs=floorAssetDefs.filter(a=>a.cols===1&&a.rows===1);
  const assetPlacements=[];
@@ -2253,30 +2257,29 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  }
  if(!rooms.length)return null;
 
- // Every floor needs at least 2 Creator's Room (craft) rooms so players can
- // always reach the shard/craft system - except archetypes that deliberately
- // omit 'creator' from their roomWeights (very special floors, e.g. 'horda').
- // One of the two is always forced onto the room closest to the entrance
- // (spawn), floor 1 included, so a craft room is never far from the start.
+ // At most 1-2 Creator's Room (craft) rooms per floor - now that every
+ // creator room becomes its own interior (see DungeonInteriors), more than
+ // that just clutters the floor with redundant craft doors. Any extra the
+ // weighted roll produced gets demoted back to a plain combat room; if none
+ // rolled at all, the room closest to the entrance is forced instead, so the
+ // shard/craft system is never completely unreachable on an unlucky floor.
+ // Skipped for archetypes that deliberately omit 'creator' from their
+ // roomWeights entirely (very special floors, e.g. 'horda').
  if('creator' in (arch.roomWeights||{})){
   const spawnRoom=rooms[0];
   const distFromSpawn=r=>Math.abs(r.cx-spawnRoom.cx)+Math.abs(r.cy-spawnRoom.cy);
-  const nonSpawn=rooms.filter(r=>r!==spawnRoom&&r.type!=='bossarena');
-  if(nonSpawn.length){
-   const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
-   nearest.type='creator';
+  // spawnRoom itself is excluded even if it happened to roll 'creator' above
+  // - it always gets reset to 'filler' once spawn is finalized further down.
+  let creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
+  if(creatorRooms.length>2){
+   const keep=new Set([...creatorRooms].sort(()=>Math.random()-.5).slice(0,2));
+   for(const r of creatorRooms)if(!keep.has(r))r.type='combat';
+   creatorRooms=creatorRooms.filter(r=>keep.has(r));
   }
-  // spawnRoom itself is excluded from this count even if it happened to roll
-  // 'creator' at random above - it always gets reset to 'filler' once spawn
-  // is finalized further down, so counting it here would let that reset
-  // silently drop the floor back to just 1 real creator room.
-  const creatorRooms=rooms.filter(r=>r.type==='creator'&&r!==spawnRoom);
-  while(creatorRooms.length<2){
-   const candidates=rooms.filter(r=>r!==spawnRoom&&r.type!=='creator'&&r.type!=='bossarena');
-   if(!candidates.length)break;
-   const r=pick(candidates);
-   r.type='creator';
-   creatorRooms.push(r);
+  if(!creatorRooms.length){
+   const nonSpawn=rooms.filter(r=>r!==spawnRoom&&r.type!=='bossarena');
+   const nearest=[...nonSpawn].sort((a,b)=>distFromSpawn(a)-distFromSpawn(b))[0];
+   if(nearest)nearest.type='creator';
   }
  }
 
@@ -2381,7 +2384,10 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  // (map[py][px]===0) before an asset can claim it, so assets only ever land
  // on floor - never on a wall, a pillar, or another asset/entity's tile.
  const assetPlacements=[];
- const assetDefs=floorAssetDefs;
+ // Door-tagged assets are reserved for DungeonInteriors below - a "house"
+ // with a door must always get an interior behind it, so it never enters
+ // this plain-decoration pool (which has no interior to attach).
+ const assetDefs=floorAssetDefs.filter(a=>!globalThis.DungeonInteriors?.isDoorAsset(a));
  // Shared placement attempt: enumerates every offset where `def` fits inside
  // room `r`'s interior (rather than randomly sampling offsets and retrying -
  // for a room whose interior is only barely bigger than the asset, the room's
@@ -2579,13 +2585,29 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const event=Math.random()<=(arch.objective==='stairs'?.12:.06)?{id:pick(eventDefs).id}:null;
  const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
 
- return {
+ const plan={
   floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,traps,altars,event,assets:assetPlacements,
   enemies,boss,family,archetype:archId,archetypeLabel:arch.label,archetypeDesc:arch.desc,
   objective,tierExpected:tier,rewardRarityBonus:R.rarity||0,
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
+ // Door assets must match the floor's own ambiente pool (floorAssetDefs),
+ // same as the plain decoration below - only falling back to every ambiente
+ // if this floor's own ambiente happens to have no door-tagged asset at all.
+ const ambienteDoorAssets=floorAssetDefs.filter(a=>globalThis.DungeonInteriors?.isDoorAsset(a));
+ const interiorAssetPool=ambienteDoorAssets.length?floorAssetDefs:listConfigAssets();
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:interiorAssetPool,interiorFloors:normalizedInteriorFloors(),totalFloors:params.floors,makeEnemy:(pos,type,opts)=>{const wantBoss=!!opts?.wantBoss,preferred=type==='alchemist'?(plan.family?.enemies||[]).filter(e=>['caster','invocador'].includes(e.type)):(plan.family?.enemies||[]);const def=preferred.length&&!wantBoss?pick(preferred):weightedFamilyEnemy(plan.family,wantBoss,floor,params.floors);const enemy=buildConfiguredEnemy(def,pos,floor,wantBoss);enemy.enemyFamily=plan.family.name;enemy.roomType=type;return enemy},makeChest:()=>pickChestDefForFloor(floor)})||plan;
+}
+
+function compactInteriorEntranceForWorld(entry){
+ const state=entry.interior?.state;if(!state)return entry;
+ const enemies=(state.enemies||[]).map(e=>compactEnemyForWorld(assignEnemySkills(e)));
+ const bossIndex=state.boss?(state.enemies||[]).indexOf(state.boss):-1;
+ return {...entry,interior:{...entry.interior,state:{...state,map:(state.map||[]).map(row=>row.join('')),mapEncoding:'digit-rows',enemies,boss:bossIndex>=0?enemies[bossIndex]:null,floorTileset:compactFloorTilesetForWorld(state.floorTileset),seen:undefined}}};
+}
+function hydrateInteriorEntrances(entries,level){
+ return (entries||[]).map(entry=>{const state=entry.interior?.state;if(!state)return entry;const enemies=(state.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e})));const boss=state.boss?enemies.find(e=>e.boss)||hydratePrecomputedEnemy({...state.boss}):null;return {...entry,interior:{...entry.interior,state:{...state,map:state.mapEncoding==='digit-rows'?(state.map||[]).map(row=>Array.from(row,Number)):state.map,enemies,boss,chests:(state.chests||[]).map(c=>initializeChestTier({...c},level)),floorTileset:hydrateFloorTilesetForWorld(state.floorTileset),seen:Array.from({length:(state.mapEncoding==='digit-rows'?(state.map||[]):state.map||[]).length},(_,y)=>Array((state.mapEncoding==='digit-rows'?String(state.map?.[y]||'').length:state.map?.[y]?.length)||0).fill(false))}}}})
 }
 
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
@@ -2604,7 +2626,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
   if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
   recent.push(plan.archetype);
   floors.push({
-   floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
+   floor,map:plan.map,rooms:plan.rooms,interiors:plan.interiors||[],interiorEntrances:(plan.interiorEntrances||[]).map(compactInteriorEntranceForWorld),safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
    doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,
    archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
    objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
@@ -2623,7 +2645,13 @@ function loadPrecomputedFloor(){
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
  const preservedChests=game?.preservedSoulReviveLoot?.[String(game.floor)];
  const floorChests=preservedChests?JSON.parse(JSON.stringify(preservedChests)):(data.chests||[]).map(c=>initializeChestTier({...c,chestDef:c.chestDef?{...c.chestDef}:null},game.player.level));
- Object.assign(game,{map:data.map,rooms:data.rooms,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
+ // A fresh floor invalidates any interior the player was previously inside -
+ // without this, dying/restarting (or any other path that reaches a new
+ // floor without walking back out through the interior's own door first)
+ // leaves activeInteriorId pointing at a scene that no longer exists, and
+ // interiorEntranceAtPlayer()'s !game.activeInteriorId guard then blocks
+ // entering *any* interior, on *any* floor, for the rest of the run.
+ Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
@@ -3112,6 +3140,46 @@ function isSafeCell(x,y){return(game.safeRooms||[]).some(r=>x>=r.x&&x<r.x+r.w&&y
 function roomTypeAt(x,y){return (game.rooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)?.type||null}
 function safeRoomAt(x,y){return(game.safeRooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)}
 function campAtPlayer(){return(game.safeRooms||[]).find(r=>r.cx===game.player.x&&r.cy===game.player.y)}
+function interiorEntranceAtPlayer(){return !game.activeInteriorId?(game.interiorEntrances||[]).find(e=>e.x===game.player.x&&e.y===game.player.y):null}
+function interiorExitAtPlayer(){return game.activeInteriorId?(game.doors||[]).find(d=>d.interiorExit&&d.x===game.player.x&&d.y===game.player.y):null}
+const INTERIOR_SCENE_FIELDS=['map','rooms','safeRooms','stairs','doors','keys','chests','traps','altars','assets','enemies','boss','floorTileset','seen','companions','skillObjects','interiorEntrances'];
+function captureInteriorScene(){return Object.fromEntries(INTERIOR_SCENE_FIELDS.map(field=>[field,game[field]]))}
+function applyInteriorScene(scene){for(const field of INTERIOR_SCENE_FIELDS)game[field]=scene[field]??(['map','seen'].includes(field)?game[field]:[])}
+function enterInteriorRoom(){
+ const entrance=interiorEntranceAtPlayer();if(!entrance)return;
+ if(game.multiplayer){log('Las salas interiores no están disponibles durante una sesión multijugador.','sys');return}
+ const interior=entrance.interior;if(!interior?.state)return;
+ clearCompanionOrders();
+ // Companions travel with the player through the door instead of being left
+ // behind - carry the live array/objects (not a snapshot) so HP, remaining
+ // turns and orders keep ticking continuously across the transition.
+ const carriedCompanions=game.companions||[];
+ game.exteriorScene=captureInteriorScene();game.exteriorPosition={x:entrance.x,y:entrance.y};game.activeInteriorId=interior.id;
+ applyInteriorScene(interior.state);game.interiorEntrances=[];game.skillObjects=[];
+ // Same lazy tier roll the precomputed-world hydration path already does for
+ // interior chests (initializeChestTier no-ops once a chest already has a
+ // lootTier) - without it a chest generated straight into interior.state
+ // would default to the lowest rarity instead of scaling with the player.
+ game.chests=(game.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel||game.player.level||1));
+ game.player.x=interior.state.spawn.x;game.player.y=interior.state.spawn.y;anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;
+ game.companions=carriedCompanions;
+ for(const c of game.companions)Object.assign(c,findFreeNear(interior.state.spawn));
+ reveal(game.player.x,game.player.y);updateUI();draw();banner(`ENTRAS · ${interior.type.toUpperCase()}`);log(`Entras en ${interior.type}. La puerta queda a tu espalda.`,'story')
+}
+function leaveInteriorRoom(){
+ if(!interiorExitAtPlayer()||!game.exteriorScene)return;
+ const exterior=game.exteriorScene,position=game.exteriorPosition,entrance=(exterior.interiorEntrances||[]).find(e=>e.interiorId===game.activeInteriorId);
+ const carriedCompanions=game.companions||[];
+ // Companions never belong to the room's own stored state (they're the
+ // player's roster, not the interior's) - persist the visit's progress
+ // without them so a later re-entry can't resurrect a stale copy.
+ if(entrance?.interior)entrance.interior.state={...captureInteriorScene(),companions:[],spawn:entrance.interior.state.spawn};
+ applyInteriorScene(exterior);game.exteriorScene=null;game.exteriorPosition=null;game.activeInteriorId=null;
+ game.player.x=position.x;game.player.y=position.y;anim.heroX=anim.targetX=position.x;anim.heroY=anim.targetY=position.y;anim.t=1;
+ game.companions=carriedCompanions;
+ for(const c of game.companions)Object.assign(c,findFreeNear(position));
+ reveal(position.x,position.y);updateUI();draw();banner('VUELVES AL PISO');log('Sales de la sala interior por la puerta.','story')
+}
 function restInSafeRoom(){
  const room=campAtPlayer();
  if(!room){log('Debes situarte junto al fuego de una sala segura.','sys');return}
@@ -3136,6 +3204,10 @@ function restInSafeRoom(){
 }
 function updateRestButton(){
  const btn=document.getElementById('waitBtn');if(!btn)return;
+ const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
+ if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;return}
+ if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;return}
+ delete btn.dataset.interior;
  const room=campAtPlayer();
  if(room){btn.textContent=room.rested?'DESCANSADO':'DESCANSAR';btn.disabled=!!room.rested;btn.dataset.rest='1'}
  else if(apModeOn()){if(game.player.ap==null)startPlayerAP();btn.textContent=`PASAR TURNO (${game.player.ap} PA)`;btn.disabled=!!(game.multiplayer&&!game.myTurn);delete btn.dataset.rest}
@@ -3158,8 +3230,11 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
  if(!plan){log('No se pudo generar el piso; reintentando con el diseño estándar.','sys');plan=buildFloorPlan(game.floor,params,{recent:['superboss','bossrush'],populationScale})}
  if(!plan)return;
  game.recentArchetypes.push(plan.archetype);
+ // See the matching comment in loadPrecomputedFloor(): a newly generated
+ // floor must never leave the player "stuck inside" a now-nonexistent
+ // interior from a previous floor/attempt.
  Object.assign(game,{
-  map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
+  map:plan.map,rooms:plan.rooms,interiorEntrances:plan.interiorEntrances||[],activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:plan.safeRooms,stairs:plan.stairs,doors:plan.doors,keys:plan.keys,
   chests:game?.preservedSoulReviveLoot?.[String(game.floor)]?JSON.parse(JSON.stringify(game.preservedSoulReviveLoot[String(game.floor)])):(plan.chests||[]).map(c=>initializeChestTier(c,game.floorEntryLevel)),traps:plan.traps,altars:plan.altars,assets:plan.assets||[],enemies:plan.enemies,enemyFamily:plan.enemyFamily,
   floorTileset:plan.floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:plan.boss,
   floorArchetype:plan.archetype,floorArchetypeLabel:plan.archetypeLabel,floorArchetypeDesc:plan.archetypeDesc,
@@ -4838,7 +4913,7 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  if(effect==='doomCountdown'){status(target,'doomCountdown',d.dotTurns??4,dotPowerFor(d,8+lvl*3),'Cuenta final');return true}
  if(effect==='repeatSkill'){p.repeatNextSkill=.60;return true}
  if(effect==='resetCooldowns'){for(const k of Object.keys(p.cooldowns))p.cooldowns[k]=0;p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+Math.ceil(d.cost*.30));return true}
- if(effect==='reveal'){const r=12+lvl;for(let yy=Math.max(0,p.y-r);yy<=Math.min(ROWS-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(COLS-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
+ if(effect==='reveal'){const r=12+lvl,dim=mapDimensions();for(let yy=Math.max(0,p.y-r);yy<=Math.min(dim.rows-1,p.y+r);yy++)for(let xx=Math.max(0,p.x-r);xx<=Math.min(dim.cols-1,p.x+r);xx++)if(Math.hypot(xx-p.x,yy-p.y)<=r)game.seen[yy][xx]=true;return true}
  if(effect==='resourceRegen'){p.stamina=Math.min(p.maxStamina,p.stamina+12+lvl*3);applyBuff(id,d.name,d.buffTurns??4,{staminaRegen:{mode:'add',value:4+lvl}});return true}
  if(effect==='cleanseHeal'||effect==='purge'||effect==='absolution'){p.debuff=0;healEntity(p,dicePowerFor(d,10+lvl*4,p));if(effect!=='cleanseHeal')for(const e of area(3))hit(e,.75);return true}
  if(effect==='steal'){hit(target,.65);const roll=rng(3);if(roll===0){const v=dicePowerFor(d,5+lvl,p);healEntity(p,v)}else if(roll===1){p.gold+=5+lvl*2}else{const res=d.resource;p[res]=Math.min(p[res==='mana'?'maxMana':'maxStamina'],p[res]+6+lvl)}return true}
@@ -5150,8 +5225,8 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='utility'){
   const mode=comp.mode||'reveal';
   if(mode==='reveal'){
-   const radius=Math.max(1,Math.round((comp.value||10)*utilitySkillMultiplier(p)));
-   for(let y=Math.max(0,p.y-radius);y<Math.min(ROWS,p.y+radius+1);y++)for(let x=Math.max(0,p.x-radius);x<Math.min(COLS,p.x+radius+1);x++)if(Math.hypot(x-p.x,y-p.y)<=radius)game.seen[y][x]=true;
+   const radius=Math.max(1,Math.round((comp.value||10)*utilitySkillMultiplier(p))),dim=mapDimensions();
+   for(let y=Math.max(0,p.y-radius);y<Math.min(dim.rows,p.y+radius+1);y++)for(let x=Math.max(0,p.x-radius);x<Math.min(dim.cols,p.x+radius+1);x++)if(Math.hypot(x-p.x,y-p.y)<=radius)game.seen[y][x]=true;
    return true
   }
   if(mode==='stealth'){game.player.shadowVeil=1;return true}
@@ -5878,7 +5953,7 @@ function useSkill(slot){
   else if(def.classEffect==='aoe'){const a=near(2+Math.floor(lvl/5));if(a.length){a.forEach(e=>attack(e,Math.round(base*.8),{skillId:id}));used=true}}
   else if(def.classEffect==='heal'){healEntity(game.player,base*2);game.player[def.resource]=Math.min(game.player[def.resource==='mana'?'maxMana':'maxStamina'],game.player[def.resource]+base);used=true}
   else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7),{skillId:id});used=true}
-  else if(def.classEffect==='utility'){const radius=7+lvl;for(let y=Math.max(0,game.player.y-radius);y<Math.min(ROWS,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(COLS,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
+  else if(def.classEffect==='utility'){const radius=7+lvl,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
   else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25),{skillId:id}));used=true}
   else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)),{skillId:id});used=true}
   else if(def.classEffect==='buff'){const turns=def.buffTurns??(6+Math.floor(lvl/2));const stat=def.buffStat||'strength';const mode=def.buffStatMode||'add';const value=def.buffStatCoef??(mode==='mult'?1.2:5);applyBuff(id,def.name,turns,{[stat]:{mode,value}});game.player.shield+=5+lvl*2;used=true}
@@ -5888,13 +5963,13 @@ function useSkill(slot){
  if(!used&&def.type==='utility'){
   const lvl=skillLevel(id);
   if(id==='arcaneLantern'){
-   const radius=8+lvl*2;for(let y=Math.max(0,game.player.y-radius);y<Math.min(ROWS,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(COLS,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;
+   const radius=8+lvl*2,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;
    log('La luz arcana revela corredores y salas cercanas.','good');used=true
   }else if(id==='phaseKey'){
    let n=0;for(const d of game.doors)if(!d.open&&Math.abs(d.x-game.player.x)+Math.abs(d.y-game.player.y)<=4+lvl){d.open=true;d.locked=false;n++}
    used=n>0;if(used)log(`Abres ${n} puerta(s) con magia de fase.`,'good')
   }else if(id==='mistStep'){
-   const candidates=[];for(let y=Math.max(1,game.player.y-6);y<Math.min(ROWS-1,game.player.y+7);y++)for(let x=Math.max(1,game.player.x-6);x<Math.min(COLS-1,game.player.x+7);x++)if(game.seen[y][x]&&!blocked(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))candidates.push({x,y,d:Math.abs(x-game.player.x)+Math.abs(y-game.player.y)});
+   const dim=mapDimensions(),candidates=[];for(let y=Math.max(1,game.player.y-6);y<Math.min(dim.rows-1,game.player.y+7);y++)for(let x=Math.max(1,game.player.x-6);x<Math.min(dim.cols-1,game.player.x+7);x++)if(game.seen[y][x]&&!blocked(x,y)&&!game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))candidates.push({x,y,d:Math.abs(x-game.player.x)+Math.abs(y-game.player.y)});
    const dest=candidates.sort((a,b)=>b.d-a.d)[0];if(dest){game.player.x=dest.x;game.player.y=dest.y;anim.heroX=anim.targetX=dest.x;anim.heroY=anim.targetY=dest.y;reveal(dest.x,dest.y);used=true}
   }else if(id==='cleanse'){
    game.player.debuff=0;healEntity(game.player,8+lvl*3);used=true
@@ -6126,16 +6201,29 @@ function drawSafeRoomOverlay(sc){
 
 function draw(){
  if(!game)return;const c=camera();ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
- for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){const x=c.x+sx,y=c.y+sy;if(!game.seen[y][x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);if(!game.map[y][x]&&roomTypeAt(x,y)==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');if(!game.map[y][x]&&roomTypeAt(x,y)==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42')}
+ for(let sy=0;sy<visibleTiles;sy++)for(let sx=0;sx<visibleTiles;sx++){
+  const x=c.x+sx,y=c.y+sy;if(!game.seen?.[y]?.[x]){px(sx*TILE,sy*TILE,TILE,TILE,'#040306');continue}
+  drawDungeonTile(sx*TILE,sy*TILE,!!game.map[y][x],x,y);
+  // The creator/soulmerchant ground tint marks a room actually functioning as
+  // that type in the open - once its content moved behind an interior door
+  // (room.interior set), the exterior tile is plain floor around the asset
+  // and the building + door highlight below are the only markers left.
+  const roomHere=!game.map[y][x]&&(game.rooms||[]).find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h);
+  if(roomHere&&!roomHere.interior){
+   if(roomHere.type==='creator')px(sx*TILE,sy*TILE,TILE,TILE,'#2a5bff26');
+   else if(roomHere.type==='soulmerchant')px(sx*TILE,sy*TILE,TILE,TILE,'#d7a72e42');
+  }
+ }
  const sc=(x,y)=>({x:(x-c.x)*TILE,y:(y-c.y)*TILE});drawSafeRoomOverlay(sc);drawSkillObjectGroundOverlay(sc);
- for(const r of game.rooms||[]){const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
+ for(const r of game.rooms||[]){if(r.interior&&!game.activeInteriorId)continue;const cx=r.cx??(r.x+Math.floor(r.w/2)),cy=r.cy??(r.y+Math.floor(r.h/2));if(game.seen[cy]?.[cx])drawWorldObjectIcon('room_'+r.type,sc(cx,cy).x,sc(cx,cy).y,32,16)}
  for(const a of game.assets||[]){
   let visible=false;
   for(let dy=0;dy<a.rows&&!visible;dy++)for(let dx=0;dx<a.cols&&!visible;dx++)if(game.seen[a.y+dy]?.[a.x+dx])visible=true;
   if(!visible)continue;
   const p=sc(a.x,a.y);drawAssetIcon(a.key,p.x,p.y,a.cols*TILE,a.rows*TILE);
  }
- if(game.seen[game.stairs.y][game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
+ for(const entrance of game.interiorEntrances||[])if(game.seen?.[entrance.y]?.[entrance.x]){const p=sc(entrance.x,entrance.y);ctx.save();ctx.fillStyle='rgba(133,239,255,.56)';ctx.fillRect(p.x,p.y,TILE,TILE);ctx.strokeStyle='#c9f8ff';ctx.lineWidth=3;ctx.strokeRect(p.x+1.5,p.y+1.5,TILE-3,TILE-3);ctx.restore()}
+ if(game.stairs&&game.seen?.[game.stairs.y]?.[game.stairs.x]){let p=sc(game.stairs.x,game.stairs.y);stairsSprite(p.x,p.y)}
  for(const d of game.doors)if(game.seen[d.y][d.x]){let p=sc(d.x,d.y);drawDoorTile(p.x,p.y,d)}
  for(const t of game.traps||[])if(t.revealed&&!t.sprung&&game.seen[t.y]?.[t.x]){let p=sc(t.x,t.y);trapSprite(p.x,p.y)}
  for(const a of game.altars||[])if(game.seen[a.y]?.[a.x]){let p=sc(a.x,a.y);altarSprite(p.x,p.y,a)}
@@ -6292,12 +6380,13 @@ const defaultTilesetFloors=[
  {id:'foundry',name:'Fundición carmesí',story:'Hornos, cadenas y metal fundido.',floorTiles:[{name:'Baldosa caliente',color:'#4b241d',alt:'#5c2c22',accent:'#ff8a45',icon:''}],wallTiles:[{name:'Ladrillo abrasado',color:'#3a1d19',top:'#612c20',accent:'#ff8a45',rotatable:true,icon:''}],doorTiles:[{name:'Compuerta oxidada',color:'#5b3328',accent:'#ff8a45',icon:''}]},
  {id:'archive',name:'Archivo del Vacío',story:'Bibliotecas imposibles y pasillos que olvidan dónde estaban.',floorTiles:[{name:'Suelo imposible',color:'#211d3c',alt:'#2c2750',accent:'#66e0df',icon:''}],wallTiles:[{name:'Muro imposible',color:'#18162b',top:'#29234b',accent:'#66e0df',rotatable:true,icon:''}],doorTiles:[{name:'Umbral de datos',color:'#25203d',accent:'#66e0df',icon:''}]}
 ];
-function normalizedSupabaseFloors(){return configFloors.map(r=>({...(r.floor_json||{}),dbId:r.id,name:r.floor_json?.name||r.floor_name,source:'config_floor'})).filter(f=>f&&f.name)}
-function normalizedConfigFloors(){const saved=normalizedSupabaseFloors();return saved.length?saved:defaultTilesetFloors}
-function pickFloorTilesetForLevel(level){const floors=normalizedSupabaseFloors();if(!floors.length)throw new Error('No hay floors consolidados en config_floor. Crea o importa floors antes de generar la dungeon.');return pick(floors)}
+function normalizedSupabaseFloors(){return configFloors.map(r=>({...(r.floor_json||{}),interior:!!(r.interior??r.floor_json?.interior),dbId:r.id,name:r.floor_json?.name||r.floor_name,source:'config_floor'})).filter(f=>f&&f.name)}
+function normalizedInteriorFloors(){return normalizedSupabaseFloors().filter(f=>f.interior)}
+function normalizedConfigFloors(){const all=normalizedSupabaseFloors(),saved=all.filter(f=>!f.interior);return saved.length?saved:(all.length?all:defaultTilesetFloors)}
+function pickFloorTilesetForLevel(level){const all=normalizedSupabaseFloors(),floors=all.filter(f=>!f.interior);if(!all.length)throw new Error('No hay floors consolidados en config_floor. Crea o importa floors antes de generar la dungeon.');return pick(floors.length?floors:all)}
 function compactTileForWorld(tile){const {icon,...rest}=tile||{};return rest}
 function compactFloorTilesetForWorld(floorTileset){if(!floorTileset)return null;return{...floorTileset,floorTiles:(floorTileset.floorTiles||[]).map(compactTileForWorld),wallTiles:(floorTileset.wallTiles||[]).map(compactTileForWorld),doorTiles:(floorTileset.doorTiles||[]).map(compactTileForWorld)}}
-function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedConfigFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
+function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedSupabaseFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
 function activeFloorTileset(){return game?.floorTileset||pickFloorTilesetForLevel(game?.floor||1)}
 function wallDirectionForCell(gx,gy){const open=(x,y)=>game?.map?.[y]?.[x]===0,up=open(gx,gy-1),down=open(gx,gy+1),left=open(gx-1,gy),right=open(gx+1,gy);if(up&&down&&!left&&!right)return'vertical';if(left&&right&&!up&&!down)return'horizontal';if(down&&!up)return'top';if(up&&!down)return'bottom';if(right&&!left)return'left';if(left&&!right)return'right';return'center'}
 function wallRotationForDirection(direction){return {top:0,right:90,bottom:180,left:270,horizontal:90,vertical:0,center:0}[direction]||0}
@@ -6342,11 +6431,11 @@ const floorVisualThemes={
  3:{name:'Fundición Carmesí',wall:'#3a1d19',wallTop:'#612c20',floor:'#4b241d',floorAlt:'#5c2c22',accent:'#ff8a45',fog:'#120705',story:'Hornos, cadenas, metal fundido y obreros monstruosos al servicio del Tirano.'},
  4:{name:'Archivo del Vacío',wall:'#18162b',wallTop:'#29234b',floor:'#211d3c',floorAlt:'#2c2750',accent:'#66e0df',fog:'#05040c',story:'Bibliotecas imposibles, magia rota y pasillos que olvidan dónde estaban.'}
 };
-function currentFloorTheme(){const f=activeFloorTileset();return {name:f.name,story:f.story||f.desc||'Set de tiles configurado.',floor:f.floorTiles?.[0]?.color||'#263927',floorAlt:f.floorTiles?.[0]?.alt||'#314832',wall:f.wallTiles?.[0]?.color||'#1c2b1d',wallTop:f.wallTiles?.[0]?.top||'#304832',accent:f.floorTiles?.[0]?.accent||f.wallTiles?.[0]?.accent||'#8fbf63',fog:'#071009'}}
+function currentFloorTheme(f=activeFloorTileset()){return {name:f.name,story:f.story||f.desc||'Set de tiles configurado.',floor:f.floorTiles?.[0]?.color||'#263927',floorAlt:f.floorTiles?.[0]?.alt||'#314832',wall:f.wallTiles?.[0]?.color||'#1c2b1d',wallTop:f.wallTiles?.[0]?.top||'#304832',accent:f.floorTiles?.[0]?.accent||f.wallTiles?.[0]?.accent||'#8fbf63',fog:'#071009'}}
 
 function drawDungeonTile(x,y,wall,gx,gy){
  const floorSet=activeFloorTileset(),seed=(gx*73856093^gy*19349663)>>>0;
- const t=currentFloorTheme();
+ const t=currentFloorTheme(floorSet);
  if(wall){
   const wallTiles=floorSet.wallTiles?.length?floorSet.wallTiles:[{}],dir=wallDirectionForCell(gx,gy),wt=directionalWallTile(wallTiles,dir,seed),rot=wt.rotatable?wallRotationForDirection(dir):0;
   if(drawConfiguredTile(wt,x,y,rot)){ctx.strokeStyle=shade(t.wall,-10);ctx.strokeRect(x+.5,y+.5,TILE-1,TILE-1);return}
@@ -7524,22 +7613,22 @@ async function removeConfigItem(id){if(!confirm('¿Borrar este objeto configurad
 async function duplicateConfigPotion(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configPotionStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Poción'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configPotionStatus.textContent='Poción duplicada.'}catch(e){configPotionStatus.textContent=e.message}}
 async function removeConfigPotion(id){if(!confirm('¿Borrar esta poción configurada?'))return;configPotionStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigPotionId)===String(id))resetConfigPotionForm();configPotionStatus.textContent='Poción borrada.'}catch(e){configPotionStatus.textContent=e.message}}
 
-function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',floorTiles:[],wallTiles:[],doorTiles:[]}}
+function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',interior:false,floorTiles:[],wallTiles:[],doorTiles:[]}}
 function currentFloorDraft(){return window.editingConfigFloorJson||emptyFloorDraft()}
 function configFloorsNeedHydration(){return configFloors.some(row=>!row.floor_json)}
 async function fetchConfigFloors({light=false}={}){const hadHydrated=!configFloorsNeedHydration();try{const r=await fetch(`/api/config-floor${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar floors');const rows=Array.isArray(data)?data:[];if(light&&hadHydrated){const fullById=new Map(configFloors.map(row=>[String(row.id),row]));configFloors=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configFloors=rows;renderConfigTilesets();setupWorldSettings()}catch(e){const st=document.getElementById('configTilesetStatus');if(st)st.textContent=`Error cargando config_floor: ${e.message}`}}
 async function ensureConfigFloorsHydrated(){if(!configFloors.length||configFloorsNeedHydration())await fetchConfigFloors()}
-async function saveConfigFloorRow(floor){const id=window.editingConfigFloorId;const r=await fetch(id?`/api/config-floor?id=${encodeURIComponent(id)}`:'/api/config-floor',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({floor_name:floor.name,floor_json:floor})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar floor');await fetchConfigFloors({light:true});setupWorldSettings();return data}
+async function saveConfigFloorRow(floor){const id=window.editingConfigFloorId;const r=await fetch(id?`/api/config-floor?id=${encodeURIComponent(id)}`:'/api/config-floor',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({floor_name:floor.name,interior:!!floor.interior,floor_json:floor})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar floor');await fetchConfigFloors({light:true});setupWorldSettings();return data}
 function tileLabel(t,i){return `${t.name||'Tile '+(i+1)} · ${t.type==='wall'?'Muro':t.type==='door'?'Puerta':'Suelo'}${t.direction?` · ${t.direction}`:''}`}
-function renderConfigTilesets(){const floor=currentFloorDraft(),tiles=[...(floor.floorTiles||[]).map((t,i)=>({...t,_key:'floorTiles',_index:i})),...(floor.wallTiles||[]).map((t,i)=>({...t,_key:'wallTiles',_index:i})),...(floor.doorTiles||[]).map((t,i)=>({...t,_key:'doorTiles',_index:i}))];const list=document.getElementById('configTilesList'),fl=document.getElementById('configFloorsList');if(list)list.innerHTML=tiles.length?tiles.map((t,i)=>`<div class="configItem"><span class="tierDot" style="background:${t.color||'#263927'}"></span><div><b>${tileLabel(t,i)}</b><span class="small">Rotación: ${t.rotatable?'sí':'no'} · Icono: ${t.icon?'imagen':'colores'}</span><div class="configItemActions"><button type="button" data-edit-tile-key="${t._key}" data-edit-tile-index="${t._index}">Editar tile</button><button type="button" data-delete-tile-key="${t._key}" data-delete-tile-index="${t._index}">Borrar tile</button></div></div></div>`).join(''):'<p class="small">Aún no hay tiles en este floor.</p>';if(fl)fl.innerHTML=[...configFloors.map(r=>({...(r.floor_json||{}),id:r.id,name:r.floor_json?.name||r.floor_name})),...(!configFloors.length?defaultTilesetFloors:[])].map((f,i)=>`<div class="configItem"><span class="tierDot" style="background:${f.floorTiles?.[0]?.color||'#263927'}"></span><div><b>${f.name}</b><span class="small">${f.floorTiles?.length||0} suelo · ${f.wallTiles?.length||0} muro · ${f.doorTiles?.length||0} puerta</span><div class="configItemActions"><button type="button" data-load-floor="${f.id||''}" data-default-floor="${!f.id?i:''}">Editar floor</button></div></div></div>`).join('');document.querySelectorAll('[data-load-floor]').forEach(btn=>btn.onclick=()=>loadConfigFloor(btn.dataset.loadFloor,btn.dataset.defaultFloor));document.querySelectorAll('[data-edit-tile-key]').forEach(btn=>btn.onclick=()=>loadConfigTile(btn.dataset.editTileKey,Number(btn.dataset.editTileIndex)));document.querySelectorAll('[data-delete-tile-key]').forEach(btn=>btn.onclick=()=>deleteConfigTile(btn.dataset.deleteTileKey,Number(btn.dataset.deleteTileIndex)));renderTileSelects()}
+function renderConfigTilesets(){const floor=currentFloorDraft(),tiles=[...(floor.floorTiles||[]).map((t,i)=>({...t,_key:'floorTiles',_index:i})),...(floor.wallTiles||[]).map((t,i)=>({...t,_key:'wallTiles',_index:i})),...(floor.doorTiles||[]).map((t,i)=>({...t,_key:'doorTiles',_index:i}))];const list=document.getElementById('configTilesList'),fl=document.getElementById('configFloorsList');if(list)list.innerHTML=tiles.length?tiles.map((t,i)=>`<div class="configItem"><span class="tierDot" style="background:${t.color||'#263927'}"></span><div><b>${tileLabel(t,i)}</b><span class="small">Rotación: ${t.rotatable?'sí':'no'} · Icono: ${t.icon?'imagen':'colores'}</span><div class="configItemActions"><button type="button" data-edit-tile-key="${t._key}" data-edit-tile-index="${t._index}">Editar tile</button><button type="button" data-delete-tile-key="${t._key}" data-delete-tile-index="${t._index}">Borrar tile</button></div></div></div>`).join(''):'<p class="small">Aún no hay tiles en este floor.</p>';if(fl)fl.innerHTML=[...configFloors.map(r=>({...(r.floor_json||{}),id:r.id,name:r.floor_json?.name||r.floor_name})),...(!configFloors.length?defaultTilesetFloors:[])].map((f,i)=>`<div class="configItem"><span class="tierDot" style="background:${f.floorTiles?.[0]?.color||'#263927'}"></span><div><b>${f.name}</b><span class="small">${f.interior?'INTERIOR · ':''}${f.floorTiles?.length||0} suelo · ${f.wallTiles?.length||0} muro · ${f.doorTiles?.length||0} puerta</span><div class="configItemActions"><button type="button" data-load-floor="${f.id||''}" data-default-floor="${!f.id?i:''}">Editar floor</button></div></div></div>`).join('');document.querySelectorAll('[data-load-floor]').forEach(btn=>btn.onclick=()=>loadConfigFloor(btn.dataset.loadFloor,btn.dataset.defaultFloor));document.querySelectorAll('[data-edit-tile-key]').forEach(btn=>btn.onclick=()=>loadConfigTile(btn.dataset.editTileKey,Number(btn.dataset.editTileIndex)));document.querySelectorAll('[data-delete-tile-key]').forEach(btn=>btn.onclick=()=>deleteConfigTile(btn.dataset.deleteTileKey,Number(btn.dataset.deleteTileIndex)));renderTileSelects()}
 function renderTileSelects(){const floor=currentFloorDraft();for(const [id,key] of [['configFloorTiles','floorTiles'],['configWallTiles','wallTiles'],['configDoorTiles','doorTiles']]){const el=document.getElementById(id);if(el)el.innerHTML=(floor[key]||[]).map((t,i)=>`<option value="${i}" selected>${t.name}</option>`).join('')}}
 function selectedTilesForKey(key){return currentFloorDraft()[key]||[]}
-async function loadConfigFloor(id,defaultIndex){let row=configFloors.find(r=>String(r.id)===String(id));if(row&&!row.floor_json){const r=await fetch(`/api/config-floor?id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar el floor');row=detail;configFloors=configFloors.map(x=>String(x.id)===String(id)?detail:x)}const f=row?{...(row.floor_json||{}),name:row.floor_json?.name||row.floor_name}:defaultTilesetFloors[Number(defaultIndex)]||emptyFloorDraft();window.editingConfigFloorId=row?.id||null;window.editingConfigFloorJson=JSON.parse(JSON.stringify(f));window.editingConfigTileRef=null;configFloorName.value=f.name||'';configFloorStory.value=f.story||'';configTilesetStatus.textContent=`Editando floor ${f.name}.`;resetConfigTileForm(false);renderConfigTilesets()}
+async function loadConfigFloor(id,defaultIndex){let row=configFloors.find(r=>String(r.id)===String(id));if(row&&!row.floor_json){const r=await fetch(`/api/config-floor?id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar el floor');row=detail;configFloors=configFloors.map(x=>String(x.id)===String(id)?detail:x)}const f=row?{...(row.floor_json||{}),interior:!!(row.interior??row.floor_json?.interior),name:row.floor_json?.name||row.floor_name}:defaultTilesetFloors[Number(defaultIndex)]||emptyFloorDraft();window.editingConfigFloorId=row?.id||null;window.editingConfigFloorJson=JSON.parse(JSON.stringify(f));window.editingConfigTileRef=null;configFloorName.value=f.name||'';configFloorStory.value=f.story||'';configFloorInterior.checked=!!f.interior;configTilesetStatus.textContent=`Editando floor ${f.name}.`;resetConfigTileForm(false);renderConfigTilesets()}
 function tileArrayKey(type){return type==='wall'?'wallTiles':type==='door'?'doorTiles':'floorTiles'}
 function resetConfigTileForm(clearIcon=true){configTileName.value='';configTileType.value='floor';configTileColor.value='#263927';configTileAlt.value='#314832';configTileAccent.value='#8fbf63';configWallDirection.value='top';configTileRotatable.checked=true;if(clearIcon){window.currentConfigTileIconHex='';renderConfigIconPreview('','configTileIconPreview','configTileIconStatus')}configTileType.dispatchEvent(new Event('change'))}
 function loadConfigTile(key,index){const floor=currentFloorDraft(),tile=floor[key]?.[index];if(!tile)return;window.editingConfigTileRef={key,index};configTileName.value=tile.name||'';configTileType.value=tile.type||({floorTiles:'floor',wallTiles:'wall',doorTiles:'door'}[key]||'floor');configTileColor.value=tile.color||'#263927';configTileAlt.value=tile.alt||tile.top||'#314832';configTileAccent.value=tile.accent||'#8fbf63';configWallDirection.value=tile.direction||'top';configTileRotatable.checked=!!tile.rotatable;window.currentConfigTileIconHex=tile.icon||'';renderConfigIconPreview(window.currentConfigTileIconHex,'configTileIconPreview','configTileIconStatus');configTileType.dispatchEvent(new Event('change'));configTilesetStatus.textContent=`Editando tile ${tile.name||index+1}. Guarda el tile para aplicar cambios al floor.`}
 function deleteConfigTile(key,index){const floor=currentFloorDraft();if(!floor[key]?.[index])return;if(!confirm('¿Borrar este tile del floor actual?'))return;floor[key].splice(index,1);window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Tile borrado del floor actual. Guarda el floor para consolidar en config_floor.';renderConfigTilesets()}
-function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImageInput',canvasId:'configTileCropCanvas',previewId:'configTileIconPreview',statusId:'configTileIconStatus',zoomId:'configTileCropZoom',eraserId:'configTileMagicEraserBtn',toleranceId:'configTileMagicTolerance',hexKey:'currentConfigTileIconHex',statusPrefix:'Tile',outline:false});window.editingConfigFloorJson=window.editingConfigFloorJson||emptyFloorDraft();renderConfigTilesets();configTileType.onchange=()=>configWallDirectionWrap?.classList.toggle('hidden',configTileType.value!=='wall');configTileType.onchange();addConfigTileBtn.onclick=()=>{const floor=currentFloorDraft(),key=tileArrayKey(configTileType.value),ref=window.editingConfigTileRef,tile={name:configTileName.value.trim()||'Tile sin nombre',type:configTileType.value,direction:configTileType.value==='wall'?configWallDirection.value:'',color:configTileColor.value,alt:configTileAlt.value,top:configTileAlt.value,accent:configTileAccent.value,rotatable:configTileType.value==='wall'&&configTileRotatable.checked,icon:window.currentConfigTileIconHex||''};if(ref&&floor[ref.key]?.[ref.index]){if(ref.key!==key){floor[ref.key].splice(ref.index,1);floor[key]=floor[key]||[];floor[key].push(tile)}else floor[key][ref.index]=tile;configTilesetStatus.textContent='Tile actualizado en el floor actual. Guarda el floor para consolidarlo.'}else{floor[key]=floor[key]||[];floor[key].push(tile);configTilesetStatus.textContent='Tile añadido al floor actual. Guarda el floor para consolidarlo.'}window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm(false);renderConfigTilesets()};newConfigTileBtn.onclick=()=>{window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Formulario listo para un tile nuevo.'};newConfigFloorBtn.onclick=()=>{window.editingConfigFloorId=null;window.editingConfigFloorJson=emptyFloorDraft();configFloorName.value=window.editingConfigFloorJson.name;configFloorStory.value=window.editingConfigFloorJson.story;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Nuevo floor iniciado.';renderConfigTilesets()};saveConfigFloorBtn.onclick=async()=>{const floor=currentFloorDraft();floor.name=configFloorName.value.trim()||'Floor sin nombre';floor.story=configFloorStory.value.trim();configTilesetStatus.textContent='Guardando floor en config_floor...';try{await saveConfigFloorRow(floor);configTilesetStatus.textContent='Floor guardado.'}catch(e){configTilesetStatus.textContent=e.message}};exportConfigTilesetBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentFloorDraft(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-floor.json';a.click();URL.revokeObjectURL(a.href)};importConfigFloorInput.onchange=async()=>{const files=[...importConfigFloorInput.files];configTilesetStatus.textContent='Leyendo floor(s) JSON/ZIP...';try{let count=0;const floorsRaw=await parseImportedJsonFiles(files);for(const raw of floorsRaw){const floor={...emptyFloorDraft(),...(raw.floor_json||raw)};floor.name=floor.name||raw.floor_name||'Floor importado';floor.floorTiles=Array.isArray(floor.floorTiles)?floor.floorTiles:[];floor.wallTiles=Array.isArray(floor.wallTiles)?floor.wallTiles:[];floor.doorTiles=Array.isArray(floor.doorTiles)?floor.doorTiles:[];window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importando floor ${count+1}/${floorsRaw.length}...`;await saveConfigFloorRow(floor);count++}window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importados ${count} floor(s) en config_floor.`}catch(e){configTilesetStatus.textContent=e.message}finally{importConfigFloorInput.value=''}}}
+function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImageInput',canvasId:'configTileCropCanvas',previewId:'configTileIconPreview',statusId:'configTileIconStatus',zoomId:'configTileCropZoom',eraserId:'configTileMagicEraserBtn',toleranceId:'configTileMagicTolerance',hexKey:'currentConfigTileIconHex',statusPrefix:'Tile',outline:false});window.editingConfigFloorJson=window.editingConfigFloorJson||emptyFloorDraft();renderConfigTilesets();configTileType.onchange=()=>configWallDirectionWrap?.classList.toggle('hidden',configTileType.value!=='wall');configTileType.onchange();addConfigTileBtn.onclick=()=>{const floor=currentFloorDraft(),key=tileArrayKey(configTileType.value),ref=window.editingConfigTileRef,tile={name:configTileName.value.trim()||'Tile sin nombre',type:configTileType.value,direction:configTileType.value==='wall'?configWallDirection.value:'',color:configTileColor.value,alt:configTileAlt.value,top:configTileAlt.value,accent:configTileAccent.value,rotatable:configTileType.value==='wall'&&configTileRotatable.checked,icon:window.currentConfigTileIconHex||''};if(ref&&floor[ref.key]?.[ref.index]){if(ref.key!==key){floor[ref.key].splice(ref.index,1);floor[key]=floor[key]||[];floor[key].push(tile)}else floor[key][ref.index]=tile;configTilesetStatus.textContent='Tile actualizado en el floor actual. Guarda el floor para consolidarlo.'}else{floor[key]=floor[key]||[];floor[key].push(tile);configTilesetStatus.textContent='Tile añadido al floor actual. Guarda el floor para consolidarlo.'}window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm(false);renderConfigTilesets()};newConfigTileBtn.onclick=()=>{window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Formulario listo para un tile nuevo.'};newConfigFloorBtn.onclick=()=>{window.editingConfigFloorId=null;window.editingConfigFloorJson=emptyFloorDraft();configFloorName.value=window.editingConfigFloorJson.name;configFloorStory.value=window.editingConfigFloorJson.story;configFloorInterior.checked=false;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Nuevo floor iniciado.';renderConfigTilesets()};saveConfigFloorBtn.onclick=async()=>{const floor=currentFloorDraft();floor.name=configFloorName.value.trim()||'Floor sin nombre';floor.story=configFloorStory.value.trim();floor.interior=!!configFloorInterior.checked;configTilesetStatus.textContent='Guardando floor en config_floor...';try{await saveConfigFloorRow(floor);configTilesetStatus.textContent='Floor guardado.'}catch(e){configTilesetStatus.textContent=e.message}};exportConfigTilesetBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentFloorDraft(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-floor.json';a.click();URL.revokeObjectURL(a.href)};importConfigFloorInput.onchange=async()=>{const files=[...importConfigFloorInput.files];configTilesetStatus.textContent='Leyendo floor(s) JSON/ZIP...';try{let count=0;const floorsRaw=await parseImportedJsonFiles(files);for(const raw of floorsRaw){const floor={...emptyFloorDraft(),...(raw.floor_json||raw)};floor.name=floor.name||raw.floor_name||'Floor importado';floor.floorTiles=Array.isArray(floor.floorTiles)?floor.floorTiles:[];floor.wallTiles=Array.isArray(floor.wallTiles)?floor.wallTiles:[];floor.doorTiles=Array.isArray(floor.doorTiles)?floor.doorTiles:[];window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importando floor ${count+1}/${floorsRaw.length}...`;await saveConfigFloorRow(floor);count++}window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importados ${count} floor(s) en config_floor.`}catch(e){configTilesetStatus.textContent=e.message}finally{importConfigFloorInput.value=''}}}
 
 
 const enemyTypeStats={rogue:{hp:.9,atk:1.15,armor:0},warrior:{hp:1.1,atk:1.05,armor:1},caster:{hp:.85,atk:1.25,armor:0},invocador:{hp:1,atk:1.05,armor:0},clerigo:{hp:1.05,atk:.95,armor:1},chaman:{hp:1,atk:1.1,armor:0},arquero:{hp:.9,atk:1.15,armor:0},francotirador:{hp:.8,atk:1.35,armor:0},tanque:{hp:1.45,atk:.85,armor:3}};
@@ -7863,7 +7952,7 @@ function assetPreviewDims(cols,rows){
 function listConfigAssets(){
  return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>{
   const {cols,rows}=parseTilesNumber(r.tiles_number);
-  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
+  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),door:r.door||'',ambiente:r.ambiente||''};
  });
 }
 function applyConfigWorldObjectRows(rows){
@@ -7954,7 +8043,7 @@ function setupConfigWorldObjectsMode(){
  };
 }
 // ---- Decoration assets (config_world_object, object_key prefix asset_) ----
-function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
+function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles${a.door?` · puerta ${a.door}`:''}</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
 function configAssetEnvironmentJson(ambiente,assets){
  const rows=assets.map(a=>{
   const blockedTiles=a.mask.flat().filter(Boolean).length,totalTiles=a.cols*a.rows;
@@ -8020,6 +8109,7 @@ function renderConfigAssetGrid(){
  const canvas=document.getElementById('configAssetGridCanvas');if(!canvas)return;
  const {cols,rows}=currentAssetGridDims();
  const mask=ensureConfigAssetMask(cols,rows);
+ const door=globalThis.DungeonInteriors?.parseDoor(window.currentConfigAssetDoor,cols,rows);
  // Real in-game size: exactly cols x rows tiles at TILE px each, so the
  // preview shows precisely how large/how it'll look on the dungeon grid.
  canvas.width=cols*TILE;canvas.height=rows*TILE;
@@ -8029,12 +8119,12 @@ function renderConfigAssetGrid(){
  if(preview)g.drawImage(preview,0,0,canvas.width,canvas.height);
  const cw=canvas.width/cols,ch=canvas.height/rows;
  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
-  g.fillStyle=mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
+  g.fillStyle=door?.x===x&&door?.y===y?'rgba(133,239,255,.62)':mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
   g.fillRect(x*cw,y*ch,cw,ch);
   g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=1;g.strokeRect(x*cw+.5,y*ch+.5,cw-1,ch-1);
  }
  const hint=document.getElementById('configAssetGridHint');
- if(hint)hint.textContent=`${cols}x${rows} tiles. Rojo = bloqueado, verde = transitable (PJ y monstruos). Clic en una casilla para alternar.`;
+ if(hint)hint.textContent=`${cols}x${rows} tiles. Rojo = bloqueado, verde = transitable, azul = puerta. Clic: bloqueada → transitable → puerta.`;
 }
 function resetConfigAssetForm(){
  window.editingAssetKey=null;
@@ -8044,6 +8134,7 @@ function resetConfigAssetForm(){
  document.getElementById('configAssetAmbiente').value='';
  window.currentConfigAssetIconHex='';
  window.currentConfigAssetMask=null;
+ window.currentConfigAssetDoor='';
  renderConfigIconPreview('','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(1,1));
  renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent='Nuevo asset (aún no guardado).';
@@ -8061,6 +8152,7 @@ async function loadAssetForEdit(objectKey){
  document.getElementById('configAssetAmbiente').value=asset.ambiente||'';
  window.currentConfigAssetIconHex=asset.icon||'';
  window.currentConfigAssetMask=asset.mask;
+ window.currentConfigAssetDoor=asset.door||'';
  renderConfigIconPreview(asset.icon||'','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(asset.cols,asset.rows));
  renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent=`Editando: ${asset.name}`;
@@ -8093,7 +8185,7 @@ function setupConfigAssetsMode(){
   const cx=Math.floor((e.clientX-b.left)*gridCanvas.width/b.width/(gridCanvas.width/cols));
   const cy=Math.floor((e.clientY-b.top)*gridCanvas.height/b.height/(gridCanvas.height/rows));
   const mask=ensureConfigAssetMask(cols,rows);
-  if(mask[cy]?.[cx]!==undefined){mask[cy][cx]=!mask[cy][cx];renderConfigAssetGrid()}
+  if(mask[cy]?.[cx]!==undefined){const here=`${cx};${cy}`;if(mask[cy][cx]){mask[cy][cx]=false}else if(window.currentConfigAssetDoor!==here){window.currentConfigAssetDoor=here;mask[cy][cx]=false}else{window.currentConfigAssetDoor='';mask[cy][cx]=true}renderConfigAssetGrid()}
  };
  document.getElementById('saveConfigAssetBtn').onclick=async()=>{
   const st=document.getElementById('configAssetStatus');
@@ -8106,7 +8198,7 @@ function setupConfigAssetsMode(){
   const objectKey=window.editingAssetKey;
   st.textContent='Guardando asset...';
   try{
-   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,ambiente,icon:window.currentConfigAssetIconHex||''};
+   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,door:window.currentConfigAssetDoor||null,ambiente,icon:window.currentConfigAssetIconHex||''};
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
@@ -9127,7 +9219,7 @@ function decodeSeen(seen){
  return seen;
 }
 function floorSnapshot(){
- return {floorEntryLevel:game.floorEntryLevel,map:game.map,rooms:game.rooms,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
+ return {floorEntryLevel:game.floorEntryLevel,map:game.map,rooms:game.rooms,interiorEntrances:game.interiorEntrances||[],activeInteriorId:game.activeInteriorId||null,exteriorScene:game.exteriorScene||null,exteriorPosition:game.exteriorPosition||null,safeRooms:game.safeRooms||[],stairs:game.stairs,floorTileset:game.floorTileset,enemyFamily:game.enemyFamily||null,enemies:game.enemies||[],chests:game.chests||[],doors:game.doors||[],keys:game.keys||[],traps:game.traps||[],altars:game.altars||[],assets:game.assets||[],companions:game.companions||[],skillObjects:game.skillObjects||[],seen:encodeSeen(game.seen),objective:game.objective||null,floorArchetype:game.floorArchetype||'standard',floorArchetypeLabel:game.floorArchetypeLabel||'',floorArchetypeDesc:game.floorArchetypeDesc||'',rewardRarityBonus:game.rewardRarityBonus||0};
 }
 // dynamic-only parts (the static map/rooms/tileset never change within a floor)
 function floorSnapshotDynamic(){
@@ -9135,7 +9227,7 @@ function floorSnapshotDynamic(){
 }
 function applyFloorSnapshot(overlay){
  const restoredFloorEntryLevel=overlay.floorEntryLevel||game.floorEntryLevel||game.player?.level||1;
- Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
+ Object.assign(game,{floorEntryLevel:restoredFloorEntryLevel,map:overlay.map,rooms:overlay.rooms,interiorEntrances:overlay.interiorEntrances||[],activeInteriorId:overlay.activeInteriorId||null,exteriorScene:overlay.exteriorScene||null,exteriorPosition:overlay.exteriorPosition||null,safeRooms:overlay.safeRooms||[],stairs:overlay.stairs,floorTileset:overlay.floorTileset,enemyFamily:overlay.enemyFamily||null,enemies:overlay.enemies||[],chests:(overlay.chests||[]).map(c=>initializeChestTier(c,restoredFloorEntryLevel)),doors:overlay.doors||[],keys:overlay.keys||[],traps:overlay.traps||[],altars:overlay.altars||[],assets:overlay.assets||[],companions:overlay.companions||[],skillObjects:overlay.skillObjects||[],seen:decodeSeen(overlay.seen),objective:overlay.objective||game.objective||null,floorArchetype:overlay.floorArchetype||game.floorArchetype||'standard',floorArchetypeLabel:overlay.floorArchetypeLabel||game.floorArchetypeLabel||'',floorArchetypeDesc:overlay.floorArchetypeDesc||game.floorArchetypeDesc||'',rewardRarityBonus:overlay.rewardRarityBonus??game.rewardRarityBonus??0});
  game.boss=(game.enemies||[]).find(e=>e.boss)||null;
 }
 function persistTurnState(){
@@ -10874,7 +10966,7 @@ document.getElementById('backFromLobbyBtn').onclick=()=>{
  startMultiHeartbeat();
 };
 
-document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
+document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.dataset.move.split(',').map(Number);move(x,y)});waitBtn.onclick=()=>{if(waitBtn.dataset.interior==='enter')enterInteriorRoom();else if(waitBtn.dataset.interior==='exit')leaveInteriorRoom();else if(waitBtn.dataset.rest==='1')restInSafeRoom();else playerFinished()};cancelTargetBtn.onclick=()=>cancelTargeting();zoomVisibleTiles.oninput=e=>setVisibleTiles(e.target.value);setVisibleTiles(visibleTiles);startBtn.onclick=start;createWorldBtn.onclick=createDungeonWorld;document.getElementById('disenchantCloseBtn')?.addEventListener('click',()=>document.getElementById('disenchantOverlay')?.classList.add('hidden'));
 document.getElementById('saveRunBtn')?.addEventListener('click',saveCurrentRun);
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
 const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupConfigPotionMode();setupClassConfigMode();setupRaceConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigAssetsMode();setupConfigGatesMode();setupDungeonConfigMode();setupTestingMode();fetchConfigItems({light:true});fetchConfigClasses({light:true});fetchConfigRaces({light:true});fetchConfigFloors({light:true});setupWorldSettings()};

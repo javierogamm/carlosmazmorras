@@ -1,3 +1,76 @@
+## v0.93.3 - 2026-08-18
+
+- Los assets con puerta usados para las salas interiores ahora respetan el ambiente elegido para el piso (el mismo pool que ya usa la decoración normal), en vez de escoger entre todos los ambientes al azar; solo si el ambiente del piso no tiene ningún asset con puerta configurado se recurre a cualquier otro ambiente.
+- Las salas de creador (craft) se limitan a 1 o 2 por piso en los pisos normales: cualquier extra que saliera de la tirada por peso se reconvierte en sala de combate, y si no salió ninguna se sigue forzando la más cercana a la entrada para que el sistema de forja nunca quede inalcanzable.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.3`.
+- Comprobación en navegador headless: más de 100 puertas interiores generadas para un piso fijado a un ambiente con puerta propia (todas usan ese asset), más de 70 generadas para un ambiente sin asset con puerta (todas caen correctamente en el fallback), y muestreo de decenas de pisos «standard»/«laberinto»/«élites»/etc. confirmando entre 1 y 2 salas de creador siempre.
+
+## v0.93.2 - 2026-08-18
+
+- Corregido un bloqueo permanente: morir dentro de una sala interior y revivir por debajo de 50 Soul Spikes (que reinicia la mazmorra en el piso 1) dejaba `activeInteriorId`/`exteriorScene` apuntando a una sala que ya no existía, así que la comprobación de "no estoy dentro de un interior" fallaba para siempre y ya no se podía entrar en ninguna sala interior de ningún piso. Generar un piso nuevo (normal o precomputado) limpia siempre ese estado.
+- Los cofres generados dentro de una sala interior ahora usan los mismos `config_chest` configurados que el resto del piso (mismo `chestDef`, misma tirada de tier según nivel al entrar), en vez de un cofre sin definición ("legacy").
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.2`.
+- Ampliado `test/interiors.test.js` (chestDef en cofres interiores); `node --check` sobre `src/game.js` y `src/interiors.js`; comprobación en navegador headless reproduciendo exactamente el bloqueo (morir dentro, reiniciar en piso 1, volver a entrar) y verificando `chestDef` en más de 1400 cofres interiores generados.
+
+## v0.93.1 - 2026-08-18
+
+- Quitado el tintado de suelo (azulado en salas de creador, dorado en salas de comerciante de souls) alrededor del asset con puerta cuando esa sala ya se convirtió en interior: en el piso exterior solo se ve el asset y el resaltado cyan de la puerta, sin ningún efecto de suelo asociado a la sala que hay dentro.
+- Los compañeros (invocaciones y mascotas permanentes) ahora entran y salen de las salas interiores junto con el personaje en vez de desaparecer mientras dura la visita: conservan vida, turnos restantes y órdenes pendientes, y se recolocan en una casilla libre junto al punto de entrada/salida. Nunca se guardan en el estado persistido de la sala interior (son del jugador, no de la sala).
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.1`.
+- `node --check` sobre `src/game.js` y `src/interiors.js`, `test/interiors.test.js`, y comprobación en navegador headless (generación real de decenas de pisos con interiores, entrada/salida de interior con compañero, `draw()` exterior e interior) sin errores.
+
+## v0.93.0 - 2026-08-18
+
+- Las salas especiales (descanso/altar, creador, comerciante de souls, cámara acorazada, arena, arena del jefe, guarida de élite, sala trampa) ya no aparecen nunca a cielo abierto: en cuanto hay floors interiores y algún asset con puerta configurados, esas tipologías se generan siempre dentro de un interior, sin excepciones ni límite de 5 por piso (antes se limitaba a 2-5 interiores por piso de forma oportunista).
+- Se protege explícitamente cualquier sala que contenga al jefe (jefe único o arenas encadenadas de un piso de asalto de jefes): nunca se convierte en interior, para no esconder el objetivo «derrota al jefe» detrás de una puerta y dejar la salida desbloqueable sin combate.
+- Cualquier asset de decoración marcado con puerta deja de poder aparecer como simple decorado (incluidos los edificios del piso ciudad, que no tiene salas y por tanto nunca puede ofrecerles interior): solo se dibuja a través del sistema de interiores, así que toda puerta visible en el piso lleva siempre a una sala real.
+- Los minipisos interiores crecen de 9x9 hasta 50x50 (antes 9x9-23x23) según su tipología y lo profundo que esté el piso, y a partir de cierto tamaño generan su propia geometría interna con subsalas conectadas por pasillos en vez de una única sala.
+- Añadida población propia por subsala: la sala principal recibe el contenido real de su tipología (cofres, trampas, altar o un enemigo reforzado en las salas de tipo boss) y el resto de subsalas reciben una pasada más ligera, además del contenido ya trasladado desde la sala exterior original.
+- Corregidos varios efectos de revelado de mapa (objeto «revelador», linterna arcana, paso de niebla, utilidades de exploración) que asumían siempre las dimensiones del piso exterior (49x49) y podían fallar dentro de una sala interior más pequeña.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.0`.
+- Ampliado y ejecutado `test/interiors.test.js` (puertas, sala del jefe protegida, ausencia de límite de 5, rango 9x9-50x50, subsalas, población de la sala boss); `node --check` sobre `src/interiors.js`, `src/game.js` y `api/config-floor.js`.
+
+## v0.92.0 - 2026-08-18
+
+- Corregida la entrada a interiores: cámara, revelado, render del tablero y escalera ausente usan ahora las dimensiones reales del minimapa, por lo que el personaje vuelve a verse y puede moverse al entrar.
+- Las salas interiores pasan a ser minipisos compactos de entre 9x9 y 23x23 tiles, sin rellenar hasta las dimensiones del piso exterior; cada dungeon genera entre 2 y 5 interiores según su número de salas y los assets compatibles disponibles.
+- Añadida población mínima propia por tipología: combate, tesoro, horda, boss, alquimista, cueva y laberinto reciben enemigos aunque la sala exterior original estuviera vacía; los alquimistas priorizan caster e invocadores.
+- El exterior conserva exclusivamente el floor normal alrededor del asset; se eliminó la sustitución visual por floors interiores en las tiles de la sala exterior.
+- La tile de puerta del asset se marca sobre el propio asset en cyan claro, sin añadir una door exterior ni cambiar el suelo que lo rodea.
+- Las puertas interiores siguen usando las `doorTiles` reales del floor interior y permiten volver al punto exacto del exterior.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.92.0` (`v0.92.0 MINIPISOS INTERIORES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.91.0 - 2026-08-18
+
+- Replanteadas las salas interiores como mapas independientes: el piso exterior muestra el asset completo y conserva como acceso transitable la tile marcada como puerta.
+- Al situarse sobre la puerta exterior, el botón contextual cambia a `ENTRAR`; al activarlo se carga el mapa exclusivo de esa sala, con su propio floor interior, geometría, niebla y contenido.
+- La puerta del mapa interior utiliza una `doorTile` real del floor interior y ofrece `SALIR` al situarse encima, restaurando exactamente el mapa y la posición del piso exterior.
+- El contenido funcional de la sala original (enemigos, boss, cofres, trampas, altares, descanso, craft y comerciante) se traslada al mapa interior, manteniendo sus iconos y mecánicas.
+- Los assets usados como acceso deben tener la puerta en el borde; se evita convertir la sala inicial o la sala de escaleras para no bloquear entrada, salida ni objetivos del dungeon.
+- Las salas y accesos interiores se consolidan también en mundos pregenerados y snapshots; enemigos, cofres y tilesets interiores se compactan e hidratan mediante los flujos existentes.
+- Retirado el resaltado cyan del mapa: la puerta exterior vuelve a ser exclusivamente la casilla correspondiente dentro del propio asset, sin superponer una puerta del tileset exterior.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.91.0` (`v0.91.0 MAPAS INTERIORES`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.90.1 - 2026-08-18
+
+- Cambiada la representación de las puertas de salas interiores vista desde el piso exterior: ya no utiliza el dibujo de puerta del tileset exterior y muestra únicamente un resaltado azul cyan claro que ocupa la tile completa.
+- El editor de assets utiliza el mismo cyan claro para identificar de forma consistente la tile marcada como puerta.
+- Las puertas normales de la mazmorra conservan intactos sus tiles configurados, estados de apertura y resaltado de bloqueo.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.90.1` (`v0.90.1 PUERTA INTERIOR CYAN`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
+## v0.90.0 - 2026-08-18
+
+- Añadidas las salas interiores como postprocesado aditivo en `src/interiors.js`: conserva intacta la geometría, entidades y mecánicas del generador existente, y solo se activa cuando existen tanto floors interiores como assets con puerta configurada.
+- Las salas normales (excepto la sala inicial) reciben metadatos de interior, geometría variada, un floor interior aleatorio y una puerta de asset; se contemplan descanso, craft, comerciante, tesoro, horda, boss, alquimista, cueva y laberinto sin sustituir las tipologías ni reglas actuales.
+- Añadida la puerta opcional por tile al editor de assets, con ciclo visual bloqueada/transitable/puerta, persistida en `config_world_object.door` como coordenada `x;y`.
+- Añadido el check «Suelo interior» al editor de floors y la columna `config_floor.interior`; esos floors quedan fuera de nuevas selecciones/generaciones exteriores, manteniendo fallback para instalaciones y mundos antiguos.
+- Añadida la migración idempotente `supabase/add_interior_rooms.sql` y compatibilidad de lectura del API ante una caché/esquema anterior.
+- Añadido un test mínimo del módulo de interiores que verifica puerta, tipología protegida y que el mapa original no cambia.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.90.0` (`v0.90.0 SALAS INTERIORES`).
+
 ## v0.89.3 - 2026-08-17
 
 - Corregido el renderizado de dungeons recientes cuando un floor contiene un icono de tile vacío, corrupto o todavía sin decodificar: ya no se aborta el frame dejando tiles negras, ocultando al personaje y aparentando bloquear el movimiento.

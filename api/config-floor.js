@@ -14,7 +14,7 @@ function supabaseConfig(){
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
 function cleanFloor(body){
  const floor=body.floor_json||body;
- return {floor_name:body.floor_name??floor.name??floor.floor_name??'Floor sin nombre',floor_json:floor};
+ return {floor_name:body.floor_name??floor.name??floor.floor_name??'Floor sin nombre',floor_json:floor,interior:body.interior??floor.interior??false};
 }
 function requestId(req){return req.query?.id||req.body?.id||req.body?.floor_id||null}
 
@@ -31,7 +31,7 @@ async function handleWorldObjects(req,res,url,key){
   // catalog requests never select icon, while an object_key request is the
   // explicit detail lookup used when the image is actually needed.
   const minimal=req.query?.light==='1'||req.query?.minimal==='1'||!objectKey;
-  const select=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente,updated_at';
+  const select=minimal?'id,object_key,name,tiles_number,tiles_mask,door,ambiente,updated_at':'id,object_key,icon,name,tiles_number,tiles_mask,door,ambiente,updated_at';
   const legacySelect=minimal?'id,object_key,name,tiles_number,tiles_mask,ambiente':'id,object_key,icon,name,tiles_number,tiles_mask,ambiente';
   const filter=objectKey?`&object_key=eq.${encodeURIComponent(objectKey)}&limit=1`:'';
   let r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}?select=${select}${filter}&order=object_key.asc`,{headers:headers(key)});
@@ -49,7 +49,7 @@ async function handleWorldObjects(req,res,url,key){
  }
  if(req.method==='POST'){
   const objectKey=`${ASSET_KEY_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
-  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1',tiles_mask:req.body?.tiles_mask||'',ambiente:req.body?.ambiente||'',updated_at:new Date().toISOString()};
+  const row={object_key:objectKey,icon:req.body?.icon??'',name:req.body?.name||'Asset sin nombre',tiles_number:req.body?.tiles_number||'1;1',tiles_mask:req.body?.tiles_mask||'',door:req.body?.door||null,ambiente:req.body?.ambiente||'',updated_at:new Date().toISOString()};
   const r=await fetch(`${url}/rest/v1/${WORLD_OBJECT_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
   const data=await r.json();
   if(!r.ok)return res.status(r.status).json(data);
@@ -62,6 +62,7 @@ async function handleWorldObjects(req,res,url,key){
   if(req.body?.name!==undefined)row.name=req.body.name;
   if(req.body?.tiles_number!==undefined)row.tiles_number=req.body.tiles_number;
   if(req.body?.tiles_mask!==undefined)row.tiles_mask=req.body.tiles_mask;
+  if(req.body?.door!==undefined)row.door=req.body.door||null;
   if(req.body?.ambiente!==undefined)row.ambiente=req.body.ambiente;
   // Do not use PostgREST's on_conflict upsert here: older installations of
   // config_world_object do not have a UNIQUE constraint on object_key, so
@@ -96,9 +97,10 @@ module.exports=async(req,res)=>{
   const {url,key}=supabaseConfig();
   if(req.query?.kind==='object')return handleWorldObjects(req,res,url,key);
   if(req.method==='GET'){
-   const id=requestId(req),light=req.query?.light==='1',select=(id||!light)?'id,created_at,floor_name,floor_json':'id,created_at,floor_name',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=floor_name.asc`,{headers:headers(key)});
-   const data=await r.json();
+   const id=requestId(req),light=req.query?.light==='1',select=(id||!light)?'id,created_at,floor_name,floor_json,interior':'id,created_at,floor_name,interior',legacySelect=(id||!light)?'id,created_at,floor_name,floor_json':'id,created_at,floor_name',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+   let r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=floor_name.asc`,{headers:headers(key)});
+   let data=await r.json();
+   if(!r.ok){r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${legacySelect}${filter}&order=floor_name.asc`,{headers:headers(key)});data=await r.json();if(r.ok&&Array.isArray(data))data=data.map(row=>({...row,interior:!!row.floor_json?.interior}))}
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
   }
