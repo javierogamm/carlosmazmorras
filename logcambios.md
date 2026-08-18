@@ -1,3 +1,13 @@
+## v0.90.0 - 2026-08-18
+
+- Añadidas las salas interiores como postprocesado aditivo en `src/interiors.js`: conserva intacta la geometría, entidades y mecánicas del generador existente, y solo se activa cuando existen tanto floors interiores como assets con puerta configurada.
+- Las salas normales (excepto la sala inicial) reciben metadatos de interior, geometría variada, un floor interior aleatorio y una puerta de asset; se contemplan descanso, craft, comerciante, tesoro, horda, boss, alquimista, cueva y laberinto sin sustituir las tipologías ni reglas actuales.
+- Añadida la puerta opcional por tile al editor de assets, con ciclo visual bloqueada/transitable/puerta, persistida en `config_world_object.door` como coordenada `x;y`.
+- Añadido el check «Suelo interior» al editor de floors y la columna `config_floor.interior`; esos floors quedan fuera de nuevas selecciones/generaciones exteriores, manteniendo fallback para instalaciones y mundos antiguos.
+- Añadida la migración idempotente `supabase/add_interior_rooms.sql` y compatibilidad de lectura del API ante una caché/esquema anterior.
+- Añadido un test mínimo del módulo de interiores que verifica puerta, tipología protegida y que el mapa original no cambia.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.90.0` (`v0.90.0 SALAS INTERIORES`).
+
 ## v0.89.3 - 2026-08-17
 
 - Corregido el renderizado de dungeons recientes cuando un floor contiene un icono de tile vacío, corrupto o todavía sin decodificar: ya no se aborta el frame dejando tiles negras, ocultando al personaje y aparentando bloquear el movimiento.

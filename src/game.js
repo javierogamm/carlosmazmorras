@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.89.3';
+const APP_VERSION='0.90.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -2579,13 +2579,14 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const event=Math.random()<=(arch.objective==='stairs'?.12:.06)?{id:pick(eventDefs).id}:null;
  const floorTileset=floorTilesetForWorldPlan(floor,params)||pickFloorTilesetForLevel(floor);
 
- return {
+ const plan={
   floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,traps,altars,event,assets:assetPlacements,
   enemies,boss,family,archetype:archId,archetypeLabel:arch.label,archetypeDesc:arch.desc,
   objective,tierExpected:tier,rewardRarityBonus:R.rarity||0,
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };
+ return globalThis.DungeonInteriors?.enhanceFloor(plan,{assets:listConfigAssets(),interiorFloors:normalizedInteriorFloors()})||plan;
 }
 
 function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
@@ -2604,7 +2605,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
   if(!plan)throw new Error(`No se pudo generar el piso ${floor}.`);
   recent.push(plan.archetype);
   floors.push({
-   floor,map:plan.map,rooms:plan.rooms,safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
+   floor,map:plan.map,rooms:plan.rooms,interiors:plan.interiors||[],safeRooms:plan.safeRooms,spawn:plan.spawn,stairs:plan.stairs,
    doors:plan.doors,keys:plan.keys,chests:plan.chests,traps:plan.traps,altars:plan.altars,assets:plan.assets||[],event:plan.event,
    archetype:plan.archetype,archetypeLabel:plan.archetypeLabel,archetypeDesc:plan.archetypeDesc,
    objective:plan.objective,tierExpected:plan.tierExpected,rewardRarityBonus:plan.rewardRarityBonus,announce:plan.announce,
@@ -6292,9 +6293,10 @@ const defaultTilesetFloors=[
  {id:'foundry',name:'Fundición carmesí',story:'Hornos, cadenas y metal fundido.',floorTiles:[{name:'Baldosa caliente',color:'#4b241d',alt:'#5c2c22',accent:'#ff8a45',icon:''}],wallTiles:[{name:'Ladrillo abrasado',color:'#3a1d19',top:'#612c20',accent:'#ff8a45',rotatable:true,icon:''}],doorTiles:[{name:'Compuerta oxidada',color:'#5b3328',accent:'#ff8a45',icon:''}]},
  {id:'archive',name:'Archivo del Vacío',story:'Bibliotecas imposibles y pasillos que olvidan dónde estaban.',floorTiles:[{name:'Suelo imposible',color:'#211d3c',alt:'#2c2750',accent:'#66e0df',icon:''}],wallTiles:[{name:'Muro imposible',color:'#18162b',top:'#29234b',accent:'#66e0df',rotatable:true,icon:''}],doorTiles:[{name:'Umbral de datos',color:'#25203d',accent:'#66e0df',icon:''}]}
 ];
-function normalizedSupabaseFloors(){return configFloors.map(r=>({...(r.floor_json||{}),dbId:r.id,name:r.floor_json?.name||r.floor_name,source:'config_floor'})).filter(f=>f&&f.name)}
-function normalizedConfigFloors(){const saved=normalizedSupabaseFloors();return saved.length?saved:defaultTilesetFloors}
-function pickFloorTilesetForLevel(level){const floors=normalizedSupabaseFloors();if(!floors.length)throw new Error('No hay floors consolidados en config_floor. Crea o importa floors antes de generar la dungeon.');return pick(floors)}
+function normalizedSupabaseFloors(){return configFloors.map(r=>({...(r.floor_json||{}),interior:!!(r.interior??r.floor_json?.interior),dbId:r.id,name:r.floor_json?.name||r.floor_name,source:'config_floor'})).filter(f=>f&&f.name)}
+function normalizedInteriorFloors(){return normalizedSupabaseFloors().filter(f=>f.interior)}
+function normalizedConfigFloors(){const all=normalizedSupabaseFloors(),saved=all.filter(f=>!f.interior);return saved.length?saved:(all.length?all:defaultTilesetFloors)}
+function pickFloorTilesetForLevel(level){const all=normalizedSupabaseFloors(),floors=all.filter(f=>!f.interior);if(!all.length)throw new Error('No hay floors consolidados en config_floor. Crea o importa floors antes de generar la dungeon.');return pick(floors.length?floors:all)}
 function compactTileForWorld(tile){const {icon,...rest}=tile||{};return rest}
 function compactFloorTilesetForWorld(floorTileset){if(!floorTileset)return null;return{...floorTileset,floorTiles:(floorTileset.floorTiles||[]).map(compactTileForWorld),wallTiles:(floorTileset.wallTiles||[]).map(compactTileForWorld),doorTiles:(floorTileset.doorTiles||[]).map(compactTileForWorld)}}
 function hydrateFloorTilesetForWorld(saved){if(!saved)return pickFloorTilesetForLevel(game?.floor||1);const source=normalizedConfigFloors().find(f=>(saved.dbId&&String(f.dbId)===String(saved.dbId))||f.name===saved.name);if(!source)return saved;return{...source,...saved,floorTiles:(saved.floorTiles||source.floorTiles||[]).map((t,i)=>({...source.floorTiles?.[i],...t,icon:t.icon||source.floorTiles?.[i]?.icon||''})),wallTiles:(saved.wallTiles||source.wallTiles||[]).map((t,i)=>({...source.wallTiles?.[i],...t,icon:t.icon||source.wallTiles?.[i]?.icon||''})),doorTiles:(saved.doorTiles||source.doorTiles||[]).map((t,i)=>({...source.doorTiles?.[i],...t,icon:t.icon||source.doorTiles?.[i]?.icon||''}))}}
@@ -6342,11 +6344,13 @@ const floorVisualThemes={
  3:{name:'Fundición Carmesí',wall:'#3a1d19',wallTop:'#612c20',floor:'#4b241d',floorAlt:'#5c2c22',accent:'#ff8a45',fog:'#120705',story:'Hornos, cadenas, metal fundido y obreros monstruosos al servicio del Tirano.'},
  4:{name:'Archivo del Vacío',wall:'#18162b',wallTop:'#29234b',floor:'#211d3c',floorAlt:'#2c2750',accent:'#66e0df',fog:'#05040c',story:'Bibliotecas imposibles, magia rota y pasillos que olvidan dónde estaban.'}
 };
-function currentFloorTheme(){const f=activeFloorTileset();return {name:f.name,story:f.story||f.desc||'Set de tiles configurado.',floor:f.floorTiles?.[0]?.color||'#263927',floorAlt:f.floorTiles?.[0]?.alt||'#314832',wall:f.wallTiles?.[0]?.color||'#1c2b1d',wallTop:f.wallTiles?.[0]?.top||'#304832',accent:f.floorTiles?.[0]?.accent||f.wallTiles?.[0]?.accent||'#8fbf63',fog:'#071009'}}
+function currentFloorTheme(f=activeFloorTileset()){return {name:f.name,story:f.story||f.desc||'Set de tiles configurado.',floor:f.floorTiles?.[0]?.color||'#263927',floorAlt:f.floorTiles?.[0]?.alt||'#314832',wall:f.wallTiles?.[0]?.color||'#1c2b1d',wallTop:f.wallTiles?.[0]?.top||'#304832',accent:f.floorTiles?.[0]?.accent||f.wallTiles?.[0]?.accent||'#8fbf63',fog:'#071009'}}
 
 function drawDungeonTile(x,y,wall,gx,gy){
- const floorSet=activeFloorTileset(),seed=(gx*73856093^gy*19349663)>>>0;
- const t=currentFloorTheme();
+ const interiorRoom=!wall&&(game.rooms||[]).find(r=>r.interior&&gx>=r.x&&gx<r.x+r.w&&gy>=r.y&&gy<r.y+r.h);
+ const interiorRef=interiorRoom?.interior?.floorTileset;
+ const floorSet=interiorRef?(normalizedInteriorFloors().find(f=>(interiorRef.dbId&&String(f.dbId)===String(interiorRef.dbId))||f.name===interiorRef.name)||activeFloorTileset()):activeFloorTileset(),seed=(gx*73856093^gy*19349663)>>>0;
+ const t=currentFloorTheme(floorSet);
  if(wall){
   const wallTiles=floorSet.wallTiles?.length?floorSet.wallTiles:[{}],dir=wallDirectionForCell(gx,gy),wt=directionalWallTile(wallTiles,dir,seed),rot=wt.rotatable?wallRotationForDirection(dir):0;
   if(drawConfiguredTile(wt,x,y,rot)){ctx.strokeStyle=shade(t.wall,-10);ctx.strokeRect(x+.5,y+.5,TILE-1,TILE-1);return}
@@ -7524,22 +7528,22 @@ async function removeConfigItem(id){if(!confirm('¿Borrar este objeto configurad
 async function duplicateConfigPotion(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configPotionStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Poción'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configPotionStatus.textContent='Poción duplicada.'}catch(e){configPotionStatus.textContent=e.message}}
 async function removeConfigPotion(id){if(!confirm('¿Borrar esta poción configurada?'))return;configPotionStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigPotionId)===String(id))resetConfigPotionForm();configPotionStatus.textContent='Poción borrada.'}catch(e){configPotionStatus.textContent=e.message}}
 
-function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',floorTiles:[],wallTiles:[],doorTiles:[]}}
+function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',interior:false,floorTiles:[],wallTiles:[],doorTiles:[]}}
 function currentFloorDraft(){return window.editingConfigFloorJson||emptyFloorDraft()}
 function configFloorsNeedHydration(){return configFloors.some(row=>!row.floor_json)}
 async function fetchConfigFloors({light=false}={}){const hadHydrated=!configFloorsNeedHydration();try{const r=await fetch(`/api/config-floor${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar floors');const rows=Array.isArray(data)?data:[];if(light&&hadHydrated){const fullById=new Map(configFloors.map(row=>[String(row.id),row]));configFloors=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configFloors=rows;renderConfigTilesets();setupWorldSettings()}catch(e){const st=document.getElementById('configTilesetStatus');if(st)st.textContent=`Error cargando config_floor: ${e.message}`}}
 async function ensureConfigFloorsHydrated(){if(!configFloors.length||configFloorsNeedHydration())await fetchConfigFloors()}
-async function saveConfigFloorRow(floor){const id=window.editingConfigFloorId;const r=await fetch(id?`/api/config-floor?id=${encodeURIComponent(id)}`:'/api/config-floor',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({floor_name:floor.name,floor_json:floor})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar floor');await fetchConfigFloors({light:true});setupWorldSettings();return data}
+async function saveConfigFloorRow(floor){const id=window.editingConfigFloorId;const r=await fetch(id?`/api/config-floor?id=${encodeURIComponent(id)}`:'/api/config-floor',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({floor_name:floor.name,interior:!!floor.interior,floor_json:floor})});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo guardar floor');await fetchConfigFloors({light:true});setupWorldSettings();return data}
 function tileLabel(t,i){return `${t.name||'Tile '+(i+1)} · ${t.type==='wall'?'Muro':t.type==='door'?'Puerta':'Suelo'}${t.direction?` · ${t.direction}`:''}`}
-function renderConfigTilesets(){const floor=currentFloorDraft(),tiles=[...(floor.floorTiles||[]).map((t,i)=>({...t,_key:'floorTiles',_index:i})),...(floor.wallTiles||[]).map((t,i)=>({...t,_key:'wallTiles',_index:i})),...(floor.doorTiles||[]).map((t,i)=>({...t,_key:'doorTiles',_index:i}))];const list=document.getElementById('configTilesList'),fl=document.getElementById('configFloorsList');if(list)list.innerHTML=tiles.length?tiles.map((t,i)=>`<div class="configItem"><span class="tierDot" style="background:${t.color||'#263927'}"></span><div><b>${tileLabel(t,i)}</b><span class="small">Rotación: ${t.rotatable?'sí':'no'} · Icono: ${t.icon?'imagen':'colores'}</span><div class="configItemActions"><button type="button" data-edit-tile-key="${t._key}" data-edit-tile-index="${t._index}">Editar tile</button><button type="button" data-delete-tile-key="${t._key}" data-delete-tile-index="${t._index}">Borrar tile</button></div></div></div>`).join(''):'<p class="small">Aún no hay tiles en este floor.</p>';if(fl)fl.innerHTML=[...configFloors.map(r=>({...(r.floor_json||{}),id:r.id,name:r.floor_json?.name||r.floor_name})),...(!configFloors.length?defaultTilesetFloors:[])].map((f,i)=>`<div class="configItem"><span class="tierDot" style="background:${f.floorTiles?.[0]?.color||'#263927'}"></span><div><b>${f.name}</b><span class="small">${f.floorTiles?.length||0} suelo · ${f.wallTiles?.length||0} muro · ${f.doorTiles?.length||0} puerta</span><div class="configItemActions"><button type="button" data-load-floor="${f.id||''}" data-default-floor="${!f.id?i:''}">Editar floor</button></div></div></div>`).join('');document.querySelectorAll('[data-load-floor]').forEach(btn=>btn.onclick=()=>loadConfigFloor(btn.dataset.loadFloor,btn.dataset.defaultFloor));document.querySelectorAll('[data-edit-tile-key]').forEach(btn=>btn.onclick=()=>loadConfigTile(btn.dataset.editTileKey,Number(btn.dataset.editTileIndex)));document.querySelectorAll('[data-delete-tile-key]').forEach(btn=>btn.onclick=()=>deleteConfigTile(btn.dataset.deleteTileKey,Number(btn.dataset.deleteTileIndex)));renderTileSelects()}
+function renderConfigTilesets(){const floor=currentFloorDraft(),tiles=[...(floor.floorTiles||[]).map((t,i)=>({...t,_key:'floorTiles',_index:i})),...(floor.wallTiles||[]).map((t,i)=>({...t,_key:'wallTiles',_index:i})),...(floor.doorTiles||[]).map((t,i)=>({...t,_key:'doorTiles',_index:i}))];const list=document.getElementById('configTilesList'),fl=document.getElementById('configFloorsList');if(list)list.innerHTML=tiles.length?tiles.map((t,i)=>`<div class="configItem"><span class="tierDot" style="background:${t.color||'#263927'}"></span><div><b>${tileLabel(t,i)}</b><span class="small">Rotación: ${t.rotatable?'sí':'no'} · Icono: ${t.icon?'imagen':'colores'}</span><div class="configItemActions"><button type="button" data-edit-tile-key="${t._key}" data-edit-tile-index="${t._index}">Editar tile</button><button type="button" data-delete-tile-key="${t._key}" data-delete-tile-index="${t._index}">Borrar tile</button></div></div></div>`).join(''):'<p class="small">Aún no hay tiles en este floor.</p>';if(fl)fl.innerHTML=[...configFloors.map(r=>({...(r.floor_json||{}),id:r.id,name:r.floor_json?.name||r.floor_name})),...(!configFloors.length?defaultTilesetFloors:[])].map((f,i)=>`<div class="configItem"><span class="tierDot" style="background:${f.floorTiles?.[0]?.color||'#263927'}"></span><div><b>${f.name}</b><span class="small">${f.interior?'INTERIOR · ':''}${f.floorTiles?.length||0} suelo · ${f.wallTiles?.length||0} muro · ${f.doorTiles?.length||0} puerta</span><div class="configItemActions"><button type="button" data-load-floor="${f.id||''}" data-default-floor="${!f.id?i:''}">Editar floor</button></div></div></div>`).join('');document.querySelectorAll('[data-load-floor]').forEach(btn=>btn.onclick=()=>loadConfigFloor(btn.dataset.loadFloor,btn.dataset.defaultFloor));document.querySelectorAll('[data-edit-tile-key]').forEach(btn=>btn.onclick=()=>loadConfigTile(btn.dataset.editTileKey,Number(btn.dataset.editTileIndex)));document.querySelectorAll('[data-delete-tile-key]').forEach(btn=>btn.onclick=()=>deleteConfigTile(btn.dataset.deleteTileKey,Number(btn.dataset.deleteTileIndex)));renderTileSelects()}
 function renderTileSelects(){const floor=currentFloorDraft();for(const [id,key] of [['configFloorTiles','floorTiles'],['configWallTiles','wallTiles'],['configDoorTiles','doorTiles']]){const el=document.getElementById(id);if(el)el.innerHTML=(floor[key]||[]).map((t,i)=>`<option value="${i}" selected>${t.name}</option>`).join('')}}
 function selectedTilesForKey(key){return currentFloorDraft()[key]||[]}
-async function loadConfigFloor(id,defaultIndex){let row=configFloors.find(r=>String(r.id)===String(id));if(row&&!row.floor_json){const r=await fetch(`/api/config-floor?id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar el floor');row=detail;configFloors=configFloors.map(x=>String(x.id)===String(id)?detail:x)}const f=row?{...(row.floor_json||{}),name:row.floor_json?.name||row.floor_name}:defaultTilesetFloors[Number(defaultIndex)]||emptyFloorDraft();window.editingConfigFloorId=row?.id||null;window.editingConfigFloorJson=JSON.parse(JSON.stringify(f));window.editingConfigTileRef=null;configFloorName.value=f.name||'';configFloorStory.value=f.story||'';configTilesetStatus.textContent=`Editando floor ${f.name}.`;resetConfigTileForm(false);renderConfigTilesets()}
+async function loadConfigFloor(id,defaultIndex){let row=configFloors.find(r=>String(r.id)===String(id));if(row&&!row.floor_json){const r=await fetch(`/api/config-floor?id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar el floor');row=detail;configFloors=configFloors.map(x=>String(x.id)===String(id)?detail:x)}const f=row?{...(row.floor_json||{}),interior:!!(row.interior??row.floor_json?.interior),name:row.floor_json?.name||row.floor_name}:defaultTilesetFloors[Number(defaultIndex)]||emptyFloorDraft();window.editingConfigFloorId=row?.id||null;window.editingConfigFloorJson=JSON.parse(JSON.stringify(f));window.editingConfigTileRef=null;configFloorName.value=f.name||'';configFloorStory.value=f.story||'';configFloorInterior.checked=!!f.interior;configTilesetStatus.textContent=`Editando floor ${f.name}.`;resetConfigTileForm(false);renderConfigTilesets()}
 function tileArrayKey(type){return type==='wall'?'wallTiles':type==='door'?'doorTiles':'floorTiles'}
 function resetConfigTileForm(clearIcon=true){configTileName.value='';configTileType.value='floor';configTileColor.value='#263927';configTileAlt.value='#314832';configTileAccent.value='#8fbf63';configWallDirection.value='top';configTileRotatable.checked=true;if(clearIcon){window.currentConfigTileIconHex='';renderConfigIconPreview('','configTileIconPreview','configTileIconStatus')}configTileType.dispatchEvent(new Event('change'))}
 function loadConfigTile(key,index){const floor=currentFloorDraft(),tile=floor[key]?.[index];if(!tile)return;window.editingConfigTileRef={key,index};configTileName.value=tile.name||'';configTileType.value=tile.type||({floorTiles:'floor',wallTiles:'wall',doorTiles:'door'}[key]||'floor');configTileColor.value=tile.color||'#263927';configTileAlt.value=tile.alt||tile.top||'#314832';configTileAccent.value=tile.accent||'#8fbf63';configWallDirection.value=tile.direction||'top';configTileRotatable.checked=!!tile.rotatable;window.currentConfigTileIconHex=tile.icon||'';renderConfigIconPreview(window.currentConfigTileIconHex,'configTileIconPreview','configTileIconStatus');configTileType.dispatchEvent(new Event('change'));configTilesetStatus.textContent=`Editando tile ${tile.name||index+1}. Guarda el tile para aplicar cambios al floor.`}
 function deleteConfigTile(key,index){const floor=currentFloorDraft();if(!floor[key]?.[index])return;if(!confirm('¿Borrar este tile del floor actual?'))return;floor[key].splice(index,1);window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Tile borrado del floor actual. Guarda el floor para consolidar en config_floor.';renderConfigTilesets()}
-function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImageInput',canvasId:'configTileCropCanvas',previewId:'configTileIconPreview',statusId:'configTileIconStatus',zoomId:'configTileCropZoom',eraserId:'configTileMagicEraserBtn',toleranceId:'configTileMagicTolerance',hexKey:'currentConfigTileIconHex',statusPrefix:'Tile',outline:false});window.editingConfigFloorJson=window.editingConfigFloorJson||emptyFloorDraft();renderConfigTilesets();configTileType.onchange=()=>configWallDirectionWrap?.classList.toggle('hidden',configTileType.value!=='wall');configTileType.onchange();addConfigTileBtn.onclick=()=>{const floor=currentFloorDraft(),key=tileArrayKey(configTileType.value),ref=window.editingConfigTileRef,tile={name:configTileName.value.trim()||'Tile sin nombre',type:configTileType.value,direction:configTileType.value==='wall'?configWallDirection.value:'',color:configTileColor.value,alt:configTileAlt.value,top:configTileAlt.value,accent:configTileAccent.value,rotatable:configTileType.value==='wall'&&configTileRotatable.checked,icon:window.currentConfigTileIconHex||''};if(ref&&floor[ref.key]?.[ref.index]){if(ref.key!==key){floor[ref.key].splice(ref.index,1);floor[key]=floor[key]||[];floor[key].push(tile)}else floor[key][ref.index]=tile;configTilesetStatus.textContent='Tile actualizado en el floor actual. Guarda el floor para consolidarlo.'}else{floor[key]=floor[key]||[];floor[key].push(tile);configTilesetStatus.textContent='Tile añadido al floor actual. Guarda el floor para consolidarlo.'}window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm(false);renderConfigTilesets()};newConfigTileBtn.onclick=()=>{window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Formulario listo para un tile nuevo.'};newConfigFloorBtn.onclick=()=>{window.editingConfigFloorId=null;window.editingConfigFloorJson=emptyFloorDraft();configFloorName.value=window.editingConfigFloorJson.name;configFloorStory.value=window.editingConfigFloorJson.story;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Nuevo floor iniciado.';renderConfigTilesets()};saveConfigFloorBtn.onclick=async()=>{const floor=currentFloorDraft();floor.name=configFloorName.value.trim()||'Floor sin nombre';floor.story=configFloorStory.value.trim();configTilesetStatus.textContent='Guardando floor en config_floor...';try{await saveConfigFloorRow(floor);configTilesetStatus.textContent='Floor guardado.'}catch(e){configTilesetStatus.textContent=e.message}};exportConfigTilesetBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentFloorDraft(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-floor.json';a.click();URL.revokeObjectURL(a.href)};importConfigFloorInput.onchange=async()=>{const files=[...importConfigFloorInput.files];configTilesetStatus.textContent='Leyendo floor(s) JSON/ZIP...';try{let count=0;const floorsRaw=await parseImportedJsonFiles(files);for(const raw of floorsRaw){const floor={...emptyFloorDraft(),...(raw.floor_json||raw)};floor.name=floor.name||raw.floor_name||'Floor importado';floor.floorTiles=Array.isArray(floor.floorTiles)?floor.floorTiles:[];floor.wallTiles=Array.isArray(floor.wallTiles)?floor.wallTiles:[];floor.doorTiles=Array.isArray(floor.doorTiles)?floor.doorTiles:[];window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importando floor ${count+1}/${floorsRaw.length}...`;await saveConfigFloorRow(floor);count++}window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importados ${count} floor(s) en config_floor.`}catch(e){configTilesetStatus.textContent=e.message}finally{importConfigFloorInput.value=''}}}
+function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImageInput',canvasId:'configTileCropCanvas',previewId:'configTileIconPreview',statusId:'configTileIconStatus',zoomId:'configTileCropZoom',eraserId:'configTileMagicEraserBtn',toleranceId:'configTileMagicTolerance',hexKey:'currentConfigTileIconHex',statusPrefix:'Tile',outline:false});window.editingConfigFloorJson=window.editingConfigFloorJson||emptyFloorDraft();renderConfigTilesets();configTileType.onchange=()=>configWallDirectionWrap?.classList.toggle('hidden',configTileType.value!=='wall');configTileType.onchange();addConfigTileBtn.onclick=()=>{const floor=currentFloorDraft(),key=tileArrayKey(configTileType.value),ref=window.editingConfigTileRef,tile={name:configTileName.value.trim()||'Tile sin nombre',type:configTileType.value,direction:configTileType.value==='wall'?configWallDirection.value:'',color:configTileColor.value,alt:configTileAlt.value,top:configTileAlt.value,accent:configTileAccent.value,rotatable:configTileType.value==='wall'&&configTileRotatable.checked,icon:window.currentConfigTileIconHex||''};if(ref&&floor[ref.key]?.[ref.index]){if(ref.key!==key){floor[ref.key].splice(ref.index,1);floor[key]=floor[key]||[];floor[key].push(tile)}else floor[key][ref.index]=tile;configTilesetStatus.textContent='Tile actualizado en el floor actual. Guarda el floor para consolidarlo.'}else{floor[key]=floor[key]||[];floor[key].push(tile);configTilesetStatus.textContent='Tile añadido al floor actual. Guarda el floor para consolidarlo.'}window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm(false);renderConfigTilesets()};newConfigTileBtn.onclick=()=>{window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Formulario listo para un tile nuevo.'};newConfigFloorBtn.onclick=()=>{window.editingConfigFloorId=null;window.editingConfigFloorJson=emptyFloorDraft();configFloorName.value=window.editingConfigFloorJson.name;configFloorStory.value=window.editingConfigFloorJson.story;configFloorInterior.checked=false;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Nuevo floor iniciado.';renderConfigTilesets()};saveConfigFloorBtn.onclick=async()=>{const floor=currentFloorDraft();floor.name=configFloorName.value.trim()||'Floor sin nombre';floor.story=configFloorStory.value.trim();floor.interior=!!configFloorInterior.checked;configTilesetStatus.textContent='Guardando floor en config_floor...';try{await saveConfigFloorRow(floor);configTilesetStatus.textContent='Floor guardado.'}catch(e){configTilesetStatus.textContent=e.message}};exportConfigTilesetBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentFloorDraft(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-floor.json';a.click();URL.revokeObjectURL(a.href)};importConfigFloorInput.onchange=async()=>{const files=[...importConfigFloorInput.files];configTilesetStatus.textContent='Leyendo floor(s) JSON/ZIP...';try{let count=0;const floorsRaw=await parseImportedJsonFiles(files);for(const raw of floorsRaw){const floor={...emptyFloorDraft(),...(raw.floor_json||raw)};floor.name=floor.name||raw.floor_name||'Floor importado';floor.floorTiles=Array.isArray(floor.floorTiles)?floor.floorTiles:[];floor.wallTiles=Array.isArray(floor.wallTiles)?floor.wallTiles:[];floor.doorTiles=Array.isArray(floor.doorTiles)?floor.doorTiles:[];window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importando floor ${count+1}/${floorsRaw.length}...`;await saveConfigFloorRow(floor);count++}window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importados ${count} floor(s) en config_floor.`}catch(e){configTilesetStatus.textContent=e.message}finally{importConfigFloorInput.value=''}}}
 
 
 const enemyTypeStats={rogue:{hp:.9,atk:1.15,armor:0},warrior:{hp:1.1,atk:1.05,armor:1},caster:{hp:.85,atk:1.25,armor:0},invocador:{hp:1,atk:1.05,armor:0},clerigo:{hp:1.05,atk:.95,armor:1},chaman:{hp:1,atk:1.1,armor:0},arquero:{hp:.9,atk:1.15,armor:0},francotirador:{hp:.8,atk:1.35,armor:0},tanque:{hp:1.45,atk:.85,armor:3}};
@@ -7863,7 +7867,7 @@ function assetPreviewDims(cols,rows){
 function listConfigAssets(){
  return Object.values(configWorldObjectRows).filter(r=>r.object_key.startsWith(ASSET_KEY_PREFIX)).map(r=>{
   const {cols,rows}=parseTilesNumber(r.tiles_number);
-  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),ambiente:r.ambiente||''};
+  return {key:r.object_key,name:r.name||r.object_key,icon:r.icon||'',cols,rows,mask:parseTilesMask(r.tiles_mask,cols,rows),door:r.door||'',ambiente:r.ambiente||''};
  });
 }
 function applyConfigWorldObjectRows(rows){
@@ -7954,7 +7958,7 @@ function setupConfigWorldObjectsMode(){
  };
 }
 // ---- Decoration assets (config_world_object, object_key prefix asset_) ----
-function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
+function renderConfigAssetRow(a){return `<div class="configItem"><span class="tierDot" style="background:${a.icon?'#8c72e8':'#4d395a'}"></span><div><b>${a.name}</b><span class="small">${a.cols}x${a.rows} tiles${a.door?` · puerta ${a.door}`:''}</span><div class="configItemActions"><button type="button" data-edit-asset="${a.key}">Editar</button><button type="button" data-delete-asset="${a.key}">Borrar</button></div></div></div>`}
 function configAssetEnvironmentJson(ambiente,assets){
  const rows=assets.map(a=>{
   const blockedTiles=a.mask.flat().filter(Boolean).length,totalTiles=a.cols*a.rows;
@@ -8020,6 +8024,7 @@ function renderConfigAssetGrid(){
  const canvas=document.getElementById('configAssetGridCanvas');if(!canvas)return;
  const {cols,rows}=currentAssetGridDims();
  const mask=ensureConfigAssetMask(cols,rows);
+ const door=globalThis.DungeonInteriors?.parseDoor(window.currentConfigAssetDoor,cols,rows);
  // Real in-game size: exactly cols x rows tiles at TILE px each, so the
  // preview shows precisely how large/how it'll look on the dungeon grid.
  canvas.width=cols*TILE;canvas.height=rows*TILE;
@@ -8029,12 +8034,12 @@ function renderConfigAssetGrid(){
  if(preview)g.drawImage(preview,0,0,canvas.width,canvas.height);
  const cw=canvas.width/cols,ch=canvas.height/rows;
  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
-  g.fillStyle=mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
+  g.fillStyle=door?.x===x&&door?.y===y?'rgba(55,145,255,.58)':mask[y][x]?'rgba(220,60,60,.4)':'rgba(70,210,140,.32)';
   g.fillRect(x*cw,y*ch,cw,ch);
   g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=1;g.strokeRect(x*cw+.5,y*ch+.5,cw-1,ch-1);
  }
  const hint=document.getElementById('configAssetGridHint');
- if(hint)hint.textContent=`${cols}x${rows} tiles. Rojo = bloqueado, verde = transitable (PJ y monstruos). Clic en una casilla para alternar.`;
+ if(hint)hint.textContent=`${cols}x${rows} tiles. Rojo = bloqueado, verde = transitable, azul = puerta. Clic: bloqueada → transitable → puerta.`;
 }
 function resetConfigAssetForm(){
  window.editingAssetKey=null;
@@ -8044,6 +8049,7 @@ function resetConfigAssetForm(){
  document.getElementById('configAssetAmbiente').value='';
  window.currentConfigAssetIconHex='';
  window.currentConfigAssetMask=null;
+ window.currentConfigAssetDoor='';
  renderConfigIconPreview('','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(1,1));
  renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent='Nuevo asset (aún no guardado).';
@@ -8061,6 +8067,7 @@ async function loadAssetForEdit(objectKey){
  document.getElementById('configAssetAmbiente').value=asset.ambiente||'';
  window.currentConfigAssetIconHex=asset.icon||'';
  window.currentConfigAssetMask=asset.mask;
+ window.currentConfigAssetDoor=asset.door||'';
  renderConfigIconPreview(asset.icon||'','configAssetIconPreview','configAssetIconStatus',true,assetPreviewDims(asset.cols,asset.rows));
  renderConfigAssetGrid();
  document.getElementById('configAssetSelected').textContent=`Editando: ${asset.name}`;
@@ -8093,7 +8100,7 @@ function setupConfigAssetsMode(){
   const cx=Math.floor((e.clientX-b.left)*gridCanvas.width/b.width/(gridCanvas.width/cols));
   const cy=Math.floor((e.clientY-b.top)*gridCanvas.height/b.height/(gridCanvas.height/rows));
   const mask=ensureConfigAssetMask(cols,rows);
-  if(mask[cy]?.[cx]!==undefined){mask[cy][cx]=!mask[cy][cx];renderConfigAssetGrid()}
+  if(mask[cy]?.[cx]!==undefined){const here=`${cx};${cy}`;if(mask[cy][cx]){mask[cy][cx]=false}else if(window.currentConfigAssetDoor!==here){window.currentConfigAssetDoor=here;mask[cy][cx]=false}else{window.currentConfigAssetDoor='';mask[cy][cx]=true}renderConfigAssetGrid()}
  };
  document.getElementById('saveConfigAssetBtn').onclick=async()=>{
   const st=document.getElementById('configAssetStatus');
@@ -8106,7 +8113,7 @@ function setupConfigAssetsMode(){
   const objectKey=window.editingAssetKey;
   st.textContent='Guardando asset...';
   try{
-   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,ambiente,icon:window.currentConfigAssetIconHex||''};
+   const body={name,tiles_number:tilesNumber,tiles_mask:tilesMask,door:window.currentConfigAssetDoor||null,ambiente,icon:window.currentConfigAssetIconHex||''};
    let r;
    if(objectKey){r=await fetch('/api/config-floor?kind=object',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,object_key:objectKey})})}
    else{r=await fetch('/api/config-floor?kind=object',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
