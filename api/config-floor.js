@@ -16,6 +16,17 @@ function cleanFloor(body){
  const floor=body.floor_json||body;
  return {floor_name:body.floor_name??floor.name??floor.floor_name??'Floor sin nombre',floor_json:floor,interior:body.interior??floor.interior??false};
 }
+// Same schema-cache/pre-migration fallback GET already has (see the comment
+// on handleWorldObjects): a project that has not yet run
+// supabase/add_interior_rooms.sql has no config_floor.interior column, so
+// writing it fails outright. floor_json already carries the same flag
+// nested (cleanFloor's floor_json is the full draft, interior included), so
+// dropping the top-level column here loses nothing - GET's own fallback
+// already reads it back from there.
+function cleanFloorLegacy(body){
+ const {interior,...rest}=cleanFloor(body);
+ return rest;
+}
 function requestId(req){return req.query?.id||req.body?.id||req.body?.floor_id||null}
 
 // User-created decoration assets are world-object rows whose object_key
@@ -106,8 +117,13 @@ module.exports=async(req,res)=>{
   }
   if(req.method==='POST'){
    const row=cleanFloor(req.body||{});
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
-   const data=await r.json();
+   let r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   let data=await r.json();
+   if(!r.ok){
+    const fallback=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(cleanFloorLegacy(req.body||{}))});
+    const fallbackData=await fallback.json();
+    if(fallback.ok){r=fallback;data=fallbackData}
+   }
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(Array.isArray(data)?data[0]:data);
   }
@@ -115,8 +131,13 @@ module.exports=async(req,res)=>{
    const id=requestId(req);
    if(!id)return res.status(400).json({error:'Falta id para actualizar el floor'});
    const row=cleanFloor(req.body||{});
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
-   const data=await r.json();
+   let r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   let data=await r.json();
+   if(!r.ok){
+    const fallback=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(cleanFloorLegacy(req.body||{}))});
+    const fallbackData=await fallback.json();
+    if(fallback.ok){r=fallback;data=fallbackData}
+   }
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(data);
   }

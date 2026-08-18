@@ -1,3 +1,9 @@
+## v0.93.4 - 2026-08-18
+
+- Corregido el error al guardar un floor en el editor: `POST`/`PUT` de `api/config-floor.js` siempre incluían la columna `interior`, así que en cualquier proyecto de Supabase donde aún no se haya ejecutado `supabase/add_interior_rooms.sql` el guardado fallaba directamente. Ahora, igual que ya hacía `GET`, si falla se reintenta sin esa columna (el flag sigue disponible dentro de `floor_json.interior`, que es de donde `GET` ya lo recupera en ese mismo caso). **Recomendado**: ejecutar `supabase/add_interior_rooms.sql` en el proyecto para que `interior` se guarde también como columna propia.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.93.4`.
+- Prueba dedicada simulando un Supabase sin la columna `interior`: `POST` y `PUT` se recuperan solos con el reintento sin esa columna, y un fallo genuino (no relacionado con la columna) se sigue reportando como error tras el reintento.
+
 ## v0.93.3 - 2026-08-18
 
 - Los assets con puerta usados para las salas interiores ahora respetan el ambiente elegido para el piso (el mismo pool que ya usa la decoración normal), en vez de escoger entre todos los ambientes al azar; solo si el ambiente del piso no tiene ningún asset con puerta configurado se recurre a cualquier otro ambiente.
