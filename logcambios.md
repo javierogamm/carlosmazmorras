@@ -1,3 +1,10 @@
+## v0.89.3 - 2026-08-17
+
+- Corregido el renderizado de dungeons recientes cuando un floor contiene un icono de tile vacío, corrupto o todavía sin decodificar: ya no se aborta el frame dejando tiles negras, ocultando al personaje y aparentando bloquear el movimiento.
+- Los iconos hexadecimales de tiles se validan antes de crear la imagen y los recursos que fallan al cargar usan el tile procedural como respaldo, sin afectar a las mazmorras antiguas.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.89.3` (`v0.89.3 RENDER DUNGEON`).
+- Sin ejecución de tests, conforme a la instrucción del usuario.
+
 ## v0.89.2 - 2026-08-17
 
 - Corregida la primera entrada a una dungeon: el canvas reajusta su buffer y vuelve a dibujarse al cerrar la vista previa, sin obligar a cambiar el zoom para activar o alinear el tablero.

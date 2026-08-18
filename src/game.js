@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.89.2';
+const APP_VERSION='0.89.3';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -6302,7 +6302,16 @@ function activeFloorTileset(){return game?.floorTileset||pickFloorTilesetForLeve
 function wallDirectionForCell(gx,gy){const open=(x,y)=>game?.map?.[y]?.[x]===0,up=open(gx,gy-1),down=open(gx,gy+1),left=open(gx-1,gy),right=open(gx+1,gy);if(up&&down&&!left&&!right)return'vertical';if(left&&right&&!up&&!down)return'horizontal';if(down&&!up)return'top';if(up&&!down)return'bottom';if(right&&!left)return'left';if(left&&!right)return'right';return'center'}
 function wallRotationForDirection(direction){return {top:0,right:90,bottom:180,left:270,horizontal:90,vertical:0,center:0}[direction]||0}
 function directionalWallTile(tiles,direction,seed){const exact=tiles.filter(t=>!t.direction||t.direction===direction||(direction==='horizontal'&&t.direction==='right')||(direction==='vertical'&&t.direction==='top'));return (exact.length?exact:tiles)[seed%(exact.length?exact.length:tiles.length)]}
-function tileImageFromHex(hex){if(!hex)return null;const img=new Image();img.src='data:image/png;base64,'+btoa(String(hex).match(/.{1,2}/g).map(h=>String.fromCharCode(parseInt(h,16))).join(''));return img}
+function tileImageFromHex(hex){
+ const value=String(hex||'').trim().replace(/^#/,'');
+ if(!value||value.length%2||!/^[0-9a-f]+$/i.test(value))return null;
+ const bytes=value.match(/.{2}/g);if(!bytes)return null;
+ const img=new Image();
+ img._loadFailed=false;
+ img.onerror=()=>{img._loadFailed=true;if(game)draw()};
+ img.src='data:image/png;base64,'+btoa(bytes.map(h=>String.fromCharCode(parseInt(h,16))).join(''));
+ return img
+}
 const tileImageCache=new Map();
 // Skill icon override (skillDefs[id].iconImage, a hex PNG from the class
 // editor's image icon tool): renders in place of the plain text/emoji glyph
@@ -6313,7 +6322,19 @@ function drawSkillIconImg(canvas,hex){
  const paint=()=>{const c=canvas.getContext('2d');c.imageSmoothingEnabled=true;c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(img,0,0,canvas.width,canvas.height)};
  if(img.complete)paint();else img.onload=paint;
 }
-function drawConfiguredTile(tile,x,y,rotate=0){if(!tile?.icon)return false;let img=tileImageCache.get(tile.icon);if(!img){img=tileImageFromHex(tile.icon);tileImageCache.set(tile.icon,img)}if(!img)return false;const paint=()=>{ctx.save();ctx.translate(x+TILE/2,y+TILE/2);if(rotate)ctx.rotate(rotate*Math.PI/180);ctx.drawImage(img,-TILE/2,-TILE/2,TILE,TILE);ctx.restore()};if(img.complete){paint();return true}img.onload=()=>game&&draw();return false}
+function drawConfiguredTile(tile,x,y,rotate=0){
+ if(!tile?.icon)return false;
+ let img=tileImageCache.get(tile.icon);
+ if(!img){img=tileImageFromHex(tile.icon);if(!img)return false;tileImageCache.set(tile.icon,img)}
+ // `complete` is also true for a broken image. Calling drawImage with that
+ // object throws and aborts the whole frame before the hero is painted,
+ // leaving a partly black board that appears frozen. Fall back to the
+ // procedural tile until a real bitmap has decoded instead.
+ if(img._loadFailed)return false;
+ if(!img.complete){img.onload=()=>game&&draw();return false}
+ if(!img.naturalWidth||!img.naturalHeight){img._loadFailed=true;return false}
+ ctx.save();ctx.translate(x+TILE/2,y+TILE/2);if(rotate)ctx.rotate(rotate*Math.PI/180);ctx.drawImage(img,-TILE/2,-TILE/2,TILE,TILE);ctx.restore();return true
+}
 
 const floorVisualThemes={
  1:{name:'Fortaleza Verde',wall:'#1c2b1d',wallTop:'#304832',floor:'#263927',floorAlt:'#314832',accent:'#8fbf63',fog:'#071009',story:'Fortaleza tomada por trasgos, mercenarios y bestias de los bosques.'},
