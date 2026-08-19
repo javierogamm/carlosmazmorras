@@ -32,6 +32,18 @@ let soulseekClassPickerOpen=false;
   .soulseekDeathBox{text-align:center;border-color:#9d6cff}
   .soulseekDeathBox .startActions{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap}
   #soulseekClassGrid .skillChoiceCard p{margin:6px 0 0}
+  .soulseekLoadoutBox{width:min(760px,94vw);max-height:88vh;overflow:auto;display:flex;flex-direction:column}
+  .soulseekLoadoutStatus{text-align:center;margin:2px 0 10px;color:#c9b8d0}
+  .soulseekLoadoutGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
+  .soulseekLoadoutCard{background:#1c1224;border:3px solid #4d395a;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:#f4ead5;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutCard:hover{border-color:#ffc35a}
+  .soulseekLoadoutCard.selected{border-color:#ffc35a;background:#3a2748}
+  .soulseekLoadoutCard canvas{width:48px;height:48px}
+  .soulseekLoadoutCard b{font-size:12px;color:#ffd68b}
+  .soulseekLoadoutTypeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}
+  .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
+  #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
  `;
  document.head.appendChild(style);
 })();
@@ -145,6 +157,17 @@ function soulseekEnsureDom(){
    <button id="soulseekDeathBankBtn">DEJAR MORIR Y GUARDAR SOUL SPIKES</button>
   </div>
  </div>
+</div>
+
+<div class="statPointModal" id="soulseekLoadoutModal">
+ <div class="statPointBox soulseekLoadoutBox">
+  <h2 id="soulseekLoadoutTitle">ELIGE TU EQUIPO INICIAL</h2>
+  <div id="soulseekLoadoutStatus" class="small soulseekLoadoutStatus"></div>
+  <div id="soulseekLoadoutBody"></div>
+  <div class="soulseekActions">
+   <button class="start" id="soulseekLoadoutConfirmBtn" disabled>CONFIRMAR</button>
+  </div>
+ </div>
 </div>`;
  while(wrap.firstElementChild)document.body.appendChild(wrap.firstElementChild);
 }
@@ -177,7 +200,7 @@ async function openSoulseekerScores(){
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar las puntuaciones');
   if(!data.length){status.textContent='Todavía no hay personajes Soulseeker.';return}
   status.textContent=`${data.length} personaje(s).`;
-  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Élites</th><th>Jefes</th><th>Megaboss</th><th>Dungeons</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const f=normalizeFeats(c.feats);return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${c.class_name||'Sin clase'}</td><td>${c.race_name||'-'}</td><td>${c.level||1}</td><td>${f.elites}</td><td>${f.bosses}</td><td>${f.megabosses}</td><td>${f.dungeons}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
+  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Élites</th><th>Jefes</th><th>Megaboss</th><th>Niveles</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const f=normalizeFeats(c.feats);return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${c.class_name||'Sin clase'}</td><td>${c.race_name||'-'}</td><td>${c.level||1}</td><td>${f.elites}</td><td>${f.bosses}</td><td>${f.megabosses}</td><td>${f.dungeons}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
 function closeSoulseekerScores(){
@@ -237,8 +260,11 @@ function renderSoulseekRaceChoices(){
 }
 
 async function soulseekStartCharacter(){
- const nameInput=document.getElementById('soulseekNameInput'),name=(nameInput?.value||'').trim();
- if(!name){alert('Escribe un nombre para tu personaje.');return}
+ const nameInput=document.getElementById('soulseekNameInput'),typedName=(nameInput?.value||'').trim();
+ // A blank name is allowed: the character is saved as "PJ Nº<id>" once
+ // Supabase assigns the row's id (see soulseekFinishCharacterCreation),
+ // since the id doesn't exist yet at creation time.
+ const name=typedName||'Aventurero sin nombre';
  if(!configRacesLoaded)await fetchConfigRaces();
  if(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace]){alert('Selecciona una raza antes de crear el personaje.');return}
  await ensureConfigItemsHydrated();
@@ -246,15 +272,142 @@ async function soulseekStartCharacter(){
  const race=soulseekSelectedRace;
  const stats={strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2};
  const maxHp=30+stats.vitality*6,maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
- const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(null);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:classlessIconForGender(soulseekSelectedGender),skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
+ const equipment=Object.fromEntries(slots.map(s=>[s,null]));
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,autoNamed:!typedName,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:classlessIconForGender(soulseekSelectedGender),skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
  const racialSkill=raceDefs[race]?.skill;
  if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
  if(rb.armor)game.player.baseArmor+=rb.armor;
- addStarterPotions(null);
+ if(soulseekCommonPotionRows().length&&soulseekCommonWeaponRows().length){
+  openSoulseekerLoadoutModal();
+ }else{
+  game.player.equipment.weapon=makeStarterWeapon(null);
+  addStarterPotions(null);
+  syncAllEquipmentPassives();recomputeDerived();
+  await soulseekFinishCharacterCreation();
+ }
+}
+// ============================================================================
+// Starting loadout picker - a small wizard, one question at a time so it
+// always fits on screen instead of one giant multi-select grid:
+//   1) weapon TYPE (the shop's own SOULSEEK_WEAPON_TYPE_GROUPS buckets)
+//   2) one common weapon of that type -> confirm
+//   3) one common potion -> confirm, repeated 4 times (any mix of types)
+// Then the character is saved and the run starts. Reuses the same
+// config_items catalog addStarterPotions()/makeStarterWeapon() draw from.
+// Only shown when the catalog actually has common potions and weapons
+// configured; falls back to the old automatic pick otherwise (see
+// soulseekStartCharacter above).
+// ============================================================================
+let soulseekLoadoutStep='weaponType';
+let soulseekLoadoutWeaponType=null;
+let soulseekLoadoutWeaponPickId=null;
+let soulseekLoadoutPotionPickId=null;
+let soulseekLoadoutChosenPotions=[];
+function soulseekCommonPotionRows(){
+ return configuredPotionRows().filter(r=>{const it=r.item_json||r;return (it.rarity||r.tier||'common')==='common'});
+}
+function soulseekCommonWeaponRows(){
+ return configItems.filter(r=>{const it=r.item_json||r;return (it.slot||r.slot)==='weapon'&&(it.rarity||r.tier||'common')==='common'});
+}
+function openSoulseekerLoadoutModal(){
+ soulseekEnsureDom();
+ soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+ // typeof guard: soulseek_shop.js (which owns soulseekWeaponGroupFor) loads
+ // after this file but before any of this runs (user interaction), so it's
+ // always defined by the time openSoulseekerLoadoutModal actually fires -
+ // this guard only covers a shop-less install missing that file entirely.
+ const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
+ const groups=[...new Set(soulseekCommonWeaponRows().map(r=>groupFor((r.item_json||r).weaponType)))];
+ if(groups.length<=1){soulseekLoadoutWeaponType=groups[0]||null;soulseekLoadoutStep='weaponPick'}
+ else soulseekLoadoutStep='weaponType';
+ renderSoulseekLoadoutStep();
+ document.getElementById('soulseekLoadoutModal').classList.add('open');
+}
+function soulseekLoadoutCardHtml(row,fallbackName){
+ const it=row.item_json||row,rarity=it.rarity||row.tier||'common',name=it.name||row.nombre||fallbackName;
+ return `<div class="soulseekLoadoutCard" data-soulseek-pick="${row.id}"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas><b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b></div>`;
+}
+function soulseekWireLoadoutCardIcons(root,rows){
+ root.querySelectorAll('[data-soulseek-loadout-icon]').forEach(c=>{
+  const row=rows.find(r=>String(r.id)===c.dataset.soulseekLoadoutIcon),it=row&&(row.item_json||row);
+  if(it)drawItemIcon(c,{icon:it.icon,rarity:it.rarity||'common'});
+ });
+}
+function renderSoulseekLoadoutStep(){
+ const title=document.getElementById('soulseekLoadoutTitle'),status=document.getElementById('soulseekLoadoutStatus'),body=document.getElementById('soulseekLoadoutBody'),confirmBtn=document.getElementById('soulseekLoadoutConfirmBtn');
+ if(soulseekLoadoutStep==='weaponType'){
+  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
+  const groups=[...new Set(soulseekCommonWeaponRows().map(r=>groupFor((r.item_json||r).weaponType)))];
+  title.textContent='ELIGE EL TIPO DE ARMA';
+  status.textContent='Selecciona con qué tipo de arma quieres empezar.';
+  body.innerHTML=`<div class="soulseekLoadoutTypeGrid">${groups.map(g=>`<button type="button" class="soulseekLoadoutTypeCard" data-soulseek-weapon-type="${g}">${g}</button>`).join('')}</div>`;
+  body.querySelectorAll('[data-soulseek-weapon-type]').forEach(btn=>btn.onclick=()=>{
+   soulseekLoadoutWeaponType=btn.dataset.soulseekWeaponType;
+   soulseekLoadoutStep='weaponPick';
+   renderSoulseekLoadoutStep();
+  });
+  confirmBtn.classList.add('hidden');
+  return;
+ }
+ if(soulseekLoadoutStep==='weaponPick'){
+  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
+  const rows=soulseekCommonWeaponRows().filter(r=>!soulseekLoadoutWeaponType||groupFor((r.item_json||r).weaponType)===soulseekLoadoutWeaponType);
+  title.textContent='ELIGE TU ARMA';
+  status.textContent=`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma común y confirma.`;
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">No hay armas comunes de este tipo.</p>';
+  soulseekWireLoadoutCardIcons(body,rows);
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+   soulseekLoadoutWeaponPickId=card.dataset.soulseekPick;
+   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutWeaponPickId));
+   confirmBtn.disabled=false;
+  });
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent='CONFIRMAR ARMA';
+  confirmBtn.disabled=!soulseekLoadoutWeaponPickId;
+  return;
+ }
+ // potion step, one at a time, up to 4
+ const idx=soulseekLoadoutChosenPotions.length+1;
+ const rows=soulseekCommonPotionRows();
+ title.textContent=`ELIGE TU POCIÓN (${idx}/4)`;
+ status.textContent='Elige una poción común y confirma. Puedes repetir el mismo tipo.';
+ body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">No hay pociones comunes configuradas.</p>';
+ soulseekWireLoadoutCardIcons(body,rows);
+ body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+  soulseekLoadoutPotionPickId=card.dataset.soulseekPick;
+  body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutPotionPickId));
+  confirmBtn.disabled=false;
+ });
+ confirmBtn.classList.remove('hidden');
+ confirmBtn.textContent=`CONFIRMAR POCIÓN ${idx}/4`;
+ confirmBtn.disabled=!soulseekLoadoutPotionPickId;
+}
+async function soulseekLoadoutConfirmStep(){
+ if(soulseekLoadoutStep==='weaponPick'){
+  if(!soulseekLoadoutWeaponPickId)return;
+  soulseekLoadoutStep='potion';
+  renderSoulseekLoadoutStep();
+  return;
+ }
+ if(!soulseekLoadoutPotionPickId)return;
+ soulseekLoadoutChosenPotions.push(soulseekLoadoutPotionPickId);
+ soulseekLoadoutPotionPickId=null;
+ if(soulseekLoadoutChosenPotions.length>=4)await soulseekFinalizeLoadout();
+ else renderSoulseekLoadoutStep();
+}
+async function soulseekFinalizeLoadout(){
+ if(!game?.player)return;
+ const weaponRow=soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId);
+ game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
+ const potionRows=soulseekCommonPotionRows();
+ for(const id of soulseekLoadoutChosenPotions){
+  const row=potionRows.find(r=>String(r.id)===id);
+  if(row)addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));
+ }
+ document.getElementById('soulseekLoadoutModal').classList.remove('open');
  syncAllEquipmentPassives();recomputeDerived();
  await soulseekFinishCharacterCreation();
 }
@@ -265,6 +418,14 @@ async function soulseekFinishCharacterCreation(){
   const r=await fetch('/api/user-pj',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:window.currentUser.nombre,pj_name:bundle.player.name,pj_json:bundle,feats:bundle.feats,pj_status:'alive',pj_score:score,souls:game.player.souls||0,soulseeker:true,last_use:new Date().toISOString()})});
   const data=await r.json().catch(()=>null);
   if(!r.ok)throw new Error(data?.error||data?.message||data?.details||data?.hint||`HTTP ${r.status}${r.statusText?' '+r.statusText:''}`);
+  // A blank-name character is saved with a placeholder name above (the row
+  // id doesn't exist before the insert) - now that Supabase returned the
+  // generated id, rename it to "PJ Nº<id>" and persist that final name.
+  if(bundle.player.autoNamed&&data?.id){
+   delete bundle.player.autoNamed;
+   bundle.player.name=`PJ Nº${data.id}`;
+   await fetch('/api/user-pj',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:data.id,pj_name:bundle.player.name,pj_json:bundle,minimal:true})}).catch(()=>{});
+  }
   alert(`Personaje "${bundle.player.name}" creado y guardado correctamente. Bienvenido al Soulseek Mode.`);
   refreshCurrentUserProgress();
  }catch(e){
@@ -430,6 +591,7 @@ async function soulseekBankSoulsAndDie(){
  document.getElementById('soulseekCreateBackBtn').onclick=closeSoulseekerNewCharacter;
  document.getElementById('soulseekCreateBtn').onclick=soulseekStartCharacter;
  document.querySelectorAll('[data-soulseek-gender]').forEach(button=>button.onclick=()=>{soulseekSelectedGender=button.dataset.soulseekGender;renderSoulseekGenderChoices();renderSoulseekRaceChoices()});
+ document.getElementById('soulseekLoadoutConfirmBtn').onclick=soulseekLoadoutConfirmStep;
 
  if(typeof classSkillConsistencyGuard==='function'){
   const originalGuard=classSkillConsistencyGuard;
