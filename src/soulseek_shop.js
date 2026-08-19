@@ -43,6 +43,25 @@ const SOULSEEK_ROMAN_TO_TIER={I:1,II:2,III:3,IV:4,V:5,VI:6};
 
 function soulseekCostForIndex(table,index,fallback){return index<table.length?table[index]:fallback}
 function soulseekItemTierCost(rarity,table){const idx=Math.min(table.length-1,Math.max(0,LOOT_RARITY_ORDER.indexOf(rarity)));return table[idx]??table[table.length-1]}
+// Shop-only friendly grouping of game.js's real weapon types
+// (configWeaponTypes - Espadas, Dagas, Sables, Hachas, ... 21 in total,
+// each with its own flavorful weaponCategory string like "Armas blancas
+// steampunk básicas") into 7 plain buckets, keyed by item.weaponType.
+// Every entry maps to exactly one bucket; anything not listed here (a
+// custom weaponType an admin might add later) falls into "Armas exóticas".
+const SOULSEEK_WEAPON_TYPE_GROUPS={
+ 'Espadas y Dagas':['Espadas','Dagas','Sables'],
+ 'Martillos y Hachas':['Hachas','Mazas','Martillos','Armas pesadas','Guanteletes'],
+ 'Armas de Fuego':['Pistolas','Rifles','Escopetas'],
+ 'Arcos y ballestas':['Arcos','Ballestas'],
+ 'Bastones y lanzas':['Bastones','Lanzas'],
+ 'Armas exóticas':['Garras','Látigos','Drones','Granadas','Artefactos'],
+ 'Varitas':['Varitas']
+};
+function soulseekWeaponGroupFor(weaponType){
+ for(const [label,types] of Object.entries(SOULSEEK_WEAPON_TYPE_GROUPS))if(types.includes(weaponType))return label;
+ return 'Armas exóticas';
+}
 // Worst to best - the request specifically wants common-first ordering in
 // the shop grid, not the pick()-random/insertion order configItems has.
 function soulseekSortByRarity(rows){
@@ -371,14 +390,18 @@ function soulseekRenderShopObjects(){
   let rows=configItems.filter(r=>!isConfiguredPotionRow(r)&&((r.item_json||r).slot||r.slot)===soulseekShopObjSlot);
   let weaponCatTabs='';
   if(soulseekShopObjSlot==='weapon'){
-   const cats=[...new Set(rows.map(r=>(r.item_json||r).weaponCategory).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+   // Grouped by the shop's own friendly buckets (SOULSEEK_WEAPON_TYPE_GROUPS),
+   // not the raw weaponCategory strings (flavor text like "Armas blancas
+   // steampunk básicas") - those are what made the old tabs look odd.
+   const presentGroups=new Set(rows.map(r=>soulseekWeaponGroupFor((r.item_json||r).weaponType)));
+   const cats=Object.keys(SOULSEEK_WEAPON_TYPE_GROUPS).filter(g=>presentGroups.has(g));
    if(cats.length){
     if(soulseekShopWeaponCategory&&!cats.includes(soulseekShopWeaponCategory))soulseekShopWeaponCategory=null;
     weaponCatTabs=`<div class="soulseekShopSubTabs" style="padding:0 0 12px">
      <button type="button" class="${!soulseekShopWeaponCategory?'active':''}" data-shop-weapon-cat="">TODAS</button>
      ${cats.map(c=>`<button type="button" class="${c===soulseekShopWeaponCategory?'active':''}" data-shop-weapon-cat="${c}">${c}</button>`).join('')}
     </div>`;
-    if(soulseekShopWeaponCategory)rows=rows.filter(r=>(r.item_json||r).weaponCategory===soulseekShopWeaponCategory);
+    if(soulseekShopWeaponCategory)rows=rows.filter(r=>soulseekWeaponGroupFor((r.item_json||r).weaponType)===soulseekShopWeaponCategory);
    }else soulseekShopWeaponCategory=null;
   }
   rows=soulseekSortByRarity(rows);
