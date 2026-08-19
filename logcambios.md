@@ -1,3 +1,12 @@
+## v0.94.1 - 2026-08-19
+
+- Arreglado el asistente de equipo inicial de Soulseek con mando: se quedaba muerto al llegar a «ELIGE TU POCIÓN (1/4)». Cada paso reescribe el cuerpo del modal, lo que destruye la tarjeta que tenía el foco, y CONFIRMAR vuelve a quedar deshabilitado al empezar el paso (deshabilitar un elemento enfocado también suelta el foco). Como la pantalla activa seguía siendo el mismo modal, nada volvía a colocar el cursor: el jugador se quedaba sin anillo de foco y sin forma de avanzar, que es exactamente la sensación de «ha desaparecido la selección de arma y pociones».
+- El mando recupera ahora el foco por su cuenta en cuanto el elemento que él mismo había resaltado deja de ser usable (destruido, deshabilitado u oculto), no solo al cambiar de pantalla. La comprobación mira el elemento concreto y no `document.activeElement`, así que tener un mando conectado nunca le roba el foco (ni desplaza la página) a quien juega con ratón. Cualquier otro modal que se redibuje sobre sí mismo queda cubierto por el mismo mecanismo.
+- Centralizado el movimiento del anillo de foco en `markGamepadFocus()`, para que el elemento resaltado y el que se vigila no puedan desincronizarse.
+- Añadido `font-size:inherit` a las tarjetas del asistente, que pasaron de `<div>` a `<button>` en 0.94.0 y heredaban el tamaño de fuente por defecto del navegador.
+- Verificación: recorrido completo del asistente con un mando simulado (`navigator.getGamepads`) usando solo primitivas de mando — tipo de arma → arma → 4 pociones → cierre —, comprobando que el equipo se aplica de verdad («Espada corta» + «Poción menor x4»). Contra el commit anterior el mismo recorrido muere en la primera poción sin arma aplicada. Capturas de los tres pasos y repetición del resto de comprobaciones (partida real con 42 enemigos, subida de nivel, diálogos, invocaciones por tier) sin errores.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.1`.
+
 ## v0.94.0 - 2026-08-19
 
 ### Mando

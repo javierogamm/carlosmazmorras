@@ -35,13 +35,13 @@ let soulseekClassPickerOpen=false;
   .soulseekLoadoutBox{width:min(760px,94vw);max-height:88vh;overflow:auto;display:flex;flex-direction:column}
   .soulseekLoadoutStatus{text-align:center;margin:2px 0 10px;color:#c9b8d0}
   .soulseekLoadoutGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
-  .soulseekLoadoutCard{background:#1c1224;border:3px solid #4d395a;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:#f4ead5;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutCard{background:#1c1224;border:3px solid #4d395a;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:#f4ead5;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutCard:hover{border-color:#ffc35a}
   .soulseekLoadoutCard.selected{border-color:#ffc35a;background:#3a2748}
   .soulseekLoadoutCard canvas{width:48px;height:48px}
   .soulseekLoadoutCard b{font-size:12px;color:#ffd68b}
   .soulseekLoadoutTypeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}
-  .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
   #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
  `;

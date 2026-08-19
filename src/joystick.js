@@ -38,6 +38,10 @@ const GAMEPAD_DPAD=[[12,0,-1],[13,0,1],[14,-1,0],[15,1,0]];
 const GAMEPAD_STICK_DEADZONE=.55;
 const GAMEPAD_REPEAT_MS=190;
 let gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS},gamepadListening=null,gamepadPrevious=[],gamepadRepeat={},gamepadUiMode='gameplay',gamepadZoneIndex=0,gamepadConnected=false,gamepadAutoFocusedScreen=null;
+// The element the pad itself put the focus ring on. Tracked so the ring can
+// be recovered if that exact element is later destroyed - see
+// autoFocusGamepadScreen().
+let gamepadFocusedElement=null;
 try{gamepadBindings={...gamepadBindings,...JSON.parse(localStorage.getItem('gamepadBindings')||'{}')}}catch(e){}
 
 // ---- Bindings menu ---------------------------------------------------------
@@ -73,10 +77,13 @@ function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.
 // the explicit hooks means any future card markup stays reachable too.
 const GAMEPAD_NAVIGABLE_SELECTOR='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[data-soulseek-pick],[data-gamepad-focusable],[tabindex],.item,.skillCard,.visualSlot,.soulseekLoadoutCard';
 function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const elements=(scope.matches?.(GAMEPAD_NAVIGABLE_SELECTOR)?[scope]:[]).concat([...scope.querySelectorAll(GAMEPAD_NAVIGABLE_SELECTOR)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
-function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;const next=els[(i+direction+els.length)%els.length];document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));next.classList.add('gamepadFocus');next.focus({preventScroll:true});next.scrollIntoView({block:'nearest'})}
-function focusGamepadElement(element){if(!element)return;gamepadUiMode='zone';document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));element.classList.add('gamepadFocus');element.focus({preventScroll:true});element.scrollIntoView({block:'nearest'})}
+// Single place that moves the ring, so gamepadFocusedElement always matches
+// what is actually highlighted.
+function markGamepadFocus(el){document.querySelectorAll('.gamepadFocus').forEach(x=>x.classList.remove('gamepadFocus'));el.classList.add('gamepadFocus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});gamepadFocusedElement=el}
+function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;markGamepadFocus(els[(i+direction+els.length)%els.length])}
+function focusGamepadElement(element){if(!element)return;gamepadUiMode='zone';markGamepadFocus(element)}
 function focusCurrentZone(){document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));navigateMenu(1)}
-function shoulderNavigate(direction){if(gameplayInputActive()&&!document.body.classList.contains('gameOnly')){cycleGameTab(direction);gamepadUiMode='tab';const active=document.querySelector('.tabview:not(.hidden)');const first=active?.querySelector('button:not([disabled]),[tabindex],.item,.skillCard,.visualSlot');if(first){first.setAttribute('tabindex',first.getAttribute('tabindex')||'0');first.focus({preventScroll:true});first.classList.add('gamepadFocus');first.scrollIntoView({block:'nearest'})}return}const zones=gamepadZones();if(!zones.length)return;gamepadUiMode='zone';gamepadZoneIndex=(gamepadZoneIndex+direction+zones.length)%zones.length;focusCurrentZone()}
+function shoulderNavigate(direction){if(gameplayInputActive()&&!document.body.classList.contains('gameOnly')){cycleGameTab(direction);gamepadUiMode='tab';const active=document.querySelector('.tabview:not(.hidden)');const first=active?.querySelector('button:not([disabled]),[tabindex],.item,.skillCard,.visualSlot');if(first){first.setAttribute('tabindex',first.getAttribute('tabindex')||'0');markGamepadFocus(first)}return}const zones=gamepadZones();if(!zones.length)return;gamepadUiMode='zone';gamepadZoneIndex=(gamepadZoneIndex+direction+zones.length)%zones.length;focusCurrentZone()}
 function returnToGameplay(){gamepadUiMode='gameplay';document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));canvas?.focus?.({preventScroll:true})}
 
 // True when there is a live run the stick can actually drive: a game in
@@ -90,25 +97,51 @@ function gameplayInputActive(){
  return visibleGamepadScreen()===app;
 }
 
-// When a modal or overlay appears while a pad is connected, put the focus
-// ring on its first control so CONFIRM works immediately instead of firing
-// at whatever was focused underneath. Gated on gamepadConnected so mouse and
-// keyboard players never see focus move on its own.
+// Keeps the focus ring alive while a pad is connected. Two jobs:
+//  1) a modal/overlay appears -> focus its first control, so CONFIRM works
+//     immediately instead of firing at whatever was focused underneath;
+//  2) the focused element DISAPPEARS while the same screen stays open ->
+//     focus the first control again. This second case is what unblocked the
+//     Soulseek starting-loadout wizard: every step replaces the modal body's
+//     innerHTML, which destroys the focused card, and document.activeElement
+//     falls back to <body>. The screen element itself never changed, so
+//     nothing re-focused, and the pad was left with no cursor and no way to
+//     reach CONFIRMAR - the wizard was impossible to finish past the first
+//     potion. Any other modal that re-renders itself in place gets the same
+//     protection for free.
+// Gated on gamepadConnected so mouse and keyboard players never see focus
+// move on its own.
 // Throttled: visibleGamepadScreen() walks the DOM, and running that on every
 // animation frame just to notice a modal opened is wasted work. ~6 checks a
 // second is imperceptible for focus latency.
 const GAMEPAD_AUTOFOCUS_EVERY_FRAMES=10;
 let gamepadAutoFocusTick=0;
+// True when the element the PAD had highlighted stopped being usable. Three
+// ways that happens in this codebase, all of them in the Soulseek loadout
+// wizard alone:
+//   - destroyed: the step re-renders the modal body, taking the focused card
+//     with it (isConnected goes false);
+//   - disabled: CONFIRMAR goes back to disabled at the start of every step,
+//     and disabling a focused element blurs it;
+//   - hidden: CONFIRMAR is hidden outright on the weapon-type step.
+// Deliberately keyed on the ELEMENT, not on document.activeElement, so it
+// never fires just because a mouse user clicked empty space - plugging a pad
+// in must never make the page snatch focus or scroll on its own.
+function gamepadFocusUsable(el){return !!el&&el.isConnected&&!el.disabled&&el.offsetParent!==null&&!el.classList.contains('hidden')}
+function gamepadFocusDestroyed(){return !!gamepadFocusedElement&&!gamepadFocusUsable(gamepadFocusedElement)}
 function autoFocusGamepadScreen(){
  if(!gamepadConnected)return;
  if(gamepadAutoFocusTick++%GAMEPAD_AUTOFOCUS_EVERY_FRAMES)return;
  const screen=visibleGamepadScreen();
- if(screen===gamepadAutoFocusedScreen)return;
+ const screenChanged=screen!==gamepadAutoFocusedScreen;
  gamepadAutoFocusedScreen=screen;
- if(screen===document.body||screen.id==='app'){gamepadUiMode='gameplay';return}
- gamepadUiMode='zone';gamepadZoneIndex=0;
+ // Gameplay owns its own "focus": the stick drives the hero, so never pull
+ // the ring onto a side-panel button on its own here.
+ if(screen===document.body||screen.id==='app'){if(screenChanged)gamepadUiMode='gameplay';return}
+ if(!screenChanged&&!gamepadFocusDestroyed())return;
+ if(screenChanged){gamepadUiMode='zone';gamepadZoneIndex=0}
  const first=navigableElements()[0];
- if(first)focusGamepadElement(first);
+ if(first)focusGamepadElement(first);else gamepadFocusedElement=null;
 }
 
 // ---- On-board aiming cursor ------------------------------------------------
@@ -184,7 +217,7 @@ function pollGamepads(now=0){
    gamepadDirections(pad,pressed,now);
   }
   gamepadPrevious=pressed;
- }else{gamepadPrevious=[];gamepadAutoFocusedScreen=null}
+ }else{gamepadPrevious=[];gamepadAutoFocusedScreen=null;gamepadFocusedElement=null}
  requestAnimationFrame(pollGamepads);
 }
 addEventListener('gamepadconnected',()=>renderGamepadBindings());
