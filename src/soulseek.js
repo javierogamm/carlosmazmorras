@@ -40,8 +40,15 @@ let soulseekClassPickerOpen=false;
 // -- editable from Configuración > Objetos del mundo like any other icon.
 // -- WORLD_OBJECT_KINDS/MAIN_MENU_SCREEN_IDS are declared `const` in game.js
 // -- but that only freezes the binding, not the array contents.
-if(typeof WORLD_OBJECT_KINDS!=='undefined'&&!WORLD_OBJECT_KINDS.some(k=>k.key==='pj_classless')){
- WORLD_OBJECT_KINDS.push({key:'pj_classless',label:'Soulseek: PJ sin clase'});
+if(typeof WORLD_OBJECT_KINDS!=='undefined'){
+ if(!WORLD_OBJECT_KINDS.some(k=>k.key==='pj_classless_male'))WORLD_OBJECT_KINDS.push({key:'pj_classless_male',label:'Soulseek: PJ sin clase (masculino)'});
+ if(!WORLD_OBJECT_KINDS.some(k=>k.key==='pj_classless_female'))WORLD_OBJECT_KINDS.push({key:'pj_classless_female',label:'Soulseek: PJ sin clase (femenino)'});
+}
+// gender-aware classless map/portrait icon - falls back to the legacy
+// ungendered 'pj_classless' key (pre-existing installs) so an icon already
+// configured before this split isn't silently lost.
+function classlessIconForGender(gender){
+ return configWorldObjects[gender==='female'?'pj_classless_female':'pj_classless_male']||configWorldObjects.pj_classless||'';
 }
 if(typeof MAIN_MENU_SCREEN_IDS!=='undefined'){
  for(const id of ['soulseekOverlay','soulseekScoresScreen','soulseekUnlocksOverlay','soulseekCreateOverlay'])
@@ -148,7 +155,8 @@ function soulseekEnsureDom(){
 function openSoulseekerMenu(){
  soulseekEnsureDom();
  fetchConfigWorldObjectDetail('soul_spike').catch(()=>{});
- fetchConfigWorldObjectDetail('pj_classless').catch(()=>{});
+ fetchConfigWorldObjectDetail('pj_classless_male').catch(()=>{});
+ fetchConfigWorldObjectDetail('pj_classless_female').catch(()=>{});
  landingOverlay.classList.add('hidden');
  document.getElementById('soulseekOverlay').classList.remove('hidden');
  document.getElementById('soulseekMenuHeader').innerHTML=soulseekHeaderHtml();
@@ -239,7 +247,7 @@ async function soulseekStartCharacter(){
  const stats={strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2};
  const maxHp=30+stats.vitality*6,maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(null);
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:configWorldObjects.pj_classless||'',skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:classlessIconForGender(soulseekSelectedGender),skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
@@ -301,7 +309,7 @@ function openSoulseekerClassPicker(){
   if(!cls)return;
   if(!confirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
   const p=game.player;
-  p.cls=id;p.className=cls.name;p.classIcon=classIconForId(id,p.gender)||configWorldObjects.pj_classless||'';
+  p.cls=id;p.className=cls.name;p.classIcon=classIconForId(id,p.gender)||classlessIconForGender(p.gender);
   // A classless Soulseek character always starts from the same flat
   // baseline (see soulseekStartCharacter) - swap it out for the class's own
   // configured stats now, as a delta on top of whatever the player already

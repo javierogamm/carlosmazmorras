@@ -7899,13 +7899,15 @@ const WORLD_OBJECT_KINDS=[
  {key:'altar_shield',label:'Altar: Escudo'},
  {key:'altar_power',label:'Altar: Poder'},
  {key:'altar_disenchant',label:'Altar: Creador (deshacer objetos)'},
+ {key:'altar_soulmerchant',label:'Altar: Mercader de Souls'},
  {key:'key',label:'Llave'},
  {key:'stairsDown',label:'Escaleras de bajada'},
  {key:'trap',label:'Trampa'},
  {key:'reward_lock',label:'Bloqueos rewards'},
  {key:'soul_spike',label:'Soul Spike (currency)'},
- {key:'room_soulmerchant',label:'Sala: Mercader de Souls'},
  ...LOOT_RARITY_ORDER.map(t=>({key:`shard_${t}`,label:`Shard: ${tierDefs[t]?.label||t}`})),
+ // One entry per ROOM_TYPES id (already covers room_soulmerchant) - don't
+ // duplicate any of them above.
  ...Object.entries(ROOM_TYPES).map(([id,T])=>({key:`room_${id}`,label:`Sala: ${T.label}`}))
 ];
 let configWorldObjects={};
@@ -7992,9 +7994,11 @@ async function fetchConfigWorldObjectDetail(objectKey){
  const r=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(objectKey)}`),data=await responseJson(r);
  if(!r.ok)throw new Error(data.error||'No se pudo cargar el asset');
  const row=Array.isArray(data)?data[0]:data;
- if(!row)throw new Error('El objeto ya no existe');
- configWorldObjectRows[objectKey]=row;configWorldObjects[objectKey]=row.icon||'';
- return row;
+ // A WORLD_OBJECT_KINDS entry with no row yet just means "no custom icon
+ // configured" (it falls back to the procedural sprite) - not an error.
+ const resolved=row||{object_key:objectKey,icon:''};
+ configWorldObjectRows[objectKey]=resolved;configWorldObjects[objectKey]=resolved.icon||'';
+ return resolved;
 }
 function loadWorldObjectIconOnDemand(objectKey){
  const row=configWorldObjectRows[objectKey];
