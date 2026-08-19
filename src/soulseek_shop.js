@@ -11,11 +11,12 @@
 // - Two account-level unlock pools (races, classes) plus a per-class skill
 //   pool (all three permanent, `user.soulseek_races/classes/skills`), spent
 //   with the same Soul Spikes balance banked on death (user.souls).
-// - The first race and the first class are free; every following one has a
-//   fixed price by position (soulseekRaceUnlocked/soulseekClassUnlocked are
-//   the single source of truth other files can use to check "is this
-//   unlocked", including the character-creation race grid and the level-2
-//   class picker, both overridden here).
+// - There's no auto-assigned free race/class: the player's FIRST race
+//   unlock and FIRST class unlock are free, whichever ones they pick
+//   (soulseekRaceCost/soulseekClassCost price by how many the account
+//   already owns, not by catalog position). A character can't be created
+//   at all until at least one of each is owned - soulseekNewCharBtn is
+//   gated below to redirect straight into the shop otherwise.
 // - Tier-1 skills come free with a class; tiers above that are individually
 //   purchasable per class, gating classSkillIdsForTier/
 //   classSkillIdsForLevelReward for soulseeker characters only.
@@ -31,6 +32,7 @@ let soulseekShopPjTab='razas';
 let soulseekShopObjTab='objetos';
 let soulseekShopSkillClassId=null;
 let soulseekShopObjSlot='weapon';
+let soulseekShopWeaponCategory=null;
 
 const SOULSEEK_RACE_COSTS=[0,20,20,50,50,100,100];
 const SOULSEEK_CLASS_COSTS=[0,15,15,25,25,50,50];
@@ -41,6 +43,14 @@ const SOULSEEK_ROMAN_TO_TIER={I:1,II:2,III:3,IV:4,V:5,VI:6};
 
 function soulseekCostForIndex(table,index,fallback){return index<table.length?table[index]:fallback}
 function soulseekItemTierCost(rarity,table){const idx=Math.min(table.length-1,Math.max(0,LOOT_RARITY_ORDER.indexOf(rarity)));return table[idx]??table[table.length-1]}
+// Worst to best - the request specifically wants common-first ordering in
+// the shop grid, not the pick()-random/insertion order configItems has.
+function soulseekSortByRarity(rows){
+ return [...rows].sort((a,b)=>{
+  const ra=(a.item_json||a).rarity||a.tier||'common',rb=(b.item_json||b).rarity||b.tier||'common';
+  return LOOT_RARITY_ORDER.indexOf(ra)-LOOT_RARITY_ORDER.indexOf(rb);
+ });
+}
 
 // -- unlock pools: window.currentUser is kept in sync with the server on
 // -- every login and every purchase (see soulseekSpendSouls), same pattern
@@ -49,11 +59,13 @@ function soulseekUnlockedRaces(){return Array.isArray(window.currentUser?.soulse
 function soulseekUnlockedClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
 function soulseekUnlockedSkills(){return Array.isArray(window.currentUser?.soulseek_skills)?window.currentUser.soulseek_skills:[]}
 function soulseekSessionItems(){return Array.isArray(window.currentUser?.soulseek_session_items)?window.currentUser.soulseek_session_items:[]}
-// The first race/class in the natural listing order is always free/unlocked
-// for everyone - not stored in the pool, just always true. Used both by the
-// shop and by the character-creation/level-up gates below.
-function soulseekRaceUnlocked(id){const ids=Object.keys(raceDefs),idx=ids.indexOf(id);return idx<=0||soulseekUnlockedRaces().includes(id)}
-function soulseekClassUnlocked(id){const ids=allClassIds(),idx=ids.indexOf(id);return idx<=0||soulseekUnlockedClasses().includes(id)}
+function soulseekRaceUnlocked(id){return soulseekUnlockedRaces().includes(id)}
+function soulseekClassUnlocked(id){return soulseekUnlockedClasses().includes(id)}
+// Price is by how many the account already owns (0 owned -> the player's
+// free pick), not by catalog position - the player chooses which one is
+// their freebie, not the catalog.
+function soulseekRaceCost(id){return soulseekRaceUnlocked(id)?0:soulseekCostForIndex(SOULSEEK_RACE_COSTS,soulseekUnlockedRaces().length,100)}
+function soulseekClassCost(id){return soulseekClassUnlocked(id)?0:soulseekCostForIndex(SOULSEEK_CLASS_COSTS,soulseekUnlockedClasses().length,100)}
 
 // Combines a souls spend (negative delta) with an unlock-pool/session-items
 // write in one PATCH, so a purchase can never leave souls debited without
@@ -134,7 +146,10 @@ function soulseekEnsureShopDom(){
 </div>
 <div class="statPointModal" id="soulseekShopDetailModal"><div class="statPointBox soulseekShopDetailBox" id="soulseekShopDetailBox"></div></div>`;
  while(wrap.firstElementChild)document.body.appendChild(wrap.firstElementChild);
- document.querySelectorAll('[data-shop-main]').forEach(b=>b.onclick=()=>{soulseekShopTab=b.dataset.shopMain;soulseekShopPjTab='razas';soulseekShopObjTab='objetos';soulseekRenderShop()});
+ document.querySelectorAll('[data-shop-main]').forEach(b=>b.onclick=()=>{
+  soulseekShopTab=b.dataset.shopMain;soulseekShopPjTab='razas';soulseekShopObjTab='objetos';
+  soulseekLoadTabThenRender();
+ });
  document.getElementById('soulseekShopBackBtn').onclick=()=>{
   document.getElementById('soulseekShopOverlay').classList.add('hidden');
   document.getElementById('soulseekShopDetailModal')?.classList.remove('open');
@@ -144,19 +159,41 @@ function soulseekEnsureShopDom(){
 }
 function soulseekCloseDetailModal(){document.getElementById('soulseekShopDetailModal')?.classList.remove('open')}
 
-async function soulseekOpenShop(){
+// Only the essentials load up front (nothing, really - the shop opens
+// instantly); each tab fetches its own catalog the first time it's
+// actually visited, not before, so opening the shop or switching tabs
+// doesn't wait on data the player isn't looking at yet.
+async function soulseekEnsureTabData(tab,subTab){
+ if(tab==='pj'){
+  if(subTab==='razas'){if(!configRacesLoaded)await fetchConfigRaces()}
+  else if(!configClasses.length)await fetchConfigClasses(); // clases + skills both need classSkillTrees, populated from configClasses
+ }else{
+  await ensureConfigItemsHydrated(); // objetos + pociones both read configItems
+ }
+}
+// Shows the same "creating character" hourglass overlay (soulseeker-
+// dungeons.js) while the current tab's data loads, then renders.
+async function soulseekLoadTabThenRender(){
+ soulseekShowLoading('Cargando tienda...');
+ try{
+  await soulseekEnsureTabData(soulseekShopTab,soulseekShopTab==='pj'?soulseekShopPjTab:soulseekShopObjTab);
+  soulseekRenderShop();
+ }finally{
+  soulseekHideLoading();
+ }
+}
+
+// opts: {tab,subTab} to land on a specific tab (e.g. the "you need a race
+// and a class first" redirect below) - omitted, keeps whatever tab was
+// last open, defaulting to PJ/Razas the very first time.
+async function soulseekOpenShop(opts={}){
  soulseekEnsureShopDom();
  document.getElementById('soulseekOverlay')?.classList.add('hidden');
  document.getElementById('soulseekShopOverlay').classList.remove('hidden');
+ if(opts.tab){soulseekShopTab=opts.tab;soulseekShopPjTab='razas';soulseekShopObjTab='objetos'}
+ if(opts.subTab){if(soulseekShopTab==='pj')soulseekShopPjTab=opts.subTab;else soulseekShopObjTab=opts.subTab}
  soulseekRenderShopHeader();
- document.getElementById('soulseekShopContent').innerHTML='<p class="small">Cargando catálogo...</p>';
- await Promise.all([
-  configRacesLoaded?Promise.resolve():fetchConfigRaces(),
-  configClasses.length?Promise.resolve():fetchConfigClasses(),
-  ensureConfigItemsHydrated()
- ]);
- soulseekShopTab='pj';soulseekShopPjTab='razas';
- soulseekRenderShop();
+ await soulseekLoadTabThenRender();
 }
 
 function soulseekRenderShopHeader(){
@@ -173,7 +210,7 @@ function soulseekRenderShop(){
  subRoot.innerHTML=subTabs.map(t=>`<button type="button" class="${t===activeSub?'active':''}" data-shop-sub="${t}">${t.toUpperCase()}</button>`).join('');
  subRoot.querySelectorAll('[data-shop-sub]').forEach(b=>b.onclick=()=>{
   if(soulseekShopTab==='pj')soulseekShopPjTab=b.dataset.shopSub;else soulseekShopObjTab=b.dataset.shopSub;
-  soulseekRenderShop();
+  soulseekLoadTabThenRender();
  });
  if(soulseekShopTab==='pj'){
   if(soulseekShopPjTab==='razas')soulseekRenderShopRaces();
@@ -189,13 +226,13 @@ function soulseekRenderShopRaces(){
  const root=document.getElementById('soulseekShopContent');
  const ids=Object.keys(raceDefs);
  if(!ids.length){root.innerHTML=`<p class="small">${configRacesLoaded?'No hay razas configuradas.':'Cargando razas...'}</p>`;return}
- root.innerHTML=`<div class="soulseekShopGrid">${ids.map((id,i)=>{
-  const r=raceDefs[id],unlocked=soulseekRaceUnlocked(id),cost=soulseekCostForIndex(SOULSEEK_RACE_COSTS,i,100);
+ root.innerHTML=`<div class="soulseekShopGrid">${ids.map(id=>{
+  const r=raceDefs[id],unlocked=soulseekRaceUnlocked(id),cost=soulseekRaceCost(id);
   return `<button type="button" class="soulseekShopCard ${unlocked?'unlocked':''}" data-shop-race="${id}">
    <span class="soulseekShopLock">${unlocked?'🔓':'🔒'}</span>
    <div class="soulseekShopCardIconWrap">${r.icon?`<canvas data-shop-race-icon="${id}" width="56" height="56"></canvas>`:'🧬'}</div>
    <b>${r.name}</b><p>${r.trait||''}</p>
-   <span class="soulseekShopCardPrice">${unlocked?'Desbloqueada':(i===0?'GRATIS':cost+' souls')}</span>
+   <span class="soulseekShopCardPrice">${unlocked?'Desbloqueada':(cost===0?'GRATIS (tu primera raza)':cost+' souls')}</span>
   </button>`;
  }).join('')}</div>`;
  root.querySelectorAll('[data-shop-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.shopRaceIcon)));
@@ -203,18 +240,18 @@ function soulseekRenderShopRaces(){
 }
 function soulseekOpenRaceDetail(id){
  const r=raceDefs[id];if(!r)return;
- const ids=Object.keys(raceDefs),idx=ids.indexOf(id),unlocked=soulseekRaceUnlocked(id),cost=soulseekCostForIndex(SOULSEEK_RACE_COSTS,idx,100),skill=r.skill;
+ const unlocked=soulseekRaceUnlocked(id),cost=soulseekRaceCost(id),skill=r.skill;
  const box=document.getElementById('soulseekShopDetailBox');
  box.innerHTML=`<h2>${r.name}</h2>
   <div class="soulseekShopDetailIcon">${r.icon?`<canvas id="soulseekShopDetailIconCanvas" width="72" height="72"></canvas>`:''}</div>
   <p class="small">${r.desc||''}</p>
   <p class="small"><strong>Bonificaciones:</strong> ${r.trait||'Ninguna'}</p>
   ${skill?`<p class="small"><strong>Skill activa:</strong> ${skill.icon||''} ${skill.name} — ${skill.desc||''}</p>`:''}
-  <div class="startActions">${unlocked?'<span class="soulseekShopUnlockedTag">DESBLOQUEADA</span>':`<button id="soulseekShopUnlockBtn" class="start">DESBLOQUEAR (${idx===0?'GRATIS':cost+' souls'})</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
+  <div class="startActions">${unlocked?'<span class="soulseekShopUnlockedTag">DESBLOQUEADA</span>':`<button id="soulseekShopUnlockBtn" class="start">DESBLOQUEAR (${cost===0?'GRATIS':cost+' souls'})</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
  if(r.icon)setTimeout(()=>drawSkillIconImg(document.getElementById('soulseekShopDetailIconCanvas'),r.icon),0);
  document.getElementById('soulseekShopDetailModal').classList.add('open');
  document.getElementById('soulseekShopDetailCloseBtn').onclick=soulseekCloseDetailModal;
- document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyRace(id,idx===0?0:cost));
+ document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyRace(id,cost));
 }
 async function soulseekBuyRace(id,price){
  if(soulseekAccountSouls()<price){alert('No tienes suficientes Soul Spikes.');return}
@@ -234,13 +271,13 @@ function soulseekRenderShopClasses(){
  const root=document.getElementById('soulseekShopContent');
  const ids=allClassIds().filter(id=>resolveClassDef(id));
  if(!ids.length){root.innerHTML='<p class="small">No hay clases configuradas.</p>';return}
- root.innerHTML=`<div class="soulseekShopGrid">${ids.map((id,i)=>{
-  const cls=resolveClassDef(id),unlocked=soulseekClassUnlocked(id),cost=soulseekCostForIndex(SOULSEEK_CLASS_COSTS,i,100),icon=classIconForId(id);
+ root.innerHTML=`<div class="soulseekShopGrid">${ids.map(id=>{
+  const cls=resolveClassDef(id),unlocked=soulseekClassUnlocked(id),cost=soulseekClassCost(id),icon=classIconForId(id);
   return `<button type="button" class="soulseekShopCard ${unlocked?'unlocked':''}" data-shop-class="${id}">
    <span class="soulseekShopLock">${unlocked?'🔓':'🔒'}</span>
    <div class="soulseekShopCardIconWrap">${icon?`<canvas data-shop-class-icon="${id}" width="56" height="56"></canvas>`:'⚔'}</div>
    <b>${cls.name}</b><p>${cls.desc||''}</p>
-   <span class="soulseekShopCardPrice">${unlocked?'Desbloqueada':(i===0?'GRATIS':cost+' souls')}</span>
+   <span class="soulseekShopCardPrice">${unlocked?'Desbloqueada':(cost===0?'GRATIS (tu primera clase)':cost+' souls')}</span>
   </button>`;
  }).join('')}</div>`;
  root.querySelectorAll('[data-shop-class-icon]').forEach(c=>drawSkillIconImg(c,classIconForId(c.dataset.shopClassIcon)));
@@ -248,16 +285,16 @@ function soulseekRenderShopClasses(){
 }
 function soulseekOpenClassDetail(id){
  const cls=resolveClassDef(id);if(!cls)return;
- const ids=allClassIds(),idx=ids.indexOf(id),unlocked=soulseekClassUnlocked(id),cost=soulseekCostForIndex(SOULSEEK_CLASS_COSTS,idx,100);
+ const unlocked=soulseekClassUnlocked(id),cost=soulseekClassCost(id);
  const tier1=(classSkillTrees[id]?.I||[]).filter(sid=>skillDefs[sid]);
  const box=document.getElementById('soulseekShopDetailBox');
  box.innerHTML=`<h2>${cls.name}</h2><p class="small">${cls.desc||''}</p>
   <h3>Skills de Tier 1</h3>
   <div class="soulseekShopSkillList">${tier1.length?tier1.map(sid=>{const s=skillDefs[sid];return `<div class="soulseekShopSkillRow"><b>${s.icon||''} ${s.name}</b><p>${s.desc||''}</p></div>`}).join(''):'<p class="small">Sin skills de tier 1 configuradas.</p>'}</div>
-  <div class="startActions">${unlocked?'<span class="soulseekShopUnlockedTag">DESBLOQUEADA</span>':`<button id="soulseekShopUnlockBtn" class="start">DESBLOQUEAR (${idx===0?'GRATIS':cost+' souls'})</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
+  <div class="startActions">${unlocked?'<span class="soulseekShopUnlockedTag">DESBLOQUEADA</span>':`<button id="soulseekShopUnlockBtn" class="start">DESBLOQUEAR (${cost===0?'GRATIS':cost+' souls'})</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
  document.getElementById('soulseekShopDetailModal').classList.add('open');
  document.getElementById('soulseekShopDetailCloseBtn').onclick=soulseekCloseDetailModal;
- document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyClass(id,idx===0?0:cost));
+ document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyClass(id,cost));
 }
 async function soulseekBuyClass(id,price){
  if(soulseekAccountSouls()<price){alert('No tienes suficientes Soul Spikes.');return}
@@ -326,14 +363,28 @@ async function soulseekBuySkill(id,cost){
 function soulseekRenderShopObjects(){
  const root=document.getElementById('soulseekShopContent');
  if(soulseekShopObjTab==='pociones'){
-  const rows=configuredPotionRows();
+  const rows=soulseekSortByRarity(configuredPotionRows());
   root.innerHTML=rows.length?`<div class="soulseekShopGrid">${rows.map(row=>soulseekObjectCardHtml(row,SOULSEEK_POTION_TIER_COSTS)).join('')}</div>`:'<p class="small">No hay pociones configuradas.</p>';
  }else{
   if(!slots.includes(soulseekShopObjSlot))soulseekShopObjSlot=slots[0];
   const slotTabs=`<div class="soulseekShopSubTabs" style="padding:0 0 12px">${slots.map(s=>`<button type="button" class="${s===soulseekShopObjSlot?'active':''}" data-shop-obj-slot="${s}">${s.toUpperCase()}</button>`).join('')}</div>`;
-  const rows=configItems.filter(r=>!isConfiguredPotionRow(r)&&((r.item_json||r).slot||r.slot)===soulseekShopObjSlot);
-  root.innerHTML=slotTabs+(rows.length?`<div class="soulseekShopGrid">${rows.map(row=>soulseekObjectCardHtml(row,SOULSEEK_ITEM_TIER_COSTS)).join('')}</div>`:'<p class="small">No hay objetos configurados para este slot.</p>');
-  root.querySelectorAll('[data-shop-obj-slot]').forEach(b=>b.onclick=()=>{soulseekShopObjSlot=b.dataset.shopObjSlot;soulseekRenderShopObjects()});
+  let rows=configItems.filter(r=>!isConfiguredPotionRow(r)&&((r.item_json||r).slot||r.slot)===soulseekShopObjSlot);
+  let weaponCatTabs='';
+  if(soulseekShopObjSlot==='weapon'){
+   const cats=[...new Set(rows.map(r=>(r.item_json||r).weaponCategory).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+   if(cats.length){
+    if(soulseekShopWeaponCategory&&!cats.includes(soulseekShopWeaponCategory))soulseekShopWeaponCategory=null;
+    weaponCatTabs=`<div class="soulseekShopSubTabs" style="padding:0 0 12px">
+     <button type="button" class="${!soulseekShopWeaponCategory?'active':''}" data-shop-weapon-cat="">TODAS</button>
+     ${cats.map(c=>`<button type="button" class="${c===soulseekShopWeaponCategory?'active':''}" data-shop-weapon-cat="${c}">${c}</button>`).join('')}
+    </div>`;
+    if(soulseekShopWeaponCategory)rows=rows.filter(r=>(r.item_json||r).weaponCategory===soulseekShopWeaponCategory);
+   }else soulseekShopWeaponCategory=null;
+  }
+  rows=soulseekSortByRarity(rows);
+  root.innerHTML=slotTabs+weaponCatTabs+(rows.length?`<div class="soulseekShopGrid">${rows.map(row=>soulseekObjectCardHtml(row,SOULSEEK_ITEM_TIER_COSTS)).join('')}</div>`:'<p class="small">No hay objetos configurados para este slot.</p>');
+  root.querySelectorAll('[data-shop-obj-slot]').forEach(b=>b.onclick=()=>{soulseekShopObjSlot=b.dataset.shopObjSlot;soulseekShopWeaponCategory=null;soulseekRenderShopObjects()});
+  root.querySelectorAll('[data-shop-weapon-cat]').forEach(b=>b.onclick=()=>{soulseekShopWeaponCategory=b.dataset.shopWeaponCat||null;soulseekRenderShopObjects()});
  }
  root.querySelectorAll('[data-shop-obj-icon]').forEach(c=>{const row=configItems.find(r=>String(r.id)===c.dataset.shopObjIcon);drawSkillIconImg(c,(row?.item_json||row||{}).icon||'')});
  root.querySelectorAll('[data-shop-obj-buy]').forEach(btn=>btn.onclick=()=>soulseekBuyObject(btn.dataset.shopObjBuy,Number(btn.dataset.shopObjCost)));
@@ -372,7 +423,27 @@ async function soulseekBuyObject(rowId,cost){
 
  // Same stale-onclick-value issue as Fase 2's buttons: soulseek.js bound
  // #soulseekUnlocksBtn directly to its own (placeholder) handler value.
- document.getElementById('soulseekUnlocksBtn').onclick=soulseekOpenShop;
+ // Reset to PJ/Razas every time it's opened from the main Soulseeker menu.
+ document.getElementById('soulseekUnlocksBtn').onclick=()=>soulseekOpenShop({tab:'pj',subTab:'razas'});
+
+ // -- a character can't be created at all until the account owns at least
+ // -- one race and one class (nothing is free-by-default any more - see
+ // -- the header comment) - send the player straight into the shop with an
+ // -- explanation instead of letting them hit the classless/raceless dead
+ // -- end that soulseek.js's own validation would otherwise silently show
+ // -- as a generic alert. Rebinds the button directly for the same
+ // -- stale-onclick-value reason as above (soulseeker-dungeons.js already
+ // -- bound it once, wrapping openSoulseekerNewCharacter). --
+ const soulseekNewCharBtn=document.getElementById('soulseekNewCharBtn');
+ const soulseekOriginalNewCharClick=soulseekNewCharBtn.onclick;
+ soulseekNewCharBtn.onclick=async function(){
+  if(!soulseekUnlockedRaces().length||!soulseekUnlockedClasses().length){
+   alert('Primero desbloquea una raza y una clase para tu personaje.');
+   await soulseekOpenShop({tab:'pj',subTab:soulseekUnlockedRaces().length?'clases':'razas'});
+   return;
+  }
+  await soulseekOriginalNewCharClick();
+ };
 
  // -- gate character creation's race grid and the level-2 class picker to
  // -- only unlocked entries. Both are short Fase 1 functions, fully
@@ -392,21 +463,19 @@ async function soulseekBuyObject(rowId,cost){
  };
  // soulseek.js's own soulseekAdvancedClassIds() is the gameplay-eligible
  // pool for the level-2 class picker (every class flagged `advanced` in
- // the editor, or every hardcoded class as a fallback if none are). That
- // set can be ordered/populated differently from allClassIds() - the
- // shop's own canonical pricing order (soulseekClassUnlocked treats
- // allClassIds()[0] as always-free) - e.g. an admin's "advanced" classes
- // might not include whichever class happens to be first in allClassIds().
- // Filter the eligible pool by unlock state; if nothing is unlocked yet,
- // offer the shop's free class only if it's actually eligible, otherwise
- // fall back to the first eligible class so level 2 is never a dead end.
+ // the editor, or every hardcoded class as a fallback if none are) - a
+ // potentially different set/order than the account's owned classes (an
+ // admin's "advanced" pool might not include whichever class the player
+ // happened to unlock first in the shop). The creation gate above already
+ // guarantees at least one class is owned before a character can exist, so
+ // the only real edge case here is an owned class that isn't in the
+ // eligible pool at all - fall back to the first eligible class rather
+ // than leaving the player with zero options at level 2.
  const soulseekOriginalAdvancedClassIds=soulseekAdvancedClassIds;
  soulseekAdvancedClassIds=function(){
   const eligible=soulseekOriginalAdvancedClassIds();
   const unlocked=eligible.filter(id=>soulseekClassUnlocked(id));
-  if(unlocked.length)return unlocked;
-  const freeId=allClassIds()[0];
-  return freeId&&eligible.includes(freeId)?[freeId]:eligible.slice(0,1);
+  return unlocked.length?unlocked:eligible.slice(0,1);
  };
 
  // -- tier 2+ skill choices (level-up pool) only ever offer unlocked
