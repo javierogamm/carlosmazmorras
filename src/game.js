@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.93.3';
+const APP_VERSION='0.94.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1422,6 +1422,69 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minR
  });
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
+// ---- In-page confirm / alert / prompt --------------------------------------
+// The browser's native confirm()/alert()/prompt() are drawn OUTSIDE the page
+// by the browser itself, so nothing in this codebase - keyboard handlers,
+// and above all the gamepad navigation in joystick.js - can focus or press
+// their buttons. Playing with a pad used to dead-end on every "¿Confirmas
+// +1 a Fuerza?" at level up. These three drop-in replacements render the
+// same question as a normal in-page modal (#uiPromptModal), so the regular
+// gamepad/keyboard focus machinery drives them like any other menu.
+//
+// Differences from the natives, and why they are safe:
+//  - uiConfirm/uiTextPrompt return a Promise, so their call sites became
+//    `await uiConfirm(...)` inside async handlers (event handlers ignore the
+//    returned promise).
+//  - uiAlert does NOT block; every call site only ever showed a message and
+//    returned, so nothing depended on the pause.
+//  - Only one dialog can be open at a time: opening a second one resolves
+//    the first as cancelled instead of stacking (matches native behaviour
+//    closely enough, and can only happen from unrelated async paths).
+let uiPromptResolve=null;
+function uiPromptClose(value){
+ const modal=document.getElementById('uiPromptModal');
+ modal?.classList.remove('open');
+ const resolve=uiPromptResolve;uiPromptResolve=null;
+ if(resolve)resolve(value);
+}
+function uiPromptOpen({title,message,accept,cancel,input}){
+ const modal=document.getElementById('uiPromptModal');
+ // No modal in the DOM (should not happen, but never strand the caller):
+ // fall back to the native dialogs rather than hanging on a promise that
+ // can never resolve.
+ if(!modal)return Promise.resolve(input!=null?window.prompt(message,input):cancel?window.confirm(message):(window.alert(message),true));
+ if(uiPromptResolve)uiPromptClose(input!=null?null:false);
+ document.getElementById('uiPromptTitle').textContent=title;
+ const text=document.getElementById('uiPromptText');text.className='small uiPromptText';text.textContent=message;
+ const field=document.getElementById('uiPromptField'),inputEl=document.getElementById('uiPromptInput');
+ field.classList.toggle('hidden',input==null);
+ inputEl.value=input==null?'':String(input);
+ const acceptBtn=document.getElementById('uiPromptAccept'),cancelBtn=document.getElementById('uiPromptCancel');
+ acceptBtn.textContent=accept;
+ cancelBtn.textContent=cancel||'';
+ cancelBtn.classList.toggle('hidden',!cancel);
+ modal.classList.add('open');
+ const promise=new Promise(resolve=>{uiPromptResolve=resolve});
+ // Re-focus for the gamepad: the text field when there is one, otherwise
+ // the accept button, so A/✕ confirms straight away.
+ setTimeout(()=>{if(typeof focusGamepadElement==='function')focusGamepadElement(input==null?acceptBtn:inputEl)},0);
+ return promise;
+}
+function uiConfirm(message,title='CONFIRMAR',accept='ACEPTAR',cancel='CANCELAR'){return uiPromptOpen({title,message,accept,cancel})}
+function uiAlert(message,title='AVISO'){return uiPromptOpen({title,message,accept:'ACEPTAR',cancel:''})}
+function uiTextPrompt(message,defaultValue='',title='ESCRIBE UN NOMBRE'){return uiPromptOpen({title,message,accept:'ACEPTAR',cancel:'CANCELAR',input:defaultValue})}
+document.getElementById('uiPromptAccept')?.addEventListener('click',()=>{
+ const field=document.getElementById('uiPromptField');
+ uiPromptClose(field.classList.contains('hidden')?true:document.getElementById('uiPromptInput').value);
+});
+document.getElementById('uiPromptCancel')?.addEventListener('click',()=>{
+ const field=document.getElementById('uiPromptField');
+ uiPromptClose(field.classList.contains('hidden')?false:null);
+});
+document.getElementById('uiPromptInput')?.addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();uiPromptClose(e.target.value)}
+ else if(e.key==='Escape'){e.preventDefault();uiPromptClose(null)}
+});
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
 function mapDimensions(){return{rows:game?.map?.length||ROWS,cols:game?.map?.[0]?.length||COLS}}
 function camera(){const{rows,cols}=mapDimensions();return{x:Math.max(0,Math.min(Math.max(0,cols-visibleTiles),game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(Math.max(0,rows-visibleTiles),game.player.y-Math.floor(visibleTiles/2)))}}
@@ -1606,7 +1669,7 @@ function processClassSkillChoices(){
  document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
  document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
- modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
+ modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   // Everything below (closing the modal, saving to Supabase on the initial
   // pick) is a chain of synchronous statements - an exception thrown by any
   // one of them silently aborted the rest, which for the initial pick meant
@@ -1619,7 +1682,7 @@ function processClassSkillChoices(){
   // exception instead of swallowing it.
   try{
    const chosen=skillDefs[b.dataset.pickSkill];
-   if(!confirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
+   if(!await uiConfirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
    learnSkill(b.dataset.pickSkill);
    game.player.skillChoicesAwarded[request.level]='chosen';
    modal.classList.remove('open');updateUI();
@@ -1630,18 +1693,18 @@ function processClassSkillChoices(){
    if(!request.initial&&!game.player.unspentStatPoints&&game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}
   }catch(e){
    console.error('Fallo al elegir la habilidad de clase:',e);
-   alert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
+   uiAlert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
   }
  }))
 }
 function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
 
 async function start(){
- if(!selectedCombatMode){alert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
+ if(!selectedCombatMode){uiAlert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
  if(!configRacesLoaded)await fetchConfigRaces();
- if(!selectedRace||!raceDefs[selectedRace]){alert('Selecciona una raza configurada antes de crear el personaje.');return}
- if(!gateUnlocked('race',selectedRace)){alert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
- if(!gateUnlocked('class',selectedClass)){alert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
+ if(!selectedRace||!raceDefs[selectedRace]){uiAlert('Selecciona una raza configurada antes de crear el personaje.');return}
+ if(!gateUnlocked('race',selectedRace)){uiAlert('Raza bloqueada: no cumples los requisitos de desbloqueo.');return}
+ if(!gateUnlocked('class',selectedClass)){uiAlert('Clase bloqueada: no cumples los requisitos de desbloqueo.');return}
  // Character creation can be reached while the catalog requests started by
  // openSinglePlayerScreen() are still in flight. Starter selections are row
  // ids, so creating before both catalogs arrive silently produced an empty
@@ -1655,7 +1718,7 @@ async function start(){
  // `cls.stats` below throws immediately and silently aborts start() before
  // `game` is even created, leaving the player stuck on the creation screen
  // with no feedback at all.
- if(!cls){alert('La clase todavía se está cargando; espera un segundo e inténtalo de nuevo.');return}
+ if(!cls){uiAlert('La clase todavía se está cargando; espera un segundo e inténtalo de nuevo.');return}
  const stats={...cls.stats},maxHp=30+stats.vitality*6;
  const maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));equipment.weapon=makeStarterWeapon(selectedClass);
@@ -1687,7 +1750,7 @@ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,
   queueClassSkillChoice(1,true);
  }catch(e){
   console.error('Fallo al iniciar la elección de habilidad inicial:',e);
-  alert('Error al preparar la elección de habilidad inicial: '+e.message);
+  uiAlert('Error al preparar la elección de habilidad inicial: '+e.message);
  }
 }
 storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
@@ -2892,10 +2955,55 @@ function difficultyScale(){
  };
 }
 
+// Which player classes each enemy archetype draws its skills from. This is
+// what makes an enemy's kit actually match its class: a "clérigo" casts
+// cleric/paladin skills, an "invocador" raises necromancer/engineer summons,
+// a "francotirador" opens fire with sniper skills. The ids are classSkillTrees
+// keys, so custom classes configured in Configuración are picked up too as
+// long as their classId is listed here.
+//
+// This replaced ENEMY_CLASS_SKILL_PREF-only filtering, which silently did
+// nothing for most archetypes: its predicates matched the GENERIC classEffect
+// tags ('dash', 'ranged', 'heal', ...) while the real skills carry their
+// signature ones ('holyDash', 'cleanseHeal', 'shadowStrike', ...), so five of
+// the nine enemy classes matched zero skills and fell through to "any skill
+// in the game" - a clérigo could roll Golpe de Yunque. The pref table is kept
+// below purely as the fallback filter for archetypes with no class mapping.
+const ENEMY_CLASS_SKILL_CLASSES={
+ warrior:['yunque','berserker'],
+ tanque:['yunque','paladin'],
+ rogue:['thief','jester','monk'],
+ arquero:['bountyHunter','sniper'],
+ francotirador:['sniper','bountyHunter'],
+ caster:['entropyMage','seer'],
+ invocador:['necromancer','engineer'],
+ clerigo:['cleric','paladin'],
+ chaman:['shaman','druid','beastGuardian']
+};
+function enemyClassSkillIds(cls,maxTier){
+ const ids=[];
+ for(const classId of ENEMY_CLASS_SKILL_CLASSES[cls]||[]){
+  const tree=classSkillTrees[classId];if(!tree)continue;
+  for(const [roman,list] of Object.entries(tree)){
+   const tier=roman==='III'?3:roman==='II'?2:1;
+   if(tier>maxTier)continue;
+   // enemyUsable===false is an explicit admin opt-out for one skill; a skill
+   // that simply never declared the flag still belongs to its class's kit.
+   for(const id of list||[])if(skillDefs[id]&&skillDefs[id].enemyUsable!==false&&!ids.includes(id))ids.push(id);
+  }
+ }
+ return ids;
+}
+// Tier gate follows the ENEMY's own level when it has one (it is the thing
+// casting), falling back to the player's for callers that pass a bare
+// template.
 function enemySkillPool(e){
- const level=game.player.level||1,maxTier=level>=30?3:level>=10?2:1;
+ const level=Math.max(1,Number(e?.level)||game.player?.level||1),maxTier=level>=30?3:level>=10?2:1;
+ const cls=enemyClassOf(e);
+ const byClass=enemyClassSkillIds(cls,maxTier);
+ if(byClass.length)return byClass;
  const all=Object.entries(skillDefs).filter(([id,s])=>s.enemyUsable&&(!s.tier||s.tier<=maxTier));
- const pref=ENEMY_CLASS_SKILL_PREF[enemyClassOf(e)];
+ const pref=ENEMY_CLASS_SKILL_PREF[cls];
  const filtered=pref?all.filter(([id,s])=>pref(s)):all;
  return (filtered.length?filtered:all).map(([id])=>id)
 }
@@ -3048,9 +3156,14 @@ function assignEnemySkills(e){
  }
  const cls=enemyClassOf(e);
  const casterClass=['caster','clerigo','chaman','invocador'].includes(cls);
- const chance=casterClass?1:e.elite?.6:(cls==='arquero'||cls==='francotirador')?.45:.18+Math.min(.22,(game?.floor||1)*.012);
+ // Every enemy now leaves this function with at least one skill from its own
+ // class kit. It used to be a dice roll whether a plain warrior/rogue/tanque
+ // even HAD one (~18-40%), which together with the broken class filtering
+ // above meant most fights never showed a single enemy skill. Casters,
+ // ranged specialists and elites carry a second one.
+ const extra=casterClass||e.elite||cls==='arquero'||cls==='francotirador';
  e.skills=Array.isArray(e.configuredSkillIds)?[...e.configuredSkillIds]:[];
- if(!e.skills.length&&Math.random()<chance){const pool=enemySkillPool(e),count=casterClass?1+(Math.random()<.35?1:0):1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
+ if(!e.skills.length){const pool=enemySkillPool(e),count=extra?2:1;while(e.skills.length<count&&pool.length){const id=pool.splice(rng(pool.length),1)[0];e.skills.push(id)}}
  return e
 }
 // Which enemy skill effects legitimately restore hp. Any type:'utility' or
@@ -3063,18 +3176,39 @@ function assignEnemySkills(e){
 const ENEMY_INSTANT_HEAL_EFFECTS=new Set(['heal','healShield','cleanseHeal','bigHeal','rewind']);
 const ENEMY_HOT_HEAL_EFFECTS=new Set(['regenHeal','survivalHeal','oakBuff']);
 const ENEMY_DRAIN_EFFECTS=new Set(['drain','holyLeech']);
+// Heal/shield/buff/utility skills act on the caster or its allies, not on
+// whatever it is fighting, so they must not be gated on standing next to the
+// player - that gate is why enemy clérigos never healed unless they had
+// already walked into melee.
+function isEnemySupportSkill(s){return ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)||s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility'}
+// Don't burn a heal (and its cooldown) when nobody has lost any HP.
+function enemyHealWorthCasting(e){return e.hp<e.maxHp||game.enemies.some(o=>o!==e&&o.hp>0&&o.hp<o.maxHp&&Math.abs(o.x-e.x)+Math.abs(o.y-e.y)<=4)}
+// A shield/buff/utility cast has no mechanical effect on an enemy yet (the
+// branch below is log + floating icon only), so it is tried LAST: a kit that
+// mixes one of those with a real skill should never waste the action on the
+// decorative one while a damage or heal skill is off cooldown.
+function isEnemyCosmeticSkill(s){return !ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)&&!ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)&&(s.classEffect==='shield'||s.classEffect==='buff'||s.type==='utility')}
+function enemySkillPriority(id){const s=skillDefs[id];return !s?2:isEnemyCosmeticSkill(s)?1:0}
 function enemyUseSkill(e,dist,target=game.player){
  if(!e.skills?.length)return false;
- for(const id of e.skills){
-  e.skillCooldowns[id]=Math.max(0,(e.skillCooldowns[id]||0)-1);
-  const s=skillDefs[id];if(e.skillCooldowns[id]>0)continue;
+ e.skillCooldowns=e.skillCooldowns||{};
+ // Every skill ticks down once per action, whichever one ends up being cast.
+ for(const id of e.skills)e.skillCooldowns[id]=Math.max(0,(e.skillCooldowns[id]||0)-1);
+ for(const id of [...e.skills].sort((a,b)=>enemySkillPriority(a)-enemySkillPriority(b))){
+  // A skill id can outlive its definition (a config_class skill renamed or
+  // deleted, a stale saved run). Reading s.classEffect below used to throw
+  // right here on undefined and abort the whole enemy turn.
+  const s=skillDefs[id];if(!s)continue;
+  if(e.skillCooldowns[id]>0)continue;
   // A companion/ally with hitByAoe===false is immune to area/multi-target-
   // flavored enemy skills specifically (still vulnerable to plain weapon
   // attacks below, and to single-target skills) - skip this one and try the
   // next skill in the list instead of picking a different target.
   if(target!==game.player&&target.hitByAoe===false&&['aoe','multihit','ultimate','massive'].includes(s.classEffect))continue;
+  const support=isEnemySupportSkill(s);
+  if(support&&(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect))&&!enemyHealWorthCasting(e))continue;
   const ranged=isRangedSkill(id)||s.classEffect==='ranged'||s.classEffect==='multihit'||s.classEffect==='ultimate'||s.classEffect==='massive';
-  if((ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
+  if(support||(ranged&&dist<=Math.max(4,s.range||6)&&hasLineOfSight(e,target))||(!ranged&&dist<=1)){
    const controlEffects=(s.effects||[]).filter(c=>c.kind==='fear'||c.kind==='mesmer');
    if(controlEffects.length){
     let applied=false,attempted=false;
@@ -3086,7 +3220,10 @@ function enemyUseSkill(e,dist,target=game.player){
     }
     if(attempted){if(applied)floating(controlEffects.some(c=>c.kind==='mesmer')?'◈':'!',target.x,target.y,controlEffects.some(c=>c.kind==='mesmer')?'#b45cff':'#111');log(`${e.name} usa ${s.name}.`,'combat');e.skillCooldowns[id]=Math.max(2,s.cd||5);return true}
    }
-   const mult=e.boss?1.35:e.elite?1.15:1,baseAmount=(e.atk||e.damage||4)*mult*(s.tier?1+s.tier*.12:1);
+   // ...*skillTierPowerMultiplier(s): the same global +5%-per-tier skill buff
+   // the player gets. `amount` below is what this cast deals OR heals, so a
+   // single factor here covers both sides of an enemy skill.
+   const mult=e.boss?1.35:e.elite?1.15:1,baseAmount=(e.atk||e.damage||4)*mult*(s.tier?1+s.tier*.12:1)*skillTierPowerMultiplier(s);
    const amount=Math.max(2,Math.round(baseAmount*(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)?utilitySkillMultiplier(e):offensiveSkillMultiplier(e))));
    if(ENEMY_INSTANT_HEAL_EFFECTS.has(s.classEffect)||ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect)){
     const isHot=ENEMY_HOT_HEAL_EFFECTS.has(s.classEffect);
@@ -3418,6 +3555,26 @@ function skillEffectMultiplier(actor=game.player){
  const base=actor===game.player?(1+((Number(actor?.raceBonuses?.skilleffect)||0)+itemBonus)/100):Math.max(0,Number(actor?.skillEffectMult??1));
  return actor===game.player?Math.max(0,base*activeBuffMultFactor('skilleffect')+activeBuffFlatBonus('skilleffect')/100):base
 }
+// ---- Skill tier power bonus ------------------------------------------------
+// Flat, global "skills scale with their tier" buff: +5% per tier to the
+// damage, healing, summon HP and summon damage a SKILL produces (tier I
+// +5%, tier II +10%, tier III +15%). It stacks multiplicatively on top of
+// the INT/SAB and skilleffect multipliers, and it applies to enemies casting
+// skills exactly like it applies to the player.
+//
+// Deliberately keyed off the skill DEFINITION's own numeric tier, which is
+// what keeps it out of gear and consumables: a potion or an equipment active
+// runs through the same effects engine under a synthetic `potion:`/`equip:`
+// cast id (see beginExternalEffectsCast), and its def carries no numeric
+// tier, so skillTierValue() returns 0 and the multiplier is exactly 1. The
+// Number()/isFinite guard also neutralises the unrelated string `tier`
+// ('common', 'rare', ...) that config_items rows and enemy templates carry.
+const SKILL_TIER_POWER_BONUS=.05;
+function skillTierValue(defLike){const t=Number(defLike?.tier);return Number.isFinite(t)&&t>0?Math.min(3,Math.round(t)):0}
+function skillTierPowerMultiplier(defLike){return 1+SKILL_TIER_POWER_BONUS*skillTierValue(defLike)}
+// Same thing addressed by cast id. Only a real skillDefs entry qualifies -
+// potions/equipment actives resolve to null here and get a plain 1.
+function skillTierPowerMultiplierFor(id){return id&&skillDefs[id]?skillTierPowerMultiplier(skillDefs[id]):1}
 function offensiveSkillMultiplier(actor=game.player){return (1+statValueFor(actor,'intelligence')*INT_OFFENSIVE_SKILL_BONUS_PER_POINT)*skillEffectMultiplier(actor)}
 function utilitySkillMultiplier(actor=game.player){return (1+statValueFor(actor,'wisdom')*WIS_UTILITY_SKILL_BONUS_PER_POINT)*skillEffectMultiplier(actor)}
 function skillHasHealing(def){
@@ -3435,12 +3592,13 @@ function statMultiplierFor(){return 1}
 function skillStatModifier(){return 0}
 function skillStatMultiplier(){return 1}
 function dotPowerFor(defLike,fallback,actor=game.player){
- const d=defLike||{};if(!(d.dotDice>0))return Math.max(1,Math.round(fallback*offensiveSkillMultiplier(actor)));
- return Math.max(1,Math.round(rollDice(`${d.dotDice}d${d.dotDie||6}`).total*offensiveSkillMultiplier(actor)))
+ const d=defLike||{},tierMult=skillTierPowerMultiplier(d);
+ if(!(d.dotDice>0))return Math.max(1,Math.round(fallback*offensiveSkillMultiplier(actor)*tierMult));
+ return Math.max(1,Math.round(rollDice(`${d.dotDice}d${d.dotDie||6}`).total*offensiveSkillMultiplier(actor)*tierMult))
 }
 function skillDotPower(id,fallback,actor=game.player){return dotPowerFor(skillDefs[id],fallback,actor)}
 function dicePowerFor(defLike,fallback){const d=defLike||{};return d.dmgDice>0?Math.max(1,rollDice(`${d.dmgDice}d${d.dmgDie||6}`).total):fallback}
-function companionDicePower(c){return Math.max(1,rollDice(c.atk||'1d4').total)}
+function companionDicePower(c){return Math.max(1,Math.round(rollDice(c.atk||'1d4').total*(c?.powerMult||1)))}
 function resolveSkillPower(id,actor=game.player){
  const d=skillDefs[id]||{},lvl=skillLevel(id),fallback=8+lvl*3;
  const base=dicePowerFor(d,fallback),automaticMultiplier=skillIsUtility(d)?utilitySkillMultiplier(actor):1;
@@ -3478,7 +3636,7 @@ function attack(e,bonus=0,options={}){
  const statMultFactor=statSource?statMultiplierFor(statSource):1;
  const defenseStat=options.defenseStat||(skillId?inferSkillDefenseStat(skillId):weaponStat);
  const markMult=1+((e.statuses||[]).find(s=>s.type==='mark'&&s.turns>0)?.power||0);
- let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult*(skillId?offensiveSkillMultiplier(game.player):1)));
+ let raw=Math.max(1,Math.round((roll.total+statMod+Math.max(0,bonus)*.35+activeBuffFlatBonus('damage'))*statMultFactor*(options.multiplier||1)*(game.player.nextSkillMultiplier||1)*activeBuffDamageMultiplier()*damageDealtMultiplier()*markMult*(skillId?offensiveSkillMultiplier(game.player)*skillTierPowerMultiplierFor(skillId):1)));
  if(skillId&&game.player.nextSkillMultiplier)game.player.nextSkillMultiplier=1;
  const defense=resolveEnemyDefense(e,defenseStat,raw);
  let d=Math.max(defense.mult===0?0:1,Math.round(raw*defense.mult));
@@ -3658,7 +3816,7 @@ function showStatPointModal(){
  if(skill)skill.innerHTML=reward.skillChoice?'<p class="small">Después de asignar la stat elegirás una nueva habilidad de tu clase.</p>':'';
  grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
  setTimeout(()=>focusGamepadElement(grid.querySelector('[data-stat-choice]')),0);
- grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',()=>{const stat=btn.dataset.statChoice;if(!confirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
+ grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',async()=>{const stat=btn.dataset.statChoice;if(!await uiConfirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 // Living participants in the run (1 in single player).
 function partySize(){
@@ -3966,10 +4124,10 @@ function disenchantItem(item){
  renderCraftShardsSummary();
  updateUI();
 }
-function confirmDisenchantItem(id){
+async function confirmDisenchantItem(id){
  const item=(game.inventory||[]).find(i=>i.id===id);if(!item)return;
  const range=item.type==='potion'?'1-3':'3-5',unit=item.type==='potion'?' una unidad de':'';
- if(!confirm(`¿Deshacer${unit} "${item.name}" a cambio de ${range} shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
+ if(!await uiConfirm(`¿Deshacer${unit} "${item.name}" a cambio de ${range} shards de ${tierDefs[item.rarity]?.label||item.rarity}? No se puede deshacer.`))return;
  disenchantItem(item);
 }
 // Opens the Creator's Room altar for potion creation and equipment upgrades.
@@ -4392,9 +4550,15 @@ function findFreeNear(origin){
 function summonCompanion(kind='companion',turns=8,power=1,custom=null){
  game.companions=game.companions||[];
  const pos=findFreeNear(custom?.spawnAt);
+ // Skill-tier power bonus for invocations: HP is scaled right here, and
+ // powerMult below carries the same factor into every point of damage or
+ // healing the companion goes on to produce (companionDicePower and the
+ // attack() calls in companionTurn). Callers that are not skills - none
+ // today - simply pass no powerMult and get a plain 1.
+ const powerMult=Math.max(1,Number(custom?.powerMult)||1);
  let stats,name;
  if(custom){
-  stats={hp:Math.max(1,Math.round(custom.hp||20)),atk:custom.atk||'1d4',range:Math.max(1,custom.range||1),shape:'allyCompanion'};
+  stats={hp:Math.max(1,Math.round((custom.hp||20)*powerMult)),atk:custom.atk||'1d4',range:Math.max(1,custom.range||1),shape:'allyCompanion'};
   name=custom.name||'Invocación';
  }else{
   const names={companion:'Compañero',skeleton:'Siervo óseo',turret:'Torreta',healer:'Custodio',tank:'Guardián',wolf:'Lobo espiritual',clone:'Clon'};
@@ -4407,11 +4571,12 @@ function summonCompanion(kind='companion',turns=8,power=1,custom=null){
    clone:{hp:10+Math.round(power*2),atk:'1d4+1',range:1,shape:'allyClone'},
    companion:{hp:18+Math.round(power*4),atk:'1d6',range:1,shape:'allyCompanion'}
   }[kind]||{hp:18,atk:'1d6',range:1,shape:'allyCompanion'};
+  stats={...stats,hp:Math.max(1,Math.round(stats.hp*powerMult))};
   name=names[kind]||'Aliado';
  }
  const companion={
   id:`comp-${Date.now()}-${Math.random()}`,kind:custom?'custom':kind,name,
-  turns,power,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
+  turns,power,powerMult,x:pos.x,y:pos.y,hp:stats.hp,maxHp:stats.hp,atk:stats.atk,range:stats.range,shape:stats.shape,
   friendly:true,permanent:!!custom?.permanent,reserveResource:'mana',reservePct:20,sourceName:name,
   // spawnTurn protects it from being picked as an enemy target for the rest
   // of the turn it was summoned on (see enemySingleAction) - a companion
@@ -4514,32 +4679,32 @@ function companionsFollowPlayerStep(){
 // always just fires at the one enemy it's already engaging). Each sub still
 // scales off the player's own stat via statDefLike/dicePowerFor, same as
 // every other stat-derived effect in the game.
-function applyCompanionSkillEffect(sub,target){
- const p=game.player;
+function applyCompanionSkillEffect(sub,target,c=null){
+ const p=game.player,powerMult=c?.powerMult||1;
  if(sub.kind==='dmg'){
   const expr=sub.dmgDice>0?`${sub.dmgDice}d${sub.dmgDie||6}`:undefined;
-  attack(target,0,{dice:expr,multiplier:sub.multiplier||1,statDefLike:sub});
+  attack(target,0,{dice:expr,multiplier:(sub.multiplier||1)*powerMult,statDefLike:sub});
   return true
  }
- if(sub.kind==='heal'){healEntity(p,dicePowerFor(sub,8,p));return true}
+ if(sub.kind==='heal'){healEntity(p,Math.round(dicePowerFor(sub,8,p)*powerMult));return true}
  if(sub.kind==='dot'){
-  attack(target,0,{multiplier:.7,statDefLike:sub});
-  addEnemyStatus(target,sub.flavor||'dot',sub.turns??4,dotPowerFor(sub,2));
+  attack(target,0,{multiplier:.7*powerMult,statDefLike:sub});
+  addEnemyStatus(target,sub.flavor||'dot',sub.turns??4,Math.round(dotPowerFor(sub,2)*powerMult));
   return true
  }
  if(sub.kind==='debuff'){
-  attack(target,0,{multiplier:.7,statDefLike:sub});
+  attack(target,0,{multiplier:.7*powerMult,statDefLike:sub});
   if(sub.stat)applyEnemyStatDebuff(target,sub.stat,sub.mode||'add',sub.value??2,sub.turns??3);
   return true
  }
  if(sub.kind==='cc'){
-  attack(target,0,{multiplier:.75,statDefLike:sub});
+  attack(target,0,{multiplier:.75*powerMult,statDefLike:sub});
   addEnemyStatus(target,sub.type||'stun',sub.turns??2,0);
   return true
  }
  if(sub.kind==='drain'){
-  attack(target,0,{multiplier:.8,statDefLike:sub});
-  const power=dicePowerFor(sub,3,p);
+  attack(target,0,{multiplier:.8*powerMult,statDefLike:sub});
+  const power=Math.round(dicePowerFor(sub,3,p)*powerMult);
   if(sub.resource==='mana')p.mana=Math.min(p.maxMana,p.mana+power);
   else if(sub.resource==='stamina')p.stamina=Math.min(p.maxStamina,p.stamina+power);
   else healEntity(p,power);
@@ -4782,7 +4947,7 @@ function companionTurn(){
     if(c.stationary&&c.effectType==='damage'&&c.damageMode==='area'){
      const radius=c.range||2,targets=enemies.filter(e=>gridDistance(c,e)<=radius);
      if(!targets.length||c.ap<10)break;c.ap-=10;
-     if(c.damageDice!==0)for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55,statDefLike:c});
+     if(c.damageDice!==0)for(const e of targets)attack(e,0,{dice:c.atk,multiplier:.55*(c.powerMult||1),statDefLike:c});
      floating('◆',c.x,c.y,'#9ee6c0');continue
     }
     if(c.effectType==='heal'){if(c.ap<10)break;c.ap-=10;healEntity(game.player,companionDicePower(c));floating('✚',c.x,c.y,'#8dffa8');continue}
@@ -4803,15 +4968,15 @@ function companionTurn(){
     // every configured sub-effect fires, same "stack as many as you want"
     // idea as a real skill's effects[]. Falls back to the plain dice attack
     // if nothing was configured yet.
-    else if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target);floating('✦',c.x,c.y,'#d9a8ff')}
-    else if(c.damageDice!==0){attack(target,0,{dice:c.atk,multiplier:.65,statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
+    else if(c.effectType==='skill'&&c.skillEffects?.length){for(const sub of c.skillEffects)applyCompanionSkillEffect(sub,target,c);floating('✦',c.x,c.y,'#d9a8ff')}
+    else if(c.damageDice!==0){attack(target,0,{dice:c.atk,multiplier:.65*(c.powerMult||1),statDefLike:c});floating('◆',c.x,c.y,'#9ee6c0')}
    }
    continue
   }
   if(c.kind==='healer'){
-   healEntity(game.player,Math.max(3,Math.round(c.power*2)));
+   healEntity(game.player,Math.max(3,Math.round(c.power*2*(c.powerMult||1))));
    const nearby=enemies.filter(e=>gridDistance(c,e)<=COMPANION_ENGAGE_RADIUS).sort((a,b)=>gridDistance(c,a)-gridDistance(c,b))[0];
-   if(nearby&&gridDistance(c,nearby)<=c.range)attack(nearby,0,{dice:c.atk,multiplier:.45});
+   if(nearby&&gridDistance(c,nearby)<=c.range)attack(nearby,0,{dice:c.atk,multiplier:.45*(c.powerMult||1)});
    continue
   }
   if(c.stance==='passive'){companionFollowPlayer(c);continue}
@@ -4819,7 +4984,7 @@ function companionTurn(){
   if(!target){companionFollowPlayer(c);continue}
   const dist=gridDistance(c,target);
   if(dist<=c.range){
-   attack(target,0,{dice:c.atk,multiplier:.65+c.power*.07});
+   attack(target,0,{dice:c.atk,multiplier:(.65+c.power*.07)*(c.powerMult||1)});
    floating(c.kind==='skeleton'?'☠':'◆',c.x,c.y,'#9ee6c0')
   }else moveCompanionToward(c,target)
  }
@@ -4935,19 +5100,23 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
 const GENERIC_CLASS_EFFECTS=new Set(['ranged','shield','dash','debuff','aoe','heal','multihit','utility','ultimate','execute','buff','massive']);
 function applyCreativeClassEffect(id,target,x,y){
  const d=skillDefs[id],lvl=skillLevel(id),effect=d.classEffect,p=game.player;
+ // Skill-tier power bonus, same as the composable engine: damage rides in
+ // through attack()/dotPowerFor, so only the healing and invocation
+ // magnitudes computed inline here need it applied by hand.
+ const tierMult=skillTierPowerMultiplier(d);
  if(applyClassEffectState(effect,id,target,x,y,lvl))return true;
  const enemiesIn=(radius)=>game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-x),Math.abs(e.y-y))<=radius);
  const hit=(e,m=.9)=>attack(e,0,{skillId:id,multiplier:m});
  if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',d.debuffTurns??(2+Math.floor(lvl/4)),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
  if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect==='poison'?'poison':effect==='decayDot'?'decayDot':'dot',d.dotTurns??(4+Math.floor(lvl/4)),dotPowerFor(d,2+lvl*.8),d.name);return true}
- if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);const power=dicePowerFor(d,5+lvl*2,p);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
+ if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);const power=Math.round(dicePowerFor(d,5+lvl*2,p)*tierMult);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
  if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,d.debuffTurns??(2+Math.floor(lvl/5)),1,d.name);return true}
  if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['combo','comboMark','markedExecute','bountyExecute','packExecute','pierce','lineShot','ricochet','chain','blinkChain'].includes(effect)){hit(target,effect.includes('Execute')||effect==='markedExecute'?1.7:1.15);return true}
  if(['swapConfuse'].includes(effect)){const ox=p.x,oy=p.y;p.x=target.x;p.y=target.y;target.x=ox;target.y=oy;addEnemyStatus(target,'confuse',d.debuffTurns??2,0,'Confuso');return true}
- if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyCreativeBuff(id,d,lvl,{armor:.12,damage:.08},3+Math.floor(lvl/3));if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15);return true}
+ if(['teleportDecoy','teleportBuff','randomTeleport','freeTeleport','teleportShield','teleportClones'].includes(effect)){const ox=p.x,oy=p.y;if(!teleportPlayerTo(x,y))return false;applyCreativeBuff(id,d,lvl,{armor:.12,damage:.08},3+Math.floor(lvl/3));if(effect==='teleportDecoy')addSkillObject('decoy',id,ox,oy,4+Math.floor(lvl/3),1,1);if(effect==='teleportClones')summonCompanion('clone',5,1+lvl*.15,{powerMult:tierMult});return true}
  if(['trap','rootZone'].includes(effect)){addSkillObject('trap',id,x,y,d.dotTurns??(6+lvl),dotPowerFor(d,1+lvl*.2),1);return true}
  // freezeTotem previously had no handler at all here (fell through to a
  // plain area attack, or a no-op with nothing in range) despite being a
@@ -4955,9 +5124,9 @@ function applyCreativeClassEffect(id,target,x,y){
  if(['consecrate','stormTotem','freezeTotem','areaDot'].includes(effect)){addSkillObject(['stormTotem','freezeTotem'].includes(effect)?'totem':'zone',id,x,y,d.dotTurns??(4+Math.floor(lvl/2)),dotPowerFor(d,1+lvl*.15),2);return true}
  if(['summon','summonTurret','summonHealer','summonTank','summonScanner','summonElite','multiSummon','clones','clone'].includes(effect)){
   const kind=effect.includes('Turret')?'turret':effect.includes('Healer')?'healer':effect.includes('Tank')?'tank':effect.includes('clone')?'clone':(id==='necromancer_t1_2'||d.classId==='necromancer')?'skeleton':d.classId==='shaman'?'wolf':'companion';
-  const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,d.buffTurns??(7+lvl),1+lvl*.18);return true
+  const n=effect==='multiSummon'||effect==='clones'?2:1;for(let i=0;i<n;i++)summonCompanion(kind,d.buffTurns??(7+lvl),1+lvl*.18,{powerMult:tierMult});return true
  }
- if(['cleanseHeal','bigHeal','regenHeal','survivalHeal','healShield'].includes(effect)){healEntity(p,dicePowerFor(d,10+lvl*4+Math.floor(p.stats.wisdom||p.stats.vitality),p));if(effect==='healShield')p.shield+=8+lvl*2;applyBuff(id,d.name,d.buffTurns??3,{maxHp:0});return true}
+ if(['cleanseHeal','bigHeal','regenHeal','survivalHeal','healShield'].includes(effect)){healEntity(p,Math.round(dicePowerFor(d,10+lvl*4+Math.floor(p.stats.wisdom||p.stats.vitality),p)*tierMult));if(effect==='healShield')p.shield+=8+lvl*2;applyBuff(id,d.name,d.buffTurns??3,{maxHp:0});return true}
  if(['buffArmor','counter','bloodBuff','lifestealBuff','rampage','overcharge','fortress','holyShield','holyAvatar','randomBuff','luckBuff','sniperBuff','stealthShot','shapeShift','lichBuff','implantBuff','mechBuff','wisdomBuff','martyrBuff','oakBuff','resourceRegen','reflect','monkAvatar','tauntBuff','beastAvatar','cheatDeath','cheatDeathHeal','rewind'].includes(effect)){
   const armor=effect.includes('Armor')||effect.includes('Shield')||effect.includes('fortress')||effect.includes('Avatar')?.28:.12;
   const damage=effect.includes('blood')||effect.includes('rampage')||effect.includes('overcharge')||effect.includes('Avatar')?.24:.10;
@@ -5060,6 +5229,11 @@ function applyEffectComponent(id,comp,ctx){
  const fxKind=comp.kind==='move'?'move':comp.kind==='dot'?'dot':['buff','heal','shield','hot'].includes(comp.kind)?'buff':'attack',fx=skillFxProfile(id,fxKind);
  combatFx(fxKind,game.player.x,game.player.y,{to:ctx?.target?{x:ctx.target.x,y:ctx.target.y}:ctx?.x!=null?{x:ctx.x,y:ctx.y}:null,...fx});
  const d=effectSourceDef(id),p=game.player,lvl=effectSourceLevel(id);
+ // Skill-tier power bonus (+5% per tier). Damage flows through attack(),
+ // which applies it on its own; this covers the magnitudes this function
+ // computes directly - healing and invocation HP/output. Exactly 1 for a
+ // potion or equipment active, whose def carries no numeric tier.
+ const tierMult=skillTierPowerMultiplier(d);
  // The component supplies only its configured base magnitude; automatic INT/SAB
  // multipliers are selected by the concrete effect branch below.
  const statDefLike={...(d||{}),...comp};
@@ -5116,7 +5290,7 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='heal'){
-  const power=Math.round(dicePowerFor(comp,8+lvl*3,p)*utilitySkillMultiplier(p)),resource=comp.resource||'hp';
+  const power=Math.round(dicePowerFor(comp,8+lvl*3,p)*utilitySkillMultiplier(p)*tierMult),resource=comp.resource||'hp';
   if(comp.target==='area'){
    restoreEntityResource(p,resource,power*2);
    for(const ally of resolveComponentAllyTargets(comp,ctx)){
@@ -5161,7 +5335,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='drain'){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
-  const power=Math.round(dicePowerFor(comp,5+lvl*2,p)*utilitySkillMultiplier(p));
+  const power=Math.round(dicePowerFor(comp,5+lvl*2,p)*utilitySkillMultiplier(p)*tierMult);
   for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
   // The target always loses HP via the attack() above (the only pool
   // enemies have); the resource picker only controls what the CASTER gets
@@ -5212,14 +5386,14 @@ function applyEffectComponent(id,comp,ctx){
    // reviveCompanion() stays only as a safety net).
    const existing=(game.companions||[]).find(c=>c.sourceSkillId===id);
    if(existing)return existing.hp>0?false:reviveCompanion(existing);
-   return !!summonCompanion('custom',Infinity,1,{hp:Math.round((comp.hp??20)*utilitySkillMultiplier(p)),atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
+   return !!summonCompanion('custom',Infinity,1,{hp:Math.round((comp.hp??20)*utilitySkillMultiplier(p)),powerMult:tierMult,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',permanent:true,sourceSkillId:id,commandResource:comp.commandResource||'mana',commandCost:comp.commandCost??0,reviveResource:comp.reviveResource||'hp',reviveAmount:comp.reviveAmount??20,targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,reserveResource:comp.reserveResource,reservePct:comp.reservePct,sourceName:d.name});
   }
-  summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??20)*utilitySkillMultiplier(p)),atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
+  summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??20)*utilitySkillMultiplier(p)),powerMult:tierMult,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,iconImage:comp.iconImage||'',targetable:comp.targetable,hitByAoe:comp.hitByAoe,stance:comp.stance,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='summonturret'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'0d6';
-  summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??16)*utilitySkillMultiplier(p)),atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||'',spawnAt:{x:ctx.x,y:ctx.y}});
+  summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??16)*utilitySkillMultiplier(p)),powerMult:tierMult,atk,range:Math.max(1,comp.range||7),skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',damageMode:comp.damageMode||'nearest',actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),effectTurns:comp.effectTurns??2,stationary:true,buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,iconImage:comp.iconImage||'',spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='utility'){
@@ -5244,7 +5418,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='hot'){
   p.hots=p.hots||[];
-  const power=Math.round(dicePowerFor(comp,3+lvl,p)*utilitySkillMultiplier(p)),turns=comp.turns??4;
+  const power=Math.round(dicePowerFor(comp,3+lvl,p)*utilitySkillMultiplier(p)*tierMult),turns=comp.turns??4;
   const resource=comp.resource||'hp';p.hots.push({turns,power,resource});
   if(comp.target==='area'){
    for(const ally of resolveComponentAllyTargets(comp,ctx)){
@@ -5309,14 +5483,14 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='trap'){
-  const power=dicePowerFor(comp,4+lvl*1.5,p);
+  const power=Math.round(dicePowerFor(comp,4+lvl*1.5,p)*tierMult);
   addSkillObject('trap',id,ctx.x,ctx.y,Math.max(1,comp.turns??8),power,Math.max(1,comp.range||1));
   return true
  }
  if(comp.kind==='clones'){
   const atk=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:'0d6';
   const count=Math.max(1,Math.min(4,Math.round((comp.count||2)*utilitySkillMultiplier(p))));
-  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??14)*utilitySkillMultiplier(p)),atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
+  for(let i=0;i<count;i++)summonCompanion('custom',comp.turns??8,1,{hp:Math.round((comp.hp??14)*utilitySkillMultiplier(p)),powerMult:tierMult,atk,range:comp.range||0,skillName:comp.skillName||'',skillEffects:Array.isArray(comp.skillEffects)?comp.skillEffects:[],dmgStat:comp.dmgStat||'',dmgStatMode:comp.dmgStatMode||'add',dmgStatCoef:comp.dmgStatCoef??1,name:d.name,effectType:comp.effectType||'damage',effectTurns:comp.effectTurns??2,actionsPerTurn:Math.max(1,Math.round((comp.ap??10)/10)),iconImage:comp.iconImage||'',buffStat:comp.stat,buffMode:comp.mode,buffValue:comp.value,spawnAt:{x:ctx.x,y:ctx.y}});
   return true
  }
  if(comp.kind==='linkdamage'){
@@ -5713,6 +5887,12 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
 }
 
 let pendingTargetAction=null;
+// On-board aiming cursor for pad/keyboard targeting. Declared here (next to
+// the rest of the targeting state) rather than in joystick.js because draw()
+// and beginTargeting()/cancelTargeting() in this file read and write it, and
+// this file is parsed first - a `let` in joystick.js would still be in its
+// temporal dead zone for anything running before that script executes.
+let gamepadTargetCursor=null;
 // Area-target skills go through an extra pick-then-confirm step: a first
 // click on a valid cell just locks in pendingAreaCandidate (shows the AoE
 // radius shaded there); a second click on that same cell, or the CONFIRMAR
@@ -7344,7 +7524,7 @@ async function summonIconHexFromFile(file){
  const size=128,scale=Math.min(1,size/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
  const binary=atob(canvas.toDataURL('image/png').split(',')[1]||'');return Array.from(binary,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('')
 }
-function bindSummonIconFiles(wrap,list,rerender){wrap.querySelectorAll('[data-summon-icon-file]').forEach(input=>input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{list[Number(input.dataset.summonIconFile)].iconImage=await summonIconHexFromFile(file);rerender()}catch(e){alert(e.message)}})}
+function bindSummonIconFiles(wrap,list,rerender){wrap.querySelectorAll('[data-summon-icon-file]').forEach(input=>input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{list[Number(input.dataset.summonIconFile)].iconImage=await summonIconHexFromFile(file);rerender()}catch(e){uiAlert(e.message)}})}
 
 function summonIconOptionsList(){
  const seen=new Set(),opts=[];
@@ -7415,7 +7595,7 @@ function renderSkillEffectsList(){
  wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   const idx=Number(btn.dataset.useSummonIcon);
-  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación".');return}
+  if(!window.currentSummonIconHex){uiAlert('Primero elige o recorta una imagen en "Imagen de invocación".');return}
   window.currentSkillEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderSkillEffectsList();
  }));
  bindSummonIconFiles(wrap,list,renderSkillEffectsList);
@@ -7609,9 +7789,9 @@ async function loadConfigItemForEdit(id){let row=configItems.find(i=>String(i.id
 function resetConfigPotionForm(){window.editingConfigPotionId=null;configPotionNombre.value='';configPotionTier.value='common';if(document.getElementById('configPotionHidden'))document.getElementById('configPotionHidden').checked=false;const potionRange=document.getElementById('configPotionRange');if(potionRange)potionRange.value='5';window.currentPotionEffectsDraft=[];renderPotionEffectsList();window.currentConfigPotionIconHex='';renderConfigIconPreview('','configPotionIconPreview','configPotionIconStatus');configPotionIconStatus.textContent='Sin icono';configPotionStatus.textContent='Nueva poción.'}
 async function loadConfigPotionForEdit(id){let row=configItems.find(i=>String(i.id)===String(id));if(!row)return;{const r=await fetch(`/api/config-items?id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar la poción');row=detail;configItems=configItems.map(x=>String(x.id)===String(id)?detail:x)}const item=row.item_json||row;window.editingConfigPotionId=row.id;configPotionNombre.value=item.name||row.nombre||'';configPotionTier.value=item.rarity||row.tier||'common';if(document.getElementById('configPotionHidden'))document.getElementById('configPotionHidden').checked=!!item.hidden;window.currentConfigPotionIconHex=item.icon||row.icon||'';window.currentPotionEffectsDraft=Array.isArray(item.effects)?JSON.parse(JSON.stringify(item.effects)):[];renderPotionEffectsList();const potionRange=document.getElementById('configPotionRange');if(potionRange)potionRange.value=item.range||5;renderConfigIconPreview(window.currentConfigPotionIconHex,'configPotionIconPreview','configPotionIconStatus');configPotionIconStatus.textContent=window.currentConfigPotionIconHex?'Icono cargado desde objeto guardado.':'Sin icono';configPotionStatus.textContent=`Editando #${row.id}: ${configPotionNombre.value||'Sin nombre'}`}
 async function duplicateConfigItem(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Objeto'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configStatus.textContent='Objeto duplicado.'}catch(e){configStatus.textContent=e.message}}
-async function removeConfigItem(id){if(!confirm('¿Borrar este objeto configurado?'))return;configStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigItemId)===String(id))resetConfigForm();configStatus.textContent='Objeto borrado.'}catch(e){configStatus.textContent=e.message}}
+async function removeConfigItem(id){if(!await uiConfirm('¿Borrar este objeto configurado?'))return;configStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigItemId)===String(id))resetConfigForm();configStatus.textContent='Objeto borrado.'}catch(e){configStatus.textContent=e.message}}
 async function duplicateConfigPotion(id){const row=configItems.find(i=>String(i.id)===String(id));if(!row)return;configPotionStatus.textContent='Duplicando...';try{const item={...(row.item_json||row),name:`${(row.item_json||row).name||row.nombre||'Poción'} (copia)`};await saveConfigItems([{...item,nombre:item.name,slot:item.slot,tier:item.rarity,ilvl:item.itemLevel,item_json:item}]);configPotionStatus.textContent='Poción duplicada.'}catch(e){configPotionStatus.textContent=e.message}}
-async function removeConfigPotion(id){if(!confirm('¿Borrar esta poción configurada?'))return;configPotionStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigPotionId)===String(id))resetConfigPotionForm();configPotionStatus.textContent='Poción borrada.'}catch(e){configPotionStatus.textContent=e.message}}
+async function removeConfigPotion(id){if(!await uiConfirm('¿Borrar esta poción configurada?'))return;configPotionStatus.textContent='Borrando...';try{await deleteConfigItem(id);if(String(window.editingConfigPotionId)===String(id))resetConfigPotionForm();configPotionStatus.textContent='Poción borrada.'}catch(e){configPotionStatus.textContent=e.message}}
 
 function emptyFloorDraft(){return {name:'Caverna verdeante',story:'Cavernas húmedas cubiertas de musgo, raíces y piedra viva.',interior:false,floorTiles:[],wallTiles:[],doorTiles:[]}}
 function currentFloorDraft(){return window.editingConfigFloorJson||emptyFloorDraft()}
@@ -7627,7 +7807,7 @@ async function loadConfigFloor(id,defaultIndex){let row=configFloors.find(r=>Str
 function tileArrayKey(type){return type==='wall'?'wallTiles':type==='door'?'doorTiles':'floorTiles'}
 function resetConfigTileForm(clearIcon=true){configTileName.value='';configTileType.value='floor';configTileColor.value='#263927';configTileAlt.value='#314832';configTileAccent.value='#8fbf63';configWallDirection.value='top';configTileRotatable.checked=true;if(clearIcon){window.currentConfigTileIconHex='';renderConfigIconPreview('','configTileIconPreview','configTileIconStatus')}configTileType.dispatchEvent(new Event('change'))}
 function loadConfigTile(key,index){const floor=currentFloorDraft(),tile=floor[key]?.[index];if(!tile)return;window.editingConfigTileRef={key,index};configTileName.value=tile.name||'';configTileType.value=tile.type||({floorTiles:'floor',wallTiles:'wall',doorTiles:'door'}[key]||'floor');configTileColor.value=tile.color||'#263927';configTileAlt.value=tile.alt||tile.top||'#314832';configTileAccent.value=tile.accent||'#8fbf63';configWallDirection.value=tile.direction||'top';configTileRotatable.checked=!!tile.rotatable;window.currentConfigTileIconHex=tile.icon||'';renderConfigIconPreview(window.currentConfigTileIconHex,'configTileIconPreview','configTileIconStatus');configTileType.dispatchEvent(new Event('change'));configTilesetStatus.textContent=`Editando tile ${tile.name||index+1}. Guarda el tile para aplicar cambios al floor.`}
-function deleteConfigTile(key,index){const floor=currentFloorDraft();if(!floor[key]?.[index])return;if(!confirm('¿Borrar este tile del floor actual?'))return;floor[key].splice(index,1);window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Tile borrado del floor actual. Guarda el floor para consolidar en config_floor.';renderConfigTilesets()}
+async function deleteConfigTile(key,index){const floor=currentFloorDraft();if(!floor[key]?.[index])return;if(!await uiConfirm('¿Borrar este tile del floor actual?'))return;floor[key].splice(index,1);window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Tile borrado del floor actual. Guarda el floor para consolidar en config_floor.';renderConfigTilesets()}
 function setupTilesetConfigMode(){setupImageIconEditor({inputId:'configTileImageInput',canvasId:'configTileCropCanvas',previewId:'configTileIconPreview',statusId:'configTileIconStatus',zoomId:'configTileCropZoom',eraserId:'configTileMagicEraserBtn',toleranceId:'configTileMagicTolerance',hexKey:'currentConfigTileIconHex',statusPrefix:'Tile',outline:false});window.editingConfigFloorJson=window.editingConfigFloorJson||emptyFloorDraft();renderConfigTilesets();configTileType.onchange=()=>configWallDirectionWrap?.classList.toggle('hidden',configTileType.value!=='wall');configTileType.onchange();addConfigTileBtn.onclick=()=>{const floor=currentFloorDraft(),key=tileArrayKey(configTileType.value),ref=window.editingConfigTileRef,tile={name:configTileName.value.trim()||'Tile sin nombre',type:configTileType.value,direction:configTileType.value==='wall'?configWallDirection.value:'',color:configTileColor.value,alt:configTileAlt.value,top:configTileAlt.value,accent:configTileAccent.value,rotatable:configTileType.value==='wall'&&configTileRotatable.checked,icon:window.currentConfigTileIconHex||''};if(ref&&floor[ref.key]?.[ref.index]){if(ref.key!==key){floor[ref.key].splice(ref.index,1);floor[key]=floor[key]||[];floor[key].push(tile)}else floor[key][ref.index]=tile;configTilesetStatus.textContent='Tile actualizado en el floor actual. Guarda el floor para consolidarlo.'}else{floor[key]=floor[key]||[];floor[key].push(tile);configTilesetStatus.textContent='Tile añadido al floor actual. Guarda el floor para consolidarlo.'}window.editingConfigFloorJson=floor;window.editingConfigTileRef=null;resetConfigTileForm(false);renderConfigTilesets()};newConfigTileBtn.onclick=()=>{window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Formulario listo para un tile nuevo.'};newConfigFloorBtn.onclick=()=>{window.editingConfigFloorId=null;window.editingConfigFloorJson=emptyFloorDraft();configFloorName.value=window.editingConfigFloorJson.name;configFloorStory.value=window.editingConfigFloorJson.story;configFloorInterior.checked=false;window.editingConfigTileRef=null;resetConfigTileForm();configTilesetStatus.textContent='Nuevo floor iniciado.';renderConfigTilesets()};saveConfigFloorBtn.onclick=async()=>{const floor=currentFloorDraft();floor.name=configFloorName.value.trim()||'Floor sin nombre';floor.story=configFloorStory.value.trim();floor.interior=!!configFloorInterior.checked;configTilesetStatus.textContent='Guardando floor en config_floor...';try{await saveConfigFloorRow(floor);configTilesetStatus.textContent='Floor guardado.'}catch(e){configTilesetStatus.textContent=e.message}};exportConfigTilesetBtn.onclick=()=>{const blob=new Blob([JSON.stringify(currentFloorDraft(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='config-floor.json';a.click();URL.revokeObjectURL(a.href)};importConfigFloorInput.onchange=async()=>{const files=[...importConfigFloorInput.files];configTilesetStatus.textContent='Leyendo floor(s) JSON/ZIP...';try{let count=0;const floorsRaw=await parseImportedJsonFiles(files);for(const raw of floorsRaw){const floor={...emptyFloorDraft(),...(raw.floor_json||raw)};floor.name=floor.name||raw.floor_name||'Floor importado';floor.floorTiles=Array.isArray(floor.floorTiles)?floor.floorTiles:[];floor.wallTiles=Array.isArray(floor.wallTiles)?floor.wallTiles:[];floor.doorTiles=Array.isArray(floor.doorTiles)?floor.doorTiles:[];window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importando floor ${count+1}/${floorsRaw.length}...`;await saveConfigFloorRow(floor);count++}window.editingConfigFloorId=null;configTilesetStatus.textContent=`Importados ${count} floor(s) en config_floor.`}catch(e){configTilesetStatus.textContent=e.message}finally{importConfigFloorInput.value=''}}}
 
 
@@ -7854,7 +8034,7 @@ function loadConfigChestForEdit(id){
  const st=document.getElementById('configChestStatus');if(st)st.textContent=`Editando ${c.name||'cofre'}.`;
 }
 async function removeConfigChest(id){
- if(!confirm('¿Borrar este cofre?'))return;
+ if(!await uiConfirm('¿Borrar este cofre?'))return;
  try{const r=await fetch(`/api/config-chest?id=${encodeURIComponent(id)}`,{method:'DELETE'});const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo borrar');await fetchConfigChests();if(String(window.editingConfigChestId)===String(id))resetConfigChestForm()}catch(e){const st=document.getElementById('configChestStatus');if(st)st.textContent=e.message}
 }
 function renderConfigChests(){
@@ -8164,7 +8344,7 @@ async function loadAssetForEdit(objectKey){
  }catch(e){if(st)st.textContent=e.message}
 }
 async function deleteConfigAsset(objectKey){
- if(!confirm('¿Borrar este asset?'))return;
+ if(!await uiConfirm('¿Borrar este asset?'))return;
  const st=document.getElementById('configAssetStatus');
  try{
   const r=await fetch(`/api/config-floor?kind=object&object_key=${encodeURIComponent(objectKey)}`,{method:'DELETE'});
@@ -8404,7 +8584,7 @@ function renderTestSkillChoices(){
  root.querySelectorAll('[data-test-skill]').forEach(cb=>cb.onchange=()=>{
   const id=cb.dataset.testSkill;
   if(cb.checked){
-   if(tstSkillIds.length>=cap){cb.checked=false;alert(`Nivel ${tstLevel} solo permite conocer ${cap} habilidad(es) de clase.`);return}
+   if(tstSkillIds.length>=cap){cb.checked=false;uiAlert(`Nivel ${tstLevel} solo permite conocer ${cap} habilidad(es) de clase.`);return}
    tstSkillIds.push(id);
   }else tstSkillIds=tstSkillIds.filter(x=>x!==id);
   renderTestSkillChoices();
@@ -8587,7 +8767,7 @@ function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||row.race
 function raceIconForId(id,gender=selectedGender){const race=raceDefs[id]||{};return gender==='female'?(race.iconFemale||race.iconMale||race.icon||''):(race.iconMale||race.icon||'')}
 function applyConfiguredRaces(){for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
 async function fetchConfigRaces({light=false}={}){try{const r=await fetch(`/api/config-class?kind=races${light?'&light=1':''}`),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar razas');configRaces=Array.isArray(data)?data:[];configRacesLoaded=true;applyConfiguredRaces();renderConfigRaces()}catch(e){const st=document.getElementById('configRaceStatus');if(st)st.textContent=e.message}}
-function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()});wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();if(!window.currentSummonIconHex){alert('Primero configura una imagen en el editor de invocación.');return}list[Number(btn.dataset.useSummonIcon)].iconImage=window.currentSummonIconHex;renderRaceEffects()});bindSummonIconFiles(wrap,list,renderRaceEffects);
+function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()});wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();if(!window.currentSummonIconHex){uiAlert('Primero configura una imagen en el editor de invocación.');return}list[Number(btn.dataset.useSummonIcon)].iconImage=window.currentSummonIconHex;renderRaceEffects()});bindSummonIconFiles(wrap,list,renderRaceEffects);
  wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();list[Number(btn.dataset.clearSummonIcon)].iconImage='';renderRaceEffects()});wrap.querySelectorAll('[data-summon-icon-idx]').forEach(canvas=>{const comp=list[Number(canvas.dataset.summonIconIdx)];if(comp?.iconImage)drawSkillIconImg(canvas,comp.iconImage)})}
 function raceStatsFromForm(){let extra={};const raw=document.getElementById('configRaceExtraStats').value.trim();if(raw)extra=JSON.parse(raw);for(const k of Object.keys(RACE_STAT_FIELDS)){const v=Number(document.querySelector(`[data-race-stat="${k}"]`)?.value);if(v)extra[k]=v;else delete extra[k]}return extra}
 function currentRacePayload(){const key=slugifyClassName(configRaceKey.value||configRaceName.value),iconMale=window.currentConfigRaceIconHex||'';return{nombre:configRaceName.value.trim(),stats:{...raceStatsFromForm(),raceKey:key,description:configRaceDesc.value.trim(),icon:iconMale,iconMale,iconFemale:window.currentConfigRaceFemaleIconHex||''},skill:{id:`${key}_racial`,name:configRaceSkillName.value.trim()||'Skill racial',icon:configRaceSkillIcon.value||'✦',desc:configRaceSkillDesc.value.trim(),resource:configRaceSkillResource.value,cost:Number(configRaceSkillCost.value)||0,apCost:Number(configRaceSkillAp.value)||0,cd:Number(configRaceSkillCd.value)||0,range:Number(configRaceSkillRange.value)||0,type:'utility',tier:1,rarity:'racial',classEffect:'stackable',effects:JSON.parse(JSON.stringify(window.currentRaceEffectsDraft||[])),raceSkill:true,raceKey:key,targetMode:effectsListTargetModeFor(window.currentRaceEffectsDraft||[])}}}
@@ -8599,7 +8779,7 @@ async function responseJson(response){
  try{return JSON.parse(text)}
  catch{return{error:response.ok?'El servidor devolvió una respuesta inválida.':`No se pudo completar la petición (${response.status}): ${text.trim().slice(0,180)}`}}
 }
-function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!confirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
+function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!await uiConfirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){Promise.all([fetchEnemyConfig(),fetchConfigClasses(),ensureConfigItemsHydrated()]).then(()=>{renderEnemySkillSelect();renderEnemyEquipment()})}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
 
@@ -8679,8 +8859,8 @@ function setupClassConfigMode(){
  if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
  configClassSelect.onchange=loadSelectedConfigClass;
  document.getElementById('configClassSkillSelect').onchange=e=>loadSkillIntoForm(e.target.value);
- document.getElementById('newConfigClassBtn').onclick=()=>{
-  const name=prompt('Nombre de la nueva clase:');if(!name)return;
+ document.getElementById('newConfigClassBtn').onclick=async()=>{
+  const name=await uiTextPrompt('Nombre de la nueva clase:');if(!name)return;
   window.pendingNewClassId=slugifyClassName(name);
   configClassName.value=name;document.getElementById('configClassDesc').value='Clase personalizada.';
   configClassStr.value=configClassVit.value=configClassAgi.value=configClassLuck.value=configClassInt.value=configClassWis.value=2;
@@ -8690,9 +8870,9 @@ function setupClassConfigMode(){
   renderConfigClassStarterGearOptions('',[]);
   configClassStatus.textContent=`Nueva clase "${name}" lista para configurar. Añade skills y pulsa Guardar clase.`;
  };
- document.getElementById('duplicateConfigClassBtn').onclick=()=>{
+ document.getElementById('duplicateConfigClassBtn').onclick=async()=>{
   const baseId=selectedGameClassId(),base=resolveClassDef(baseId);if(!base)return;
-  const name=prompt('Nombre de la copia:',`${base.name} (copia)`);if(!name)return;
+  const name=await uiTextPrompt('Nombre de la copia:',`${base.name} (copia)`);if(!name)return;
   const newId=slugifyClassName(name);
   window.pendingNewClassId=newId;
   configClassName.value=name;document.getElementById('configClassDesc').value=base.desc||'';
@@ -8820,7 +9000,7 @@ function renderPotionEffectsList(){
  wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   const idx=Number(btn.dataset.useSummonIcon);
-  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
+  if(!window.currentSummonIconHex){uiAlert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
   window.currentPotionEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderPotionEffectsList();
  }));
  bindSummonIconFiles(wrap,list,renderPotionEffectsList);
@@ -8882,7 +9062,7 @@ function renderEquipmentEffectsList(){
  wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.addEventListener('click',e=>{
   e.preventDefault();e.stopPropagation();
   const idx=Number(btn.dataset.useSummonIcon);
-  if(!window.currentSummonIconHex){alert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
+  if(!window.currentSummonIconHex){uiAlert('Primero elige o recorta una imagen en "Imagen de invocación" (pestaña Clases).');return}
   window.currentEquipmentEffectsDraft[idx].iconImage=window.currentSummonIconHex;renderEquipmentEffectsList();
  }));
  bindSummonIconFiles(wrap,list,renderEquipmentEffectsList);
@@ -8946,7 +9126,7 @@ async function saveDungeonConfig(){
   editingDungeonWorldId=data.id;editingDungeonBaseline=JSON.parse(JSON.stringify(params));importedDungeonDraft=false;dungeonPreviewWorld=world;dungeonPreviewFloor=0;drawDungeonGeometryPreview();await fetchConfigDungeons();status.textContent='Dungeon nueva consolidada y vista previa actualizada.'
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
-function setupDungeonConfigMode(){if(dungeonField('dungeonFloorEditor')?.dataset.ready)return;dungeonField('dungeonFloorEditor').dataset.ready='1';renderDungeonFloorEditor();dungeonField('saveDungeonConfigBtn').onclick=saveDungeonConfig;dungeonField('newDungeonConfigBtn').onclick=resetDungeonConfig;dungeonField('deleteDungeonConfigBtn').onclick=async()=>{if(!editingDungeonWorldId||!confirm('¿Borrar esta dungeon definitivamente?'))return;const r=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(editingDungeonWorldId)}`,{method:'DELETE'});if(r.ok){resetDungeonConfig();fetchConfigDungeons()}};dungeonField('exportDungeonConfigBtn').onclick=()=>downloadDungeonJson({world_name:dungeonField('dungeonConfigName').value,world_json:dungeonPreviewWorld||{params:dungeonConfigParams()}},dungeonField('dungeonConfigName').value||'dungeon');dungeonField('importDungeonConfigInput').onchange=async e=>{try{const raw=JSON.parse(await e.target.files[0].text());fillDungeonConfig(raw.world_json?raw:{world_json:raw.dungeon||raw.world||raw,world_name:raw.worldName||raw.world_name||raw.name},{imported:true})}catch(err){dungeonField('dungeonConfigStatus').textContent=`JSON inválido: ${err.message}`}e.target.value=''};dungeonField('dungeonPreviewPrev').onclick=()=>{dungeonPreviewFloor=Math.max(0,dungeonPreviewFloor-1);drawDungeonGeometryPreview()};dungeonField('dungeonPreviewNext').onclick=()=>{dungeonPreviewFloor=Math.min((dungeonPreviewWorld?.floors?.length||1)-1,dungeonPreviewFloor+1);drawDungeonGeometryPreview()};fetchConfigDungeons();drawDungeonGeometryPreview()}
+function setupDungeonConfigMode(){if(dungeonField('dungeonFloorEditor')?.dataset.ready)return;dungeonField('dungeonFloorEditor').dataset.ready='1';renderDungeonFloorEditor();dungeonField('saveDungeonConfigBtn').onclick=saveDungeonConfig;dungeonField('newDungeonConfigBtn').onclick=resetDungeonConfig;dungeonField('deleteDungeonConfigBtn').onclick=async()=>{if(!editingDungeonWorldId||!await uiConfirm('¿Borrar esta dungeon definitivamente?'))return;const r=await fetch(`/api/dungeon-worlds?id=${encodeURIComponent(editingDungeonWorldId)}`,{method:'DELETE'});if(r.ok){resetDungeonConfig();fetchConfigDungeons()}};dungeonField('exportDungeonConfigBtn').onclick=()=>downloadDungeonJson({world_name:dungeonField('dungeonConfigName').value,world_json:dungeonPreviewWorld||{params:dungeonConfigParams()}},dungeonField('dungeonConfigName').value||'dungeon');dungeonField('importDungeonConfigInput').onchange=async e=>{try{const raw=JSON.parse(await e.target.files[0].text());fillDungeonConfig(raw.world_json?raw:{world_json:raw.dungeon||raw.world||raw,world_name:raw.worldName||raw.world_name||raw.name},{imported:true})}catch(err){dungeonField('dungeonConfigStatus').textContent=`JSON inválido: ${err.message}`}e.target.value=''};dungeonField('dungeonPreviewPrev').onclick=()=>{dungeonPreviewFloor=Math.max(0,dungeonPreviewFloor-1);drawDungeonGeometryPreview()};dungeonField('dungeonPreviewNext').onclick=()=>{dungeonPreviewFloor=Math.min((dungeonPreviewWorld?.floors?.length||1)-1,dungeonPreviewFloor+1);drawDungeonGeometryPreview()};fetchConfigDungeons();drawDungeonGeometryPreview()}
 
 async function fetchDungeonWorlds(){
  const status=document.getElementById('worldStatus'),list=document.getElementById('worldList');if(!status||!list)return;
@@ -9019,11 +9199,11 @@ async function finishCharacterCreation(){
   // character actually made it into Supabase before we tear down `game` and
   // navigate away - this is the "it looked like it worked but nothing got
   // created" case made impossible to miss.
-  alert(`Personaje "${bundle.player.name}" creado y guardado correctamente.`);
+  uiAlert(`Personaje "${bundle.player.name}" creado y guardado correctamente.`);
   refreshCurrentUserProgress();
  }catch(e){
   console.error('No se pudo guardar el personaje nuevo:',e);
-  alert('Error al guardar el personaje: '+e.message);
+  uiAlert('Error al guardar el personaje: '+e.message);
  }
  game=null;
  startOverlay.classList.add('hidden');
@@ -9109,7 +9289,7 @@ async function openSessionContinue(){
 }
 
 async function deleteSavedSession(sessionId){
- if(!confirm('¿Eliminar esta partida guardada? Esta acción no se puede deshacer.'))return;
+ if(!await uiConfirm('¿Eliminar esta partida guardada? Esta acción no se puede deshacer.'))return;
  const button=document.querySelector(`[data-delete-session="${CSS.escape(String(sessionId))}"]`);
  if(button)button.disabled=true;
  try{
@@ -9119,7 +9299,7 @@ async function deleteSavedSession(sessionId){
   await openSessionContinue();
  }catch(e){
   if(button)button.disabled=false;
-  alert('Error al eliminar la sesión: '+e.message);
+  uiAlert('Error al eliminar la sesión: '+e.message);
  }
 }
 
@@ -9174,7 +9354,7 @@ async function resumeSession(sessionId){
   if(pos){game.player.x=pos.x;game.player.y=pos.y;game.player.facing=pos.facing||game.player.facing}
   anim.heroX=anim.targetX=game.player.x;anim.heroY=anim.targetY=game.player.y;anim.t=1;reveal(game.player.x,game.player.y);
   syncAllEquipmentPassives();recomputeDerived();updateUI();draw();banner(`SESIÓN RESTAURADA · PISO ${game.floor}`);
- }catch(e){alert('Error al continuar la sesión: '+e.message)}
+ }catch(e){uiAlert('Error al continuar la sesión: '+e.message)}
 }
 
 async function enterWorldWithCharacter(){
@@ -9320,11 +9500,11 @@ function logoutMultiSession(){
  fetch(`/api/multi-session?id=${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({logout:true})}).catch(e=>console.error(e));
 }
 const MAIN_MENU_SCREEN_IDS=['app','singlePlayerOverlay','multiplayerOverlay','mpLobbyOverlay','configScreen','scoresScreen','dungeonOverlay','dungeonPreviewOverlay','startOverlay','storyOverlay'];
-function goToMainMenu(){
+async function goToMainMenu(){
  // Nothing to lose in testing mode (never persisted) - skip the confirm and
  // drop straight back into Configuración > Modo Testing for fast iteration.
  const wasTesting=!!game?.testingMode;
- if(game&&!wasTesting&&!confirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
+ if(game&&!wasTesting&&!await uiConfirm('¿Volver al menú principal? Perderás el progreso no guardado de este piso.'))return;
  if(game?.multiplayer){logoutMultiSession();mpFlushCheckpointBeacon();cleanupMultiplayerRuntime()}
  if(multiHeartbeatTimer){clearInterval(multiHeartbeatTimer);multiHeartbeatTimer=null}
  if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
@@ -9427,7 +9607,7 @@ function proceedAfterWorldChosen(){
  document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');
  document.getElementById('dungeonPreviewContinueBtn').onclick=async()=>{
   document.getElementById('dungeonPreviewOverlay')?.classList.add('hidden');
-  try{await ensureWorldObjectIcons()}catch(e){alert('No se pudieron cargar los objetos del mundo: '+e.message);document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');return}
+  try{await ensureWorldObjectIcons()}catch(e){uiAlert('No se pudieron cargar los objetos del mundo: '+e.message);document.getElementById('dungeonPreviewOverlay')?.classList.remove('hidden');return}
   if(mpPendingAction?.type==='host'){mpCreateHostSession();return}
   await enterWorldWithCharacter();
  };
@@ -9448,7 +9628,7 @@ async function mpCreateHostSession(){
   if(!r.ok)throw new Error(data.error||data.message||'No se pudo crear la sesión multijugador');
   mpPendingAction=null;
   openMpLobby(data.id,true);
- }catch(e){alert('Error al crear la sesión: '+e.message)}
+ }catch(e){uiAlert('Error al crear la sesión: '+e.message)}
 }
 
 async function mpStartJoinFlow(sessionId){
@@ -10299,13 +10479,13 @@ function applyIncomingTradeState(t){
 }
 async function proposeTrade(otherPjId){
  if(!game?.multiplayer||!game.dungeonStatusId)return;
- if(game.mpTrade){alert('Ya hay un intercambio en curso.');return}
+ if(game.mpTrade){uiAlert('Ya hay un intercambio en curso.');return}
  const id=crypto.randomUUID(),a=String(game.pjId),b=String(otherPjId);
  const saved=await mpSaveSession(game.dungeonStatusId,fresh=>{
   if(fresh.trade)return null; // someone else proposed one first
   return {dungeon_status:{...fresh,trade:{id,a,b,offers:{[a]:[],[b]:[]},accepted:{[a]:false,[b]:false},applied:{},createdAt:Date.now()}}};
  });
- if(!saved){alert('No se pudo proponer el intercambio (puede que ya haya uno en curso).');return}
+ if(!saved){uiAlert('No se pudo proponer el intercambio (puede que ya haya uno en curso).');return}
  game.mpTradeSeenId=id;
  applyIncomingTradeState(saved.status.trade);
  mpSend('trade',{});
@@ -10548,7 +10728,7 @@ async function mpJoinSession(sessionId,pj){
   currentCharacter=pj;
   if(startedFlag){multiplayerOverlay.classList.add('hidden');mpEnterStartedSession({id:sessionId,dungeon_world_id:saved.session.dungeon_world_id,dungeon_status:saved.status})}
   else openMpLobby(sessionId,false);
- }catch(e){alert('Error al unirte: '+e.message)}
+ }catch(e){uiAlert('Error al unirte: '+e.message)}
 }
 
 function openMpLobby(sessionId,isHost,resuming=false){
@@ -10671,7 +10851,7 @@ async function mpEnterStartedSession(session,starter=false){
   mpEnsureEnemyIds();
   game.mpTrade=null;game.mpTradeSeenId=null;startMpTradePolling();
    banner(`PARTIDA MULTIJUGADOR · PISO ${game.floor}`);
- }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');startMultiHeartbeat();alert('Error al entrar en la partida: '+e.message)}
+ }catch(e){game=null;app.classList.add('hidden');multiplayerOverlay.classList.remove('hidden');startMultiHeartbeat();uiAlert('Error al entrar en la partida: '+e.message)}
 }
 
 function mpSyncOtherPlayers(st){
@@ -10941,7 +11121,7 @@ async function mpResumeSession(sessionId,chars){
    await mpSaveSession(sessionId,fresh=>({dungeon_status:{...fresh,resumeReady:{...(fresh.resumeReady||{}),[myChar.id]:true}}}));
    openMpLobby(sessionId,isHost,true);
   }else openMpLobby(sessionId,isHost);
- }catch(e){alert('Error al continuar la sesión: '+e.message)}
+ }catch(e){uiAlert('Error al continuar la sesión: '+e.message)}
 }
 
 menuMultiBtn.onclick=enterMultiplayerScreen;
@@ -10958,7 +11138,7 @@ document.getElementById('mpStartGameBtn').onclick=async()=>{
   // resuming an already-started session must NOT regenerate floor 1 (starter=true
   // is only for a brand-new session's very first launch)
   await mpEnterStartedSession(session,!mpLobbyResuming);
- }catch(e){alert('Error al iniciar: '+e.message)}
+ }catch(e){uiAlert('Error al iniciar: '+e.message)}
 };
 document.getElementById('backFromLobbyBtn').onclick=()=>{
  if(mpLobbyPollTimer){clearInterval(mpLobbyPollTimer);mpLobbyPollTimer=null}
@@ -10981,7 +11161,7 @@ document.getElementById('backFromSingleBtn').onclick=closeSinglePlayerScreen;
 document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
-menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){alert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
+menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){uiAlert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
 loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
 backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
 
@@ -11018,8 +11198,8 @@ function setWizardStep(step){
 document.querySelectorAll('[data-gender]').forEach(button=>button.onclick=()=>{selectedGender=button.dataset.gender;renderGenderChoices();renderRaceChoices()});
 document.getElementById('wizardBackBtn')?.addEventListener('click',()=>setWizardStep(characterWizardStep-1));
 document.getElementById('wizardNextBtn')?.addEventListener('click',()=>{
- if(characterWizardStep===0&&!selectedCombatMode){alert('Elige un modo de combate para continuar.');return}
- if(characterWizardStep===1&&!resolveClassDef(selectedClass)){alert('Elige una clase para continuar.');return}
+ if(characterWizardStep===0&&!selectedCombatMode){uiAlert('Elige un modo de combate para continuar.');return}
+ if(characterWizardStep===1&&!resolveClassDef(selectedClass)){uiAlert('Elige una clase para continuar.');return}
  setWizardStep(characterWizardStep+1);
 });
 
@@ -11037,7 +11217,7 @@ function renderRaceChoices(){
  }).join('');
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.raceIcon)));
- root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices();renderGenderChoices()});
+ root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){uiAlert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices();renderGenderChoices()});
 }
 renderRaceChoices();
 
@@ -11078,7 +11258,7 @@ function renderClassChoices(){
  root.querySelectorAll('[data-class-preview]').forEach(c=>drawClassPreview(c,c.dataset.classPreview));
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
- root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){alert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
+ root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){uiAlert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
  const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
 }
 renderClassChoices();
@@ -11090,34 +11270,20 @@ document.getElementById('combatModeAp')?.addEventListener('change',()=>{selected
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabview').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
 function isTypingTarget(el){return ['INPUT','TEXTAREA','SELECT'].includes(el?.tagName)||el?.isContentEditable}
-addEventListener('keydown',e=>{if(isTypingTarget(e.target)||!configScreen.classList.contains('hidden'))return;const k=e.key.toLowerCase(),m={arrowup:[0,-1],arrowdown:[0,1],arrowleft:[-1,0],arrowright:[1,0]};if(k==='escape'&&pendingTargetAction){cancelTargeting();return}if(m[k]){e.preventDefault();if(pendingTargetAction)moveTargetCursor(...m[k]);else move(...m[k]);return}if(k==='enter'&&pendingTargetAction){e.preventDefault();confirmTargetCursor();return}if('1234'.includes(k)){e.preventDefault();useSkill(Number(k)-1);return}if(k==='a'){e.preventDefault();beginBasicAttack()}if(k==='e'){e.preventDefault();waitBtn.click()}});
+// A blocking modal (level up, skill pick, soulseek pickers, and the in-page
+// confirm/alert/prompt) takes the keyboard with it: the native confirm() this
+// replaced stopped key events from ever reaching the page, so without this
+// guard answering a dialog would also walk the hero or fire a skill behind it.
+// Escape answers a cancellable dialog with "no", like the native one did.
+function blockingModalOpen(){return document.querySelector('.statPointModal.open,.skillChoiceModal.open,.uiPromptModal.open')}
+addEventListener('keydown',e=>{if(document.getElementById('uiPromptModal')?.classList.contains('open')){if(e.key==='Escape'&&!isTypingTarget(e.target)){e.preventDefault();document.getElementById('uiPromptCancel')?.click()}return}if(isTypingTarget(e.target)||!configScreen.classList.contains('hidden'))return;if(blockingModalOpen())return;const k=e.key.toLowerCase(),m={arrowup:[0,-1],arrowdown:[0,1],arrowleft:[-1,0],arrowright:[1,0]};if(k==='escape'&&pendingTargetAction){cancelTargeting();return}if(m[k]){e.preventDefault();if(pendingTargetAction)moveTargetCursor(...m[k]);else move(...m[k]);return}if(k==='enter'&&pendingTargetAction){e.preventDefault();confirmTargetCursor();return}if('1234'.includes(k)){e.preventDefault();useSkill(Number(k)-1);return}if(k==='a'){e.preventDefault();beginBasicAttack()}if(k==='e'){e.preventDefault();waitBtn.click()}});
 
-// Standard Gamepad API support. Bindings are deliberately button-based so
-// Xbox, PlayStation and generic pads can all be remapped without assumptions.
-const DEFAULT_GAMEPAD_BINDINGS={confirm:0,cancel:1,skill1:2,skill2:3,skill3:4,skill4:5,prevTab:6,nextTab:7,wait:8,attack:9,menu:10,fullscreen:11};
-const GAMEPAD_ACTIONS={confirm:'Confirmar / interactuar',cancel:'Atrás / volver al juego',attack:'Atacar',skill1:'Habilidad 1',skill2:'Habilidad 2',skill3:'Habilidad 3',skill4:'Habilidad 4',prevTab:'Hombro: zona anterior',nextTab:'Hombro: zona siguiente',wait:'Esperar',menu:'Menú de mando',fullscreen:'Solo juego / pantalla completa'};
-let gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS},gamepadListening=null,gamepadPrevious=[],gamepadRepeat={},gamepadTargetCursor=null,gamepadUiMode='gameplay',gamepadZoneIndex=0;
-try{gamepadBindings={...gamepadBindings,...JSON.parse(localStorage.getItem('gamepadBindings')||'{}')}}catch(e){}
-function gamepadButtonName(index){return ['A / ✕','B / ○','X / □','Y / △','LB / L1','RB / R1','LT / L2','RT / R2','SELECT','START','L3','R3','CRUCETA ↑','CRUCETA ↓','CRUCETA ←','CRUCETA →'][index]||`Botón ${index}`}
-function renderGamepadBindings(){const root=document.getElementById('gamepadBindings');if(!root)return;root.innerHTML=Object.entries(GAMEPAD_ACTIONS).map(([id,label])=>`<div class="gamepadBinding"><span><b>${label}</b><small>${gamepadButtonName(gamepadBindings[id])}</small></span><button type="button" data-gamepad-bind="${id}" class="${gamepadListening===id?'listening':''}">${gamepadListening===id?'PULSA UN BOTÓN…':'CAMBIAR'}</button></div>`).join('');root.querySelectorAll('[data-gamepad-bind]').forEach(b=>b.onclick=()=>{gamepadListening=b.dataset.gamepadBind;renderGamepadBindings()})}
-function openGamepadMenu(){gamepadListening=null;renderGamepadBindings();document.getElementById('gamepadOverlay')?.classList.remove('hidden')}
-function closeGamepadMenu(){gamepadListening=null;document.getElementById('gamepadOverlay')?.classList.add('hidden')}
-document.getElementById('menuGamepadBtn')?.addEventListener('click',openGamepadMenu);document.getElementById('closeGamepadBtn')?.addEventListener('click',closeGamepadMenu);document.getElementById('resetGamepadBtn')?.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()});
-function cycleGameTab(direction){const tabs=[...document.querySelectorAll('.tabs [data-tab]')].filter(b=>!b.classList.contains('hidden'));if(!tabs.length)return;const current=Math.max(0,tabs.findIndex(b=>b.classList.contains('active')));tabs[(current+direction+tabs.length)%tabs.length].click()}
-function visibleGamepadScreen(){const blockingModal=document.querySelector('.statPointModal.open,.skillChoiceModal.open');return blockingModal||[...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body}
-function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden)')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
-function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const selector='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[tabindex],.item,.skillCard,.visualSlot';const elements=(scope.matches?.(selector)?[scope]:[]).concat([...scope.querySelectorAll(selector)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
-function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;const next=els[(i+direction+els.length)%els.length];document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));next.classList.add('gamepadFocus');next.focus({preventScroll:true});next.scrollIntoView({block:'nearest'})}
-function focusGamepadElement(element){if(!element)return;gamepadUiMode='zone';document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));element.classList.add('gamepadFocus');element.focus({preventScroll:true});element.scrollIntoView({block:'nearest'})}
-function focusCurrentZone(){document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));navigateMenu(1)}
-function shoulderNavigate(direction){if(game&&visibleGamepadScreen()?.id==='app'&&!document.body.classList.contains('gameOnly')){cycleGameTab(direction);gamepadUiMode='tab';const active=document.querySelector('.tabview:not(.hidden)');const first=active?.querySelector('button:not([disabled]),[tabindex],.item,.skillCard,.visualSlot');if(first){first.setAttribute('tabindex',first.getAttribute('tabindex')||'0');first.focus({preventScroll:true});first.classList.add('gamepadFocus');first.scrollIntoView({block:'nearest'})}return}const zones=gamepadZones();if(!zones.length)return;gamepadUiMode='zone';gamepadZoneIndex=(gamepadZoneIndex+direction+zones.length)%zones.length;focusCurrentZone()}
-function returnToGameplay(){gamepadUiMode='gameplay';document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));canvas?.focus?.({preventScroll:true})}
+// Gamepad / joystick input lives in src/joystick.js (loaded right after this
+// file): bindings menu, stick-vs-D-pad routing, menu focus navigation and
+// the on-board targeting cursor. Only toggleGameOnly() stays here - it is
+// bound by value to #hudFullscreen at load time in this same file, so it has
+// to exist before joystick.js runs, and it is a view toggle, not input.
 async function toggleGameOnly(){const enabled=!document.body.classList.contains('gameOnly');document.body.classList.toggle('gameOnly',enabled);document.getElementById('hudFullscreen').textContent=enabled?'⛶':'⛶';if(enabled){try{await document.documentElement.requestFullscreen?.()}catch(e){}}else if(document.fullscreenElement){try{await document.exitFullscreen?.()}catch(e){}}setTimeout(()=>{applyCanvasSize();draw()},50)}
-function moveTargetCursor(dx,dy){if(!pendingTargetAction||!game?.player)return;const range=pendingTargetAction.range||1,min=pendingTargetAction.minRange??1;if(!gamepadTargetCursor)gamepadTargetCursor={x:game.player.x,y:game.player.y};const x=Math.max(0,Math.min(COLS-1,gamepadTargetCursor.x+dx)),y=Math.max(0,Math.min(ROWS-1,gamepadTargetCursor.y+dy));gamepadTargetCursor={x,y};pendingAreaHover={x,y};if(pendingTargetAction.mode==='area'&&validateTargetCell(x,y,range,min)){pendingAreaCandidate={x,y};document.getElementById('confirmTargetBtn')?.classList.remove('hidden')}draw()}
-function confirmTargetCursor(){if(!pendingTargetAction)return;if(!gamepadTargetCursor)gamepadTargetCursor={x:game.player.x,y:game.player.y};const {x,y}=gamepadTargetCursor;if(pendingTargetAction.mode==='area'){if(!pendingAreaCandidate)moveTargetCursor(0,0);if(pendingAreaCandidate)confirmAreaTarget();return}if(pendingTargetAction.kind==='companionCommand')resolveCompanionCommand(pendingTargetAction.companionId,x,y);else if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,x,y);else if(pendingTargetAction.kind==='potion')resolveTargetedPotion(pendingTargetAction.potionId,x,y);else if(pendingTargetAction.kind==='equipment')resolveTargetedEquipmentActive(pendingTargetAction.equipSlot,x,y);else resolveBasicAttack(x,y)}
-function gamepadAction(action){if(action==='menu'){openGamepadMenu();return}if(action==='fullscreen'){toggleGameOnly();return}if(action==='cancel'){if(!document.getElementById('gamepadOverlay')?.classList.contains('hidden'))closeGamepadMenu();else if(pendingTargetAction)cancelTargeting();else if(game&&gamepadUiMode!=='gameplay')returnToGameplay();return}if(action==='confirm'){if(pendingTargetAction)confirmTargetCursor();else document.activeElement?.click?.();return}if(action==='prevTab'){shoulderNavigate(-1);return}if(action==='nextTab'){shoulderNavigate(1);return}if(!game||game.over)return;if(action==='attack')beginBasicAttack();else if(action==='wait')waitBtn.click();else if(action.startsWith('skill'))useSkill(Number(action.slice(-1))-1)}
-function pollGamepads(now=0){const pad=[...(navigator.getGamepads?.()||[])].find(Boolean),status=document.getElementById('gamepadStatus');if(status){status.textContent=pad?`Conectado: ${pad.id}`:'Sin mando detectado';status.classList.toggle('connected',!!pad)}if(pad){const pressed=pad.buttons.map(b=>b.pressed);if(gamepadListening!==null){const index=pressed.findIndex((p,i)=>p&&!gamepadPrevious[i]);if(index>=0){gamepadBindings[gamepadListening]=index;gamepadListening=null;localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()}}else{for(const [action,index] of Object.entries(gamepadBindings))if(pressed[index]&&!gamepadPrevious[index])gamepadAction(action);const directions=[[12,0,-1],[13,0,1],[14,-1,0],[15,1,0]];for(const [button,dx,dy] of directions)if(pressed[button]&&!gamepadPrevious[button]){if(pendingTargetAction)moveTargetCursor(dx,dy);else if(gamepadUiMode!=='gameplay'||!game||document.getElementById('app')?.classList.contains('hidden'))navigateMenu(dy||dx)}const ax=pad.axes[0]||0,ay=pad.axes[1]||0,dx=Math.abs(ax)>.55?Math.sign(ax):0,dy=Math.abs(ay)>.55?Math.sign(ay):0;if((dx||dy)&&now>(gamepadRepeat.stick||0)){gamepadRepeat.stick=now+190;const mx=Math.abs(dx)>Math.abs(dy)?dx:0,my=Math.abs(dy)>=Math.abs(dx)?dy:0;if(pendingTargetAction)moveTargetCursor(mx,my);else if(game&&gamepadUiMode==='gameplay'){if(!busy&&!game.over)move(mx,my)}else navigateMenu(my||mx)}}gamepadPrevious=pressed}else gamepadPrevious=[];requestAnimationFrame(pollGamepads)}
-addEventListener('gamepadconnected',()=>renderGamepadBindings());requestAnimationFrame(pollGamepads);
 
 
 function gridCellFromEvent(ev){

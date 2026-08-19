@@ -1,3 +1,41 @@
+## v0.94.0 - 2026-08-19
+
+### Mando
+
+- Sustituidos todos los `confirm()`, `alert()` y `prompt()` nativos del navegador por una ventana propia dentro del juego (`#uiPromptModal`, con `uiConfirm()`/`uiAlert()`/`uiTextPrompt()` en `src/game.js`). Los diálogos nativos los dibuja el navegador FUERA de la página, así que ningún mando podía enfocar ni pulsar su botón «Aceptar»: subir de nivel, aprender una habilidad, deshacer un objeto o comprar en la tienda Soulseek dejaban al jugador bloqueado. La ventana nueva se navega con el mando como cualquier otro menú, responde a Escape y se cancela con el botón «Atrás» del mando.
+- Cancelar ya no inutiliza la tarjeta pulsada: los selectores de clase avanzada y de primera habilidad de Soulseek usaban `{once:true}`, que descartaba el listener aunque el jugador dijera que no. Ahora se puede volver a elegir.
+- Mientras hay una ventana bloqueante abierta (subida de nivel, elección de habilidad, modales de Soulseek o el nuevo diálogo), el teclado deja de mover al personaje y de lanzar habilidades por detrás, igual que hacía el diálogo nativo del navegador.
+- El modal de equipo inicial de Soulseek ya funciona con mando: sus tarjetas eran `<div>` sin foco posible (ahora son `<button>` con el mismo aspecto) y el cuadro entero es una zona de navegación, así que la cruceta recorre las tarjetas y el botón CONFIRMAR sin saltos.
+- La detección de la pantalla activa del mando ya tiene en cuenta el nuevo diálogo, que se abre POR ENCIMA de los modales de subida de nivel.
+- Con un mando conectado, al abrirse cualquier ventana u overlay el foco salta solo a su primer control (sin efecto alguno para quien juega con ratón o teclado).
+
+### Stick y cruceta
+
+- **Stick izquierdo**: siempre el mundo. Mueve al personaje, o el cursor de ataque/habilidad cuando se está apuntando. Solo navega menús en pantallas donde no hay ninguna partida jugable (login, configuración, puntuaciones).
+- **Cruceta**: siempre la interfaz. Recorre los menús laterales durante la partida y los botones de cualquier ventana abierta, con repetición al mantenerla pulsada. Ya no mueve al personaje ni el cursor de apuntado.
+- Todo el código de entrada de mando se ha movido a `src/joystick.js` (menú de asignación de botones, reparto stick/cruceta, navegación por foco y cursor de apuntado). En `src/game.js` solo quedan `toggleGameOnly()` (se enlaza por valor al HUD durante la carga) y la declaración de `gamepadTargetCursor` (lo leen `draw()` y el sistema de apuntado).
+
+### Habilidades
+
+- Nuevo buff general de habilidades: +5% de daño, curación, vida de invocación y daño de invocación **por tier de habilidad** (tier I +5%, tier II +10%, tier III +15%). Multiplica sobre los multiplicadores de INT/SAB y `skilleffect` ya existentes.
+- No afecta a efectos de objetos ni de pociones: esos se ejecutan con un id de lanzamiento sintético (`potion:`/`equip:`) cuya definición no tiene tier numérico, así que el multiplicador vale exactamente 1.
+- Sí afecta a los enemigos que lanzan habilidades, en el mismo factor.
+
+### IA enemiga
+
+- Los enemigos ahora sacan sus habilidades del árbol de la clase que les corresponde (`ENEMY_CLASS_SKILL_CLASSES`): un clérigo lanza habilidades de clérigo/paladín, un invocador levanta esbirros de nigromante/ingeniero, un francotirador dispara habilidades de francotirador. Antes el filtro por clase no funcionaba en la práctica: sus predicados comparaban con las etiquetas genéricas (`dash`, `ranged`, `heal`…) mientras las habilidades reales llevan las suyas propias (`holyDash`, `cleanseHeal`, `shadowStrike`…), así que cinco de las nueve clases de enemigo no encajaban con ninguna habilidad y caían al pool de «cualquier habilidad del juego».
+- Todos los enemigos salen ya con al menos una habilidad de su clase; casters, clases a distancia y élites llevan dos. Antes era una tirada (~18-40%) para guerreros, pícaros y tanques.
+- Corregido un fallo que podía abortar el turno enemigo completo: una habilidad cuya definición ya no existía (skill de `config_class` renombrada o borrada, partida guardada antigua) lanzaba una excepción al leer su `classEffect`.
+- Las habilidades de apoyo (curación, escudo, buff, utilidad) ya no exigen estar en cuerpo a cuerpo con el jugador: actúan sobre el propio lanzador o sus aliados. Además, una curación no se malgasta (ni consume su enfriamiento) si nadie ha perdido vida.
+- Dentro de un mismo kit se prueban primero las habilidades con efecto real y en último lugar las decorativas (escudo/buff/utilidad, que hoy solo escriben en el registro), para no desperdiciar la acción.
+
+### Verificación
+
+- `node --check` sobre `src/game.js`, `src/joystick.js`, `src/soulseek.js`, `src/soulseek_shop.js` y `src/soulseeker-dungeons.js`; `test/interiors.test.js`.
+- Comprobación en navegador headless con partida real generada: 42 enemigos, el 99% con habilidades de su clase, 8 turnos enemigos completos sin errores; ciclo completo de subida de nivel (modal → diálogo propio → stat aplicada), cancelación sin efectos y reintento posterior; invocaciones de tier I y III con su multiplicador correcto (1.05 / 1.15); `uiConfirm`/`uiAlert`/`uiTextPrompt` devolviendo aceptar/cancelar/texto.
+- Comparativa contra la versión anterior en el mismo escenario (25 partidas, 6 enemigos rodeando al jugador, 6 turnos): los lanzamientos de habilidad enemigos casi se duplican (9,3 → 17,9 por partida) y el porcentaje de enemigos con habilidades sube del 62% al 99%, mientras que el daño total recibido se mantiene plano (284,6 → 267,8), es decir, más variedad y sabor de clase sin subida de dificultad.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.0`.
+
 ## v0.93.3 - 2026-08-18
 
 - Los assets con puerta usados para las salas interiores ahora respetan el ambiente elegido para el piso (el mismo pool que ya usa la decoración normal), en vez de escoger entre todos los ambientes al azar; solo si el ambiente del piso no tiene ningún asset con puerta configurado se recurre a cualquier otro ambiente.

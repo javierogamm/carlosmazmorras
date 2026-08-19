@@ -136,7 +136,7 @@ async function soulseekFinishCharacterCreation(){
   refreshCurrentUserProgress();
  }catch(e){
   console.error('No se pudo guardar el personaje Soulseeker:',e);
-  alert('Error al guardar el personaje: '+e.message);
+  uiAlert('Error al guardar el personaje: '+e.message);
   game=null;
   document.getElementById('soulseekCreateOverlay')?.classList.add('hidden');
   openSinglePlayerScreen();
@@ -147,7 +147,7 @@ async function soulseekFinishCharacterCreation(){
   await soulseekEnterDungeon();
  }catch(e){
   console.error('No se pudo generar el piso 1 del personaje Soulseeker:',e);
-  alert('El personaje se creó, pero no se pudo generar la mazmorra: '+e.message+'\nRevisa que haya al menos una familia de enemigos consolidada en Configuración → Enemigos.');
+  uiAlert('El personaje se creó, pero no se pudo generar la mazmorra: '+e.message+'\nRevisa que haya al menos una familia de enemigos consolidada en Configuración → Enemigos.');
   game=null;
   app.classList.add('hidden');
   openSinglePlayerScreen();
@@ -357,9 +357,9 @@ function soulseekGrantFloorReward(){
  // -- afterwards would never be seen by that already-bound handler, so the
  // -- buttons themselves have to be rebound directly instead. --
  const soulseekOriginalGoToMainMenu=goToMainMenu;
- document.getElementById('globalMenuBtn').onclick=function(){
+ document.getElementById('globalMenuBtn').onclick=async function(){
   if(game?.player?.soulseeker&&!game.testingMode){
-   if(!confirm('¿Volver al menú principal? Soulseek Mode no guarda partidas: tu personaje morirá permanentemente.'))return;
+   if(!await uiConfirm('¿Volver al menú principal? Soulseek Mode no guarda partidas: tu personaje morirá permanentemente.'))return;
    permanentDeath();
    return;
   }

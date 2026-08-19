@@ -160,7 +160,7 @@ function soulseekEnsureDom(){
 </div>
 
 <div class="statPointModal" id="soulseekLoadoutModal">
- <div class="statPointBox soulseekLoadoutBox">
+ <div class="statPointBox soulseekLoadoutBox" data-gamepad-zone="soulseek-loadout">
   <h2 id="soulseekLoadoutTitle">ELIGE TU EQUIPO INICIAL</h2>
   <div id="soulseekLoadoutStatus" class="small soulseekLoadoutStatus"></div>
   <div id="soulseekLoadoutBody"></div>
@@ -266,7 +266,7 @@ async function soulseekStartCharacter(){
  // since the id doesn't exist yet at creation time.
  const name=typedName||'Aventurero sin nombre';
  if(!configRacesLoaded)await fetchConfigRaces();
- if(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace]){alert('Selecciona una raza antes de crear el personaje.');return}
+ if(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace]){uiAlert('Selecciona una raza antes de crear el personaje.');return}
  await ensureConfigItemsHydrated();
  if(!configClasses.length)await fetchConfigClasses();
  const race=soulseekSelectedRace;
@@ -328,7 +328,7 @@ function openSoulseekerLoadoutModal(){
 }
 function soulseekLoadoutCardHtml(row,fallbackName){
  const it=row.item_json||row,rarity=it.rarity||row.tier||'common',name=it.name||row.nombre||fallbackName;
- return `<div class="soulseekLoadoutCard" data-soulseek-pick="${row.id}"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas><b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b></div>`;
+ return `<button type="button" class="soulseekLoadoutCard" data-soulseek-pick="${row.id}"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas><b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b></button>`;
 }
 function soulseekWireLoadoutCardIcons(root,rows){
  root.querySelectorAll('[data-soulseek-loadout-icon]').forEach(c=>{
@@ -426,11 +426,11 @@ async function soulseekFinishCharacterCreation(){
    bundle.player.name=`PJ Nº${data.id}`;
    await fetch('/api/user-pj',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:data.id,pj_name:bundle.player.name,pj_json:bundle,minimal:true})}).catch(()=>{});
   }
-  alert(`Personaje "${bundle.player.name}" creado y guardado correctamente. Bienvenido al Soulseek Mode.`);
+  uiAlert(`Personaje "${bundle.player.name}" creado y guardado correctamente. Bienvenido al Soulseek Mode.`);
   refreshCurrentUserProgress();
  }catch(e){
   console.error('No se pudo guardar el personaje Soulseeker:',e);
-  alert('Error al guardar el personaje: '+e.message);
+  uiAlert('Error al guardar el personaje: '+e.message);
  }
  game=null;
  document.getElementById('soulseekCreateOverlay')?.classList.add('hidden');
@@ -465,10 +465,10 @@ function openSoulseekerClassPicker(){
   return `<button type="button" class="skillChoiceCard" data-soulseek-class="${id}"><b>${cls.name}</b><p>${cls.desc}</p></button>`;
  }).join('');
  modal.classList.add('open');
- grid.querySelectorAll('[data-soulseek-class]').forEach(btn=>btn.addEventListener('click',()=>{
+ grid.querySelectorAll('[data-soulseek-class]').forEach(btn=>btn.addEventListener('click',async()=>{
   const id=btn.dataset.soulseekClass,cls=resolveClassDef(id);
-  if(!cls)return;
-  if(!confirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
+  if(!cls||!modal.classList.contains('open'))return;
+  if(!await uiConfirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
   const p=game.player;
   p.cls=id;p.className=cls.name;p.classIcon=classIconForId(id,p.gender)||classlessIconForGender(p.gender);
   // A classless Soulseek character always starts from the same flat
@@ -486,7 +486,7 @@ function openSoulseekerClassPicker(){
   log(`Te conviertes en ${cls.name}.`,'good');
   recomputeDerived();updateUI();draw();
   openSoulseekerSkillPicker();
- },{once:true}));
+ }));
 }
 function openSoulseekerSkillPicker(){
  const choices=classSkillChoicesForTier(1);
@@ -497,16 +497,17 @@ function openSoulseekerSkillPicker(){
  const grid=document.getElementById('skillChoiceGrid');
  grid.innerHTML=choices.map(id=>{const s=skillDefs[id],roman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-soulseek-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
- grid.querySelectorAll('[data-soulseek-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
+ grid.querySelectorAll('[data-soulseek-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   const id=b.dataset.soulseekPickSkill,chosen=skillDefs[id];
-  if(!confirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
+  if(!modal.classList.contains('open'))return;
+  if(!await uiConfirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
   learnSkill(id);
   game.player.skillChoicesAwarded[game.player.level]='chosen';
   modal.classList.remove('open');
   updateUI();draw();
   soulseekClassPickerOpen=false;
   soulseekPersistAfterClassChoice();
- },{once:true}));
+ }));
 }
 function soulseekPersistAfterClassChoice(){
  if(!game?.pjId)return;
