@@ -59,9 +59,37 @@ function soulseekDifficultyConfig(){
   #soulseekDifficultyChoices{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 14px}
   #soulseekDifficultyChoices button.selected{border-color:#ffc35a;box-shadow:0 0 10px #ffc35a55;background:#3a2748}
   @media(max-width:620px){#soulseekDifficultyChoices{grid-template-columns:repeat(2,1fr)}}
+  #soulseekLoadingOverlay{position:fixed;inset:0;z-index:10500;background:#050308f0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center}
+  #soulseekLoadingOverlay.open{display:flex}
+  #soulseekLoadingOverlay .soulseekHourglass{font-size:64px;animation:soulseekHourglassFlip 1.6s ease-in-out infinite}
+  #soulseekLoadingOverlay .soulseekLoadingText{color:#e8d6ff;font-size:15px;letter-spacing:.04em}
+  @keyframes soulseekHourglassFlip{0%,15%{transform:rotate(0)}45%,55%{transform:rotate(180deg)}85%,100%{transform:rotate(360deg)}}
  `;
  document.head.appendChild(style);
 })();
+
+// ============================================================================
+// Loading overlay: shown from the moment "CREAR PERSONAJE" is clicked until
+// floor 1 has actually been generated and drawn (or creation failed), so
+// the player never stares at an unresponsive/black screen wondering if
+// anything is happening.
+// ============================================================================
+function soulseekEnsureLoadingOverlay(){
+ if(document.getElementById('soulseekLoadingOverlay'))return;
+ const div=document.createElement('div');
+ div.id='soulseekLoadingOverlay';
+ div.innerHTML=`<div class="soulseekHourglass">⏳</div><div class="soulseekLoadingText" id="soulseekLoadingText">Creando personaje...</div>`;
+ document.body.appendChild(div);
+}
+function soulseekShowLoading(text){
+ soulseekEnsureLoadingOverlay();
+ const text_=document.getElementById('soulseekLoadingText');
+ if(text_)text_.textContent=text||'Creando personaje...';
+ document.getElementById('soulseekLoadingOverlay').classList.add('open');
+}
+function soulseekHideLoading(){
+ document.getElementById('soulseekLoadingOverlay')?.classList.remove('open');
+}
 
 // ============================================================================
 // Difficulty picker: injected once into the existing #soulseekCreateOverlay
@@ -115,13 +143,35 @@ async function soulseekFinishCharacterCreation(){
   return;
  }
  document.getElementById('soulseekCreateOverlay')?.classList.add('hidden');
- await soulseekEnterDungeon();
+ try{
+  await soulseekEnterDungeon();
+ }catch(e){
+  console.error('No se pudo generar el piso 1 del personaje Soulseeker:',e);
+  alert('El personaje se creó, pero no se pudo generar la mazmorra: '+e.message+'\nRevisa que haya al menos una familia de enemigos consolidada en Configuración → Enemigos.');
+  game=null;
+  app.classList.add('hidden');
+  openSinglePlayerScreen();
+ }
 }
 
 async function soulseekEnterDungeon(){
  await ensureConfigItemsHydrated();
  if(!configClasses.length)await fetchConfigClasses();
  if(!configChests.length)await fetchConfigChests();
+ // generateFloor() -> buildFloorPlan() needs a consolidated enemy family to
+ // populate the floor (pickConfiguredFamilyForFloor() throws otherwise).
+ // Normal mode only ever loads this via loadDungeonOptionCatalogs(), called
+ // from openCharacterSelection() - a screen Soulseeker's create-straight-
+ // into-floor-1 flow never visits, so it has to be fetched here instead.
+ // Without it, generateFloor() threw deep inside buildFloorPlan and
+ // everything after it (the draw() call) never ran, leaving a black
+ // canvas with no error shown to the player.
+ if(!configEnemyFamilies.length)await fetchEnemyConfig({throwOnError:true});
+ // Same reasoning as the enemy family fetch above: floorTilesetForWorldPlan()
+ // needs config_floor rows consolidated to assign a real floor template
+ // (see soulseekRollFloorPlanEntry below) instead of just falling back to
+ // pickFloorTilesetForLevel()'s own internal random pick.
+ if(!configFloors.length)await fetchConfigFloors();
  try{await ensureWorldObjectIcons()}catch(e){console.error('No se pudieron cargar los assets del mundo',e)}
  document.getElementById('dungeonOverlay')?.classList.add('hidden');
  document.getElementById('singlePlayerOverlay')?.classList.add('hidden');
@@ -132,11 +182,41 @@ async function soulseekEnterDungeon(){
  document.getElementById('saveRunBtn')?.classList.add('hidden');
  const saveStatus=document.getElementById('saveRunStatus');
  if(saveStatus)saveStatus.textContent='Soulseek Mode: sin guardado. Salir al menú mata al personaje.';
+ soulseekApplyFloorPlan(game.floor);
  generateFloor();
  game.player.hp=game.player.maxHp;game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;
  applyCanvasSize();updateUI();draw();
  requestAnimationFrame(()=>{applyCanvasSize();draw()});
  banner(`SOULSEEK MODE · ${SOULSEEK_DIFFICULTIES[game.player.soulseekDifficulty]?.label.toUpperCase()||'NORMAL'}`);
+}
+
+// ============================================================================
+// Every Soulseeker floor rolls its own explicit {floorId, familyName,
+// ambiente} combo - the same shape a hand-authored dungeon_world's
+// per-floor plan uses (worldPlanEntry()/params.floorPlan, see
+// renderWorldFloorPlan()'s admin UI) - instead of leaving the floor
+// tileset, enemy family and decoration ambiente to independently roll
+// their own unrelated random fallback. game.worldParams.floorPlan is
+// overwritten with a single entry for the CURRENT floor right before every
+// generateFloor() call; normalizeWorldParams()'s cap to DUNGEON_FLOORS
+// entries (see game.js) never applies here since this is set directly on
+// the live game.worldParams object, not re-normalized.
+// ============================================================================
+function soulseekRollFloorPlanEntry(floor){
+ const floorRow=pick(normalizedConfigFloors());
+ const familyRow=pick(normalizedEnemyFamilies());
+ const ambientes=[...new Set(listConfigAssets().map(a=>a.ambiente).filter(Boolean))];
+ return {
+  floor,
+  floorId:floorRow?String(floorRow.dbId??floorRow.id??floorRow.name):'',
+  familyName:familyRow?familyRow.name:'',
+  ambiente:ambientes.length?pick(ambientes):'',
+  archetype:''
+ };
+}
+function soulseekApplyFloorPlan(floor){
+ game.worldParams=game.worldParams||{};
+ game.worldParams.floorPlan=[soulseekRollFloorPlanEntry(floor)];
 }
 
 // ============================================================================
@@ -201,7 +281,7 @@ function soulseekGrantFloorReward(){
    const block=stairsBlockedReason();
    if(block){log(block,'combat');return}
    soulseekGrantFloorReward();
-   game.floor++;generateFloor();
+   game.floor++;soulseekApplyFloorPlan(game.floor);generateFloor();
   }
  };
 
@@ -272,5 +352,23 @@ function soulseekGrantFloorReward(){
   await openSoulseekerNewCharacter();
   soulseekInjectDifficultyPicker();
   soulseekResetDifficultyChoice();
+ };
+
+ // -- "creating character" hourglass overlay: soulseek.js already bound
+ // -- #soulseekCreateBtn's onclick directly to soulseekStartCharacter's
+ // -- function value (same stale-reference issue as above), so the button
+ // -- is rebound here to a wrapper that shows the overlay first, then calls
+ // -- soulseekStartCharacter() as a bare identifier (late-bound - still
+ // -- resolves to soulseek.js's original function, only the button itself
+ // -- changed). try/finally covers every exit path: a validation alert
+ // -- (no name/race picked, soulseekStartCharacter returns early), a failed
+ // -- save, or a successful run into soulseekEnterDungeon().
+ document.getElementById('soulseekCreateBtn').onclick=async function(){
+  soulseekShowLoading('Creando personaje...');
+  try{
+   await soulseekStartCharacter();
+  }finally{
+   soulseekHideLoading();
+  }
  };
 })();
