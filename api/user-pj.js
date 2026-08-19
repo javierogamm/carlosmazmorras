@@ -57,6 +57,10 @@ function cleanPj(body){
   pj_score:body.pj_score??0,
   feats:body.feats??{elites:0,bosses:0,megabosses:0,dungeons:0},
   souls:Number(body.souls)||0,
+  // Soulseek Mode: true for characters created via the Soulseeker menu
+  // (classless start, advanced classes + AP by default, death can bank
+  // souls into the account instead of reviving). Never set for normal mode.
+  soulseeker:!!body.soulseeker,
   // tier shards from the Creator's Room disenchant altar - a real column,
   // not nested in pj_json, so it can be updated independently
   shards:shardsToText(body.shards),
@@ -74,7 +78,7 @@ module.exports=async(req,res)=>{
    const id=req.query?.id||null;
    const nombre=req.query?.nombre||null;
    if(id){
-    const select='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,feats,shards,souls,custom_items';
+    const select='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,pj_json,feats,shards,souls,custom_items,soulseeker';
     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}&id=eq.${encodeURIComponent(id)}&limit=1`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
@@ -82,14 +86,18 @@ module.exports=async(req,res)=>{
    }
    if(nombre){
     const light=req.query?.light==='1';
-    const select=light?'id,pj_name,pj_status,pj_score,last_use,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName':'*';
+    const select=light?'id,pj_name,pj_status,pj_score,last_use,soulseeker,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName':'*';
     const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}&nombre=eq.${encodeURIComponent(nombre)}&order=last_use.desc.nullslast`,{headers:headers(key)});
     const data=await r.json();
     if(!r.ok)return res.status(r.status).json(data);
     return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
    }
-   const scoreSelect='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,feats,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName';
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${scoreSelect}&order=pj_score.desc.nullslast`,{headers:headers(key)});
+   // Soulseek Mode's own PUNTUACIONES tab filters the leaderboard to
+   // Soulseeker characters only (?soulseeker=1); normal mode's leaderboard
+   // keeps showing every character, same as before this flag existed.
+   const soulseekerOnly=req.query?.soulseeker==='1';
+   const scoreSelect='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,feats,soulseeker,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName';
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${scoreSelect}&order=pj_score.desc.nullslast${soulseekerOnly?'&soulseeker=eq.true':''}`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(Array.isArray(data)?data.map(withParsedShards):data);
