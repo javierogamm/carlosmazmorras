@@ -35,13 +35,13 @@ let soulseekClassPickerOpen=false;
   .soulseekLoadoutBox{width:min(760px,94vw);max-height:88vh;overflow:auto;display:flex;flex-direction:column}
   .soulseekLoadoutStatus{text-align:center;margin:2px 0 10px;color:#c9b8d0}
   .soulseekLoadoutGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
-  .soulseekLoadoutCard{background:#1c1224;border:3px solid #4d395a;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:#f4ead5;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutCard{background:#1c1224;border:3px solid #4d395a;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:#f4ead5;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutCard:hover{border-color:#ffc35a}
   .soulseekLoadoutCard.selected{border-color:#ffc35a;background:#3a2748}
   .soulseekLoadoutCard canvas{width:48px;height:48px}
   .soulseekLoadoutCard b{font-size:12px;color:#ffd68b}
   .soulseekLoadoutTypeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}
-  .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;cursor:pointer}
+  .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
   #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
  `;
@@ -160,7 +160,7 @@ function soulseekEnsureDom(){
 </div>
 
 <div class="statPointModal" id="soulseekLoadoutModal">
- <div class="statPointBox soulseekLoadoutBox">
+ <div class="statPointBox soulseekLoadoutBox" data-gamepad-zone="soulseek-loadout">
   <h2 id="soulseekLoadoutTitle">ELIGE TU EQUIPO INICIAL</h2>
   <div id="soulseekLoadoutStatus" class="small soulseekLoadoutStatus"></div>
   <div id="soulseekLoadoutBody"></div>
@@ -266,7 +266,7 @@ async function soulseekStartCharacter(){
  // since the id doesn't exist yet at creation time.
  const name=typedName||'Aventurero sin nombre';
  if(!configRacesLoaded)await fetchConfigRaces();
- if(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace]){alert('Selecciona una raza antes de crear el personaje.');return}
+ if(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace]){uiAlert('Selecciona una raza antes de crear el personaje.');return}
  await ensureConfigItemsHydrated();
  if(!configClasses.length)await fetchConfigClasses();
  const race=soulseekSelectedRace;
@@ -280,14 +280,14 @@ async function soulseekStartCharacter(){
  const racialSkill=raceDefs[race]?.skill;
  if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
  if(rb.armor)game.player.baseArmor+=rb.armor;
- if(soulseekCommonPotionRows().length&&soulseekCommonWeaponRows().length){
-  openSoulseekerLoadoutModal();
- }else{
-  game.player.equipment.weapon=makeStarterWeapon(null);
-  addStarterPotions(null);
-  syncAllEquipmentPassives();recomputeDerived();
-  await soulseekFinishCharacterCreation();
- }
+ // Always ask. Entering floor 1 must go through the loadout wizard, no
+ // matter what the catalogue holds - it used to be skipped silently unless
+ // there were BOTH common weapons and common potions configured, which is
+ // how a run could start with nothing chosen at all. The wizard itself
+ // handles an empty catalogue (see renderSoulseekLoadoutStep) and
+ // soulseekFinalizeLoadout still falls back to the automatic starter gear
+ // for anything that was not picked.
+ await openSoulseekerLoadoutModal();
 }
 // ============================================================================
 // Starting loadout picker - a small wizard, one question at a time so it
@@ -306,29 +306,106 @@ let soulseekLoadoutWeaponType=null;
 let soulseekLoadoutWeaponPickId=null;
 let soulseekLoadoutPotionPickId=null;
 let soulseekLoadoutChosenPotions=[];
-function soulseekCommonPotionRows(){
- return configuredPotionRows().filter(r=>{const it=r.item_json||r;return (it.rarity||r.tier||'common')==='common'});
+// ---- Catalogue the wizard lists from ---------------------------------------
+// In Soulseek mode the ONLY thing that ever loads config_items is
+// ensureConfigItemsHydrated() in soulseekStartCharacter, and that asks for
+// the FULL catalogue - every configured object with its item_json, which
+// carries each item's embedded icon. On a big catalogue that payload is
+// enormous, and when the request fails or times out fetchConfigItems()
+// swallows the error into #configStatus (a field that is not even on screen
+// here), leaving configItems empty with nothing to show for it. That is how
+// a catalogue full of weapons could end up reported as "no hay armas ni
+// pociones".
+//
+// So the wizard no longer depends on that full fetch succeeding: if
+// configItems is empty it falls back to the LIGHT listing
+// (id/nombre/slot/tier/weapontype/type - small, and everything the picker
+// needs), kept in its own array so the rest of the game still sees an empty
+// configItems and behaves exactly as it does today. Only the rows actually
+// CHOSEN get hydrated, one id at a time.
+let soulseekLoadoutLightRows=null;
+let soulseekLoadoutCatalogError='';
+function soulseekLoadoutCatalogRows(){return configItems.length?configItems:(soulseekLoadoutLightRows||[])}
+async function soulseekEnsureLoadoutCatalog(){
+ soulseekLoadoutCatalogError='';
+ if(soulseekLoadoutCatalogRows().length)return true;
+ try{
+  const r=await fetch('/api/config-items?light=1');
+  const data=await r.json();
+  if(!r.ok)throw new Error(data?.error||data?.message||`HTTP ${r.status}`);
+  soulseekLoadoutLightRows=Array.isArray(data)?data:[];
+ }catch(e){soulseekLoadoutLightRows=[];soulseekLoadoutCatalogError=e.message||'error desconocido'}
+ return soulseekLoadoutCatalogRows().length>0;
 }
-function soulseekCommonWeaponRows(){
- return configItems.filter(r=>{const it=r.item_json||r;return (it.slot||r.slot)==='weapon'&&(it.rarity||r.tier||'common')==='common'});
+// Full row for one id. A light row has no item_json, and building an item
+// from it would silently produce a stripped-down weapon (no dice, no affixes,
+// no icon), so the chosen rows are always hydrated before use.
+async function soulseekHydrateItemRow(row){
+ if(!row||row.item_json)return row||null;
+ try{
+  const r=await fetch(`/api/config-items?id=${encodeURIComponent(row.id)}`);
+  const detail=await r.json();
+  if(!r.ok||!detail||!detail.item_json)return null;
+  return detail;
+ }catch(e){return null}
 }
-function openSoulseekerLoadoutModal(){
- soulseekEnsureDom();
- soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+
+// The starting loadout is ALWAYS offered, so these pools must never come back
+// empty just because the catalogue happens to have nothing at 'common'.
+// They prefer common and only walk up the rarity ladder when that rarity has
+// nothing configured - previously they filtered hard on 'common', and an
+// empty result silently skipped the whole wizard and dropped the player
+// straight into floor 1 with the automatic starter gear.
+const SOULSEEK_LOADOUT_RARITIES=['common','uncommon','rare','epic','legendary','artifact'];
+function soulseekRowRarity(row){const it=row.item_json||row;return it.rarity||row.tier||'common'}
+// Light rows spell it `weapontype` (Postgres column), hydrated ones
+// `item_json.weaponType` - the picker must group both the same way.
+function soulseekRowWeaponType(row){const it=row.item_json||row;return it.weaponType||it.weaponCategory||row.weapontype||''}
+function soulseekLowestRarityRows(rows){
+ for(const rarity of SOULSEEK_LOADOUT_RARITIES){
+  const match=rows.filter(r=>soulseekRowRarity(r)===rarity);
+  if(match.length)return match;
+ }
+ return rows;
+}
+function soulseekCommonPotionRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(isConfiguredPotionRow))}
+function soulseekCommonWeaponRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='weapon'))}
+// Weapons of the type picked in step 1 (or every weapon when the catalogue
+// only has one group / none at all). Shared by the render and the confirm
+// step so they can never disagree about whether there is anything to pick.
+function soulseekLoadoutWeaponChoices(){
+ const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
+ return soulseekCommonWeaponRows().filter(r=>!soulseekLoadoutWeaponType||groupFor(soulseekRowWeaponType(r))===soulseekLoadoutWeaponType);
+}
+function soulseekLoadoutWeaponGroups(){
  // typeof guard: soulseek_shop.js (which owns soulseekWeaponGroupFor) loads
  // after this file but before any of this runs (user interaction), so it's
- // always defined by the time openSoulseekerLoadoutModal actually fires -
- // this guard only covers a shop-less install missing that file entirely.
+ // always defined by the time the wizard actually opens - this guard only
+ // covers a shop-less install missing that file entirely.
  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
- const groups=[...new Set(soulseekCommonWeaponRows().map(r=>groupFor((r.item_json||r).weaponType)))];
+ return [...new Set(soulseekCommonWeaponRows().map(r=>groupFor(soulseekRowWeaponType(r))))];
+}
+function soulseekResetLoadoutSteps(){
+ soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+ const groups=soulseekLoadoutWeaponGroups();
  if(groups.length<=1){soulseekLoadoutWeaponType=groups[0]||null;soulseekLoadoutStep='weaponPick'}
  else soulseekLoadoutStep='weaponType';
+}
+async function openSoulseekerLoadoutModal(){
+ soulseekEnsureDom();
+ // Open first, then load: on a big catalogue the request takes a moment and
+ // the player should see the wizard (and any failure) rather than a frozen
+ // screen followed by a run that started without asking anything.
+ soulseekLoadoutStep='loading';
  renderSoulseekLoadoutStep();
  document.getElementById('soulseekLoadoutModal').classList.add('open');
+ await soulseekEnsureLoadoutCatalog();
+ soulseekResetLoadoutSteps();
+ renderSoulseekLoadoutStep();
 }
 function soulseekLoadoutCardHtml(row,fallbackName){
  const it=row.item_json||row,rarity=it.rarity||row.tier||'common',name=it.name||row.nombre||fallbackName;
- return `<div class="soulseekLoadoutCard" data-soulseek-pick="${row.id}"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas><b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b></div>`;
+ return `<button type="button" class="soulseekLoadoutCard" data-soulseek-pick="${row.id}"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas><b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b></button>`;
 }
 function soulseekWireLoadoutCardIcons(root,rows){
  root.querySelectorAll('[data-soulseek-loadout-icon]').forEach(c=>{
@@ -338,9 +415,33 @@ function soulseekWireLoadoutCardIcons(root,rows){
 }
 function renderSoulseekLoadoutStep(){
  const title=document.getElementById('soulseekLoadoutTitle'),status=document.getElementById('soulseekLoadoutStatus'),body=document.getElementById('soulseekLoadoutBody'),confirmBtn=document.getElementById('soulseekLoadoutConfirmBtn');
+ if(soulseekLoadoutStep==='loading'){
+  title.textContent='PREPARANDO TU EQUIPO INICIAL';
+  status.textContent='Cargando el catálogo de objetos configurados...';
+  body.innerHTML='<p class="small">Un momento.</p>';
+  confirmBtn.classList.add('hidden');
+  return;
+ }
+ if(soulseekLoadoutCatalogError){
+  // Never silently start a run because the catalogue could not be read: say
+  // what failed, offer a retry, and let the player continue with the
+  // automatic starter gear only if they choose to.
+  title.textContent='NO SE PUDO CARGAR EL CATÁLOGO';
+  status.textContent=`No se han podido leer los objetos configurados: ${soulseekLoadoutCatalogError}`;
+  body.innerHTML='<div class="soulseekLoadoutTypeGrid"><button type="button" class="soulseekLoadoutTypeCard" data-soulseek-loadout-retry>REINTENTAR</button></div>';
+  body.querySelector('[data-soulseek-loadout-retry]').onclick=async()=>{
+   soulseekLoadoutLightRows=null;
+   soulseekLoadoutStep='loading';renderSoulseekLoadoutStep();
+   await soulseekEnsureLoadoutCatalog();
+   soulseekResetLoadoutSteps();renderSoulseekLoadoutStep();
+  };
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent='CONTINUAR CON EQUIPO AUTOMÁTICO';
+  confirmBtn.disabled=false;
+  return;
+ }
  if(soulseekLoadoutStep==='weaponType'){
-  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
-  const groups=[...new Set(soulseekCommonWeaponRows().map(r=>groupFor((r.item_json||r).weaponType)))];
+  const groups=soulseekLoadoutWeaponGroups();
   title.textContent='ELIGE EL TIPO DE ARMA';
   status.textContent='Selecciona con qué tipo de arma quieres empezar.';
   body.innerHTML=`<div class="soulseekLoadoutTypeGrid">${groups.map(g=>`<button type="button" class="soulseekLoadoutTypeCard" data-soulseek-weapon-type="${g}">${g}</button>`).join('')}</div>`;
@@ -353,11 +454,10 @@ function renderSoulseekLoadoutStep(){
   return;
  }
  if(soulseekLoadoutStep==='weaponPick'){
-  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
-  const rows=soulseekCommonWeaponRows().filter(r=>!soulseekLoadoutWeaponType||groupFor((r.item_json||r).weaponType)===soulseekLoadoutWeaponType);
+  const rows=soulseekLoadoutWeaponChoices();
   title.textContent='ELIGE TU ARMA';
-  status.textContent=`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma común y confirma.`;
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">No hay armas comunes de este tipo.</p>';
+  status.textContent=rows.length?`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma y confirma.`:'No hay armas configuradas en el catálogo: empezarás con el arma inicial automática.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">Sin armas disponibles.</p>';
   soulseekWireLoadoutCardIcons(body,rows);
   body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
    soulseekLoadoutWeaponPickId=card.dataset.soulseekPick;
@@ -365,16 +465,18 @@ function renderSoulseekLoadoutStep(){
    confirmBtn.disabled=false;
   });
   confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent='CONFIRMAR ARMA';
-  confirmBtn.disabled=!soulseekLoadoutWeaponPickId;
+  // With nothing to pick the button becomes a plain "carry on" so an empty
+  // catalogue can never strand the player on this step.
+  confirmBtn.textContent=rows.length?'CONFIRMAR ARMA':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutWeaponPickId:false;
   return;
  }
  // potion step, one at a time, up to 4
  const idx=soulseekLoadoutChosenPotions.length+1;
  const rows=soulseekCommonPotionRows();
  title.textContent=`ELIGE TU POCIÓN (${idx}/4)`;
- status.textContent='Elige una poción común y confirma. Puedes repetir el mismo tipo.';
- body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">No hay pociones comunes configuradas.</p>';
+ status.textContent=rows.length?'Elige una poción y confirma. Puedes repetir el mismo tipo.':'No hay pociones configuradas en el catálogo: empezarás con las pociones iniciales automáticas.';
+ body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">Sin pociones disponibles.</p>';
  soulseekWireLoadoutCardIcons(body,rows);
  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
   soulseekLoadoutPotionPickId=card.dataset.soulseekPick;
@@ -382,16 +484,21 @@ function renderSoulseekLoadoutStep(){
   confirmBtn.disabled=false;
  });
  confirmBtn.classList.remove('hidden');
- confirmBtn.textContent=`CONFIRMAR POCIÓN ${idx}/4`;
- confirmBtn.disabled=!soulseekLoadoutPotionPickId;
+ confirmBtn.textContent=rows.length?`CONFIRMAR POCIÓN ${idx}/4`:'EMPEZAR LA PARTIDA';
+ confirmBtn.disabled=rows.length?!soulseekLoadoutPotionPickId:false;
 }
 async function soulseekLoadoutConfirmStep(){
+ if(soulseekLoadoutStep==='loading')return;
+ if(soulseekLoadoutCatalogError){await soulseekFinalizeLoadout();return}
  if(soulseekLoadoutStep==='weaponPick'){
-  if(!soulseekLoadoutWeaponPickId)return;
+  // Nothing configured to choose from: CONTINUAR just moves on (the
+  // automatic starter weapon is applied in soulseekFinalizeLoadout).
+  if(!soulseekLoadoutWeaponPickId&&soulseekLoadoutWeaponChoices().length)return;
   soulseekLoadoutStep='potion';
   renderSoulseekLoadoutStep();
   return;
  }
+ if(!soulseekCommonPotionRows().length){await soulseekFinalizeLoadout();return}
  if(!soulseekLoadoutPotionPickId)return;
  soulseekLoadoutChosenPotions.push(soulseekLoadoutPotionPickId);
  soulseekLoadoutPotionPickId=null;
@@ -400,13 +507,15 @@ async function soulseekLoadoutConfirmStep(){
 }
 async function soulseekFinalizeLoadout(){
  if(!game?.player)return;
- const weaponRow=soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId);
+ const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
  game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
  const potionRows=soulseekCommonPotionRows();
+ let addedPotions=0;
  for(const id of soulseekLoadoutChosenPotions){
-  const row=potionRows.find(r=>String(r.id)===id);
-  if(row)addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));
+  const row=await soulseekHydrateItemRow(potionRows.find(r=>String(r.id)===id));
+  if(row){addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));addedPotions++}
  }
+ if(!addedPotions)addStarterPotions(null);
  document.getElementById('soulseekLoadoutModal').classList.remove('open');
  syncAllEquipmentPassives();recomputeDerived();
  await soulseekFinishCharacterCreation();
@@ -426,11 +535,11 @@ async function soulseekFinishCharacterCreation(){
    bundle.player.name=`PJ Nº${data.id}`;
    await fetch('/api/user-pj',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:data.id,pj_name:bundle.player.name,pj_json:bundle,minimal:true})}).catch(()=>{});
   }
-  alert(`Personaje "${bundle.player.name}" creado y guardado correctamente. Bienvenido al Soulseek Mode.`);
+  uiAlert(`Personaje "${bundle.player.name}" creado y guardado correctamente. Bienvenido al Soulseek Mode.`);
   refreshCurrentUserProgress();
  }catch(e){
   console.error('No se pudo guardar el personaje Soulseeker:',e);
-  alert('Error al guardar el personaje: '+e.message);
+  uiAlert('Error al guardar el personaje: '+e.message);
  }
  game=null;
  document.getElementById('soulseekCreateOverlay')?.classList.add('hidden');
@@ -465,10 +574,10 @@ function openSoulseekerClassPicker(){
   return `<button type="button" class="skillChoiceCard" data-soulseek-class="${id}"><b>${cls.name}</b><p>${cls.desc}</p></button>`;
  }).join('');
  modal.classList.add('open');
- grid.querySelectorAll('[data-soulseek-class]').forEach(btn=>btn.addEventListener('click',()=>{
+ grid.querySelectorAll('[data-soulseek-class]').forEach(btn=>btn.addEventListener('click',async()=>{
   const id=btn.dataset.soulseekClass,cls=resolveClassDef(id);
-  if(!cls)return;
-  if(!confirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
+  if(!cls||!modal.classList.contains('open'))return;
+  if(!await uiConfirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
   const p=game.player;
   p.cls=id;p.className=cls.name;p.classIcon=classIconForId(id,p.gender)||classlessIconForGender(p.gender);
   // A classless Soulseek character always starts from the same flat
@@ -486,7 +595,7 @@ function openSoulseekerClassPicker(){
   log(`Te conviertes en ${cls.name}.`,'good');
   recomputeDerived();updateUI();draw();
   openSoulseekerSkillPicker();
- },{once:true}));
+ }));
 }
 function openSoulseekerSkillPicker(){
  const choices=classSkillChoicesForTier(1);
@@ -497,16 +606,17 @@ function openSoulseekerSkillPicker(){
  const grid=document.getElementById('skillChoiceGrid');
  grid.innerHTML=choices.map(id=>{const s=skillDefs[id],roman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-soulseek-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
- grid.querySelectorAll('[data-soulseek-pick-skill]').forEach(b=>b.addEventListener('click',()=>{
+ grid.querySelectorAll('[data-soulseek-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   const id=b.dataset.soulseekPickSkill,chosen=skillDefs[id];
-  if(!confirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
+  if(!modal.classList.contains('open'))return;
+  if(!await uiConfirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
   learnSkill(id);
   game.player.skillChoicesAwarded[game.player.level]='chosen';
   modal.classList.remove('open');
   updateUI();draw();
   soulseekClassPickerOpen=false;
   soulseekPersistAfterClassChoice();
- },{once:true}));
+ }));
 }
 function soulseekPersistAfterClassChoice(){
  if(!game?.pjId)return;

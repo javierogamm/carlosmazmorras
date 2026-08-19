@@ -1,3 +1,69 @@
+## v0.94.3 - 2026-08-19
+
+- Corregido el motivo real por el que el asistente de equipo inicial de Soulseek no encontraba objetos con un catálogo grande. En modo Soulseek lo único que carga `config_items` es `ensureConfigItemsHydrated()`, que pide el catálogo **completo**: todos los objetos con su `item_json`, que lleva el icono incrustado de cada uno. Con muchos objetos configurados esa respuesta es enorme y, cuando falla o expira, `fetchConfigItems()` se traga el error escribiéndolo en `#configStatus` (un campo que ni siquiera está en pantalla en Soulseek), dejando `configItems` vacío sin ninguna señal. Así es como un catálogo lleno de armas acababa reportado como «no hay armas ni pociones».
+- El asistente ya no depende de que esa petición gigante funcione: si `configItems` está vacío recurre al listado **ligero** (`?light=1`: id, nombre, slot, tier, weapontype y tipo — pequeño y suficiente para el selector), guardado en su propio array para que el resto del juego siga viendo `configItems` vacío y se comporte exactamente igual que hoy.
+- Solo se hidratan por id (`?id=…`) las filas realmente **elegidas** (un arma y hasta cuatro pociones): como máximo cinco peticiones pequeñas en lugar de una descomunal. Construir un objeto desde una fila ligera daría un arma degradada (sin dados, sin afijos, sin icono), así que nunca se hace.
+- Si tampoco se puede leer el catálogo ligero, el asistente lo dice con el error concreto y ofrece `REINTENTAR` o continuar con el equipo automático. Ya no hay ningún camino que empiece la partida en silencio por un fallo de carga.
+- El asistente se abre antes de pedir el catálogo y muestra un paso de carga, para que con un catálogo grande se vea el modal en vez de una pausa seguida de una partida ya empezada.
+- Los tipos de arma se agrupan leyendo tanto `item_json.weaponType` (filas hidratadas) como `weapontype` (columna de las filas ligeras).
+- Verificación con mando simulado y un catálogo de 60 armas + 12 pociones, contra tres estados de la API: petición completa correcta (72 filas, arma final `2d6` con afijos); **petición completa fallando** — el caso real — donde `configItems` queda a 0 pero el asistente sigue listando las 60 armas y 12 pociones y el arma elegida llega igual de completa (`2d6` con afijos); y todo fallando, donde aparece el error concreto, el botón de reintento y el equipo automático. Repetidos también los cinco escenarios de catálogo de 0.94.2 y el resto de comprobaciones.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.3`.
+
+## v0.94.2 - 2026-08-19
+
+- El asistente de equipo inicial de Soulseek se muestra **siempre** al empezar una partida (entrada al piso 1). Hasta ahora solo se abría si el catálogo tenía a la vez armas **y** pociones de rareza `common`; en cuanto faltaba cualquiera de las dos cosas el juego se saltaba la elección en silencio y metía al personaje directo en el piso 1 con el equipo inicial automático. Esa condición se ha eliminado: solo hay un camino hacia el piso 1 y pasa por el asistente.
+- Los pools del asistente ya no filtran en duro por `common`: prefieren esa rareza y solo suben por la escala (`uncommon`, `rare`, `epic`, `legendary`, `artifact`) cuando no hay nada configurado en ella, así que un catálogo sin objetos comunes sigue ofreciendo una elección real en vez de ninguna.
+- El asistente aguanta un catálogo incompleto sin dejar al jugador atascado: si no hay armas configuradas el paso lo explica y el botón pasa a `CONTINUAR`; si no hay pociones, a `EMPEZAR LA PARTIDA`. Lo que no se elija se rellena con el arma y las pociones iniciales automáticas de siempre.
+- Verificación con mando simulado sobre cinco catálogos distintos (completo con comunes; solo raros; con armas y sin pociones; con pociones y sin armas; vacío del todo): el modal se abre en los cinco y el asistente se completa entero solo con mando en todos ellos, aplicando el arma y las pociones elegidas o el equipo automático cuando no había nada que elegir. Los cuatro últimos casos son exactamente los que antes se saltaban el modal.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.2`.
+
+## v0.94.1 - 2026-08-19
+
+- Arreglado el asistente de equipo inicial de Soulseek con mando: se quedaba muerto al llegar a «ELIGE TU POCIÓN (1/4)». Cada paso reescribe el cuerpo del modal, lo que destruye la tarjeta que tenía el foco, y CONFIRMAR vuelve a quedar deshabilitado al empezar el paso (deshabilitar un elemento enfocado también suelta el foco). Como la pantalla activa seguía siendo el mismo modal, nada volvía a colocar el cursor: el jugador se quedaba sin anillo de foco y sin forma de avanzar, que es exactamente la sensación de «ha desaparecido la selección de arma y pociones».
+- El mando recupera ahora el foco por su cuenta en cuanto el elemento que él mismo había resaltado deja de ser usable (destruido, deshabilitado u oculto), no solo al cambiar de pantalla. La comprobación mira el elemento concreto y no `document.activeElement`, así que tener un mando conectado nunca le roba el foco (ni desplaza la página) a quien juega con ratón. Cualquier otro modal que se redibuje sobre sí mismo queda cubierto por el mismo mecanismo.
+- Centralizado el movimiento del anillo de foco en `markGamepadFocus()`, para que el elemento resaltado y el que se vigila no puedan desincronizarse.
+- Añadido `font-size:inherit` a las tarjetas del asistente, que pasaron de `<div>` a `<button>` en 0.94.0 y heredaban el tamaño de fuente por defecto del navegador.
+- Verificación: recorrido completo del asistente con un mando simulado (`navigator.getGamepads`) usando solo primitivas de mando — tipo de arma → arma → 4 pociones → cierre —, comprobando que el equipo se aplica de verdad («Espada corta» + «Poción menor x4»). Contra el commit anterior el mismo recorrido muere en la primera poción sin arma aplicada. Capturas de los tres pasos y repetición del resto de comprobaciones (partida real con 42 enemigos, subida de nivel, diálogos, invocaciones por tier) sin errores.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.1`.
+
+## v0.94.0 - 2026-08-19
+
+### Mando
+
+- Sustituidos todos los `confirm()`, `alert()` y `prompt()` nativos del navegador por una ventana propia dentro del juego (`#uiPromptModal`, con `uiConfirm()`/`uiAlert()`/`uiTextPrompt()` en `src/game.js`). Los diálogos nativos los dibuja el navegador FUERA de la página, así que ningún mando podía enfocar ni pulsar su botón «Aceptar»: subir de nivel, aprender una habilidad, deshacer un objeto o comprar en la tienda Soulseek dejaban al jugador bloqueado. La ventana nueva se navega con el mando como cualquier otro menú, responde a Escape y se cancela con el botón «Atrás» del mando.
+- Cancelar ya no inutiliza la tarjeta pulsada: los selectores de clase avanzada y de primera habilidad de Soulseek usaban `{once:true}`, que descartaba el listener aunque el jugador dijera que no. Ahora se puede volver a elegir.
+- Mientras hay una ventana bloqueante abierta (subida de nivel, elección de habilidad, modales de Soulseek o el nuevo diálogo), el teclado deja de mover al personaje y de lanzar habilidades por detrás, igual que hacía el diálogo nativo del navegador.
+- El modal de equipo inicial de Soulseek ya funciona con mando: sus tarjetas eran `<div>` sin foco posible (ahora son `<button>` con el mismo aspecto) y el cuadro entero es una zona de navegación, así que la cruceta recorre las tarjetas y el botón CONFIRMAR sin saltos.
+- La detección de la pantalla activa del mando ya tiene en cuenta el nuevo diálogo, que se abre POR ENCIMA de los modales de subida de nivel.
+- Con un mando conectado, al abrirse cualquier ventana u overlay el foco salta solo a su primer control (sin efecto alguno para quien juega con ratón o teclado).
+
+### Stick y cruceta
+
+- **Stick izquierdo**: siempre el mundo. Mueve al personaje, o el cursor de ataque/habilidad cuando se está apuntando. Solo navega menús en pantallas donde no hay ninguna partida jugable (login, configuración, puntuaciones).
+- **Cruceta**: siempre la interfaz. Recorre los menús laterales durante la partida y los botones de cualquier ventana abierta, con repetición al mantenerla pulsada. Ya no mueve al personaje ni el cursor de apuntado.
+- Todo el código de entrada de mando se ha movido a `src/joystick.js` (menú de asignación de botones, reparto stick/cruceta, navegación por foco y cursor de apuntado). En `src/game.js` solo quedan `toggleGameOnly()` (se enlaza por valor al HUD durante la carga) y la declaración de `gamepadTargetCursor` (lo leen `draw()` y el sistema de apuntado).
+
+### Habilidades
+
+- Nuevo buff general de habilidades: +5% de daño, curación, vida de invocación y daño de invocación **por tier de habilidad** (tier I +5%, tier II +10%, tier III +15%). Multiplica sobre los multiplicadores de INT/SAB y `skilleffect` ya existentes.
+- No afecta a efectos de objetos ni de pociones: esos se ejecutan con un id de lanzamiento sintético (`potion:`/`equip:`) cuya definición no tiene tier numérico, así que el multiplicador vale exactamente 1.
+- Sí afecta a los enemigos que lanzan habilidades, en el mismo factor.
+
+### IA enemiga
+
+- Los enemigos ahora sacan sus habilidades del árbol de la clase que les corresponde (`ENEMY_CLASS_SKILL_CLASSES`): un clérigo lanza habilidades de clérigo/paladín, un invocador levanta esbirros de nigromante/ingeniero, un francotirador dispara habilidades de francotirador. Antes el filtro por clase no funcionaba en la práctica: sus predicados comparaban con las etiquetas genéricas (`dash`, `ranged`, `heal`…) mientras las habilidades reales llevan las suyas propias (`holyDash`, `cleanseHeal`, `shadowStrike`…), así que cinco de las nueve clases de enemigo no encajaban con ninguna habilidad y caían al pool de «cualquier habilidad del juego».
+- Todos los enemigos salen ya con al menos una habilidad de su clase; casters, clases a distancia y élites llevan dos. Antes era una tirada (~18-40%) para guerreros, pícaros y tanques.
+- Corregido un fallo que podía abortar el turno enemigo completo: una habilidad cuya definición ya no existía (skill de `config_class` renombrada o borrada, partida guardada antigua) lanzaba una excepción al leer su `classEffect`.
+- Las habilidades de apoyo (curación, escudo, buff, utilidad) ya no exigen estar en cuerpo a cuerpo con el jugador: actúan sobre el propio lanzador o sus aliados. Además, una curación no se malgasta (ni consume su enfriamiento) si nadie ha perdido vida.
+- Dentro de un mismo kit se prueban primero las habilidades con efecto real y en último lugar las decorativas (escudo/buff/utilidad, que hoy solo escriben en el registro), para no desperdiciar la acción.
+
+### Verificación
+
+- `node --check` sobre `src/game.js`, `src/joystick.js`, `src/soulseek.js`, `src/soulseek_shop.js` y `src/soulseeker-dungeons.js`; `test/interiors.test.js`.
+- Comprobación en navegador headless con partida real generada: 42 enemigos, el 99% con habilidades de su clase, 8 turnos enemigos completos sin errores; ciclo completo de subida de nivel (modal → diálogo propio → stat aplicada), cancelación sin efectos y reintento posterior; invocaciones de tier I y III con su multiplicador correcto (1.05 / 1.15); `uiConfirm`/`uiAlert`/`uiTextPrompt` devolviendo aceptar/cancelar/texto.
+- Comparativa contra la versión anterior en el mismo escenario (25 partidas, 6 enemigos rodeando al jugador, 6 turnos): los lanzamientos de habilidad enemigos casi se duplican (9,3 → 17,9 por partida) y el porcentaje de enemigos con habilidades sube del 62% al 99%, mientras que el daño total recibido se mantiene plano (284,6 → 267,8), es decir, más variedad y sabor de clase sin subida de dificultad.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.0`.
+
 ## v0.93.3 - 2026-08-18
 
 - Los assets con puerta usados para las salas interiores ahora respetan el ambiente elegido para el piso (el mismo pool que ya usa la decoración normal), en vez de escoger entre todos los ambientes al azar; solo si el ambiente del piso no tiene ningún asset con puerta configurado se recurre a cualquier otro ambiente.

@@ -273,14 +273,14 @@ function soulseekOpenRaceDetail(id){
  document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyRace(id,cost));
 }
 async function soulseekBuyRace(id,price){
- if(soulseekAccountSouls()<price){alert('No tienes suficientes Soul Spikes.');return}
- if(!confirm(`¿Desbloquear la raza ${raceDefs[id]?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
+ if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
+ if(!await uiConfirm(`¿Desbloquear la raza ${raceDefs[id]?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
  try{
   const next=[...new Set([...soulseekUnlockedRaces(),id])];
   await soulseekSpendSouls(price,{soulseek_races:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
- }catch(e){alert('Error al desbloquear: '+e.message)}
+ }catch(e){uiAlert('Error al desbloquear: '+e.message)}
 }
 
 // ============================================================================
@@ -316,14 +316,14 @@ function soulseekOpenClassDetail(id){
  document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyClass(id,cost));
 }
 async function soulseekBuyClass(id,price){
- if(soulseekAccountSouls()<price){alert('No tienes suficientes Soul Spikes.');return}
- if(!confirm(`¿Desbloquear la clase ${resolveClassDef(id)?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
+ if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
+ if(!await uiConfirm(`¿Desbloquear la clase ${resolveClassDef(id)?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
  try{
   const next=[...new Set([...soulseekUnlockedClasses(),id])];
   await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
- }catch(e){alert('Error al desbloquear: '+e.message)}
+ }catch(e){uiAlert('Error al desbloquear: '+e.message)}
 }
 
 // ============================================================================
@@ -365,14 +365,14 @@ function soulseekOpenSkillDetail(id,cost){
  document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuySkill(id,cost));
 }
 async function soulseekBuySkill(id,cost){
- if(soulseekAccountSouls()<cost){alert('No tienes suficientes Soul Spikes.');return}
- if(!confirm(`¿Desbloquear la skill ${skillDefs[id]?.name} por ${cost} souls?`))return;
+ if(soulseekAccountSouls()<cost){uiAlert('No tienes suficientes Soul Spikes.');return}
+ if(!await uiConfirm(`¿Desbloquear la skill ${skillDefs[id]?.name} por ${cost} souls?`))return;
  try{
   const next=[...new Set([...soulseekUnlockedSkills(),id])];
   await soulseekSpendSouls(cost,{soulseek_skills:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
- }catch(e){alert('Error al desbloquear: '+e.message)}
+ }catch(e){uiAlert('Error al desbloquear: '+e.message)}
 }
 
 // ============================================================================
@@ -424,9 +424,9 @@ function soulseekObjectCardHtml(row,costTable){
 }
 async function soulseekBuyObject(rowId,cost){
  const row=configItems.find(r=>String(r.id)===String(rowId));if(!row)return;
- if(soulseekAccountSouls()<cost){alert('No tienes suficientes Soul Spikes.');return}
+ if(soulseekAccountSouls()<cost){uiAlert('No tienes suficientes Soul Spikes.');return}
  const it=row.item_json||row,name=it.name||row.nombre||'Objeto';
- if(!confirm(`¿Comprar ${name} por ${cost} souls? Aparecerá en el inventario de tu próximo personaje Soulseeker.`))return;
+ if(!await uiConfirm(`¿Comprar ${name} por ${cost} souls? Aparecerá en el inventario de tu próximo personaje Soulseeker.`))return;
  try{
   const lootRow={itemLevel:{min:1,max:3}};
   const item=isConfiguredPotionRow(row)?configuredPotionFromRow(row,lootRow,1):configuredItemFromRow(row,lootRow,1);
@@ -435,7 +435,7 @@ async function soulseekBuyObject(rowId,cost){
   await soulseekSpendSouls(cost,{soulseek_session_items:next});
   banner(`COMPRADO: ${item.name}`);
   soulseekRenderShop();
- }catch(e){alert('Error al comprar: '+e.message)}
+ }catch(e){uiAlert('Error al comprar: '+e.message)}
 }
 
 // ============================================================================
@@ -461,7 +461,7 @@ async function soulseekBuyObject(rowId,cost){
  const soulseekOriginalNewCharClick=soulseekNewCharBtn.onclick;
  soulseekNewCharBtn.onclick=async function(){
   if(!soulseekUnlockedRaces().length||!soulseekUnlockedClasses().length){
-   alert('Primero desbloquea una raza y una clase para tu personaje.');
+   uiAlert('Primero desbloquea una raza y una clase para tu personaje.');
    await soulseekOpenShop({tab:'pj',subTab:soulseekUnlockedRaces().length?'clases':'razas'});
    return;
   }
