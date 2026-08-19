@@ -77,7 +77,7 @@ function soulseekEnsureDom(){
   <p class="small">Personajes sin clase que empiezan con Advanced Classes y Puntos de Acción. Elige tu clase al nivel 2 y decide, al morir, si gastas tus Soul Spikes para revivir o dejas caer al personaje y las guardas en tu cuenta para siempre.</p>
   <div class="landingActions" id="soulseekMenuActions">
    <button class="start" id="soulseekScoresBtn">PUNTUACIONES</button>
-   <button class="start" id="soulseekUnlocksBtn">SOUL UNLOCKS</button>
+   <button class="start" id="soulseekUnlocksBtn">SHOP</button>
    <button class="start" id="soulseekNewCharBtn">NUEVA PARTIDA</button>
   </div>
   <button class="backToLanding" id="soulseekBackBtn">VOLVER</button>
