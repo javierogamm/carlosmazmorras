@@ -280,14 +280,14 @@ async function soulseekStartCharacter(){
  const racialSkill=raceDefs[race]?.skill;
  if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
  if(rb.armor)game.player.baseArmor+=rb.armor;
- if(soulseekCommonPotionRows().length&&soulseekCommonWeaponRows().length){
-  openSoulseekerLoadoutModal();
- }else{
-  game.player.equipment.weapon=makeStarterWeapon(null);
-  addStarterPotions(null);
-  syncAllEquipmentPassives();recomputeDerived();
-  await soulseekFinishCharacterCreation();
- }
+ // Always ask. Entering floor 1 must go through the loadout wizard, no
+ // matter what the catalogue holds - it used to be skipped silently unless
+ // there were BOTH common weapons and common potions configured, which is
+ // how a run could start with nothing chosen at all. The wizard itself
+ // handles an empty catalogue (see renderSoulseekLoadoutStep) and
+ // soulseekFinalizeLoadout still falls back to the automatic starter gear
+ // for anything that was not picked.
+ openSoulseekerLoadoutModal();
 }
 // ============================================================================
 // Starting loadout picker - a small wizard, one question at a time so it
@@ -306,11 +306,29 @@ let soulseekLoadoutWeaponType=null;
 let soulseekLoadoutWeaponPickId=null;
 let soulseekLoadoutPotionPickId=null;
 let soulseekLoadoutChosenPotions=[];
-function soulseekCommonPotionRows(){
- return configuredPotionRows().filter(r=>{const it=r.item_json||r;return (it.rarity||r.tier||'common')==='common'});
+// The starting loadout is ALWAYS offered, so these pools must never come back
+// empty just because the catalogue happens to have nothing at 'common'.
+// They prefer common and only walk up the rarity ladder when that rarity has
+// nothing configured - previously they filtered hard on 'common', and an
+// empty result silently skipped the whole wizard and dropped the player
+// straight into floor 1 with the automatic starter gear.
+const SOULSEEK_LOADOUT_RARITIES=['common','uncommon','rare','epic','legendary','artifact'];
+function soulseekRowRarity(row){const it=row.item_json||row;return it.rarity||row.tier||'common'}
+function soulseekLowestRarityRows(rows){
+ for(const rarity of SOULSEEK_LOADOUT_RARITIES){
+  const match=rows.filter(r=>soulseekRowRarity(r)===rarity);
+  if(match.length)return match;
+ }
+ return rows;
 }
-function soulseekCommonWeaponRows(){
- return configItems.filter(r=>{const it=r.item_json||r;return (it.slot||r.slot)==='weapon'&&(it.rarity||r.tier||'common')==='common'});
+function soulseekCommonPotionRows(){return soulseekLowestRarityRows(configuredPotionRows())}
+function soulseekCommonWeaponRows(){return soulseekLowestRarityRows(configItems.filter(r=>((r.item_json||r).slot||r.slot)==='weapon'))}
+// Weapons of the type picked in step 1 (or every weapon when the catalogue
+// only has one group / none at all). Shared by the render and the confirm
+// step so they can never disagree about whether there is anything to pick.
+function soulseekLoadoutWeaponChoices(){
+ const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
+ return soulseekCommonWeaponRows().filter(r=>!soulseekLoadoutWeaponType||groupFor((r.item_json||r).weaponType)===soulseekLoadoutWeaponType);
 }
 function openSoulseekerLoadoutModal(){
  soulseekEnsureDom();
@@ -353,11 +371,10 @@ function renderSoulseekLoadoutStep(){
   return;
  }
  if(soulseekLoadoutStep==='weaponPick'){
-  const groupFor=typeof soulseekWeaponGroupFor==='function'?soulseekWeaponGroupFor:()=>'Armas';
-  const rows=soulseekCommonWeaponRows().filter(r=>!soulseekLoadoutWeaponType||groupFor((r.item_json||r).weaponType)===soulseekLoadoutWeaponType);
+  const rows=soulseekLoadoutWeaponChoices();
   title.textContent='ELIGE TU ARMA';
-  status.textContent=`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma común y confirma.`;
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">No hay armas comunes de este tipo.</p>';
+  status.textContent=rows.length?`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma y confirma.`:'No hay armas configuradas en el catálogo: empezarás con el arma inicial automática.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">Sin armas disponibles.</p>';
   soulseekWireLoadoutCardIcons(body,rows);
   body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
    soulseekLoadoutWeaponPickId=card.dataset.soulseekPick;
@@ -365,16 +382,18 @@ function renderSoulseekLoadoutStep(){
    confirmBtn.disabled=false;
   });
   confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent='CONFIRMAR ARMA';
-  confirmBtn.disabled=!soulseekLoadoutWeaponPickId;
+  // With nothing to pick the button becomes a plain "carry on" so an empty
+  // catalogue can never strand the player on this step.
+  confirmBtn.textContent=rows.length?'CONFIRMAR ARMA':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutWeaponPickId:false;
   return;
  }
  // potion step, one at a time, up to 4
  const idx=soulseekLoadoutChosenPotions.length+1;
  const rows=soulseekCommonPotionRows();
  title.textContent=`ELIGE TU POCIÓN (${idx}/4)`;
- status.textContent='Elige una poción común y confirma. Puedes repetir el mismo tipo.';
- body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">No hay pociones comunes configuradas.</p>';
+ status.textContent=rows.length?'Elige una poción y confirma. Puedes repetir el mismo tipo.':'No hay pociones configuradas en el catálogo: empezarás con las pociones iniciales automáticas.';
+ body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">Sin pociones disponibles.</p>';
  soulseekWireLoadoutCardIcons(body,rows);
  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
   soulseekLoadoutPotionPickId=card.dataset.soulseekPick;
@@ -382,16 +401,19 @@ function renderSoulseekLoadoutStep(){
   confirmBtn.disabled=false;
  });
  confirmBtn.classList.remove('hidden');
- confirmBtn.textContent=`CONFIRMAR POCIÓN ${idx}/4`;
- confirmBtn.disabled=!soulseekLoadoutPotionPickId;
+ confirmBtn.textContent=rows.length?`CONFIRMAR POCIÓN ${idx}/4`:'EMPEZAR LA PARTIDA';
+ confirmBtn.disabled=rows.length?!soulseekLoadoutPotionPickId:false;
 }
 async function soulseekLoadoutConfirmStep(){
  if(soulseekLoadoutStep==='weaponPick'){
-  if(!soulseekLoadoutWeaponPickId)return;
+  // Nothing configured to choose from: CONTINUAR just moves on (the
+  // automatic starter weapon is applied in soulseekFinalizeLoadout).
+  if(!soulseekLoadoutWeaponPickId&&soulseekLoadoutWeaponChoices().length)return;
   soulseekLoadoutStep='potion';
   renderSoulseekLoadoutStep();
   return;
  }
+ if(!soulseekCommonPotionRows().length){await soulseekFinalizeLoadout();return}
  if(!soulseekLoadoutPotionPickId)return;
  soulseekLoadoutChosenPotions.push(soulseekLoadoutPotionPickId);
  soulseekLoadoutPotionPickId=null;
@@ -407,6 +429,7 @@ async function soulseekFinalizeLoadout(){
   const row=potionRows.find(r=>String(r.id)===id);
   if(row)addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));
  }
+ if(!soulseekLoadoutChosenPotions.length)addStarterPotions(null);
  document.getElementById('soulseekLoadoutModal').classList.remove('open');
  syncAllEquipmentPassives();recomputeDerived();
  await soulseekFinishCharacterCreation();

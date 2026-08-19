@@ -1,3 +1,11 @@
+## v0.94.2 - 2026-08-19
+
+- El asistente de equipo inicial de Soulseek se muestra **siempre** al empezar una partida (entrada al piso 1). Hasta ahora solo se abría si el catálogo tenía a la vez armas **y** pociones de rareza `common`; en cuanto faltaba cualquiera de las dos cosas el juego se saltaba la elección en silencio y metía al personaje directo en el piso 1 con el equipo inicial automático. Esa condición se ha eliminado: solo hay un camino hacia el piso 1 y pasa por el asistente.
+- Los pools del asistente ya no filtran en duro por `common`: prefieren esa rareza y solo suben por la escala (`uncommon`, `rare`, `epic`, `legendary`, `artifact`) cuando no hay nada configurado en ella, así que un catálogo sin objetos comunes sigue ofreciendo una elección real en vez de ninguna.
+- El asistente aguanta un catálogo incompleto sin dejar al jugador atascado: si no hay armas configuradas el paso lo explica y el botón pasa a `CONTINUAR`; si no hay pociones, a `EMPEZAR LA PARTIDA`. Lo que no se elija se rellena con el arma y las pociones iniciales automáticas de siempre.
+- Verificación con mando simulado sobre cinco catálogos distintos (completo con comunes; solo raros; con armas y sin pociones; con pociones y sin armas; vacío del todo): el modal se abre en los cinco y el asistente se completa entero solo con mando en todos ellos, aplicando el arma y las pociones elegidas o el equipo automático cuando no había nada que elegir. Los cuatro últimos casos son exactamente los que antes se saltaban el modal.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.94.2`.
+
 ## v0.94.1 - 2026-08-19
 
 - Arreglado el asistente de equipo inicial de Soulseek con mando: se quedaba muerto al llegar a «ELIGE TU POCIÓN (1/4)». Cada paso reescribe el cuerpo del modal, lo que destruye la tarjeta que tenía el foco, y CONFIRMAR vuelve a quedar deshabilitado al empezar el paso (deshabilitar un elemento enfocado también suelta el foco). Como la pantalla activa seguía siendo el mismo modal, nada volvía a colocar el cursor: el jugador se quedaba sin anillo de foco y sin forma de avanzar, que es exactamente la sensación de «ha desaparecido la selección de arma y pociones».
