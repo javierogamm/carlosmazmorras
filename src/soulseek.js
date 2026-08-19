@@ -302,6 +302,16 @@ function openSoulseekerClassPicker(){
   if(!confirm(`¿Confirmas que quieres convertirte en ${cls.name}?`))return;
   const p=game.player;
   p.cls=id;p.className=cls.name;p.classIcon=classIconForId(id,p.gender)||configWorldObjects.pj_classless||'';
+  // A classless Soulseek character always starts from the same flat
+  // baseline (see soulseekStartCharacter) - swap it out for the class's own
+  // configured stats now, as a delta on top of whatever the player already
+  // has, so any stat point already spent since level 2 (strength/vitality/
+  // etc picked via the normal level-up modal) isn't lost in the process.
+  const SOULSEEK_CLASSLESS_BASELINE={strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2};
+  for(const stat of Object.keys(cls.stats||{})){
+   const delta=(cls.stats[stat]||0)-(SOULSEEK_CLASSLESS_BASELINE[stat]||0);
+   p.stats[stat]=(p.stats[stat]||0)+delta;
+  }
   modal.classList.remove('open');
   banner(`CLASE: ${cls.name}`);
   log(`Te conviertes en ${cls.name}.`,'good');

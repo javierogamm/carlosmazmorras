@@ -220,6 +220,42 @@ function soulseekApplyFloorPlan(floor){
 }
 
 // ============================================================================
+// Game-over screen: normal mode's permanentDeath() only offers "Crear nuevo
+// personaje", which reloads the page straight to the login/landing screen -
+// for a Soulseeker character that meant losing the Soulseeker menu context
+// entirely on every death, with no way back to it short of logging in again.
+// This replaces that single button with two: back to the Soulseeker menu
+// (no reload - the account stays logged in for this tab) and back to the
+// true main menu.
+// ============================================================================
+function soulseekShowGameOverScreen(){
+ const p=game.player;
+ game.over=true;
+ finalizeCharacterDeath();
+ try{localStorage.clear()}catch(e){}
+ storyTitle.textContent='GAME OVER';
+ storyBody.innerHTML=`<div class="narrative gameOverBox"><p class="gameOverName"><b>${p.name||'Tu personaje'} ha muerto.</b></p><div class="gameOverStats"><div><span class="small">Nivel de héroe</span><b>${p.level}</b></div><div><span class="small">Piso alcanzado</span><b>${game.floor}</b></div></div><p class="small">Muerte permanente: Soulseek Mode no guarda partidas.</p><div class="startActions"><button id="soulseekRestartAfterDeath">VOLVER AL MENÚ SOULSEEKER</button><button id="soulseekMainMenuAfterDeath">MENÚ PRINCIPAL</button></div></div>`;
+ storyOverlay.classList.remove('hidden');
+ setTimeout(()=>{
+  document.getElementById('soulseekRestartAfterDeath')?.addEventListener('click',()=>{
+   storyOverlay.classList.add('hidden');
+   game=null;
+   app.classList.add('hidden');
+   document.getElementById('dungeonOverlay')?.classList.add('hidden');
+   openSoulseekerMenu();
+  });
+  document.getElementById('soulseekMainMenuAfterDeath')?.addEventListener('click',()=>{
+   storyOverlay.classList.add('hidden');
+   game=null;
+   app.classList.add('hidden');
+   document.getElementById('dungeonOverlay')?.classList.add('hidden');
+   for(const id of MAIN_MENU_SCREEN_IDS)document.getElementById(id)?.classList.add('hidden');
+   landingOverlay.classList.remove('hidden');
+  });
+ },0);
+}
+
+// ============================================================================
 // Guaranteed per-floor completion reward: 1 non-potion item at the max
 // rarity the player's current level can roll (maxLootRarityIndexForProgress
 // is already exactly "tier máximo obtenible por el nivel del PJ según
@@ -299,6 +335,16 @@ function soulseekGrantFloorReward(){
    floating(`+${gained} SOUL (x2)`,e.x,e.y,'#c69cff');
   }
   return result;
+ };
+
+ // -- game-over screen: permanentDeath() is invoked only as a bare
+ // -- identifier call (handlePlayerDeath's death-choice modal in
+ // -- soulseek.js, and goToMainMenu below), so reassigning the global is
+ // -- enough - no button was ever bound directly to its old value. --
+ const soulseekOriginalPermanentDeath=permanentDeath;
+ permanentDeath=function(){
+  if(!game?.player?.soulseeker||game?.testingMode)return soulseekOriginalPermanentDeath();
+  soulseekShowGameOverScreen();
  };
 
  // -- no session save/resume: leaving to the main menu is permanent death.
