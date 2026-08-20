@@ -71,15 +71,25 @@ function visibleGamepadScreen(){
  const blockingModal=document.querySelector('.statPointModal.open,.skillChoiceModal.open');
  return blockingModal||[...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body;
 }
-function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden),.statChoiceGrid,.skillChoiceGrid')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
+function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden),.statChoiceGrid,.skillChoiceGrid')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class],[data-soulseek-race]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
 // `.soulseekLoadoutCard`/`[data-soulseek-pick]` are here because the starting
 // loadout picker builds clickable cards; they are <button>s now, but keeping
 // the explicit hooks means any future card markup stays reachable too.
-const GAMEPAD_NAVIGABLE_SELECTOR='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[data-soulseek-pick],[data-gamepad-focusable],[tabindex],.item,.skillCard,.visualSlot,.soulseekLoadoutCard';
-function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const elements=(scope.matches?.(GAMEPAD_NAVIGABLE_SELECTOR)?[scope]:[]).concat([...scope.querySelectorAll(GAMEPAD_NAVIGABLE_SELECTOR)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
+// `[data-soulseek-race]`/`[data-race]` are plain <div> cards, so they only
+// become reachable by being named here.
+const GAMEPAD_NAVIGABLE_SELECTOR='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[data-soulseek-race],[data-soulseek-pick],[data-gamepad-focusable],[tabindex],.item,.skillCard,.visualSlot,.soulseekLoadoutCard';
+// A character-creation wizard keeps every step in the DOM and slides the
+// track sideways, so the steps that are off-screen are still laid out and
+// still have an offsetParent. They are marked `inert`, which is the signal
+// used here to skip them - otherwise the D-pad would walk straight out of
+// the visible step into controls nobody can see.
+function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const elements=(scope.matches?.(GAMEPAD_NAVIGABLE_SELECTOR)?[scope]:[]).concat([...scope.querySelectorAll(GAMEPAD_NAVIGABLE_SELECTOR)]).filter(el=>el.offsetParent!==null&&!el.closest('[inert]'));elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
 // Single place that moves the ring, so gamepadFocusedElement always matches
-// what is actually highlighted.
-function markGamepadFocus(el){document.querySelectorAll('.gamepadFocus').forEach(x=>x.classList.remove('gamepadFocus'));el.classList.add('gamepadFocus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});gamepadFocusedElement=el}
+// what is actually highlighted. Cards like the race/class choices are plain
+// <div>s: .focus() on one is a silent no-op unless it is made focusable
+// first, which is why the tabIndex fix-up lives here rather than only in
+// navigableElements() - every focus path needs it, not just the D-pad walk.
+function markGamepadFocus(el){if(!/^(BUTTON|INPUT|SELECT|SUMMARY|TEXTAREA|A)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0;document.querySelectorAll('.gamepadFocus').forEach(x=>x.classList.remove('gamepadFocus'));el.classList.add('gamepadFocus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});gamepadFocusedElement=el}
 function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;markGamepadFocus(els[(i+direction+els.length)%els.length])}
 function focusGamepadElement(element){if(!element)return;gamepadUiMode='zone';markGamepadFocus(element)}
 function focusCurrentZone(){document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));navigateMenu(1)}
@@ -140,7 +150,12 @@ function autoFocusGamepadScreen(){
  if(screen===document.body||screen.id==='app'){if(screenChanged)gamepadUiMode='gameplay';return}
  if(!screenChanged&&!gamepadFocusDestroyed())return;
  if(screenChanged){gamepadUiMode='zone';gamepadZoneIndex=0}
- const first=navigableElements()[0];
+ // A screen can name where the pad should land with [data-gamepad-autofocus]
+ // instead of taking whatever comes first in document order. The Soulseek
+ // creation wizard uses it to start each step on that step's own first
+ // choice rather than on the progress tabs above it.
+ const preferred=screen.querySelector('[data-gamepad-autofocus]:not([disabled])');
+ const first=(preferred&&preferred.offsetParent!==null&&!preferred.closest('[inert]'))?preferred:navigableElements()[0];
  if(first)focusGamepadElement(first);else gamepadFocusedElement=null;
 }
 
