@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.99.0';
+const APP_VERSION='0.100.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -448,8 +448,9 @@ for(const skill of Object.values(skillDefs)){
  }
 }
 
-const classSkillMilestones={1:1};
-function isClassSkillChoiceLevel(level){return level>=3&&level%2===1}
+const classSkillMilestones={1:1,5:1,7:2,10:3,12:3,15:4,20:4};
+const soulseekClassSkillLevels=[1,5,7,10,12,15,20];
+function isClassSkillChoiceLevel(level){return game?.player?.soulseeker?soulseekClassSkillLevels.includes(level):level>=3&&level%2===1}
 
 
 
@@ -1581,20 +1582,23 @@ function reveal(cx,cy,r=game.player.vision){
 
 let pendingClassSkillRequests=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1];
+function classSkillRewardLevels(level=game.player.level){
+ if(game.player.soulseeker)return soulseekClassSkillLevels.filter(l=>l<=level);
+ return [1];
+}
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
  pendingClassSkillRequests=pendingClassSkillRequests||[];
 }
 function classSkillIdsForTier(tier){
- const roman=['','I','II','III'][tier];
+ const roman=['','I','II','III','IV'][tier];
  return (classSkillTrees[game.player.cls]?.[roman]||[]).filter(id=>skillDefs[id]);
 }
 function classSkillIdsForLevelReward(level){
- const maxTier=level>=10?3:level>=7?2:1,tree=classSkillTrees[game.player.cls]||{};
+ const maxTier=level>=15?4:level>=10?3:level>=7?2:1,tree=classSkillTrees[game.player.cls]||{};
  return Object.entries(tree).flatMap(([roman,ids])=>{
-  const tier={I:1,II:2,III:3}[roman]||0;
+  const tier={I:1,II:2,III:3,IV:4}[roman]||0;
   return tier&&tier<=maxTier?ids:[];
  }).filter(id=>skillDefs[id]&&!game.player.knownSkills.includes(id));
 }
@@ -1604,7 +1608,7 @@ function knownClassSkillIds(){
  const all=new Set(Object.values(classSkillTrees[game.player.cls]||{}).flat());
  return (game.player.knownSkills||[]).filter(id=>all.has(id));
 }
-function expectedClassSkillLevels(level=game.player.level){return CLASS_SKILL_LEVELS.filter(l=>l<=level&&classTierForLevel(l))}
+function expectedClassSkillLevels(level=game.player.level){return classSkillRewardLevels(level).filter(l=>game.player.soulseeker?classTierForLevel(l):true)}
 function expectedClassSkillCount(level=game.player.level){
  const byTier={};
  let total=0;
@@ -1617,6 +1621,17 @@ function expectedClassSkillCount(level=game.player.level){
 }
 function firstMissingClassSkillRequest(){
  if(!game?.player)return null;
+ if(game.player.soulseeker){
+  const known=knownClassSkillIds();
+  for(const level of expectedClassSkillLevels()){
+   // Older Soulseeker saves recorded the class-acquisition pick under the
+   // character's current level (normally 2), rather than under milestone 1.
+   // A known class skill is enough to regard that one initial pick as paid.
+   if(level===1&&known.length)continue;
+   if(!game.player.skillChoicesAwarded?.[level])return{level,tier:classTierForLevel(level),initial:level===1&&!known.length};
+  }
+  return null;
+ }
  const known=new Set(knownClassSkillIds());
  const takenByTier={};
  for(const id of known){
@@ -1633,7 +1648,7 @@ function firstMissingClassSkillRequest(){
 function queueClassSkillChoice(level,initial=false){
  if(!game?.player)return;
  ensureSkillChoiceState();
- const tier=initial?classTierForLevel(level):(level>=10?3:level>=7?2:1);
+ const tier=initial?1:(level>=15?4:level>=10?3:level>=7?2:1);
  if(!tier)return;
  const alreadyQueued=pendingClassSkillRequests.some(q=>q.level===level&&q.tier===tier);
  if(!alreadyQueued)pendingClassSkillRequests.push({level,tier,initial});
@@ -1651,7 +1666,7 @@ function classSkillChoicesForTier(tier){return classSkillIdsForTier(tier).filter
 function levelRewardLabel(level,skillId){
  const s=skillDefs[skillId];
  if(!s)return '';
- const tier=['','I','II','III'][s.tier]||s.tier||'?';
+ const tier=['','I','II','III','IV'][s.tier]||s.tier||'?';
  return `<div class="levelRewardSkill"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${tier}</span><p>${s.desc}</p><span class="small">Skill aleatoria de ${game.player.className} desbloqueada al nivel ${level}.</span></div>`
 }
 function processClassSkillChoices(){
@@ -1664,7 +1679,7 @@ function processClassSkillChoices(){
   if(missing)pendingClassSkillRequests.push(missing);
  }
  if(!pendingClassSkillRequests.length)return;
- const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier];
+ const request=pendingClassSkillRequests.shift(),roman=['','I','II','III','IV'][request.tier];
  const choices=request.initial?classSkillChoicesForTier(request.tier):classSkillIdsForLevelReward(request.level);
  // A custom class with no skills configured for this tier leaves nothing to
  // pick - mark it satisfied and move on instead of leaving the request
@@ -1677,7 +1692,7 @@ function processClassSkillChoices(){
  if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();else if(game.player.unspentStatPoints)showStatPointModal();processClassSkillChoices();return}
  document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
  document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
- document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
+ document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III','IV'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   // Everything below (closing the modal, saving to Supabase on the initial
@@ -7183,8 +7198,8 @@ function applyClassSkillOverrides(){
   // classes without a hardcoded tree get theirs (re)synthesized every time,
   // so editing a custom class's skill tiers takes effect on the next load
   if(!HARDCODED_CLASS_SKILL_TREE_IDS.has(classId)){
-   const tiers={I:[],II:[],III:[]};
-   for(const [skillId,s] of Object.entries(bag))tiers[s.tier===3?'III':s.tier===2?'II':'I'].push(skillId);
+   const tiers={I:[],II:[],III:[],IV:[]};
+   for(const [skillId,s] of Object.entries(bag))tiers[s.tier===4?'IV':s.tier===3?'III':s.tier===2?'II':'I'].push(skillId);
    classSkillTrees[classId]=tiers;
   }
  }

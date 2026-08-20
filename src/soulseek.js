@@ -768,7 +768,7 @@ function openSoulseekerSkillPicker(){
   if(!modal.classList.contains('open'))return;
   if(!await uiConfirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
   learnSkill(id);
-  game.player.skillChoicesAwarded[game.player.level]='chosen';
+  game.player.skillChoicesAwarded[1]='chosen';
   modal.classList.remove('open');
   updateUI();draw();
   soulseekClassPickerOpen=false;

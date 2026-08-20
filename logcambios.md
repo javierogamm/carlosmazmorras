@@ -1,3 +1,11 @@
+## v0.100.0 - 2026-08-20
+
+- Soulseeker concede nuevas elecciones de habilidad de clase en los niveles 5, 7, 10, 12, 15 y 20; la primera habilidad continúa eligiéndose al adquirir la clase.
+- Las elecciones muestran todas las habilidades de la clase todavía no aprendidas cuyo tier esté desbloqueado: tier I desde nivel 5, tier II desde nivel 7, tier III desde nivel 10 y tier IV desde nivel 15.
+- El seguimiento de recompensas por nivel permite recuperar elecciones pendientes de personajes Soulseeker guardados sin repetir elecciones ya consolidadas.
+- Configuración de clases admite ahora habilidades de tier IV y las incorpora al árbol de habilidades generado desde `skills_json`.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.100.0`.
+
 ## v0.99.0 - 2026-08-20
 
 - Soulseek mantiene al personaje sin clase durante todo el piso 1 y abre la selección de clase nada más entrar al piso 2. La elección sigue aplicando los bonus de estadísticas de clase y encadena la elección de la primera habilidad.
