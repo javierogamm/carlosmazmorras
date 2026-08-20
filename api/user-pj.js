@@ -96,7 +96,7 @@ module.exports=async(req,res)=>{
    // Soulseeker characters only (?soulseeker=1); normal mode's leaderboard
    // keeps showing every character, same as before this flag existed.
    const soulseekerOnly=req.query?.soulseeker==='1';
-   const scoreSelect='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,feats,soulseeker,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName';
+   const scoreSelect='id,created_at,nombre,pj_name,pj_status,pj_score,last_use,feats,soulseeker,max_floor_reached:pj_json->>maxFloorReached,level:pj_json->player->>level,class_name:pj_json->player->>className,race_name:pj_json->player->>raceName';
    const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${scoreSelect}&order=pj_score.desc.nullslast${soulseekerOnly?'&soulseeker=eq.true':''}`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);

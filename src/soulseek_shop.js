@@ -37,12 +37,17 @@ let soulseekShopWeaponCategory=null;
 const SOULSEEK_RACE_COSTS=[0,20,20,50,50,100,100];
 const SOULSEEK_CLASS_COSTS=[0,15,15,25,25,50,50];
 const SOULSEEK_SKILL_TIER_COSTS={2:5,3:10,4:15};
-const SOULSEEK_POTION_TIER_COSTS=[3,5,7,10];
-const SOULSEEK_ITEM_TIER_COSTS=[5,10,15,20];
+const SOULSEEK_POTION_TIER_COSTS=[5,7,10,15];
+const SOULSEEK_ITEM_TIER_COSTS=[5,20,30,50];
 const SOULSEEK_ROMAN_TO_TIER={I:1,II:2,III:3,IV:4,V:5,VI:6};
 
 function soulseekCostForIndex(table,index,fallback){return index<table.length?table[index]:fallback}
 function soulseekItemTierCost(rarity,table){const idx=Math.min(table.length-1,Math.max(0,LOOT_RARITY_ORDER.indexOf(rarity)));return table[idx]??table[table.length-1]}
+function soulseekLegendaryItemCost(rarity,baseCost){
+ if(rarity!=='legendary')return baseCost;
+ const legendaryBought=soulseekSessionItems().filter(item=>item?.rarity==='legendary'&&item?.type!=='potion'&&item?.slot!=='consumable').length;
+ return legendaryBought===0?baseCost:legendaryBought===1?60:75;
+}
 // Shop-only friendly grouping of game.js's real weapon types
 // (configWeaponTypes - Espadas, Dagas, Sables, Hachas, ... 21 in total,
 // each with its own flavorful weaponCategory string like "Armas blancas
@@ -419,7 +424,7 @@ function soulseekRenderShopObjects(){
  root.querySelectorAll('[data-shop-obj-buy]').forEach(btn=>btn.onclick=()=>soulseekBuyObject(btn.dataset.shopObjBuy,Number(btn.dataset.shopObjCost)));
 }
 function soulseekObjectCardHtml(row,costTable){
- const it=row.item_json||row,rarity=it.rarity||row.tier||'common',cost=soulseekItemTierCost(rarity,costTable),name=it.name||row.nombre||'Objeto';
+ const it=row.item_json||row,rarity=it.rarity||row.tier||'common',baseCost=soulseekItemTierCost(rarity,costTable),cost=costTable===SOULSEEK_ITEM_TIER_COSTS?soulseekLegendaryItemCost(rarity,baseCost):baseCost,name=it.name||row.nombre||'Objeto';
  return `<div class="soulseekShopCard">
   <div class="soulseekShopCardIconWrap">${it.icon?`<canvas data-shop-obj-icon="${row.id}" width="56" height="56"></canvas>`:'✦'}</div>
   <b style="color:${tierDefs[rarity]?.color||'#fff'}">${name}</b>
