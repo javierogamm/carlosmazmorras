@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.99.0';
+const APP_VERSION='0.100.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -447,11 +447,6 @@ for(const skill of Object.values(skillDefs)){
   skill.targetMode=CLASS_EFFECT_SPECS[skill.classEffect][1];
  }
 }
-
-const classSkillMilestones={1:1};
-function isClassSkillChoiceLevel(level){return level>=3&&level%2===1}
-
-
 
 // OBSOLETO v0.34.4: modelo legacy de familias embebidas.
 // El juego ya no debe usar estas familias para generar pisos; la fuente activa es la tabla Supabase `enemy_family`.
@@ -1070,7 +1065,9 @@ function skillCostMultiplier(resource){
   return m*mult;
  },1)
 }
-function effectiveSkillCost(def){const configured=game.player?.raceBonuses?.resourceCostPct,raceMult=Math.max(0,configured==null?100:Number(configured))/100;return Math.max(0,Math.round(def.cost*skillCostMultiplier(def.resource)*raceMult))}
+// resourceCostPct is a percentage delta like every other race percent field
+// (0 = unchanged cost, -100 = free, can go negative/above per admin choice).
+function effectiveSkillCost(def){const raceMult=Math.max(0,1+(Number(game.player?.raceBonuses?.resourceCostPct)||0)/100);return Math.max(0,Math.round(def.cost*skillCostMultiplier(def.resource)*raceMult))}
 // Transformación (stackable 'transform' effect) can be authored to disallow
 // casting any other skill while it's active - see useSkill().
 function skillsBlockedByTransform(){return (game.player?.activeBuffs||[]).some(b=>b.effects?.blockSkills)}
@@ -1086,7 +1083,7 @@ function enforceActiveSkillSlots(player=game.player){
 function recomputeDerived(){
  const p=game.player,allStats={...p.stats},rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom'])allStats[k]=(allStats[k]||0)+(Number(rb[k])||0);
- const direct={armor:Number(rb.armor)||0,maxHp:Number(rb.maxHp)||0,maxStamina:Number(rb.maxStamina)||0,maxMana:Number(rb.maxMana)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,rarityFind:Number(rb.rarityFind)||0};
+ const direct={armor:Number(rb.armor)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,hpRegen:Number(rb.hpRegen)||0,rarityFind:Number(rb.rarityFind)||0};
  for(const item of Object.values(p.equipment||{}))if(item){
   for(const a of item.affixes||[]){
    // Legacy physicalPower/magicPower fields are deliberately ignored.
@@ -1105,7 +1102,7 @@ function recomputeDerived(){
   maxStamina:45+allStats.strength*4+(direct.maxStamina||0),
   maxMana:30+allStats.wisdom*5+allStats.intelligence*3+(direct.maxMana||0),
   critChance:4+allStats.luck*.75+(direct.critChance||0),critDamage:175+(direct.critDamage||0)+activeBuffFlatBonus('critDamage'),
-  dodge:allStats.agility*.45+(direct.dodge||0),staminaRegen:(direct.staminaRegen||0)+activeBuffFlatBonus('staminaRegen'),manaRegen:(direct.manaRegen||0)+activeBuffFlatBonus('manaRegen'),rarityFind:direct.rarityFind||0,
+  dodge:allStats.agility*.45+(direct.dodge||0),staminaRegen:(direct.staminaRegen||0)+activeBuffFlatBonus('staminaRegen'),manaRegen:(direct.manaRegen||0)+activeBuffFlatBonus('manaRegen'),hpRegen:(direct.hpRegen||0)+activeBuffFlatBonus('hpRegen'),rarityFind:direct.rarityFind||0,
   finalStats:allStats,vision:4+Math.floor(allStats.intelligence/4),weaponProcLuckBonus:Math.min(15,allStats.luck*.5)
  };
  p.derived=d;p.baseArmor=d.armor;p.vision=d.vision;p.maxHp=d.maxHp;p.maxStamina=d.maxStamina;p.maxMana=d.maxMana;
@@ -1579,135 +1576,6 @@ function reveal(cx,cy,r=game.player.vision){
 }
 
 
-let pendingClassSkillRequests=[];
-function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1];
-function ensureSkillChoiceState(){
- const p=game.player;
- p.skillChoicesAwarded=p.skillChoicesAwarded||{};
- pendingClassSkillRequests=pendingClassSkillRequests||[];
-}
-function classSkillIdsForTier(tier){
- const roman=['','I','II','III'][tier];
- return (classSkillTrees[game.player.cls]?.[roman]||[]).filter(id=>skillDefs[id]);
-}
-function classSkillIdsForLevelReward(level){
- const maxTier=level>=10?3:level>=7?2:1,tree=classSkillTrees[game.player.cls]||{};
- return Object.entries(tree).flatMap(([roman,ids])=>{
-  const tier={I:1,II:2,III:3}[roman]||0;
-  return tier&&tier<=maxTier?ids:[];
- }).filter(id=>skillDefs[id]&&!game.player.knownSkills.includes(id));
-}
-function randomClassSkillForLevelReward(level){return pick(classSkillIdsForLevelReward(level))}
-function knownClassSkillIds(){
- if(!game?.player)return [];
- const all=new Set(Object.values(classSkillTrees[game.player.cls]||{}).flat());
- return (game.player.knownSkills||[]).filter(id=>all.has(id));
-}
-function expectedClassSkillLevels(level=game.player.level){return CLASS_SKILL_LEVELS.filter(l=>l<=level&&classTierForLevel(l))}
-function expectedClassSkillCount(level=game.player.level){
- const byTier={};
- let total=0;
- for(const l of expectedClassSkillLevels(level)){
-  const tier=classTierForLevel(l);
-  byTier[tier]=(byTier[tier]||0)+1;
- }
- for(const [tier,count] of Object.entries(byTier))total+=Math.min(count,classSkillIdsForTier(Number(tier)).length);
- return total;
-}
-function firstMissingClassSkillRequest(){
- if(!game?.player)return null;
- const known=new Set(knownClassSkillIds());
- const takenByTier={};
- for(const id of known){
-  const d=skillDefs[id];
-  if(d?.tier)takenByTier[d.tier]=(takenByTier[d.tier]||0)+1;
- }
- for(const level of expectedClassSkillLevels()){
-  const tier=classTierForLevel(level),available=classSkillIdsForTier(tier);
-  const neededUntilThisLevel=expectedClassSkillLevels(level).filter(l=>classTierForLevel(l)===tier).length;
-  if(Math.min(neededUntilThisLevel,available.length)>(takenByTier[tier]||0))return{level,tier,initial:level===1&&!known.size};
- }
- return null;
-}
-function queueClassSkillChoice(level,initial=false){
- if(!game?.player)return;
- ensureSkillChoiceState();
- const tier=initial?classTierForLevel(level):(level>=10?3:level>=7?2:1);
- if(!tier)return;
- const alreadyQueued=pendingClassSkillRequests.some(q=>q.level===level&&q.tier===tier);
- if(!alreadyQueued)pendingClassSkillRequests.push({level,tier,initial});
- processClassSkillChoices();
-}
-function queueMissingClassSkillChoices(){
- if(!game?.player)return;
- ensureSkillChoiceState();
- const expected=expectedClassSkillCount(),known=knownClassSkillIds().length;
- if(known>=expected)return;
- const missing=firstMissingClassSkillRequest();
- if(missing)queueClassSkillChoice(missing.level,missing.initial);
-}
-function classSkillChoicesForTier(tier){return classSkillIdsForTier(tier).filter(id=>!game.player.knownSkills.includes(id))}
-function levelRewardLabel(level,skillId){
- const s=skillDefs[skillId];
- if(!s)return '';
- const tier=['','I','II','III'][s.tier]||s.tier||'?';
- return `<div class="levelRewardSkill"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${tier}</span><p>${s.desc}</p><span class="small">Skill aleatoria de ${game.player.className} desbloqueada al nivel ${level}.</span></div>`
-}
-function processClassSkillChoices(){
- if(!game?.player)return;
- if(document.getElementById('statPointModal')?.classList.contains('open'))return;
- const modal=document.getElementById('skillChoiceModal');
- if(!modal||modal.classList.contains('open'))return;
- if(!pendingClassSkillRequests.length){
-  const missing=firstMissingClassSkillRequest();
-  if(missing)pendingClassSkillRequests.push(missing);
- }
- if(!pendingClassSkillRequests.length)return;
- const request=pendingClassSkillRequests.shift(),roman=['','I','II','III'][request.tier];
- const choices=request.initial?classSkillChoicesForTier(request.tier):classSkillIdsForLevelReward(request.level);
- // A custom class with no skills configured for this tier leaves nothing to
- // pick - mark it satisfied and move on instead of leaving the request
- // stuck forever, but if this WAS the initial character-creation request,
- // still finish creating the character (save to DB, back to single player)
- // exactly like the real pick-a-skill path below does. Skipping this was
- // the "click Crear, screen goes blank, character never saved" bug: no
- // choices meant the modal never opened, so finishCharacterCreation() (only
- // ever called from inside that modal's click handler) never ran.
- if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();else if(game.player.unspentStatPoints)showStatPointModal();processClassSkillChoices();return}
- document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
- document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
- document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
- modal.classList.add('open');
- modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
-  // Everything below (closing the modal, saving to Supabase on the initial
-  // pick) is a chain of synchronous statements - an exception thrown by any
-  // one of them silently aborted the rest, which for the initial pick meant
-  // finishCharacterCreation() never even got called and the click looked
-  // like it did nothing. One real example: updateUI() used to unconditionally
-  // compute the "Zona:" floor theme, which throws with no active floor/
-  // tileset yet (character creation) and no config_floor rows configured -
-  // entirely unrelated to whichever skill happened to be picked (see
-  // updateUI()'s game.floorTileset/game.map guard). Surface any such
-  // exception instead of swallowing it.
-  try{
-   const chosen=skillDefs[b.dataset.pickSkill];
-   if(!await uiConfirm(`¿Confirmas que quieres aprender ${chosen?.name||'esta habilidad'}?`))return;
-   learnSkill(b.dataset.pickSkill);
-   game.player.skillChoicesAwarded[request.level]='chosen';
-   modal.classList.remove('open');updateUI();
-   if(request.initial)finishCharacterCreation();
-   else if(game.player.unspentStatPoints)showStatPointModal();
-   queueMissingClassSkillChoices();
-   processClassSkillChoices();
-   if(!request.initial&&!game.player.unspentStatPoints&&game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}
-  }catch(e){
-   console.error('Fallo al elegir la habilidad de clase:',e);
-   uiAlert(`Error al elegir la habilidad "${b.dataset.pickSkill}": ${e.message}`);
-  }
- }))
-}
-function classSkillConsistencyGuard(){if(game?.turn%2===0)queueMissingClassSkillChoices()}
 
 async function start(){
  if(!selectedCombatMode){uiAlert('Elige un modo de combate (Clásico o Puntos de Acción) antes de crear el personaje.');return}
@@ -2734,7 +2602,7 @@ function createDungeonWorldJson(name,params=DEFAULT_WORLD_PARAMS){
 }
 function loadPrecomputedFloor(){
  const data=selectedDungeonWorld?.world_json?.floors?.[game.floor-1];if(!data)return false;
- if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+ if(game?.player){recomputeDerived();game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  const floorTileset=hydrateFloorTilesetForWorld(data.floorTileset)||pickFloorTilesetForLevel(game.floor);
  const preservedChests=game?.preservedSoulReviveLoot?.[String(game.floor)];
  const floorChests=preservedChests?JSON.parse(JSON.stringify(preservedChests)):(data.chests||[]).map(c=>initializeChestTier({...c,chestDef:c.chestDef?{...c.chestDef}:null},game.player.level));
@@ -2947,32 +2815,6 @@ function resolveFloorEvent(ev,prepared){
 }
 
 
-const LEVEL_CAP=100;
-function xpNeededForLevel(level){
- level=Math.max(1,Math.min(LEVEL_CAP,level));
- return Math.round(28+level*18+Math.pow(level,1.72)*5.4);
-}
-function levelGrowth(level){
- return{
-  hp:5+Math.floor(level/5),
-  stamina:3+Math.floor(level/12),
-  mana:3+Math.floor(level/12),
-  damage:(level%3===0?1:0)+(level%10===0?1:0),
-  armor:(level%4===0?1:0)+(level%15===0?1:0)
- };
-}
-function levelScalePreview(level){
- const cumulativeXp=Array.from({length:Math.max(0,level-1)},(_,i)=>xpNeededForLevel(i+1)).reduce((a,b)=>a+b,0);
- return{
-  level,
-  xpForNext:level<LEVEL_CAP?xpNeededForLevel(level):0,
-  cumulativeXp,
-  enemyHpMultiplier:+Math.pow(1.055,level-1).toFixed(2),
-  enemyDamageMultiplier:+Math.pow(1.035,level-1).toFixed(2),
-  lootQuality:+(1+Math.pow(level-1,0.72)*.18).toFixed(2)
- }
-}
-const LEVEL_100_FORECAST=[1,5,10,20,30,40,50,60,70,80,90,100].map(levelScalePreview);
 
 function difficultyScale(){
  const p=game.player,f=game.floor||1,l=Math.min(LEVEL_CAP,p.level||1);
@@ -3015,7 +2857,7 @@ function enemyClassSkillIds(cls,maxTier){
  for(const classId of ENEMY_CLASS_SKILL_CLASSES[cls]||[]){
   const tree=classSkillTrees[classId];if(!tree)continue;
   for(const [roman,list] of Object.entries(tree)){
-   const tier=roman==='III'?3:roman==='II'?2:1;
+   const tier=roman==='IV'?4:roman==='III'?3:roman==='II'?2:1;
    if(tier>maxTier)continue;
    // enemyUsable===false is an explicit admin opt-out for one skill; a skill
    // that simply never declared the flag still belongs to its class's kit.
@@ -3386,7 +3228,7 @@ function updateRestButton(){
 // every companion goes back to just following instead of chasing a ghost.
 function clearCompanionOrders(){for(const c of game?.companions||[])c.orderTarget=null}
 function applyPreservedSoulReviveLoot(){const saved=game?.preservedSoulReviveLoot?.[String(game.floor)];if(saved)game.chests=JSON.parse(JSON.stringify(saved))}
-function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,game?.player?.level||1);if(loadPrecomputedFloor()){applyPreservedSoulReviveLoot();return}game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();if(game.player.raceBonuses?.floorHeal)healEntity(game.player,game.player.raceBonuses.floorHeal);game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
+function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,game?.player?.level||1);if(loadPrecomputedFloor()){applyPreservedSoulReviveLoot();return}game.floorEventRolled=false;game.activeEvent=null;if(game?.player){recomputeDerived();game.player.secondLifeReady=true;game.player.shield=(game.player.shield||0)+(game.player.derived?.floorShield||0)}
  busy=false;
  const params=worldParams();
  const overCap=Math.max(0,(game.floorEntryLevel||1)-BALANCE_LEVEL_CAP);
@@ -3829,25 +3671,6 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  if(p.hp<=0){p.hp=0;game.over=true;updateUI();draw();handlePlayerDeath()}
 }
 
-const statDescriptions={strength:'Aumenta daño físico y la stamina máxima.',vitality:'Aumenta vida y resistencia.',agility:'Aumenta evasión, movilidad y los Puntos de Acción (PA).',luck:'Mejora el % de crítico, botín y eventos.',intelligence:'Aumenta poder mágico y aporta algo de maná extra.',wisdom:'Aumenta el maná máximo y mejora regeneración y percepción.'};
-function animateLevelUpThen(done){const stage=document.getElementById('gameStage');stage?.classList.remove('levelUpPulse');void stage?.offsetWidth;stage?.classList.add('levelUpPulse');setTimeout(done,2000)}
-function queueStatPoint(level){
- const p=game.player;p.unspentStatPoints=(p.unspentStatPoints||0)+1;p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];
- p.pendingLevelUpRewards.push({level,skillChoice:isClassSkillChoiceLevel(level)});
- showStatPointModal()
-}
-function showStatPointModal(){
- const p=game.player;if(!p?.unspentStatPoints)return;
- const modal=document.getElementById('statPointModal'),grid=document.getElementById('statChoiceGrid'),title=document.getElementById('statPointTitle'),text=document.getElementById('statPointText'),skill=document.getElementById('statPointSkillReward'),labels={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría'};
- if(!modal||!grid)return;
- p.pendingLevelUpRewards=p.pendingLevelUpRewards||[];const reward=p.pendingLevelUpRewards[0]||{};
- if(title)title.textContent=`SUBIDA DE NIVEL${reward.level?` · NIVEL ${reward.level}`:''}`;
- if(text)text.textContent='Distribuye 1 punto en una stat principal para consolidar la subida.';
- if(skill)skill.innerHTML=reward.skillChoice?'<p class="small">Después de asignar la stat elegirás una nueva habilidad de tu clase.</p>':'';
- grid.innerHTML=Object.keys(labels).map(k=>`<button type="button" class="statChoice" data-stat-choice="${k}"><b>${labels[k]}: ${p.stats[k]}</b><span>${statDescriptions[k]}</span></button>`).join('');modal.classList.add('open');
- setTimeout(()=>focusGamepadElement(grid.querySelector('[data-stat-choice]')),0);
- grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',async()=>{const stat=btn.dataset.statChoice;if(!await uiConfirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
-}
 // Living participants in the run (1 in single player).
 function partySize(){
  if(!game?.multiplayer)return 1;
@@ -3914,60 +3737,6 @@ function scaleFloorForPlayerLevel(){
 function rescaleBossOnLevelUp(){
  if(game?.multiplayer||!game?.boss)return;
  rescaleEnemyToLevel(game.boss,bossTargetLevel());
-}
-function grantXp(v){
- const p=game.player;if(p.level>=LEVEL_CAP)return;
- const startLevel=p.level;
- v=Math.ceil(v*(p.raceBonuses?.xpMult||1)*xpReceivedMultiplier());p.xp+=v;
- while(p.level<LEVEL_CAP&&p.xp>=p.nextXp){
-  p.xp-=p.nextXp;p.level++;
-  const g=levelGrowth(p.level);
-  p.nextXp=p.level<LEVEL_CAP?xpNeededForLevel(p.level):0;
-  p.maxHp+=g.hp+p.stats.vitality;p.hp=p.maxHp;
-  p.maxStamina+=g.stamina+Math.floor(p.stats.strength/3);p.stamina=p.maxStamina;
-  p.maxMana+=g.mana+Math.floor((p.stats.wisdom*2+p.stats.intelligence)/3);p.mana=p.maxMana;
-  p.baseDamage+=g.damage;p.baseArmor+=g.armor;
-  if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
-  banner(`NIVEL ${p.level}`);animateLevelUpThen(()=>queueStatPoint(p.level));
- }
- if(p.level>=LEVEL_CAP){p.level=LEVEL_CAP;p.xp=0;p.nextXp=0;banner('NIVEL MÁXIMO 100')}
- if(p.level>startLevel)rescaleBossOnLevelUp();
- // Levelling up changes both this character's score (used in accumulated_points)
- // and possibly the account's max_pj_lv gate threshold - push the save right
- // away instead of waiting for the next turn-end persist, so unlocks react
- // immediately rather than a move/action later.
- if(p.level>startLevel&&game.pjId){
-  const bundle=characterBundleFromGame();
-  fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:p.name,last_use:new Date().toISOString()})})
-   .then(()=>refreshCurrentUserProgress())
-   .catch(e=>console.error('No se pudo guardar el personaje tras subir de nivel',e));
- }
-}
-// Recomputes window.currentUser.max_pj_lv/accumulated_points from this
-// user's characters (same source the server aggregates from) and refreshes
-// the login stats banner and localStorage copy in place - keeps race/class
-// gate checks correct within the same session (login, new character, level
-// up) without forcing a re-login.
-async function refreshCurrentUserProgress(){
- if(!window.currentUser?.nombre)return;
- try{
-  const r=await fetch(`/api/user-pj?nombre=${encodeURIComponent(window.currentUser.nombre)}&light=1`);
-  const chars=await r.json();
-  if(!r.ok||!Array.isArray(chars))return;
-  const maxLevel=chars.reduce((m,c)=>Math.max(m,Number(c.level)||1),0);
-  const totalScore=chars.reduce((s,c)=>s+(Number(c.pj_score)||0),0);
-  window.currentUser.max_pj_lv=maxLevel;
-  window.currentUser.accumulated_points=totalScore;
-  try{localStorage.setItem('mazmorraUser',JSON.stringify(window.currentUser))}catch(e){}
-  const statsEl=document.getElementById('userProgressStats');
-  if(statsEl)statsEl.textContent=`Nivel máximo de PJ: ${maxLevel} · PUNTUACIÓN: ${Math.round(totalScore)}`;
- }catch(e){/* best-effort refresh, ignore network errors */}
-}
-function gainXp(v,id){
- // multiplayer: experience from a kill is split and shared with every party member
- const share=v/partySize();
- grantXp(share);
- if(game?.multiplayer&&id)sendMpAction('xp_share',{id,amount:share});
 }
 function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))return;game.player.knownSkills.push(id);game.player.skillProgress=game.player.skillProgress||{};game.player.skillProgress[id]={level:1,xp:0,uses:0};enforceActiveSkillSlots();const free=game.player.equippedSkills.findIndex(x=>!x);if(free>=0)game.player.equippedSkills[free]=id;log(`Nueva habilidad: ${skillDefs[id].name}.`,'loot')}
 function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
@@ -4437,14 +4206,16 @@ function tickEntityHots(entity){
 function tickPlayerHots(){
  tickEntityHots(game.player);
 }
-// Applies derived.staminaRegen/manaRegen once per turn. No flat baseline and
-// no stat scaling: the only sources are the off-hand item (its rolled affix,
-// or the guaranteed wand/dagger regen), race passives, active buffs and
-// potions - see the staminaRegen/manaRegen assembly in recomputeDerived().
+// Applies derived.staminaRegen/manaRegen/hpRegen once per turn. No flat
+// baseline and no stat scaling: the only sources are the off-hand item (its
+// rolled affix, or the guaranteed wand/dagger regen), race passives, active
+// buffs and potions - see the staminaRegen/manaRegen/hpRegen assembly in
+// recomputeDerived().
 function tickPlayerRegen(){
  const p=game.player;if(!p)return;
  p.stamina=Math.min(p.maxStamina,p.stamina+Math.max(0,p.derived?.staminaRegen||0));
  p.mana=Math.min(p.maxMana,p.mana+Math.max(0,p.derived?.manaRegen||0));
+ p.hp=Math.min(p.maxHp,p.hp+Math.max(0,p.derived?.hpRegen||0));
 }
 function tickEquipmentCooldowns(){
  const cd=game.player?.equipmentCooldowns;if(!cd)return;
@@ -7183,8 +6954,8 @@ function applyClassSkillOverrides(){
   // classes without a hardcoded tree get theirs (re)synthesized every time,
   // so editing a custom class's skill tiers takes effect on the next load
   if(!HARDCODED_CLASS_SKILL_TREE_IDS.has(classId)){
-   const tiers={I:[],II:[],III:[]};
-   for(const [skillId,s] of Object.entries(bag))tiers[s.tier===3?'III':s.tier===2?'II':'I'].push(skillId);
+   const tiers={I:[],II:[],III:[],IV:[]};
+   for(const [skillId,s] of Object.entries(bag))tiers[s.tier===4?'IV':s.tier===3?'III':s.tier===2?'II':'I'].push(skillId);
    classSkillTrees[classId]=tiers;
   }
  }
@@ -7227,7 +6998,7 @@ function classSkillBagFor(id){
  if(row?.skills_json&&Object.keys(row.skills_json).length)return JSON.parse(JSON.stringify(row.skills_json));
  const tree=classSkillTrees[id];if(!tree)return {};
  const bag={};
- for(const [roman,ids] of Object.entries(tree)){const tierNum=roman==='III'?3:roman==='II'?2:1;for(const sid of ids)if(skillDefs[sid])bag[sid]={...skillDefs[sid],tier:tierNum}}
+ for(const [roman,ids] of Object.entries(tree)){const tierNum=roman==='IV'?4:roman==='III'?3:roman==='II'?2:1;for(const sid of ids)if(skillDefs[sid])bag[sid]={...skillDefs[sid],tier:tierNum}}
  return bag;
 }
 function renderClassSkillSelect(){
@@ -8574,10 +8345,10 @@ const TEST_STAT_LABELS={strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad
 function testStatPointsTotal(level){return Math.max(0,Math.round(level)-1)}
 function testMilestoneBonus(level){return Math.floor(Math.max(1,Math.round(level))/10)}
 function testStatPointsSpent(){return Object.values(tstStatAlloc).reduce((a,b)=>a+b,0)}
-// Mirrors classSkillIdsForLevelReward(): tier II unlocks at 7 and III at 10.
-function testMaxSkillTierForLevel(level){return level>=10?3:level>=7?2:1}
-function testMaxSkillPicks(level){return 1+Math.max(0,Math.floor((Math.max(1,level)-1)/2)-1)}
-function classSkillIdsForTierOf(classId,tier){const roman=['','I','II','III'][tier];return (classSkillTrees[classId]?.[roman]||[]).filter(id=>skillDefs[id])}
+// Mirrors maxSkillTierForLevel()/SKILL_CHOICE_LEVELS so the testing-mode
+// sandbox character always reflects the real leveling rules.
+function testMaxSkillTierForLevel(level){return maxSkillTierForLevel(level)}
+function testMaxSkillPicks(level){return 1+SKILL_CHOICE_LEVELS.filter(l=>l<=level).length}
 function testEligibleSkillIds(){
  const max=testMaxSkillTierForLevel(tstLevel),ids=[];
  for(let t=1;t<=max;t++)ids.push(...classSkillIdsForTierOf(tstClass,t));
@@ -8640,10 +8411,10 @@ function renderTestSkillChoices(){
  const eligible=testEligibleSkillIds();
  const cap=Math.min(testMaxSkillPicks(tstLevel),eligible.length);
  tstSkillIds=tstSkillIds.filter(id=>eligible.includes(id)).slice(0,cap);
- if(info)info.textContent=`Nivel ${tstLevel}: puedes seleccionar hasta ${cap} habilidad(es) de clase (hasta tier ${['','I','II','III'][testMaxSkillTierForLevel(tstLevel)]}). Las 4 primeras marcadas quedan equipadas (${Math.min(tstSkillIds.length,4)}/4 equipadas).`;
+ if(info)info.textContent=`Nivel ${tstLevel}: puedes seleccionar hasta ${cap} habilidad(es) de clase (hasta tier ${TIER_ROMAN[testMaxSkillTierForLevel(tstLevel)]}). Las 4 primeras marcadas quedan equipadas (${Math.min(tstSkillIds.length,4)}/4 equipadas).`;
  root.innerHTML=eligible.map(id=>{
   const s=skillDefs[id];if(!s)return '';
-  const idx=tstSkillIds.indexOf(id),checked=idx>=0,roman=['','I','II','III'][s.tier]||'?';
+  const idx=tstSkillIds.indexOf(id),checked=idx>=0,roman=TIER_ROMAN[s.tier]||'?';
   return `<label class="configItem testSkillItem"><input type="checkbox" data-test-skill="${id}" ${checked?'checked':''}><div><b>${s.icon||''} ${s.name}</b> <span class="tierBadge">TIER ${roman}</span>${checked&&idx<4?' <span class="small">(equipada)</span>':''}<p class="small">${s.desc||''}</p></div></label>`;
  }).join('')||'<p class="small">Esta clase no tiene árbol de habilidades configurado.</p>';
  root.querySelectorAll('[data-test-skill]').forEach(cb=>cb.onchange=()=>{
@@ -8700,18 +8471,21 @@ function launchTestCombat(){
  const milestone=testMilestoneBonus(tstLevel),stats={...cls.stats};
  for(const k of Object.keys(TEST_STAT_LABELS))stats[k]=(stats[k]||0)+milestone+(tstStatAlloc[k]||0);
 
+ const rb=raceDefs[tstRace]?.bonuses||{};
  let maxHp=30+stats.vitality*6;
  let maxStamina=45+stats.strength*4;
  let maxMana=30+stats.wisdom*5+stats.intelligence*3;
  let baseDamage=2+stats.strength,baseArmor=4+Math.floor(stats.vitality/2);
  // Approximates the real per-level grantXp() loop using the final (already
  // allocated) stats throughout - order-independent and close enough for a
- // sandbox character built to already be at `tstLevel`.
+ // sandbox character built to already be at `tstLevel`. Mirrors grantXp()'s
+ // race hp/stamina/mana growth coefficients too, so the sandbox reflects the
+ // chosen race the same way a real character would.
  for(let l=2;l<=tstLevel;l++){
   const g=levelGrowth(l);
-  maxHp+=g.hp;
-  maxStamina+=g.stamina;
-  maxMana+=g.mana+Math.floor((stats.wisdom*2+stats.intelligence)/3);
+  maxHp+=Math.round(g.hp*(1+(Number(rb.hpGainPct)||0)/100));
+  maxStamina+=Math.round(g.stamina*(1+(Number(rb.staminaGainPct)||0)/100));
+  maxMana+=Math.round((g.mana+Math.floor((stats.wisdom*2+stats.intelligence)/3))*(1+(Number(rb.manaGainPct)||0)/100));
   baseDamage+=g.damage;baseArmor+=g.armor;
  }
 
@@ -8748,7 +8522,6 @@ function launchTestCombat(){
    cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},unspentStatPoints:0,pendingLevelUpRewards:[]
   }
  };
- const rb=raceDefs[tstRace]?.bonuses||{};
  game.player.raceName=raceDefs[tstRace]?.name||tstRace;
  game.player.raceBonuses={...rb};
  const racialSkill=raceDefs[tstRace]?.skill;if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
@@ -8827,24 +8600,20 @@ function drawShardTierIconToCanvas(canvas,tier){
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
 
-const RACE_STAT_FIELDS={skilleffect:'Efecto de habilidades %',strength:'Fuerza',vitality:'Vitalidad',agility:'Agilidad',luck:'Suerte',intelligence:'Inteligencia',wisdom:'Sabiduría',armor:'Armadura',maxHp:'Vida máxima',maxStamina:'Stamina máxima',maxMana:'Maná máximo',critChance:'Crítico %',critDamage:'Daño crítico %',dodge:'Evasión %',staminaRegen:'Regeneración stamina',manaRegen:'Regeneración maná',rarityFind:'Hallazgo rareza %',floorHeal:'Curación por piso',xpMult:'Multiplicador XP',apBonus:'PA adicionales',resourceCostPct:'Gasto de recursos %'};
-function raceDefFromRow(row){const meta=row.stats||{},key=meta.raceKey||row.race_key||`race_${row.id}`,bonuses={};for(const [k,v] of Object.entries(meta))if(!['raceKey','description','icon','iconMale','iconFemale','mapIconMale','mapIconFemale'].includes(k)&&typeof v==='number')bonuses[k]=v;const skill=row.skill&&typeof row.skill==='object'?{...row.skill,id:row.skill.id||`${key}_racial`,raceSkill:true,raceKey:key}:null;const iconMale=meta.iconMale||meta.icon||'',iconFemale=meta.iconFemale||iconMale;return{key,name:row.nombre||key,desc:meta.description||row.description||'',origin:'Raza configurable',trait:Object.entries(bonuses).map(([k,v])=>`${RACE_STAT_FIELDS[k]||k}: ${v}`).join(' · ')||'Skill racial',icon:iconMale,iconMale,iconFemale,mapIconMale:meta.mapIconMale||'',mapIconFemale:meta.mapIconFemale||'',bonuses,skill,rowId:row.id}}
-function raceIconForId(id,gender=selectedGender){const race=raceDefs[id]||{};return gender==='female'?(race.iconFemale||race.iconMale||race.icon||''):(race.iconMale||race.icon||'')}
-function applyConfiguredRaces(){for(const k of Object.keys(raceDefs))delete raceDefs[k];for(const row of configRaces){const d=raceDefFromRow(row);raceDefs[d.key]=d;if(d.skill)skillDefs[d.skill.id]=d.skill}renderRaceChoices();renderConfigGatesLists();renderTestRaceChoices()}
-async function fetchConfigRaces({light=false}={}){try{const r=await fetch(`/api/config-class?kind=races${light?'&light=1':''}`),data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar razas');configRaces=Array.isArray(data)?data:[];configRacesLoaded=true;applyConfiguredRaces();renderConfigRaces()}catch(e){const st=document.getElementById('configRaceStatus');if(st)st.textContent=e.message}}
-function renderRaceEffects(){const wrap=document.getElementById('configRaceEffectsList');if(!wrap)return;const list=window.currentRaceEffectsDraft||[];wrap.innerHTML=list.map((c,i)=>effectComponentCardHtml(c,i)).join('')||'<p class="small">Añade uno o más efectos apilables.</p>';wrap.querySelectorAll('[data-effect-idx]').forEach(el=>el.onchange=()=>{const c=list[Number(el.dataset.effectIdx)],f=el.dataset.effectField;c[f]=el.type==='number'?Number(el.value):el.type==='checkbox'?el.checked:el.value;if(['effectType','mode','target','damageMode','permanent'].includes(f))renderRaceEffects()});wrap.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();list.splice(Number(b.dataset.removeEffect),1);renderRaceEffects()});wrap.querySelectorAll('[data-use-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();if(!window.currentSummonIconHex){uiAlert('Primero configura una imagen en el editor de invocación.');return}list[Number(btn.dataset.useSummonIcon)].iconImage=window.currentSummonIconHex;renderRaceEffects()});bindSummonIconFiles(wrap,list,renderRaceEffects);
- wrap.querySelectorAll('[data-clear-summon-icon]').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();list[Number(btn.dataset.clearSummonIcon)].iconImage='';renderRaceEffects()});wrap.querySelectorAll('[data-summon-icon-idx]').forEach(canvas=>{const comp=list[Number(canvas.dataset.summonIconIdx)];if(comp?.iconImage)drawSkillIconImg(canvas,comp.iconImage)})}
-function raceStatsFromForm(){let extra={};const raw=document.getElementById('configRaceExtraStats').value.trim();if(raw)extra=JSON.parse(raw);for(const k of Object.keys(RACE_STAT_FIELDS)){const v=Number(document.querySelector(`[data-race-stat="${k}"]`)?.value);if(v)extra[k]=v;else delete extra[k]}return extra}
-function currentRacePayload(){const key=slugifyClassName(configRaceKey.value||configRaceName.value),iconMale=window.currentConfigRaceIconHex||'';return{nombre:configRaceName.value.trim(),stats:{...raceStatsFromForm(),raceKey:key,description:configRaceDesc.value.trim(),icon:iconMale,iconMale,iconFemale:window.currentConfigRaceFemaleIconHex||'',mapIconMale:window.currentConfigRaceMapMaleIconHex||'',mapIconFemale:window.currentConfigRaceMapFemaleIconHex||''},skill:{id:`${key}_racial`,name:configRaceSkillName.value.trim()||'Skill racial',icon:configRaceSkillIcon.value||'✦',desc:configRaceSkillDesc.value.trim(),resource:configRaceSkillResource.value,cost:Number(configRaceSkillCost.value)||0,apCost:Number(configRaceSkillAp.value)||0,cd:Number(configRaceSkillCd.value)||0,range:Number(configRaceSkillRange.value)||0,type:'utility',tier:1,rarity:'racial',classEffect:'stackable',effects:JSON.parse(JSON.stringify(window.currentRaceEffectsDraft||[])),raceSkill:true,raceKey:key,targetMode:effectsListTargetModeFor(window.currentRaceEffectsDraft||[])}}}
-async function loadConfigRace(id){let row=configRaces.find(x=>String(x.id)===String(id));if(row&&!row.stats){const r=await fetch(`/api/config-class?kind=races&id=${encodeURIComponent(id)}`),detail=await responseJson(r);if(!r.ok)throw new Error(detail.error||'No se pudo cargar la raza');row=detail;configRaces=configRaces.map(x=>String(x.id)===String(id)?detail:x)}window.editingConfigRaceId=row?.id||null;const d=row?raceDefFromRow(row):{key:'',name:'',desc:'',icon:'',iconMale:'',iconFemale:'',bonuses:{},skill:{}};configRaceKey.value=d.key||'';configRaceName.value=d.name||'';configRaceDesc.value=d.desc||'';for(const k of Object.keys(RACE_STAT_FIELDS))document.querySelector(`[data-race-stat="${k}"]`).value=d.bonuses?.[k]||'';const extras=Object.fromEntries(Object.entries(d.bonuses||{}).filter(([k])=>!RACE_STAT_FIELDS[k]));configRaceExtraStats.value=Object.keys(extras).length?JSON.stringify(extras,null,2):'';const sk=d.skill||{};configRaceSkillName.value=sk.name||'';configRaceSkillIcon.value=sk.icon||'✦';configRaceSkillDesc.value=sk.desc||'';configRaceSkillResource.value=sk.resource||'stamina';configRaceSkillCost.value=sk.cost??10;configRaceSkillAp.value=sk.apCost??10;configRaceSkillCd.value=sk.cd??5;configRaceSkillRange.value=sk.range??1;window.currentRaceEffectsDraft=JSON.parse(JSON.stringify(sk.effects||[]));window.currentConfigRaceIconHex=d.iconMale||d.icon||'';window.currentConfigRaceFemaleIconHex=row?.stats?.iconFemale||'';window.currentConfigRaceMapMaleIconHex=row?.stats?.mapIconMale||'';window.currentConfigRaceMapFemaleIconHex=row?.stats?.mapIconFemale||'';renderConfigIconPreview(window.currentConfigRaceIconHex,'configRaceIconPreview','configRaceIconStatus');renderConfigIconPreview(window.currentConfigRaceFemaleIconHex,'configRaceFemaleIconPreview','configRaceFemaleIconStatus');renderConfigIconPreview(window.currentConfigRaceMapMaleIconHex,'configRaceMapMaleIconPreview','configRaceMapMaleIconStatus');renderConfigIconPreview(window.currentConfigRaceMapFemaleIconHex,'configRaceMapFemaleIconPreview','configRaceMapFemaleIconStatus');configRaceIconStatus.textContent=window.currentConfigRaceIconHex?'Icono masculino cargado.':'Sin icono masculino.';configRaceFemaleIconStatus.textContent=window.currentConfigRaceFemaleIconHex?'Icono femenino cargado.':'Sin icono femenino: se reutilizará el masculino.';configRaceMapMaleIconStatus.textContent=window.currentConfigRaceMapMaleIconHex?'Icono de mapa masculino cargado.':'Sin icono: se usará Objetos del mundo.';configRaceMapFemaleIconStatus.textContent=window.currentConfigRaceMapFemaleIconHex?'Icono de mapa femenino cargado.':'Sin icono: se usará Objetos del mundo.';renderRaceEffects()}
-function renderConfigRaces(){const sel=document.getElementById('configRaceSelect'),list=document.getElementById('configRacesList');if(!sel)return;sel.innerHTML='<option value="">— Nueva raza —</option>'+configRaces.map(r=>`<option value="${r.id}">${r.nombre||r.id}</option>`).join('');if(window.editingConfigRaceId)sel.value=window.editingConfigRaceId;if(list)list.innerHTML=configRaces.map(r=>{const d=raceDefFromRow(r);return `<div class="configItem"><div><b>${d.name}</b><span class="small">${d.key} · ${d.skill?.name||'sin skill'}</span><div class="configItemActions"><button data-edit-race="${r.id}">Editar</button></div></div></div>`}).join('')||'<p class="small">No hay razas configuradas.</p>';list?.querySelectorAll('[data-edit-race]').forEach(b=>b.onclick=()=>loadConfigRace(b.dataset.editRace))}
+// Percent-style fields (rendered as a fixed ±10%-step selector by
+// setupRaceConfigMode - see RACE_STAT_PERCENT_FIELDS) versus plain linear
+// ones (rendered as a free number input): hpGainPct/staminaGainPct/
+// manaGainPct are multipliers on the per-level HP/stamina/mana growth
+// (see grantXp()), replacing the old flat maxHp/maxStamina/maxMana bonus and
+// the removed floorHeal one-off heal. hpRegen/staminaRegen/manaRegen are
+// flat points regenerated per turn; apBonus is a flat addition to the PA
+// baseline every turn.
 async function responseJson(response){
  const text=await response.text();
  if(!text)return{};
  try{return JSON.parse(text)}
  catch{return{error:response.ok?'El servidor devolvió una respuesta inválida.':`No se pudo completar la petición (${response.status}): ${text.trim().slice(0,180)}`}}
 }
-function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});if(!window.raceMapMaleIconEditor)window.raceMapMaleIconEditor=setupImageIconEditor({inputId:'configRaceMapMaleImageInput',canvasId:'configRaceMapMaleCropCanvas',previewId:'configRaceMapMaleIconPreview',statusId:'configRaceMapMaleIconStatus',zoomId:'configRaceMapMaleCropZoom',eraserId:'configRaceMapMaleMagicEraserBtn',toleranceId:'configRaceMapMaleMagicTolerance',hexKey:'currentConfigRaceMapMaleIconHex',statusPrefix:'Icono de mapa masculino',maxSize:128});if(!window.raceMapFemaleIconEditor)window.raceMapFemaleIconEditor=setupImageIconEditor({inputId:'configRaceMapFemaleImageInput',canvasId:'configRaceMapFemaleCropCanvas',previewId:'configRaceMapFemaleIconPreview',statusId:'configRaceMapFemaleIconStatus',zoomId:'configRaceMapFemaleCropZoom',eraserId:'configRaceMapFemaleMagicEraserBtn',toleranceId:'configRaceMapFemaleMagicTolerance',hexKey:'currentConfigRaceMapFemaleIconHex',statusPrefix:'Icono de mapa femenino',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!await uiConfirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
 function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');configTabGamepad?.classList.toggle('hidden',tab!=='gamepad');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){Promise.all([fetchEnemyConfig(),fetchConfigClasses(),ensureConfigItemsHydrated()]).then(()=>{renderEnemySkillSelect();renderEnemyEquipment()})}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates();if(tab==='gamepad'&&typeof renderGamepadBindings==='function')renderGamepadBindings()})}
 
@@ -11282,22 +11051,6 @@ document.getElementById('wizardNextBtn')?.addEventListener('click',()=>{
  setWizardStep(characterWizardStep+1);
 });
 
-function renderRaceChoices(){
- const root=document.getElementById('raceChoices');if(!root)return;
- const raceIds=sortByGate('race',Object.keys(raceDefs));
- if(!raceIds.length){selectedRace=null;root.innerHTML=`<p class="small">${configRacesLoaded?'No hay razas configuradas. Crea al menos una en Configuración → Razas.':'Cargando razas configuradas desde la base de datos...'}</p>`;return}
- if(!raceIds.includes(selectedRace))selectedRace=raceIds.find(id=>gateUnlocked('race',id))||raceIds[0];
- root.innerHTML=raceIds.map(id=>{
-  const r=raceDefs[id],unlocked=gateUnlocked('race',id),g=gateFor('race',id);
-  // Locked races have no icon of their own today - the padlock takes that slot.
-  const lockIcon=unlocked?'':`<canvas class="choiceLockIcon" width="40" height="40" data-gate-lock></canvas>`;
-  const lockNote=unlocked?'':`<p class="small gateLockNote">Requiere Nivel PJ ${g.min_level||0} y ${g.min_points||0} puntos</p>`;
-  return `<div class="choice ${id===selectedRace?'selected':''} ${unlocked?'':'locked'}" data-race="${id}" data-locked="${unlocked?'0':'1'}">${lockIcon}${unlocked&&raceIconForId(id)?`<canvas class="raceChoiceIcon" width="42" height="42" data-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p>${lockNote}</div></div>`;
- }).join('');
- root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
- root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.raceIcon)));
- root.querySelectorAll('[data-race]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){uiAlert('Raza bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedRace=el.dataset.race;renderRaceChoices();renderGenderChoices()});
-}
 renderRaceChoices();
 
 // Advanced eligibility is the explicit config_class.advanced flag (set by
@@ -11338,7 +11091,7 @@ function renderClassChoices(){
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
  root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){uiAlert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
- const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles 3, 5, 10, 15, 20, 30 y 40.</p>`;
+ const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles ${SKILL_CHOICE_LEVELS.join(', ')}.</p>`;
 }
 renderClassChoices();
 document.getElementById('skillModeHardcode')?.addEventListener('change',()=>{selectedSkillMode='hardcode';renderClassChoices()});

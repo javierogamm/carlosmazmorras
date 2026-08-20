@@ -761,7 +761,7 @@ function openSoulseekerSkillPicker(){
  document.getElementById('skillChoiceTitle').textContent='ELIGE TU PRIMERA HABILIDAD DE CLASE';
  document.getElementById('skillChoiceText').textContent=`${game.player.className} · nivel ${game.player.level}. Elige una habilidad del pool real de tu clase.`;
  const grid=document.getElementById('skillChoiceGrid');
- grid.innerHTML=choices.map(id=>{const s=skillDefs[id],roman=['','I','II','III'][s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-soulseek-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
+ grid.innerHTML=choices.map(id=>{const s=skillDefs[id],roman=TIER_ROMAN[s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-soulseek-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${roman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  grid.querySelectorAll('[data-soulseek-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   const id=b.dataset.soulseekPickSkill,chosen=skillDefs[id];
