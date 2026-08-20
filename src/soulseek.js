@@ -703,7 +703,8 @@ async function soulseekFinishCharacterCreation(){
 }
 
 // ============================================================================
-// Level-2 advanced-class unlock. Hooked from classSkillConsistencyGuard
+// Second-floor advanced-class unlock. Hooked from the floor transition, with
+// the consistency guard retained as a fallback for restored/legacy state.
 // (called once per turn end in game.js), so it fires reliably without
 // depending on level-up animation timing and never collides with the stat
 // point / skill choice modals already in use.
@@ -714,7 +715,7 @@ function soulseekAdvancedClassIds(){
  return ids;
 }
 function soulseekCheckClassUnlock(){
- if(!game?.player?.soulseeker||game.player.cls||game.player.level<2)return;
+ if(!game?.player?.soulseeker||game.player.cls||game.floor<2)return;
  if(soulseekClassPickerOpen)return;
  if(document.getElementById('statPointModal')?.classList.contains('open'))return;
  if(document.getElementById('skillChoiceModal')?.classList.contains('open'))return;
