@@ -832,7 +832,9 @@ async function soulseekBankSoulsAndDie(){
  if(mainMenuActions&&!document.getElementById('menuSoulseekBtn')){
   const btn=document.createElement('button');
   btn.className='start';btn.id='menuSoulseekBtn';btn.type='button';btn.textContent='SOULSEEKER MODE';
-  mainMenuActions.appendChild(btn);
+  // Between STANDARD MODE and CONFIGURACIÓN, so the root menu reads
+  // standard / soulseeker / configuración.
+  mainMenuActions.insertBefore(btn,document.getElementById('menuConfigBtn'));
   btn.onclick=openSoulseekerMenu;
  }
 

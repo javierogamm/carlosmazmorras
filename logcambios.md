@@ -1,3 +1,14 @@
+## v0.96.0 - 2026-08-20
+
+- **Menú principal reorganizado en tres modos**: `STANDARD MODE`, `SOULSEEKER MODE` y `CONFIGURACIÓN`. Puntuaciones, Single Player y Multiplayer pasan a un submenú dentro de Standard Mode, con su propio «← VOLVER». Soulseeker y Configuración conservan su contenido.
+- El botón «MANDO / KEYBINDING» desaparece del menú principal: las asignaciones son ahora una pestaña **Mando** dentro de Configuración.
+- El overlay de mando se mantiene, porque el botón «menú de mando» del propio mando (L3 por defecto) es la única vía para llegar a las asignaciones **durante la partida**, donde la pantalla de Configuración no es accesible. Las dos copias (overlay y pestaña) se identifican por clase (`.gamepadStatus`, `.gamepadBindings`, `[data-gamepad-reset]`) en lugar de por id, de modo que `renderGamepadBindings()` las pinta a la vez y no pueden desincronizarse.
+- Todo camino de vuelta a la pantalla de inicio (salir de una partida, salir de Configuración, iniciar sesión) pasa por `showMainMenuRoot()`, así que siempre se aterriza en la raíz y nunca queda el submenú de Standard abierto por debajo.
+- La barra de pestañas de Configuración pasa a `flex-wrap`: con la pestaña nueva ya no cabían todas en una línea y las últimas quedaban cortadas fuera de la pantalla.
+- El botón CERRAR del overlay de mando declara `data-gamepad-cancel`, así que el botón B lo cierra.
+- Verificación en navegador: menú raíz con los tres modos en orden y sin el botón de mando; submenú de Standard con las tres entradas y su vuelta; pestaña Mando con las 12 asignaciones renderizadas, el estado del mando conectado y las dos copias sincronizadas al cambiar una tecla; vuelta desde Configuración aterrizando en la raíz aunque el submenú estuviera abierto; el botón de menú del mando sigue abriendo el overlay y B lo cierra. Repetidas todas las comprobaciones anteriores (asistente de creación con mando, ficha de raza, pociones sin modal, calavera de muerte, equipo inicial sobre cinco catálogos, partida real y `test/interiors.test.js`).
+- Actualizada la versión de runtime, paquete y cache-busting a `0.96.0`.
+
 ## v0.95.1 - 2026-08-20
 
 - **Pociones sin ventana de confirmación.** Usar una poción abría una pantalla completa «POCIÓN UTILIZADA» con un botón Continuar: detenía la partida en seco cada vez y tapaba el tablero justo en el momento en que el efecto se resolvía. Ahora se ve una animación donde la poción cae de verdad — sobre el enemigo o la casilla apuntada si es arrojada, sobre el personaje si es de uso propio — con el color de su rareza y su nombre flotando. El registro sigue anotando qué se usó y con qué efectos.

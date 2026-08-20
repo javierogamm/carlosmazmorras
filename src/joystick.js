@@ -46,12 +46,27 @@ try{gamepadBindings={...gamepadBindings,...JSON.parse(localStorage.getItem('game
 
 // ---- Bindings menu ---------------------------------------------------------
 function gamepadButtonName(index){return ['A / ✕','B / ○','X / □','Y / △','LB / L1','RB / R1','LT / L2','RT / R2','SELECT','START','L3','R3','CRUCETA ↑','CRUCETA ↓','CRUCETA ←','CRUCETA →'][index]||`Botón ${index}`}
-function renderGamepadBindings(){const root=document.getElementById('gamepadBindings');if(!root)return;root.innerHTML=Object.entries(GAMEPAD_ACTIONS).map(([id,label])=>`<div class="gamepadBinding"><span><b>${label}</b><small>${gamepadButtonName(gamepadBindings[id])}</small></span><button type="button" data-gamepad-bind="${id}" class="${gamepadListening===id?'listening':''}">${gamepadListening===id?'PULSA UN BOTÓN…':'CAMBIAR'}</button></div>`).join('');root.querySelectorAll('[data-gamepad-bind]').forEach(b=>b.onclick=()=>{gamepadListening=b.dataset.gamepadBind;renderGamepadBindings()})}
+// The bindings live in two places at once: the #gamepadOverlay (opened by the
+// pad's own "menú de mando" button, the only route available mid-run) and the
+// Mando tab of the Configuración screen. Both are addressed by class so every
+// copy is rendered from the same state and they can never show different
+// bindings.
+function renderGamepadBindings(){
+ const roots=[...document.querySelectorAll('.gamepadBindings')];if(!roots.length)return;
+ const html=Object.entries(GAMEPAD_ACTIONS).map(([id,label])=>`<div class="gamepadBinding"><span><b>${label}</b><small>${gamepadButtonName(gamepadBindings[id])}</small></span><button type="button" data-gamepad-bind="${id}" class="${gamepadListening===id?'listening':''}">${gamepadListening===id?'PULSA UN BOTÓN…':'CAMBIAR'}</button></div>`).join('');
+ for(const root of roots){
+  root.innerHTML=html;
+  root.querySelectorAll('[data-gamepad-bind]').forEach(b=>b.onclick=()=>{gamepadListening=b.dataset.gamepadBind;renderGamepadBindings()});
+ }
+}
 function openGamepadMenu(){gamepadListening=null;renderGamepadBindings();document.getElementById('gamepadOverlay')?.classList.remove('hidden')}
 function closeGamepadMenu(){gamepadListening=null;document.getElementById('gamepadOverlay')?.classList.add('hidden')}
+// menuGamepadBtn no longer exists (the bindings moved into Configuración >
+// Mando); the optional chaining keeps this harmless for any build that still
+// ships that button.
 document.getElementById('menuGamepadBtn')?.addEventListener('click',openGamepadMenu);
 document.getElementById('closeGamepadBtn')?.addEventListener('click',closeGamepadMenu);
-document.getElementById('resetGamepadBtn')?.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()});
+document.querySelectorAll('[data-gamepad-reset]').forEach(btn=>btn.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()}));
 
 // ---- Screens, zones and focus ---------------------------------------------
 function cycleGameTab(direction){const tabs=[...document.querySelectorAll('.tabs [data-tab]')].filter(b=>!b.classList.contains('hidden'));if(!tabs.length)return;const current=Math.max(0,tabs.findIndex(b=>b.classList.contains('active')));tabs[(current+direction+tabs.length)%tabs.length].click()}
@@ -222,9 +237,9 @@ function gamepadDirections(pad,pressed,now){
  else navigateMenu(my||mx);
 }
 function pollGamepads(now=0){
- const pad=[...(navigator.getGamepads?.()||[])].find(Boolean),status=document.getElementById('gamepadStatus');
+ const pad=[...(navigator.getGamepads?.()||[])].find(Boolean);
  gamepadConnected=!!pad;
- if(status){status.textContent=pad?`Conectado: ${pad.id}`:'Sin mando detectado';status.classList.toggle('connected',!!pad)}
+ for(const status of document.querySelectorAll('.gamepadStatus')){status.textContent=pad?`Conectado: ${pad.id}`:'Sin mando detectado';status.classList.toggle('connected',!!pad)}
  if(pad){
   const pressed=pad.buttons.map(b=>b.pressed);
   if(gamepadListening!==null){
@@ -240,4 +255,7 @@ function pollGamepads(now=0){
  requestAnimationFrame(pollGamepads);
 }
 addEventListener('gamepadconnected',()=>renderGamepadBindings());
+// Fill both copies once at startup so Configuración > Mando is already
+// populated the first time it is opened, with or without a pad plugged in.
+renderGamepadBindings();
 requestAnimationFrame(pollGamepads);
