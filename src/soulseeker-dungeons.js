@@ -24,7 +24,7 @@
 // - Enemies/tier/loot/chests are already recalculated every floor purely
 //   from the player's CURRENT level (game.floorEntryLevel, read fresh at
 //   the top of generateFloor()) - nothing extra needed for that part.
-// - Four difficulty presets (chosen at character creation) map onto the
+// - Five difficulty presets (chosen at character creation) map onto the
 //   existing worldParams() multipliers plus a per-kill soul-doubling
 //   chance and a per-floor guaranteed reward (1 max-tier equipment item +
 //   N souls, N by difficulty).
@@ -37,7 +37,8 @@ const SOULSEEK_DIFFICULTIES={
  easy:     {label:'Easy',      pct:100, soulDoubleChance:0,   floorSouls:3},
  normal:   {label:'Normal',    pct:125, soulDoubleChance:.25, floorSouls:5},
  hard:     {label:'Hard',      pct:150, soulDoubleChance:.5,  floorSouls:7},
- nightmare:{label:'Nightmare', pct:200, soulDoubleChance:.10, floorSouls:10}
+ nightmare:{label:'Nightmare', pct:200, soulDoubleChance:.10, floorSouls:10},
+ hell:     {label:'Hell',      pct:400, soulDoubleChance:.10, floorSouls:20}
 };
 let soulseekSelectedDifficulty='normal';
 
@@ -56,7 +57,7 @@ function soulseekDifficultyConfig(){
 (function injectSoulseekDungeonStyles(){
  const style=document.createElement('style');
  style.textContent=`
-  #soulseekDifficultyChoices{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 14px}
+  #soulseekDifficultyChoices{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:6px 0 14px}
   #soulseekDifficultyChoices button.selected{border-color:#ffc35a;box-shadow:0 0 10px #ffc35a55;background:#3a2748}
   @media(max-width:620px){#soulseekDifficultyChoices{grid-template-columns:repeat(2,1fr)}}
   #soulseekLoadingOverlay{position:fixed;inset:0;z-index:10500;background:#050308f0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center}
@@ -277,6 +278,13 @@ function soulseekGrantFloorReward(){
  updateUI();
 }
 
+function soulseekPersistFloorProgress(){
+ if(!game?.pjId)return;
+ const bundle=characterBundleFromGame();
+ fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pj_json:bundle,feats:bundle.feats,pj_score:computeScore(bundle),pj_name:game.player.name,last_use:new Date().toISOString()})})
+  .catch(e=>console.error('No se pudo guardar el progreso de pisos Soulseek',e));
+}
+
 // ============================================================================
 // Wiring: wrap the game.js functions that need Soulseeker-specific
 // behaviour. Every wrapper falls straight through to the original function
@@ -317,7 +325,7 @@ function soulseekGrantFloorReward(){
    const block=stairsBlockedReason();
    if(block){log(block,'combat');return}
    soulseekGrantFloorReward();
-   game.floor++;soulseekApplyFloorPlan(game.floor);generateFloor();
+   game.floor++;game.maxFloorReached=Math.max(game.maxFloorReached||1,game.floor);soulseekPersistFloorProgress();soulseekApplyFloorPlan(game.floor);generateFloor();
   }
  };
 

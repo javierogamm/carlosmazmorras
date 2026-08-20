@@ -1,3 +1,16 @@
+## v0.98.1 - 2026-08-20
+
+- La tabla de puntuaciones Soulseek muestra ahora los **pisos terminados** de cada personaje en lugar del contador de dungeons completas, que siempre permanecía a cero en este modo infinito.
+- El progreso de piso se guarda al subir al siguiente piso, de modo que la clasificación refleja también el avance actual de personajes vivos. Los personajes existentes recuperan el dato desde `maxFloorReached` guardado en su ficha.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.98.1`.
+
+## v0.98.0 - 2026-08-20
+
+- Actualizados los precios de la tienda Soulseek: las pociones cuestan 5, 7, 10 y 15 souls por tier, y los objetos cuestan 5, 20, 30 y 50 souls por tier.
+- Los objetos legendarios escalan dentro de una misma sesión de compras: el primero conserva su precio base de 50 souls, el segundo cuesta 60 y desde el tercero cuestan 75 souls cada uno. Las pociones y los artefactos no incrementan este contador.
+- Añadida la dificultad **HELL** a Soulseek, con los modificadores de vida enemiga, daño recibido y experiencia recibida al 400 % (x4), siguiendo el mismo sistema con el que Nightmare aplica x2, y una recompensa de 20 souls por piso.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.98.0`.
+
 ## v0.97.0 - 2026-08-20
 
 - Configuración → Razas permite guardar dos iconos adicionales, masculino y femenino, destinados al mapa de Soulseek. Mientras el personaje está sin clase se muestra el icono de mapa correspondiente a su raza y sexo; al elegir clase vuelve a utilizar el icono de clase.
