@@ -73,6 +73,12 @@ if(typeof WORLD_OBJECT_KINDS!=='undefined'){
 function classlessIconForGender(gender){
  return configWorldObjects[gender==='female'?'pj_classless_female':'pj_classless_male']||configWorldObjects.pj_classless||'';
 }
+// Race-specific classless art is exclusive to Soulseek. World-object art
+// remains the fallback for races that do not configure either map icon.
+function soulseekClasslessMapIcon(raceId,gender){
+ const race=raceDefs[raceId]||{};
+ return (gender==='female'?race.mapIconFemale:race.mapIconMale)||classlessIconForGender(gender);
+}
 if(typeof MAIN_MENU_SCREEN_IDS!=='undefined'){
  for(const id of ['soulseekOverlay','soulseekScoresScreen','soulseekUnlocksOverlay','soulseekCreateOverlay'])
   if(!MAIN_MENU_SCREEN_IDS.includes(id))MAIN_MENU_SCREEN_IDS.push(id);
@@ -405,13 +411,20 @@ async function soulseekStartCharacter(){
  const stats={strength:2,vitality:2,agility:2,luck:2,intelligence:2,wisdom:2};
  const maxHp=30+stats.vitality*6,maxStamina=45+stats.strength*4,maxMana=30+stats.wisdom*5+stats.intelligence*3;
  const equipment=Object.fromEntries(slots.map(s=>[s,null]));
- game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,autoNamed:!typedName,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:classlessIconForGender(soulseekSelectedGender),skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
+ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,dungeonWorldName:selectedDungeonWorld?.world_name||null,worldParams:normalizeWorldParams(selectedDungeonWorld?.world_json?.params),inventory:[],achievements:{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,player:{name,autoNamed:!typedName,race,gender:soulseekSelectedGender,raceIcon:raceIconForId(race,soulseekSelectedGender),cls:null,className:'Sin clase',classIcon:soulseekClasslessMapIcon(race,soulseekSelectedGender),skillMode:'advanced',combatMode:'ap',soulseeker:true,level:1,xp:0,nextXp:xpNeededForLevel(1),hp:maxHp,maxHp,stamina:maxStamina,maxStamina,mana:maxMana,maxMana,baseDamage:2+stats.strength,baseArmor:4+Math.floor(stats.vitality/2),gold:0,keys:0,vision:4+Math.floor((stats.intelligence||0)/4),shield:0,stats,equipment,knownSkills:[],skillProgress:{},skillChoicesAwarded:{},equippedSkills:[null,null,null,null],cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},souls:0}};
  const rb=raceDefs[race]?.bonuses||{};
  game.player.raceName=raceDefs[race]?.name||race;
  game.player.raceBonuses={...rb};
  const racialSkill=raceDefs[race]?.skill;
  if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
  if(rb.armor)game.player.baseArmor+=rb.armor;
+ // Materialize racial stats and resource maxima before floor 1. Previously
+ // they were only derived during floor generation, after the current HP,
+ // stamina and mana had already been created from the flat baseline.
+ recomputeDerived();
+ game.player.hp=game.player.maxHp;
+ game.player.stamina=game.player.maxStamina;
+ game.player.mana=game.player.maxMana;
  // Always ask. Entering floor 1 must go through the loadout wizard, no
  // matter what the catalogue holds - it used to be skipped silently unless
  // there were BOTH common weapons and common potions configured, which is
