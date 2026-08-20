@@ -1,3 +1,10 @@
+## v0.97.0 - 2026-08-20
+
+- Configuración → Razas permite guardar dos iconos adicionales, masculino y femenino, destinados al mapa de Soulseek. Mientras el personaje está sin clase se muestra el icono de mapa correspondiente a su raza y sexo; al elegir clase vuelve a utilizar el icono de clase.
+- Si una raza no tiene configurado su icono de mapa para el sexo elegido, Soulseek conserva como respaldo el icono classless establecido en Configuración → Objetos del mundo. El modo Standard no cambia.
+- Los bonus raciales de un personaje Soulseek se calculan al crearlo en nivel 1 y sus puntos de vida, stamina y maná se rellenan hasta los máximos raciales antes de entrar al piso 1, evitando que nazca con los valores planos.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.97.0`.
+
 ## v0.96.0 - 2026-08-20
 
 - **Menú principal reorganizado en tres modos**: `STANDARD MODE`, `SOULSEEKER MODE` y `CONFIGURACIÓN`. Puntuaciones, Single Player y Multiplayer pasan a un submenú dentro de Standard Mode, con su propio «← VOLVER». Soulseeker y Configuración conservan su contenido.
