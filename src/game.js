@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.94.3';
+const APP_VERSION='0.96.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1173,13 +1173,23 @@ function endExternalEffectsCast(){activeExternalCast=null}
 function potionCastId(item){return `potion:${item.id}`}
 function beginPotionCast(item){return beginExternalEffectsCast(potionCastId(item),item)}
 function endPotionCast(){endExternalEffectsCast()}
-function finishPotionUse(item){
+// Splash played where the potion actually landed - on the enemy/tile for a
+// thrown one, on the player for a self-cast. This replaced a full-screen
+// "POCIÓN UTILIZADA" overlay with a Continuar button: stopping the run dead
+// on every single potion was the wrong weight for something you do
+// constantly, and it made the board impossible to read at the exact moment
+// the effect resolved. The log line still records what was used.
+function potionSplash(item,x,y){
+ const color=tierColor(item.rarity)||'#8dffa8';
+ combatFx('buff',x,y,{color,accent:'#fff6d8',icon:'⚗',theme:'alchemy'});
+ for(let i=0;i<4;i++)setTimeout(()=>combatFx('buff',x,y,{color,accent:color,icon:'✦',theme:'alchemy',subtle:true}),70+i*60);
+ floating(item.name,x,y,color);
+}
+function finishPotionUse(item,x=game.player.x,y=game.player.y){
  if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(i=>i.id!==item.id);
- recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name} usada.`,'loot');
- storyTitle.textContent='POCIÓN UTILIZADA';
- storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${describePotionEffects(item)||item.desc||''}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;
- storyOverlay.classList.remove('hidden');
- setTimeout(()=>{const button=document.getElementById('closePotionMessage');if(!button)return;button.addEventListener('click',()=>{storyOverlay.classList.add('hidden');returnToGameplay()});focusGamepadElement(button)},0);
+ recomputeDerived();updateUI();draw();
+ potionSplash(item,x,y);
+ log(`${item.name} usada: ${describePotionEffects(item)||item.desc||'sin efectos'}.`,'loot');
 }
 // All-self effects (heal/buff/hot/utility/etc, same as a self-cast skill)
 // resolve instantly on click, exactly like today; any component targeting
@@ -1200,7 +1210,7 @@ function usePotion(id){
  const used=applySkillEffectsList(castId,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
  endPotionCast();
  if(!used){log('La poción no tuvo ningún efecto.','sys');return}
- finishPotionUse(item);
+ finishPotionUse(item,game.player.x,game.player.y);
 }
 // Confirmed target click for a thrown potion (mirrors resolveTargetedSkill).
 function resolveTargetedPotion(potionId,x,y){
@@ -1214,7 +1224,7 @@ function resolveTargetedPotion(potionId,x,y){
  const used=applySkillEffectsList(castId,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
  endPotionCast();
  if(!used){if(mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');return false}
- finishPotionUse(item);
+ finishPotionUse(item,x,y);
  cancelTargeting('');
  return true;
 }
@@ -5705,11 +5715,46 @@ function configuredReviveSource(){
  for(const item of game.inventory||[])if(item.type==='potion')for(const effect of item.effects||[])if(effect.kind==='revive')candidates.push({effect,consume:()=>{if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(x=>x!==item)}});
  return candidates.find(x=>(x.effect.soulsCost||0)<=(p.souls||0))||null;
 }
+// Two seconds of a skull rising and spinning over the corpse before any
+// death screen opens. Deliberately driven from the death HANDLERS rather
+// than from permanentDeath(): that function is also reached from "volver al
+// menú" in Soulseek and from banking souls, and a skull flying up because
+// you clicked a menu button would make no sense.
+// game.over is already true by the time either handler runs (see the two
+// call sites), so the player cannot act during the animation.
+const DEATH_SKULL_MS=2000;
+function playDeathSkullAnimation(done){
+ // Parented to #gameStage, not to #combatFxLayer: that layer is
+ // overflow:hidden and would clip the skull as it climbs out of the tile.
+ // Both boxes are the same size (the layer is inset:0 on the stage), so the
+ // percentage positioning below is identical either way.
+ const stage=document.getElementById('gameStage');
+ if(!stage||!game?.player){done();return}
+ const c=camera(),pct=100/visibleTiles;
+ const el=document.createElement('i');
+ el.className='deathSkull';
+ el.textContent='☠';
+ el.style.left=`${(game.player.x-c.x+.5)*pct}%`;
+ el.style.top=`${(game.player.y-c.y+.5)*pct}%`;
+ stage.appendChild(el);
+ const finish=()=>{el.remove();done()};
+ if(window.gsap){
+  gsap.fromTo(el,{scale:.2,opacity:0,rotation:0,yPercent:0},
+   {scale:1.9,opacity:1,rotation:720,yPercent:-260,duration:DEATH_SKULL_MS/1000,ease:'power1.out',
+    onComplete:()=>gsap.to(el,{opacity:0,duration:.25,onComplete:finish})});
+ }else{
+  el.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.2) rotate(0deg)'},
+              {opacity:1,transform:'translate(-50%,-160%) scale(1.9) rotate(540deg)',offset:.75},
+              {opacity:0,transform:'translate(-50%,-260%) scale(1.9) rotate(720deg)'}],
+             {duration:DEATH_SKULL_MS,easing:'ease-out'}).onfinish=finish;
+  setTimeout(finish,DEATH_SKULL_MS+400);
+ }
+}
 function handlePlayerDeath(){
  const automatic=configuredReviveSource();
  if(automatic){automatic.consume();if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}reviveAtCurrentPosition(automatic.effect.hpPercent||50);banner('REVIVIR');return}
- if((game.player.souls||0)>=20&&!game.multiplayer){showSoulReviveModal();return}
- permanentDeath();
+ const next=((game.player.souls||0)>=20&&!game.multiplayer)?showSoulReviveModal:permanentDeath;
+ playDeathSkullAnimation(next);
 }
 function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){
@@ -8781,7 +8826,7 @@ async function responseJson(response){
 }
 function setupRaceConfigMode(){const fields=document.getElementById('configRaceStatsFields');if(!fields)return;if(!fields.children.length)fields.innerHTML=Object.entries(RACE_STAT_FIELDS).map(([k,l])=>`<label>${l}<input type="number" step="0.01" data-race-stat="${k}"></label>`).join('');const picker=document.getElementById('configRaceEffectKindPicker');if(!picker.options.length)picker.innerHTML=['dmg','dot','buff','debuff','heal','move','cc','fear','mesmer','drain','aoe','multihit','mark','summon','summonturret','utility','hot','execute','pullroot','counter','cheatdeath','holyshield','lineshot','trap','clones','linkdamage','invisible','ascend','transform','revive'].map(k=>`<option value="${k}">${effectKindLabel(k)}</option>`).join('');if(!window.raceIconEditor)window.raceIconEditor=setupImageIconEditor({inputId:'configRaceImageInput',canvasId:'configRaceCropCanvas',previewId:'configRaceIconPreview',statusId:'configRaceIconStatus',zoomId:'configRaceCropZoom',eraserId:'configRaceMagicEraserBtn',toleranceId:'configRaceMagicTolerance',hexKey:'currentConfigRaceIconHex',statusPrefix:'Icono masculino de raza',maxSize:128});if(!window.raceFemaleIconEditor)window.raceFemaleIconEditor=setupImageIconEditor({inputId:'configRaceFemaleImageInput',canvasId:'configRaceFemaleCropCanvas',previewId:'configRaceFemaleIconPreview',statusId:'configRaceFemaleIconStatus',zoomId:'configRaceFemaleCropZoom',eraserId:'configRaceFemaleMagicEraserBtn',toleranceId:'configRaceFemaleMagicTolerance',hexKey:'currentConfigRaceFemaleIconHex',statusPrefix:'Icono femenino de raza',maxSize:128});configRaceSelect.onchange=e=>e.target.value?loadConfigRace(e.target.value):loadConfigRace(null);addRaceEffectBtn.onclick=()=>{window.currentRaceEffectsDraft=window.currentRaceEffectsDraft||[];window.currentRaceEffectsDraft.push(defaultComponentFor(picker.value));renderRaceEffects()};newConfigRaceBtn.onclick=()=>loadConfigRace(null);saveConfigRaceBtn.onclick=async()=>{const st=configRaceStatus;try{const payload=currentRacePayload();if(!payload.nombre)throw new Error('El nombre es obligatorio');st.textContent='Guardando...';const method=window.editingConfigRaceId?'PUT':'POST',url=`/api/config-class?kind=races${window.editingConfigRaceId?`&id=${window.editingConfigRaceId}`:''}`;const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo guardar');window.editingConfigRaceId=data.id||window.editingConfigRaceId;await fetchConfigRaces({light:true});st.textContent='Raza guardada.'}catch(e){st.textContent=e.message}};deleteConfigRaceBtn.onclick=async()=>{if(!window.editingConfigRaceId||!await uiConfirm('¿Eliminar esta raza?'))return;await fetch(`/api/config-class?kind=races&id=${window.editingConfigRaceId}`,{method:'DELETE'});window.editingConfigRaceId=null;await fetchConfigRaces();loadConfigRace(null)};exportConfigRacesBtn.onclick=()=>{const a=document.createElement('a'),blob=new Blob([JSON.stringify(configRaces.map(({nombre,skill,stats})=>({nombre,skill,stats})),null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download='config-razas.json';a.click();URL.revokeObjectURL(a.href)};importConfigRacesInput.onchange=async()=>{try{for(const file of importConfigRacesInput.files){const raw=JSON.parse(await file.text());for(const row of (Array.isArray(raw)?raw:[raw])){const r=await fetch('/api/config-class?kind=races',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});if(!r.ok)throw new Error((await r.json()).error)}}await fetchConfigRaces();configRaceStatus.textContent='Importación completada.'}catch(e){configRaceStatus.textContent=e.message}finally{importConfigRacesInput.value=''}};renderRaceEffects()}
 
-function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){Promise.all([fetchEnemyConfig(),fetchConfigClasses(),ensureConfigItemsHydrated()]).then(()=>{renderEnemySkillSelect();renderEnemyEquipment()})}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates()})}
+function setupConfigTabs(){document.querySelectorAll('[data-config-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.configTab;document.querySelectorAll('[data-config-tab]').forEach(b=>b.classList.toggle('active',b===btn));configTabItems.classList.toggle('hidden',tab!=='items');configTabPotions?.classList.toggle('hidden',tab!=='potions');configTabClasses.classList.toggle('hidden',tab!=='classes');configTabRaces?.classList.toggle('hidden',tab!=='races');configTabTilesets.classList.toggle('hidden',tab!=='tilesets');configTabDungeons?.classList.toggle('hidden',tab!=='dungeons');configTabEnemies?.classList.toggle('hidden',tab!=='enemies');configTabChests?.classList.toggle('hidden',tab!=='chests');configTabWorldObjects?.classList.toggle('hidden',tab!=='worldobjects');configTabGates?.classList.toggle('hidden',tab!=='gates');configTabTesting?.classList.toggle('hidden',tab!=='testing');configTabGamepad?.classList.toggle('hidden',tab!=='gamepad');if(tab==='races'&&!configRacesLoaded)fetchConfigRaces();if(tab==='enemies'){Promise.all([fetchEnemyConfig(),fetchConfigClasses(),ensureConfigItemsHydrated()]).then(()=>{renderEnemySkillSelect();renderEnemyEquipment()})}if(tab==='dungeons')fetchConfigDungeons();if(tab==='worldobjects'&&!configWorldObjectsLoaded)fetchConfigWorldObjects({minimal:true});if(tab==='gates'&&!configGatesLoaded)fetchConfigGates();if(tab==='gamepad'&&typeof renderGamepadBindings==='function')renderGamepadBindings()})}
 
 function setupImageIconEditor({inputId,canvasId,previewId,statusId,zoomId,eraserId,toleranceId,hexKey,statusPrefix,outline=true,onSave,aspect={w:1,h:1},maxSize=0}){
  const imgInput=document.getElementById(inputId),crop=document.getElementById(canvasId),preview=document.getElementById(previewId),status=document.getElementById(statusId),zoom=document.getElementById(zoomId),eraserBtn=document.getElementById(eraserId),tolerance=document.getElementById(toleranceId);
@@ -9518,7 +9563,7 @@ async function goToMainMenu(){
   return;
  }
  landingOverlay.classList.remove('hidden');
- mainMenuActions?.classList.remove('hidden');
+ showMainMenuRoot();
  loginForm?.classList.add('hidden');
 }
 document.getElementById('globalMenuBtn').onclick=goToMainMenu;
@@ -11154,6 +11199,20 @@ document.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{const[x,y]=b.
 document.getElementById('saveRunBtn')?.addEventListener('click',saveCurrentRun);
 document.querySelectorAll('.craftTabBtn').forEach(b=>b.addEventListener('click',()=>switchCraftTab(b.dataset.craftTab)));
 const enterConfig=()=>{landingOverlay.classList.add('hidden');configScreen.classList.remove('hidden');setupConfigTabs();setupConfigMode();setupConfigPotionMode();setupClassConfigMode();setupRaceConfigMode();setupTilesetConfigMode();setupEnemyConfigMode();setupChestConfigMode();setupConfigWorldObjectsMode();setupConfigAssetsMode();setupConfigGatesMode();setupDungeonConfigMode();setupTestingMode();fetchConfigItems({light:true});fetchConfigClasses({light:true});fetchConfigRaces({light:true});fetchConfigFloors({light:true});setupWorldSettings()};
+// The landing has two levels now: the root (Standard / Soulseeker /
+// Configuración) and the Standard submenu (Puntuaciones / Single / Multi).
+// Every path that returns to the landing goes through here so it always lands
+// on the root instead of leaving the submenu showing.
+function showMainMenuRoot(){
+ document.getElementById('mainMenuActions')?.classList.remove('hidden');
+ document.getElementById('standardModeActions')?.classList.add('hidden');
+}
+function showStandardModeMenu(){
+ document.getElementById('mainMenuActions')?.classList.add('hidden');
+ document.getElementById('standardModeActions')?.classList.remove('hidden');
+}
+document.getElementById('menuStandardBtn')?.addEventListener('click',showStandardModeMenu);
+document.getElementById('standardBackBtn')?.addEventListener('click',showMainMenuRoot);
 menuScoresBtn.onclick=()=>{landingOverlay.classList.add('hidden');scoresScreen.classList.remove('hidden');fetchScores()};
 document.getElementById('backFromScoresBtn').onclick=()=>{scoresScreen.classList.add('hidden');landingOverlay.classList.remove('hidden')};
 menuSingleBtn.onclick=openSinglePlayerScreen;
@@ -11162,8 +11221,8 @@ document.getElementById('spSelectCharBtn').onclick=openCharacterSelection;
 document.getElementById('spNewCharBtn').onclick=openCharacterCreation;
 document.getElementById('spContinueBtn').onclick=openSessionContinue;
 menuConfigBtn.onclick=()=>{if(!window.currentUser?.admin){uiAlert('Solo administradores pueden acceder a Configurar.');return}enterConfig()};
-loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
-backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');mainMenuActions.classList.remove('hidden');loginForm.classList.add('hidden')};
+loginForm.onsubmit=async e=>{e.preventDefault();loginBtn.disabled=true;loginStatus.textContent='Entrando...';try{const r=await fetch('/api/user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:loginName.value,pass:loginPass.value})}),data=await responseJson(r);if(!r.ok)throw new Error(data.error||'No se pudo iniciar sesión');window.currentUser=data;try{localStorage.setItem('mazmorraUser',JSON.stringify(data))}catch(err){}loginStatus.textContent=`Sesión iniciada: ${data.nombre}${data.admin?' · admin':''}`;const statsEl=document.getElementById('userProgressStats');if(statsEl){statsEl.textContent=`Nivel máximo de PJ: ${data.max_pj_lv||0} · PUNTUACIÓN: ${Math.round(data.accumulated_points||0)}`;statsEl.classList.remove('hidden')}showMainMenuRoot();loginForm.classList.add('hidden')}catch(err){loginStatus.textContent=err.message}finally{loginBtn.disabled=false}};
+backToLandingBtn.onclick=()=>{configScreen.classList.add('hidden');landingOverlay.classList.remove('hidden');showMainMenuRoot();loginForm.classList.add('hidden')};
 
 
 

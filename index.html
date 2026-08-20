@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>MAZMORRA // BOTÍN v0.89.3 RENDER DUNGEON</title>
-<link rel="stylesheet" href="./src/styles.css?v=0.94.3">
+<link rel="stylesheet" href="./src/styles.css?v=0.96.0">
 
 </head>
 <body>
@@ -112,12 +112,20 @@
   </form>
   <div id="loginStatus" class="small"></div>
   <div id="userProgressStats" class="small userProgressStats hidden"></div>
+  <!-- Root menu: three modes. SOULSEEKER MODE is injected between STANDARD
+       and CONFIGURACIÓN by soulseek.js (see wireSoulseekMode). The gamepad
+       bindings used to be a fifth button here; they are a tab inside
+       Configuración now, and the pad's own "menú de mando" button still opens
+       them from anywhere, including mid-run. -->
   <div class="landingActions hidden" id="mainMenuActions">
+   <button class="start" id="menuStandardBtn" type="button">STANDARD MODE</button>
+   <button class="start" id="menuConfigBtn">CONFIGURACIÓN</button>
+  </div>
+  <div class="landingActions hidden" id="standardModeActions">
    <button class="start" id="menuScoresBtn">PUNTUACIONES</button>
    <button class="start" id="menuSingleBtn">SINGLE PLAYER</button>
    <button class="start" id="menuMultiBtn">MULTIPLAYER</button>
-   <button class="start" id="menuConfigBtn">CONFIGURAR</button>
-   <button class="start" id="menuGamepadBtn" type="button">MANDO / KEYBINDING</button>
+   <button class="start" id="standardBackBtn" type="button">← VOLVER</button>
   </div>
  </div>
 </div>
@@ -126,9 +134,9 @@
  <div class="modal gamepadModal">
   <h2>MANDO / KEYBINDING</h2>
   <p class="small">Conecta un mando. Pulsa «Cambiar» y después el botón que quieras asignar. <b>Stick izquierdo</b>: mueve siempre al personaje, o el cursor de ataque/habilidad al apuntar. <b>Cruceta</b>: navega siempre por los menús laterales y por los botones de cualquier ventana abierta. <b>Hombros</b>: cambian de pestaña o de zona.</p>
-  <div id="gamepadStatus" class="gamepadStatus">Sin mando detectado</div>
-  <div id="gamepadBindings" class="gamepadBindings"></div>
-  <div class="startActions"><button type="button" id="resetGamepadBtn">RESTAURAR</button><button type="button" id="closeGamepadBtn">CERRAR</button></div>
+  <div class="gamepadStatus">Sin mando detectado</div>
+  <div class="gamepadBindings"></div>
+  <div class="startActions"><button type="button" data-gamepad-reset>RESTAURAR</button><button type="button" id="closeGamepadBtn" data-gamepad-cancel>CERRAR</button></div>
  </div>
 </div>
 
@@ -189,7 +197,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.4 RAZAS CONFIGURADAS</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button><button type="button" data-config-tab="gamepad">Mando</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -713,6 +721,19 @@
    <section class="panel"><h2>Vista previa navegable</h2><div class="dungeonPreviewNav"><button id="dungeonPreviewPrev">◀</button><b id="dungeonPreviewLabel">Piso 1</b><button id="dungeonPreviewNext">▶</button></div><canvas id="dungeonGeometryPreview" width="520" height="520"></canvas><p class="small">Suelo, muros, salas, puertas, enemigos, cofres, entrada y salida en una representación simplificada.</p><h2>Dungeons guardadas</h2><div id="dungeonConfigList" class="configItemsList"></div></section>
   </div>
  </div>
+ <!-- Gamepad bindings, same controls as #gamepadOverlay. Both copies are
+      addressed by CLASS (.gamepadStatus/.gamepadBindings/[data-gamepad-reset])
+      rather than by id so joystick.js can render into every copy at once and
+      they can never drift apart - the overlay stays because the pad's own
+      "menú de mando" button opens it mid-run, where the config screen is not
+      reachable. -->
+ <div class="configTabPanel hidden" id="configTabGamepad">
+  <h3>Mando / keybinding</h3>
+  <p class="small">Conecta un mando. Pulsa «Cambiar» y después el botón que quieras asignar. <b>Stick izquierdo</b>: mueve siempre al personaje, o el cursor de ataque/habilidad al apuntar. <b>Cruceta</b>: navega siempre por los menús laterales y por los botones de cualquier ventana abierta. <b>Hombros</b>: cambian de pestaña o de zona.</p>
+  <div class="gamepadStatus">Sin mando detectado</div>
+  <div class="gamepadBindings"></div>
+  <div class="startActions"><button type="button" data-gamepad-reset>RESTAURAR VALORES POR DEFECTO</button></div>
+ </div>
  <div class="configTabPanel hidden" id="configTabTesting">
   <p class="small">Personaje y piso 100% temporales para probar combate, skills y archetypes de piso: no se guardan en Supabase y no están sujetos a bloqueos de nivel/puntuación. Sales en cualquier momento con "☰ MENÚ PRINCIPAL".</p>
   <div class="configLayout">
@@ -887,13 +908,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/interiors.js?v=0.94.3"></script>
-<script src="./src/game.js?v=0.94.3"></script>
-<script src="./src/joystick.js?v=0.94.3"></script>
-<script src="./src/soulseek.js?v=0.94.3"></script>
-<script src="./src/soulseeker-dungeons.js?v=0.94.3"></script>
-<script src="./src/soulseek_shop.js?v=0.94.3"></script>
-<script src="./src/loading-overlays.js?v=0.94.3"></script>
+<script src="./src/interiors.js?v=0.96.0"></script>
+<script src="./src/game.js?v=0.96.0"></script>
+<script src="./src/joystick.js?v=0.96.0"></script>
+<script src="./src/soulseek.js?v=0.96.0"></script>
+<script src="./src/soulseeker-dungeons.js?v=0.96.0"></script>
+<script src="./src/soulseek_shop.js?v=0.96.0"></script>
+<script src="./src/loading-overlays.js?v=0.96.0"></script>
 
 </body>
 </html>

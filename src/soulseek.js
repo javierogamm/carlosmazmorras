@@ -41,6 +41,17 @@ let soulseekClassPickerOpen=false;
   .soulseekLoadoutCard canvas{width:48px;height:48px}
   .soulseekLoadoutCard b{font-size:12px;color:#ffd68b}
   .soulseekLoadoutTypeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}
+  .soulseekRaceDetailBox{width:min(560px,100%);max-height:92vh;overflow:auto}
+  .soulseekRaceDetailHead{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .soulseekRaceDetailHead h2{margin:0;color:#ffd477}
+  .soulseekRaceDetailHead canvas{width:84px;height:84px;background:#1c1224;border:2px solid #59406b;flex:0 0 auto}
+  .soulseekRaceDetailStats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+  .soulseekRaceDetailStats span{display:flex;justify-content:space-between;gap:8px;background:#1c1224;border:1px solid #4d395a;padding:5px 8px;font-size:12px}
+  .soulseekRaceDetailStats b{color:#8dffa8}
+  .soulseekRaceDetailSkill{background:#1c1224;border:2px solid #59406b;padding:10px}
+  .soulseekRaceDetailSkill b{display:block;color:#ffd68b}
+  .soulseekRaceDetailSkill p{margin:6px 0 0}
+  @media(max-width:600px){.soulseekRaceDetailStats{grid-template-columns:1fr}}
   .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
   #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
@@ -119,22 +130,71 @@ function soulseekEnsureDom(){
  </div>
 </div>
 
+<!-- Three-step wizard (raza -> sexo -> nombre) instead of one long column.
+     Everything used to be stacked on a single screen - race grid, sexo,
+     dificultad (injected by soulseeker-dungeons.js after #soulseekGenderChoices)
+     and nombre - which simply did not fit. Reuses the exact same
+     .characterWizard / .wizardProgress / .wizardTrack / .wizardNav markup and
+     CSS as the normal character creation: fixed modal height with the race
+     grid scrolling inside its own step, so nothing ever overflows.
+     Element ids are deliberately unchanged (#soulseekRaceChoices,
+     #soulseekGenderChoices, #soulseekNameInput, #soulseekCreateBtn,
+     #soulseekCreateBackBtn) - soulseeker-dungeons.js and soulseek_shop.js
+     rebind those by id and inject the difficulty picker next to the gender
+     choices, so they keep working untouched. -->
 <div class="overlay hidden" id="soulseekCreateOverlay">
- <div class="modal characterWizard">
+ <div class="modal characterWizard" data-gamepad-zone="soulseek-create">
   <h2>NUEVO PERSONAJE SOULSEEKER</h2>
-  <p class="small">Empieza sin clase (Advanced Classes + Puntos de Acción). Al llegar a nivel 2 elegirás tu clase avanzada. Todas las razas están desbloqueadas.</p>
-  <h4>Raza</h4>
-  <div class="choices raceGrid" id="soulseekRaceChoices"></div>
-  <h4>Sexo</h4>
-  <div class="genderChoices" id="soulseekGenderChoices">
-   <button type="button" class="genderChoice selected" data-soulseek-gender="male"><canvas width="64" height="64"></canvas><b>Masculino</b><span>♂</span></button>
-   <button type="button" class="genderChoice" data-soulseek-gender="female"><canvas width="64" height="64"></canvas><b>Femenino</b><span>♀</span></button>
+  <div class="wizardProgress" id="soulseekWizardProgress" aria-label="Progreso de creación"></div>
+  <div class="wizardViewport"><div class="wizardTrack" id="soulseekWizardTrack">
+   <section class="wizardStep">
+    <h3>1. Raza</h3>
+    <p class="small">Empiezas sin clase (Advanced Classes + Puntos de Acción). Al llegar a nivel 2 elegirás tu clase avanzada. Todas las razas están desbloqueadas.</p>
+    <div class="choices raceGrid" id="soulseekRaceChoices"></div>
+   </section>
+   <section class="wizardStep">
+    <h3>2. Sexo</h3>
+    <p class="small">Solo cambia el icono de tu personaje.</p>
+    <div class="genderChoices" id="soulseekGenderChoices">
+     <button type="button" class="genderChoice selected" data-soulseek-gender="male"><canvas width="64" height="64"></canvas><b>Masculino</b><span>♂</span></button>
+     <button type="button" class="genderChoice" data-soulseek-gender="female"><canvas width="64" height="64"></canvas><b>Femenino</b><span>♀</span></button>
+    </div>
+   </section>
+   <section class="wizardStep wizardNameStep">
+    <h3>3. Nombre</h3>
+    <p class="small">Revisa tu identidad y ponle un nombre antes de entrar en la mazmorra.</p>
+    <div id="soulseekCharacterSummary" class="characterSummary"></div>
+    <label>Nombre <input id="soulseekNameInput" maxlength="16" placeholder="Nombre de tu personaje" autocomplete="off"></label>
+    <button class="start" id="soulseekCreateBtn">CREAR PERSONAJE</button>
+   </section>
+  </div></div>
+  <div class="wizardNav">
+   <button type="button" class="start" id="soulseekWizardBackBtn">← ATRÁS</button>
+   <button type="button" class="start" id="soulseekWizardNextBtn">SIGUIENTE →</button>
   </div>
-  <h4>Nombre</h4>
-  <label>Nombre <input id="soulseekNameInput" maxlength="16" placeholder="Nombre de tu personaje" autocomplete="off"></label>
-  <div class="soulseekActions">
-   <button class="start" id="soulseekCreateBtn">CREAR PERSONAJE</button>
-   <button class="backToLanding" id="soulseekCreateBackBtn">VOLVER</button>
+  <button class="backToLanding" id="soulseekCreateBackBtn">VOLVER AL MENÚ</button>
+ </div>
+</div>
+
+<!-- Race detail, opened by clicking a race card in step 1 of the creation
+     wizard. The cards themselves stay compact so the whole roster fits in the
+     grid; this is where the full stats and the racial skill are readable.
+     Icon canvas is 84px: race icons are stored at up to 128px (see the icon
+     editor's maxSize), so anything much larger starts to look pixelated. -->
+<div class="statPointModal" id="soulseekRaceDetailModal" data-gamepad-zone="soulseek-race-detail">
+ <div class="statPointBox soulseekRaceDetailBox">
+  <div class="soulseekRaceDetailHead">
+   <canvas id="soulseekRaceDetailIcon" width="84" height="84"></canvas>
+   <div><h2 id="soulseekRaceDetailName">RAZA</h2><span class="raceTag" id="soulseekRaceDetailOrigin"></span></div>
+  </div>
+  <p class="small" id="soulseekRaceDetailDesc"></p>
+  <h4>Atributos</h4>
+  <div id="soulseekRaceDetailStats" class="soulseekRaceDetailStats"></div>
+  <h4>Habilidad racial</h4>
+  <div id="soulseekRaceDetailSkill" class="soulseekRaceDetailSkill"></div>
+  <div class="startActions">
+   <button type="button" class="start" id="soulseekRaceDetailPickBtn">ELEGIR ESTA RAZA</button>
+   <button type="button" id="soulseekRaceDetailCloseBtn" data-gamepad-cancel>CERRAR</button>
   </div>
  </div>
 </div>
@@ -221,9 +281,57 @@ async function openSoulseekerNewCharacter(){
  document.getElementById('soulseekOverlay').classList.add('hidden');
  document.getElementById('soulseekCreateOverlay').classList.remove('hidden');
  document.getElementById('soulseekNameInput').value='';
+ setSoulseekWizardStep(0);
  if(!configRacesLoaded)await fetchConfigRaces();
  renderSoulseekRaceChoices();
  renderSoulseekGenderChoices();
+ // Again now that the race cards exist: the first call ran against an empty
+ // grid, so with a pad the focus ring would have landed on the progress tab
+ // instead of on a race.
+ setSoulseekWizardStep(0);
+}
+// ---- Three-step creation wizard (raza -> sexo -> nombre) --------------------
+// Same driver as game.js's setWizardStep(): the track slides by whole steps
+// and every panel that is not the active one is marked `inert`, which is what
+// keeps both keyboard tabbing and the gamepad's focus walk out of the steps
+// that are scrolled off-screen (see navigableElements() in joystick.js).
+let soulseekWizardStep=0;
+const SOULSEEK_WIZARD_LABELS=['1 · RAZA','2 · SEXO','3 · NOMBRE'];
+function renderSoulseekCharacterSummary(){
+ const root=document.getElementById('soulseekCharacterSummary');if(!root)return;
+ const race=raceDefs[soulseekSelectedRace];
+ root.innerHTML=`<canvas width="96" height="96"></canvas><b>${race?.name||'Sin raza'}</b><span>Sin clase · ${soulseekSelectedGender==='female'?'Femenino':'Masculino'}</span><small>Advanced Classes · Puntos de Acción</small>`;
+ const icon=soulseekSelectedRace?raceIconForId(soulseekSelectedRace,soulseekSelectedGender):'';
+ if(icon)drawSkillIconImg(root.querySelector('canvas'),icon);
+}
+function setSoulseekWizardStep(step){
+ soulseekWizardStep=Math.max(0,Math.min(2,Number(step)||0));
+ const track=document.getElementById('soulseekWizardTrack');if(!track)return;
+ track.style.transform=`translateX(-${soulseekWizardStep*100}%)`;
+ [...track.querySelectorAll('.wizardStep')].forEach((panel,i)=>{panel.toggleAttribute('inert',i!==soulseekWizardStep);panel.setAttribute('aria-hidden',i===soulseekWizardStep?'false':'true')});
+ const progress=document.getElementById('soulseekWizardProgress');
+ if(progress){
+  progress.innerHTML=SOULSEEK_WIZARD_LABELS.map((label,i)=>`<button type="button" data-soulseek-wizard-step="${i}" class="${i===soulseekWizardStep?'active':i<soulseekWizardStep?'done':''}" ${i>soulseekWizardStep?'disabled':''}>${label}</button>`).join('');
+  progress.querySelectorAll('[data-soulseek-wizard-step]').forEach(b=>b.onclick=()=>setSoulseekWizardStep(b.dataset.soulseekWizardStep));
+ }
+ // Step 1's "back" leaves the wizard: .backToLanding is position:fixed, and
+ // the pad's focus walk skips fixed elements (offsetParent is null), so this
+ // is the only reachable way out with a controller.
+ const backBtn=document.getElementById('soulseekWizardBackBtn');
+ backBtn.disabled=false;
+ backBtn.textContent=soulseekWizardStep===0?'← VOLVER AL MENÚ':'← ATRÁS';
+ document.getElementById('soulseekWizardNextBtn').classList.toggle('hidden',soulseekWizardStep===2);
+ if(soulseekWizardStep===1)renderSoulseekGenderChoices();
+ if(soulseekWizardStep===2){renderSoulseekCharacterSummary();setTimeout(()=>document.getElementById('soulseekNameInput')?.focus(),380)}
+ // With a pad connected, drop the focus ring on the new step's first control:
+ // otherwise it stays on SIGUIENTE (which is not destroyed by the step change,
+ // so joystick.js has no reason to move it) and the player would start each
+ // step already past its own choices. No-op for mouse and keyboard.
+ const panel=track.querySelectorAll('.wizardStep')[soulseekWizardStep];
+ const entry=panel?.querySelector('button:not([disabled]),input:not([disabled]),[data-soulseek-race]');
+ track.querySelectorAll('[data-gamepad-autofocus]').forEach(el=>el.removeAttribute('data-gamepad-autofocus'));
+ if(entry)entry.setAttribute('data-gamepad-autofocus','');
+ if(typeof gamepadConnected!=='undefined'&&gamepadConnected&&typeof focusGamepadElement==='function'&&entry)setTimeout(()=>focusGamepadElement(entry),0);
 }
 function closeSoulseekerNewCharacter(){
  document.getElementById('soulseekCreateOverlay').classList.add('hidden');
@@ -256,7 +364,31 @@ function renderSoulseekRaceChoices(){
   return `<div class="choice ${id===soulseekSelectedRace?'selected':''}" data-soulseek-race="${id}">${icon?`<canvas class="raceChoiceIcon" width="42" height="42" data-soulseek-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p></div></div>`;
  }).join('');
  root.querySelectorAll('[data-soulseek-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.soulseekRaceIcon)));
- root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>{soulseekSelectedRace=el.dataset.soulseekRace;renderSoulseekRaceChoices();renderSoulseekGenderChoices()});
+ root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>openSoulseekRaceDetail(el.dataset.soulseekRace));
+}
+// Clicking a race card opens its full sheet (bigger icon, every stat bonus and
+// the racial skill) instead of just selecting it silently: the cards in the
+// grid stay compact so the whole roster fits, and this is where the detail
+// that actually drives the choice lives.
+function openSoulseekRaceDetail(id){
+ const race=raceDefs[id];if(!race)return;
+ const modal=document.getElementById('soulseekRaceDetailModal');if(!modal)return;
+ document.getElementById('soulseekRaceDetailName').textContent=race.name||id;
+ document.getElementById('soulseekRaceDetailOrigin').textContent=race.origin||'Raza configurable';
+ document.getElementById('soulseekRaceDetailDesc').textContent=race.desc||'Sin descripción.';
+ const stats=document.getElementById('soulseekRaceDetailStats'),bonuses=Object.entries(race.bonuses||{});
+ stats.innerHTML=bonuses.length?bonuses.map(([k,v])=>`<span>${RACE_STAT_FIELDS[k]||k} <b>${v>0?'+':''}${v}</b></span>`).join(''):'<span>Sin bonificadores <b>—</b></span>';
+ const skill=race.skill,skillRoot=document.getElementById('soulseekRaceDetailSkill');
+ skillRoot.innerHTML=skill?`<b>${skill.icon||'✦'} ${skill.name||skill.id}</b><p class="small">${skill.desc||'Sin descripción.'}</p><p class="small">${skill.cost??0} ${skill.resource==='mana'?'maná':'stamina'} · CD ${skill.cd??0} · Alcance ${skill.range||0}</p>`:'<p class="small">Esta raza no aporta habilidad racial.</p>';
+ const canvas=document.getElementById('soulseekRaceDetailIcon'),icon=raceIconForId(id,soulseekSelectedGender);
+ if(icon)drawSkillIconImg(canvas,icon);else canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+ document.getElementById('soulseekRaceDetailPickBtn').onclick=()=>{
+  soulseekSelectedRace=id;
+  modal.classList.remove('open');
+  renderSoulseekRaceChoices();renderSoulseekGenderChoices();renderSoulseekCharacterSummary();
+ };
+ document.getElementById('soulseekRaceDetailCloseBtn').onclick=()=>modal.classList.remove('open');
+ modal.classList.add('open');
 }
 
 async function soulseekStartCharacter(){
@@ -507,18 +639,29 @@ async function soulseekLoadoutConfirmStep(){
 }
 async function soulseekFinalizeLoadout(){
  if(!game?.player)return;
- const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
- game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
- const potionRows=soulseekCommonPotionRows();
- let addedPotions=0;
- for(const id of soulseekLoadoutChosenPotions){
-  const row=await soulseekHydrateItemRow(potionRows.find(r=>String(r.id)===id));
-  if(row){addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));addedPotions++}
- }
- if(!addedPotions)addStarterPotions(null);
  document.getElementById('soulseekLoadoutModal').classList.remove('open');
- syncAllEquipmentPassives();recomputeDerived();
- await soulseekFinishCharacterCreation();
+ // The slow part of creation is HERE, not in soulseekStartCharacter: hydrating
+ // the chosen rows, saving the character and generating floor 1. The hourglass
+ // overlay was wired around soulseekStartCharacter, which now returns as soon
+ // as the loadout wizard opens, so it flashed by long before any of this and
+ // the actual dungeon generation ran with no feedback at all.
+ // typeof guard: soulseeker-dungeons.js owns the overlay and is optional.
+ if(typeof soulseekShowLoading==='function')soulseekShowLoading('Generando mazmorra...');
+ try{
+  const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
+  game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
+  const potionRows=soulseekCommonPotionRows();
+  let addedPotions=0;
+  for(const id of soulseekLoadoutChosenPotions){
+   const row=await soulseekHydrateItemRow(potionRows.find(r=>String(r.id)===id));
+   if(row){addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));addedPotions++}
+  }
+  if(!addedPotions)addStarterPotions(null);
+  syncAllEquipmentPassives();recomputeDerived();
+  await soulseekFinishCharacterCreation();
+ }finally{
+  if(typeof soulseekHideLoading==='function')soulseekHideLoading();
+ }
 }
 async function soulseekFinishCharacterCreation(){
  const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,maxFloorReached:1};
@@ -642,7 +785,8 @@ function soulseekHandleDeath(){
   banner('REVIVIR');
   return;
  }
- soulseekShowDeathChoiceModal();
+ // Same 2s skull as the normal game before the death choice appears.
+ playDeathSkullAnimation(soulseekShowDeathChoiceModal);
 }
 function soulseekShowDeathChoiceModal(){
  const modal=document.getElementById('soulseekDeathModal'),souls=Math.max(0,Number(game.player.souls)||0);
@@ -688,7 +832,9 @@ async function soulseekBankSoulsAndDie(){
  if(mainMenuActions&&!document.getElementById('menuSoulseekBtn')){
   const btn=document.createElement('button');
   btn.className='start';btn.id='menuSoulseekBtn';btn.type='button';btn.textContent='SOULSEEKER MODE';
-  mainMenuActions.appendChild(btn);
+  // Between STANDARD MODE and CONFIGURACIÓN, so the root menu reads
+  // standard / soulseeker / configuración.
+  mainMenuActions.insertBefore(btn,document.getElementById('menuConfigBtn'));
   btn.onclick=openSoulseekerMenu;
  }
 
@@ -699,8 +845,16 @@ async function soulseekBankSoulsAndDie(){
  document.getElementById('soulseekUnlocksBackBtn').onclick=closeSoulseekerUnlocks;
  document.getElementById('soulseekNewCharBtn').onclick=openSoulseekerNewCharacter;
  document.getElementById('soulseekCreateBackBtn').onclick=closeSoulseekerNewCharacter;
+ document.getElementById('soulseekWizardBackBtn').onclick=()=>{if(soulseekWizardStep===0){closeSoulseekerNewCharacter();return}setSoulseekWizardStep(soulseekWizardStep-1)};
+ document.getElementById('soulseekWizardNextBtn').onclick=()=>{
+  // A race is the only hard requirement to move on; sexo already defaults to
+  // masculino and an empty name is allowed (the character is saved as
+  // "PJ Nº<id>" - see soulseekFinishCharacterCreation).
+  if(soulseekWizardStep===0&&(!soulseekSelectedRace||!raceDefs[soulseekSelectedRace])){uiAlert('Elige una raza para continuar.');return}
+  setSoulseekWizardStep(soulseekWizardStep+1);
+ };
  document.getElementById('soulseekCreateBtn').onclick=soulseekStartCharacter;
- document.querySelectorAll('[data-soulseek-gender]').forEach(button=>button.onclick=()=>{soulseekSelectedGender=button.dataset.soulseekGender;renderSoulseekGenderChoices();renderSoulseekRaceChoices()});
+ document.querySelectorAll('[data-soulseek-gender]').forEach(button=>button.onclick=()=>{soulseekSelectedGender=button.dataset.soulseekGender;renderSoulseekGenderChoices();renderSoulseekRaceChoices();renderSoulseekCharacterSummary()});
  document.getElementById('soulseekLoadoutConfirmBtn').onclick=soulseekLoadoutConfirmStep;
 
  if(typeof classSkillConsistencyGuard==='function'){

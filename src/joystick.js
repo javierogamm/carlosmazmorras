@@ -46,12 +46,27 @@ try{gamepadBindings={...gamepadBindings,...JSON.parse(localStorage.getItem('game
 
 // ---- Bindings menu ---------------------------------------------------------
 function gamepadButtonName(index){return ['A / ✕','B / ○','X / □','Y / △','LB / L1','RB / R1','LT / L2','RT / R2','SELECT','START','L3','R3','CRUCETA ↑','CRUCETA ↓','CRUCETA ←','CRUCETA →'][index]||`Botón ${index}`}
-function renderGamepadBindings(){const root=document.getElementById('gamepadBindings');if(!root)return;root.innerHTML=Object.entries(GAMEPAD_ACTIONS).map(([id,label])=>`<div class="gamepadBinding"><span><b>${label}</b><small>${gamepadButtonName(gamepadBindings[id])}</small></span><button type="button" data-gamepad-bind="${id}" class="${gamepadListening===id?'listening':''}">${gamepadListening===id?'PULSA UN BOTÓN…':'CAMBIAR'}</button></div>`).join('');root.querySelectorAll('[data-gamepad-bind]').forEach(b=>b.onclick=()=>{gamepadListening=b.dataset.gamepadBind;renderGamepadBindings()})}
+// The bindings live in two places at once: the #gamepadOverlay (opened by the
+// pad's own "menú de mando" button, the only route available mid-run) and the
+// Mando tab of the Configuración screen. Both are addressed by class so every
+// copy is rendered from the same state and they can never show different
+// bindings.
+function renderGamepadBindings(){
+ const roots=[...document.querySelectorAll('.gamepadBindings')];if(!roots.length)return;
+ const html=Object.entries(GAMEPAD_ACTIONS).map(([id,label])=>`<div class="gamepadBinding"><span><b>${label}</b><small>${gamepadButtonName(gamepadBindings[id])}</small></span><button type="button" data-gamepad-bind="${id}" class="${gamepadListening===id?'listening':''}">${gamepadListening===id?'PULSA UN BOTÓN…':'CAMBIAR'}</button></div>`).join('');
+ for(const root of roots){
+  root.innerHTML=html;
+  root.querySelectorAll('[data-gamepad-bind]').forEach(b=>b.onclick=()=>{gamepadListening=b.dataset.gamepadBind;renderGamepadBindings()});
+ }
+}
 function openGamepadMenu(){gamepadListening=null;renderGamepadBindings();document.getElementById('gamepadOverlay')?.classList.remove('hidden')}
 function closeGamepadMenu(){gamepadListening=null;document.getElementById('gamepadOverlay')?.classList.add('hidden')}
+// menuGamepadBtn no longer exists (the bindings moved into Configuración >
+// Mando); the optional chaining keeps this harmless for any build that still
+// ships that button.
 document.getElementById('menuGamepadBtn')?.addEventListener('click',openGamepadMenu);
 document.getElementById('closeGamepadBtn')?.addEventListener('click',closeGamepadMenu);
-document.getElementById('resetGamepadBtn')?.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()});
+document.querySelectorAll('[data-gamepad-reset]').forEach(btn=>btn.addEventListener('click',()=>{gamepadBindings={...DEFAULT_GAMEPAD_BINDINGS};localStorage.setItem('gamepadBindings',JSON.stringify(gamepadBindings));renderGamepadBindings()}));
 
 // ---- Screens, zones and focus ---------------------------------------------
 function cycleGameTab(direction){const tabs=[...document.querySelectorAll('.tabs [data-tab]')].filter(b=>!b.classList.contains('hidden'));if(!tabs.length)return;const current=Math.max(0,tabs.findIndex(b=>b.classList.contains('active')));tabs[(current+direction+tabs.length)%tabs.length].click()}
@@ -71,15 +86,25 @@ function visibleGamepadScreen(){
  const blockingModal=document.querySelector('.statPointModal.open,.skillChoiceModal.open');
  return blockingModal||[...document.querySelectorAll('.overlay:not(.hidden),.configScreen:not(.hidden),#app:not(.hidden)')].pop()||document.body;
 }
-function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden),.statChoiceGrid,.skillChoiceGrid')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
+function gamepadZones(){const screen=visibleGamepadScreen(),explicit=[...screen.querySelectorAll('[data-gamepad-zone]')].filter(el=>el.offsetParent!==null);let zones=explicit;if(!zones.length){zones=[...screen.querySelectorAll('.configTabs,.configTabPanel:not(.hidden),.landingActions,.wizardViewport,.wizardNav,.worldList,.configItemsList,.startActions,.tabs,.tabview:not(.hidden),.statChoiceGrid,.skillChoiceGrid')].filter(el=>el.offsetParent!==null&&el.querySelector('button:not([disabled]),input,select,[data-race],[data-class],[data-soulseek-race]'))}if(!zones.length)zones=[screen];const main=document.getElementById('globalMenuBtn');if(main?.offsetParent!==null&&!document.body.classList.contains('gameOnly'))zones.unshift(main);return [...new Set(zones)]}
 // `.soulseekLoadoutCard`/`[data-soulseek-pick]` are here because the starting
 // loadout picker builds clickable cards; they are <button>s now, but keeping
 // the explicit hooks means any future card markup stays reachable too.
-const GAMEPAD_NAVIGABLE_SELECTOR='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[data-soulseek-pick],[data-gamepad-focusable],[tabindex],.item,.skillCard,.visualSlot,.soulseekLoadoutCard';
-function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const elements=(scope.matches?.(GAMEPAD_NAVIGABLE_SELECTOR)?[scope]:[]).concat([...scope.querySelectorAll(GAMEPAD_NAVIGABLE_SELECTOR)]).filter(el=>el.offsetParent!==null);elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
+// `[data-soulseek-race]`/`[data-race]` are plain <div> cards, so they only
+// become reachable by being named here.
+const GAMEPAD_NAVIGABLE_SELECTOR='button:not([disabled]):not(.hidden),input:not([disabled]),select:not([disabled]),summary,[data-race],[data-class],[data-soulseek-race],[data-soulseek-pick],[data-gamepad-focusable],[tabindex],.item,.skillCard,.visualSlot,.soulseekLoadoutCard';
+// A character-creation wizard keeps every step in the DOM and slides the
+// track sideways, so the steps that are off-screen are still laid out and
+// still have an offsetParent. They are marked `inert`, which is the signal
+// used here to skip them - otherwise the D-pad would walk straight out of
+// the visible step into controls nobody can see.
+function navigableElements(){let scope=visibleGamepadScreen();const zones=gamepadZones();if(gamepadUiMode==='zone'&&zones.length)scope=zones[Math.max(0,Math.min(gamepadZoneIndex,zones.length-1))];const elements=(scope.matches?.(GAMEPAD_NAVIGABLE_SELECTOR)?[scope]:[]).concat([...scope.querySelectorAll(GAMEPAD_NAVIGABLE_SELECTOR)]).filter(el=>el.offsetParent!==null&&!el.closest('[inert]'));elements.forEach(el=>{if(!/^(BUTTON|INPUT|SELECT|SUMMARY)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0});return elements}
 // Single place that moves the ring, so gamepadFocusedElement always matches
-// what is actually highlighted.
-function markGamepadFocus(el){document.querySelectorAll('.gamepadFocus').forEach(x=>x.classList.remove('gamepadFocus'));el.classList.add('gamepadFocus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});gamepadFocusedElement=el}
+// what is actually highlighted. Cards like the race/class choices are plain
+// <div>s: .focus() on one is a silent no-op unless it is made focusable
+// first, which is why the tabIndex fix-up lives here rather than only in
+// navigableElements() - every focus path needs it, not just the D-pad walk.
+function markGamepadFocus(el){if(!/^(BUTTON|INPUT|SELECT|SUMMARY|TEXTAREA|A)$/.test(el.tagName)&&!el.hasAttribute('tabindex'))el.tabIndex=0;document.querySelectorAll('.gamepadFocus').forEach(x=>x.classList.remove('gamepadFocus'));el.classList.add('gamepadFocus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});gamepadFocusedElement=el}
 function navigateMenu(direction){const els=navigableElements();if(!els.length)return;let i=els.indexOf(document.activeElement);i=i<0?(direction>0?-1:0):i;markGamepadFocus(els[(i+direction+els.length)%els.length])}
 function focusGamepadElement(element){if(!element)return;gamepadUiMode='zone';markGamepadFocus(element)}
 function focusCurrentZone(){document.querySelectorAll('.gamepadFocus').forEach(el=>el.classList.remove('gamepadFocus'));navigateMenu(1)}
@@ -140,7 +165,12 @@ function autoFocusGamepadScreen(){
  if(screen===document.body||screen.id==='app'){if(screenChanged)gamepadUiMode='gameplay';return}
  if(!screenChanged&&!gamepadFocusDestroyed())return;
  if(screenChanged){gamepadUiMode='zone';gamepadZoneIndex=0}
- const first=navigableElements()[0];
+ // A screen can name where the pad should land with [data-gamepad-autofocus]
+ // instead of taking whatever comes first in document order. The Soulseek
+ // creation wizard uses it to start each step on that step's own first
+ // choice rather than on the progress tabs above it.
+ const preferred=screen.querySelector('[data-gamepad-autofocus]:not([disabled])');
+ const first=(preferred&&preferred.offsetParent!==null&&!preferred.closest('[inert]'))?preferred:navigableElements()[0];
  if(first)focusGamepadElement(first);else gamepadFocusedElement=null;
 }
 
@@ -149,6 +179,7 @@ function moveTargetCursor(dx,dy){if(!pendingTargetAction||!game?.player)return;c
 function confirmTargetCursor(){if(!pendingTargetAction)return;if(!gamepadTargetCursor)gamepadTargetCursor={x:game.player.x,y:game.player.y};const {x,y}=gamepadTargetCursor;if(pendingTargetAction.mode==='area'){if(!pendingAreaCandidate)moveTargetCursor(0,0);if(pendingAreaCandidate)confirmAreaTarget();return}if(pendingTargetAction.kind==='companionCommand')resolveCompanionCommand(pendingTargetAction.companionId,x,y);else if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,x,y);else if(pendingTargetAction.kind==='potion')resolveTargetedPotion(pendingTargetAction.potionId,x,y);else if(pendingTargetAction.kind==='equipment')resolveTargetedEquipmentActive(pendingTargetAction.equipSlot,x,y);else resolveBasicAttack(x,y)}
 
 // ---- Button actions --------------------------------------------------------
+function screenCancelButton(){return visibleGamepadScreen()?.querySelector('[data-gamepad-cancel]:not([disabled])')||null}
 function gamepadAction(action){
  if(action==='menu'){openGamepadMenu();return}
  if(action==='fullscreen'){toggleGameOnly();return}
@@ -157,6 +188,9 @@ function gamepadAction(action){
   // A cancellable in-page dialog answers "no" to CANCEL, exactly like the
   // native confirm() it replaced.
   else if(document.getElementById('uiPromptModal')?.classList.contains('open'))document.getElementById('uiPromptCancel')?.click();
+  // A screen can name its own "back" control with [data-gamepad-cancel] so B
+  // dismisses it, instead of the button only being reachable by walking to it.
+  else if(screenCancelButton())screenCancelButton().click();
   else if(pendingTargetAction)cancelTargeting();
   else if(game&&gamepadUiMode!=='gameplay')returnToGameplay();
   return
@@ -203,9 +237,9 @@ function gamepadDirections(pad,pressed,now){
  else navigateMenu(my||mx);
 }
 function pollGamepads(now=0){
- const pad=[...(navigator.getGamepads?.()||[])].find(Boolean),status=document.getElementById('gamepadStatus');
+ const pad=[...(navigator.getGamepads?.()||[])].find(Boolean);
  gamepadConnected=!!pad;
- if(status){status.textContent=pad?`Conectado: ${pad.id}`:'Sin mando detectado';status.classList.toggle('connected',!!pad)}
+ for(const status of document.querySelectorAll('.gamepadStatus')){status.textContent=pad?`Conectado: ${pad.id}`:'Sin mando detectado';status.classList.toggle('connected',!!pad)}
  if(pad){
   const pressed=pad.buttons.map(b=>b.pressed);
   if(gamepadListening!==null){
@@ -221,4 +255,7 @@ function pollGamepads(now=0){
  requestAnimationFrame(pollGamepads);
 }
 addEventListener('gamepadconnected',()=>renderGamepadBindings());
+// Fill both copies once at startup so Configuración > Mando is already
+// populated the first time it is opened, with or without a pad plugged in.
+renderGamepadBindings();
 requestAnimationFrame(pollGamepads);
