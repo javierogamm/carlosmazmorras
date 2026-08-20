@@ -41,6 +41,17 @@ let soulseekClassPickerOpen=false;
   .soulseekLoadoutCard canvas{width:48px;height:48px}
   .soulseekLoadoutCard b{font-size:12px;color:#ffd68b}
   .soulseekLoadoutTypeGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}
+  .soulseekRaceDetailBox{width:min(560px,100%);max-height:92vh;overflow:auto}
+  .soulseekRaceDetailHead{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .soulseekRaceDetailHead h2{margin:0;color:#ffd477}
+  .soulseekRaceDetailHead canvas{width:84px;height:84px;background:#1c1224;border:2px solid #59406b;flex:0 0 auto}
+  .soulseekRaceDetailStats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+  .soulseekRaceDetailStats span{display:flex;justify-content:space-between;gap:8px;background:#1c1224;border:1px solid #4d395a;padding:5px 8px;font-size:12px}
+  .soulseekRaceDetailStats b{color:#8dffa8}
+  .soulseekRaceDetailSkill{background:#1c1224;border:2px solid #59406b;padding:10px}
+  .soulseekRaceDetailSkill b{display:block;color:#ffd68b}
+  .soulseekRaceDetailSkill p{margin:6px 0 0}
+  @media(max-width:600px){.soulseekRaceDetailStats{grid-template-columns:1fr}}
   .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
   #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
@@ -162,6 +173,29 @@ function soulseekEnsureDom(){
    <button type="button" class="start" id="soulseekWizardNextBtn">SIGUIENTE →</button>
   </div>
   <button class="backToLanding" id="soulseekCreateBackBtn">VOLVER AL MENÚ</button>
+ </div>
+</div>
+
+<!-- Race detail, opened by clicking a race card in step 1 of the creation
+     wizard. The cards themselves stay compact so the whole roster fits in the
+     grid; this is where the full stats and the racial skill are readable.
+     Icon canvas is 84px: race icons are stored at up to 128px (see the icon
+     editor's maxSize), so anything much larger starts to look pixelated. -->
+<div class="statPointModal" id="soulseekRaceDetailModal" data-gamepad-zone="soulseek-race-detail">
+ <div class="statPointBox soulseekRaceDetailBox">
+  <div class="soulseekRaceDetailHead">
+   <canvas id="soulseekRaceDetailIcon" width="84" height="84"></canvas>
+   <div><h2 id="soulseekRaceDetailName">RAZA</h2><span class="raceTag" id="soulseekRaceDetailOrigin"></span></div>
+  </div>
+  <p class="small" id="soulseekRaceDetailDesc"></p>
+  <h4>Atributos</h4>
+  <div id="soulseekRaceDetailStats" class="soulseekRaceDetailStats"></div>
+  <h4>Habilidad racial</h4>
+  <div id="soulseekRaceDetailSkill" class="soulseekRaceDetailSkill"></div>
+  <div class="startActions">
+   <button type="button" class="start" id="soulseekRaceDetailPickBtn">ELEGIR ESTA RAZA</button>
+   <button type="button" id="soulseekRaceDetailCloseBtn" data-gamepad-cancel>CERRAR</button>
+  </div>
  </div>
 </div>
 
@@ -330,7 +364,31 @@ function renderSoulseekRaceChoices(){
   return `<div class="choice ${id===soulseekSelectedRace?'selected':''}" data-soulseek-race="${id}">${icon?`<canvas class="raceChoiceIcon" width="42" height="42" data-soulseek-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span><p class="small"><strong>Rasgo:</strong> ${r.trait}</p></div></div>`;
  }).join('');
  root.querySelectorAll('[data-soulseek-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.soulseekRaceIcon)));
- root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>{soulseekSelectedRace=el.dataset.soulseekRace;renderSoulseekRaceChoices();renderSoulseekGenderChoices();renderSoulseekCharacterSummary()});
+ root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>openSoulseekRaceDetail(el.dataset.soulseekRace));
+}
+// Clicking a race card opens its full sheet (bigger icon, every stat bonus and
+// the racial skill) instead of just selecting it silently: the cards in the
+// grid stay compact so the whole roster fits, and this is where the detail
+// that actually drives the choice lives.
+function openSoulseekRaceDetail(id){
+ const race=raceDefs[id];if(!race)return;
+ const modal=document.getElementById('soulseekRaceDetailModal');if(!modal)return;
+ document.getElementById('soulseekRaceDetailName').textContent=race.name||id;
+ document.getElementById('soulseekRaceDetailOrigin').textContent=race.origin||'Raza configurable';
+ document.getElementById('soulseekRaceDetailDesc').textContent=race.desc||'Sin descripción.';
+ const stats=document.getElementById('soulseekRaceDetailStats'),bonuses=Object.entries(race.bonuses||{});
+ stats.innerHTML=bonuses.length?bonuses.map(([k,v])=>`<span>${RACE_STAT_FIELDS[k]||k} <b>${v>0?'+':''}${v}</b></span>`).join(''):'<span>Sin bonificadores <b>—</b></span>';
+ const skill=race.skill,skillRoot=document.getElementById('soulseekRaceDetailSkill');
+ skillRoot.innerHTML=skill?`<b>${skill.icon||'✦'} ${skill.name||skill.id}</b><p class="small">${skill.desc||'Sin descripción.'}</p><p class="small">${skill.cost??0} ${skill.resource==='mana'?'maná':'stamina'} · CD ${skill.cd??0} · Alcance ${skill.range||0}</p>`:'<p class="small">Esta raza no aporta habilidad racial.</p>';
+ const canvas=document.getElementById('soulseekRaceDetailIcon'),icon=raceIconForId(id,soulseekSelectedGender);
+ if(icon)drawSkillIconImg(canvas,icon);else canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+ document.getElementById('soulseekRaceDetailPickBtn').onclick=()=>{
+  soulseekSelectedRace=id;
+  modal.classList.remove('open');
+  renderSoulseekRaceChoices();renderSoulseekGenderChoices();renderSoulseekCharacterSummary();
+ };
+ document.getElementById('soulseekRaceDetailCloseBtn').onclick=()=>modal.classList.remove('open');
+ modal.classList.add('open');
 }
 
 async function soulseekStartCharacter(){
@@ -581,18 +639,29 @@ async function soulseekLoadoutConfirmStep(){
 }
 async function soulseekFinalizeLoadout(){
  if(!game?.player)return;
- const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
- game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
- const potionRows=soulseekCommonPotionRows();
- let addedPotions=0;
- for(const id of soulseekLoadoutChosenPotions){
-  const row=await soulseekHydrateItemRow(potionRows.find(r=>String(r.id)===id));
-  if(row){addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));addedPotions++}
- }
- if(!addedPotions)addStarterPotions(null);
  document.getElementById('soulseekLoadoutModal').classList.remove('open');
- syncAllEquipmentPassives();recomputeDerived();
- await soulseekFinishCharacterCreation();
+ // The slow part of creation is HERE, not in soulseekStartCharacter: hydrating
+ // the chosen rows, saving the character and generating floor 1. The hourglass
+ // overlay was wired around soulseekStartCharacter, which now returns as soon
+ // as the loadout wizard opens, so it flashed by long before any of this and
+ // the actual dungeon generation ran with no feedback at all.
+ // typeof guard: soulseeker-dungeons.js owns the overlay and is optional.
+ if(typeof soulseekShowLoading==='function')soulseekShowLoading('Generando mazmorra...');
+ try{
+  const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
+  game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
+  const potionRows=soulseekCommonPotionRows();
+  let addedPotions=0;
+  for(const id of soulseekLoadoutChosenPotions){
+   const row=await soulseekHydrateItemRow(potionRows.find(r=>String(r.id)===id));
+   if(row){addInventoryItem(configuredPotionFromRow(row,{itemLevel:{min:1,max:2}},1));addedPotions++}
+  }
+  if(!addedPotions)addStarterPotions(null);
+  syncAllEquipmentPassives();recomputeDerived();
+  await soulseekFinishCharacterCreation();
+ }finally{
+  if(typeof soulseekHideLoading==='function')soulseekHideLoading();
+ }
 }
 async function soulseekFinishCharacterCreation(){
  const bundle={player:game.player,inventory:game.inventory||[],achievements:game.achievements||{},feats:normalizeFeats(),bossesKilled:0,chestsOpened:0,maxFloorReached:1};
@@ -716,7 +785,8 @@ function soulseekHandleDeath(){
   banner('REVIVIR');
   return;
  }
- soulseekShowDeathChoiceModal();
+ // Same 2s skull as the normal game before the death choice appears.
+ playDeathSkullAnimation(soulseekShowDeathChoiceModal);
 }
 function soulseekShowDeathChoiceModal(){
  const modal=document.getElementById('soulseekDeathModal'),souls=Math.max(0,Number(game.player.souls)||0);

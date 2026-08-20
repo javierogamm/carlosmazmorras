@@ -164,6 +164,7 @@ function moveTargetCursor(dx,dy){if(!pendingTargetAction||!game?.player)return;c
 function confirmTargetCursor(){if(!pendingTargetAction)return;if(!gamepadTargetCursor)gamepadTargetCursor={x:game.player.x,y:game.player.y};const {x,y}=gamepadTargetCursor;if(pendingTargetAction.mode==='area'){if(!pendingAreaCandidate)moveTargetCursor(0,0);if(pendingAreaCandidate)confirmAreaTarget();return}if(pendingTargetAction.kind==='companionCommand')resolveCompanionCommand(pendingTargetAction.companionId,x,y);else if(pendingTargetAction.kind==='skill')resolveTargetedSkill(pendingTargetAction.slot,x,y);else if(pendingTargetAction.kind==='potion')resolveTargetedPotion(pendingTargetAction.potionId,x,y);else if(pendingTargetAction.kind==='equipment')resolveTargetedEquipmentActive(pendingTargetAction.equipSlot,x,y);else resolveBasicAttack(x,y)}
 
 // ---- Button actions --------------------------------------------------------
+function screenCancelButton(){return visibleGamepadScreen()?.querySelector('[data-gamepad-cancel]:not([disabled])')||null}
 function gamepadAction(action){
  if(action==='menu'){openGamepadMenu();return}
  if(action==='fullscreen'){toggleGameOnly();return}
@@ -172,6 +173,9 @@ function gamepadAction(action){
   // A cancellable in-page dialog answers "no" to CANCEL, exactly like the
   // native confirm() it replaced.
   else if(document.getElementById('uiPromptModal')?.classList.contains('open'))document.getElementById('uiPromptCancel')?.click();
+  // A screen can name its own "back" control with [data-gamepad-cancel] so B
+  // dismisses it, instead of the button only being reachable by walking to it.
+  else if(screenCancelButton())screenCancelButton().click();
   else if(pendingTargetAction)cancelTargeting();
   else if(game&&gamepadUiMode!=='gameplay')returnToGameplay();
   return

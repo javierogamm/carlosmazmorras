@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.95.0';
+const APP_VERSION='0.95.1';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1173,13 +1173,23 @@ function endExternalEffectsCast(){activeExternalCast=null}
 function potionCastId(item){return `potion:${item.id}`}
 function beginPotionCast(item){return beginExternalEffectsCast(potionCastId(item),item)}
 function endPotionCast(){endExternalEffectsCast()}
-function finishPotionUse(item){
+// Splash played where the potion actually landed - on the enemy/tile for a
+// thrown one, on the player for a self-cast. This replaced a full-screen
+// "POCIÓN UTILIZADA" overlay with a Continuar button: stopping the run dead
+// on every single potion was the wrong weight for something you do
+// constantly, and it made the board impossible to read at the exact moment
+// the effect resolved. The log line still records what was used.
+function potionSplash(item,x,y){
+ const color=tierColor(item.rarity)||'#8dffa8';
+ combatFx('buff',x,y,{color,accent:'#fff6d8',icon:'⚗',theme:'alchemy'});
+ for(let i=0;i<4;i++)setTimeout(()=>combatFx('buff',x,y,{color,accent:color,icon:'✦',theme:'alchemy',subtle:true}),70+i*60);
+ floating(item.name,x,y,color);
+}
+function finishPotionUse(item,x=game.player.x,y=game.player.y){
  if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(i=>i.id!==item.id);
- recomputeDerived();updateUI();draw();banner(item.name.toUpperCase());log(`${item.name} usada.`,'loot');
- storyTitle.textContent='POCIÓN UTILIZADA';
- storyBody.innerHTML=`<div class="narrative"><p><b>${item.name}</b></p><p>${describePotionEffects(item)||item.desc||''}</p><div class="startActions"><button id="closePotionMessage">Continuar</button></div></div>`;
- storyOverlay.classList.remove('hidden');
- setTimeout(()=>{const button=document.getElementById('closePotionMessage');if(!button)return;button.addEventListener('click',()=>{storyOverlay.classList.add('hidden');returnToGameplay()});focusGamepadElement(button)},0);
+ recomputeDerived();updateUI();draw();
+ potionSplash(item,x,y);
+ log(`${item.name} usada: ${describePotionEffects(item)||item.desc||'sin efectos'}.`,'loot');
 }
 // All-self effects (heal/buff/hot/utility/etc, same as a self-cast skill)
 // resolve instantly on click, exactly like today; any component targeting
@@ -1200,7 +1210,7 @@ function usePotion(id){
  const used=applySkillEffectsList(castId,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
  endPotionCast();
  if(!used){log('La poción no tuvo ningún efecto.','sys');return}
- finishPotionUse(item);
+ finishPotionUse(item,game.player.x,game.player.y);
 }
 // Confirmed target click for a thrown potion (mirrors resolveTargetedSkill).
 function resolveTargetedPotion(potionId,x,y){
@@ -1214,7 +1224,7 @@ function resolveTargetedPotion(potionId,x,y){
  const used=applySkillEffectsList(castId,{x,y,clickedEnemy,nearest:clickedEnemy,clickedAlly});
  endPotionCast();
  if(!used){if(mode==='area')log('No hay enemigos dentro del área seleccionada.','sys');return false}
- finishPotionUse(item);
+ finishPotionUse(item,x,y);
  cancelTargeting('');
  return true;
 }
@@ -5705,11 +5715,46 @@ function configuredReviveSource(){
  for(const item of game.inventory||[])if(item.type==='potion')for(const effect of item.effects||[])if(effect.kind==='revive')candidates.push({effect,consume:()=>{if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(x=>x!==item)}});
  return candidates.find(x=>(x.effect.soulsCost||0)<=(p.souls||0))||null;
 }
+// Two seconds of a skull rising and spinning over the corpse before any
+// death screen opens. Deliberately driven from the death HANDLERS rather
+// than from permanentDeath(): that function is also reached from "volver al
+// menú" in Soulseek and from banking souls, and a skull flying up because
+// you clicked a menu button would make no sense.
+// game.over is already true by the time either handler runs (see the two
+// call sites), so the player cannot act during the animation.
+const DEATH_SKULL_MS=2000;
+function playDeathSkullAnimation(done){
+ // Parented to #gameStage, not to #combatFxLayer: that layer is
+ // overflow:hidden and would clip the skull as it climbs out of the tile.
+ // Both boxes are the same size (the layer is inset:0 on the stage), so the
+ // percentage positioning below is identical either way.
+ const stage=document.getElementById('gameStage');
+ if(!stage||!game?.player){done();return}
+ const c=camera(),pct=100/visibleTiles;
+ const el=document.createElement('i');
+ el.className='deathSkull';
+ el.textContent='☠';
+ el.style.left=`${(game.player.x-c.x+.5)*pct}%`;
+ el.style.top=`${(game.player.y-c.y+.5)*pct}%`;
+ stage.appendChild(el);
+ const finish=()=>{el.remove();done()};
+ if(window.gsap){
+  gsap.fromTo(el,{scale:.2,opacity:0,rotation:0,yPercent:0},
+   {scale:1.9,opacity:1,rotation:720,yPercent:-260,duration:DEATH_SKULL_MS/1000,ease:'power1.out',
+    onComplete:()=>gsap.to(el,{opacity:0,duration:.25,onComplete:finish})});
+ }else{
+  el.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.2) rotate(0deg)'},
+              {opacity:1,transform:'translate(-50%,-160%) scale(1.9) rotate(540deg)',offset:.75},
+              {opacity:0,transform:'translate(-50%,-260%) scale(1.9) rotate(720deg)'}],
+             {duration:DEATH_SKULL_MS,easing:'ease-out'}).onfinish=finish;
+  setTimeout(finish,DEATH_SKULL_MS+400);
+ }
+}
 function handlePlayerDeath(){
  const automatic=configuredReviveSource();
  if(automatic){automatic.consume();if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}reviveAtCurrentPosition(automatic.effect.hpPercent||50);banner('REVIVIR');return}
- if((game.player.souls||0)>=20&&!game.multiplayer){showSoulReviveModal();return}
- permanentDeath();
+ const next=((game.player.souls||0)>=20&&!game.multiplayer)?showSoulReviveModal:permanentDeath;
+ playDeathSkullAnimation(next);
 }
 function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){

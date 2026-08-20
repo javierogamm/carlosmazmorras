@@ -137,7 +137,13 @@ async function soulseekSpendSouls(cost,extraFields={}){
   .soulseekShopSkillRow p{margin:4px 0 0;font-size:11px}
   .soulseekShopUnlockedTag{color:#5fce7a;font-weight:bold;align-self:center}
   .soulseekShopDetailBox{width:min(560px,100%)}
+  /* styles.css sets canvas width:100% for the game board, which was
+     stretching this race icon to the full width of the modal - that
+     upscale, not the source art, is what looked pixelated. Pinned to its
+     natural size instead. Only the race sheet uses this container, so the
+     class and skill sheets are unaffected. */
   .soulseekShopDetailIcon{display:flex;justify-content:center;margin:8px 0}
+  .soulseekShopDetailIcon canvas{width:48px;height:48px;flex:0 0 auto}
   @media(max-width:700px){.soulseekShopGrid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.soulseekShopHeader{padding:10px}.soulseekShopContent{padding:6px 10px 40px}}
  `;
  document.head.appendChild(style);
@@ -262,7 +268,7 @@ function soulseekOpenRaceDetail(id){
  const unlocked=soulseekRaceUnlocked(id),cost=soulseekRaceCost(id),skill=r.skill;
  const box=document.getElementById('soulseekShopDetailBox');
  box.innerHTML=`<h2>${r.name}</h2>
-  <div class="soulseekShopDetailIcon">${r.icon?`<canvas id="soulseekShopDetailIconCanvas" width="72" height="72"></canvas>`:''}</div>
+  <div class="soulseekShopDetailIcon">${r.icon?`<canvas id="soulseekShopDetailIconCanvas" width="48" height="48"></canvas>`:''}</div>
   <p class="small">${r.desc||''}</p>
   <p class="small"><strong>Bonificaciones:</strong> ${r.trait||'Ninguna'}</p>
   ${skill?`<p class="small"><strong>Skill activa:</strong> ${skill.icon||''} ${skill.name} — ${skill.desc||''}</p>`:''}
@@ -482,7 +488,12 @@ async function soulseekBuyObject(rowId,cost){
    return `<div class="choice ${id===soulseekSelectedRace?'selected':''}" data-soulseek-race="${id}">${icon?`<canvas class="raceChoiceIcon" width="42" height="42" data-soulseek-race-icon="${id}"></canvas>`:''}<div class="choiceBody"><b>${r.name}</b><p class="small">${r.desc}</p><span class="raceTag">${r.origin}</span></div></div>`;
   }).join('');
   root.querySelectorAll('[data-soulseek-race-icon]').forEach(c=>drawSkillIconImg(c,raceIconForId(c.dataset.soulseekRaceIcon)));
-  root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>{soulseekSelectedRace=el.dataset.soulseekRace;renderSoulseekRaceChoices();renderSoulseekGenderChoices()});
+  // Same as soulseek.js's own version: the card opens the race sheet
+  // (bigger icon, stat bonuses, racial skill) and the sheet's own button
+  // is what actually selects it. This function fully REPLACES that one, so
+  // a change to the card wiring there has to be mirrored here or it simply
+  // never runs.
+  root.querySelectorAll('[data-soulseek-race]').forEach(el=>el.onclick=()=>openSoulseekRaceDetail(el.dataset.soulseekRace));
  };
  // soulseek.js's own soulseekAdvancedClassIds() is the gameplay-eligible
  // pool for the level-2 class picker (every class flagged `advanced` in
