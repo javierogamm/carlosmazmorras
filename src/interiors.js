@@ -185,7 +185,11 @@
   // flavoured interiors on top, same spirit as before - just uncapped.
   const bonusPool=plan.rooms.filter(r=>!SPECIAL_TYPES[r.type]&&eligible(r)).sort(()=>random()-.5);
   const bonusTarget=Math.max(2,Math.round(plan.rooms.length*.18));
-  const candidates=[...mandatory,...bonusPool.slice(0,bonusTarget)];
+  let candidates=[...mandatory,...bonusPool.slice(0,bonusTarget)];
+  if(plan.soulseekEntry){
+   const safe=(plan.safeRooms||[]).map(s=>plan.rooms.find(r=>r.x===s.x&&r.y===s.y)).filter(r=>r&&eligible(r));
+   candidates=[...new Set([...safe,...mandatory,...bonusPool])].slice(0,2);
+  }
   const interiors=[],entrances=[];
   for(const room of candidates){
    const fitting=doorAssets.filter(a=>a.cols<=room.w-2&&a.rows<=room.h-2);

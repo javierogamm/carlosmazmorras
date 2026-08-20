@@ -285,6 +285,24 @@ function soulseekPersistFloorProgress(){
   .catch(e=>console.error('No se pudo guardar el progreso de pisos Soulseek',e));
 }
 
+function soulseekPopulateEntryChests(plan){
+ const ranges=plan?.soulseekEntryChestRanges;if(!ranges)return plan;
+ const occupied=new Set([plan.spawn,plan.stairs,...(plan.enemies||[]),...(plan.chests||[]),...(plan.traps||[]),...(plan.altars||[])].filter(Boolean).map(p=>`${p.x},${p.y}`));
+ const cells=[];
+ for(let y=1;y<plan.map.length-1;y++)for(let x=1;x<plan.map[y].length-1;x++)if(plan.map[y][x]===0&&!occupied.has(`${x},${y}`))cells.push({x,y});
+ const add=(types,range)=>{
+  const defs=configChests.filter(r=>types.includes(r?.chest_json?.type));
+  if(!defs.length)return;
+  for(let i=0,n=randBetween(range[0],range[1]);i<n&&cells.length;i++){
+   const row=pick(defs),index=rng(cells.length),pos=cells.splice(index,1)[0];
+   plan.chests.push({...pos,opened:false,chestDef:{...row.chest_json,configChestId:row.id}});
+  }
+ };
+ add(['equipment','weapon','skill'],ranges.items);
+ add(['potion'],ranges.potions);
+ return plan;
+}
+
 // ============================================================================
 // Wiring: wrap the game.js functions that need Soulseeker-specific
 // behaviour. Every wrapper falls straight through to the original function
@@ -292,10 +310,16 @@ function soulseekPersistFloorProgress(){
 // ============================================================================
 (function wireSoulseekDungeons(){
 
- // -- floor 1 rules are the normal ones; multiples of 3 are guaranteed
+ // -- floor 1 is a short classless threshold; multiples of 3 are guaranteed
  // -- megaboss/boss-chain floors instead of normal mode's 33% chance --
  const soulseekOriginalBuildFloorPlan=buildFloorPlan;
  buildFloorPlan=function(floor,params,opts){
+  if(game?.player?.soulseeker&&floor===1&&!game?.forcedFloorArchetype){
+   game.forcedFloorArchetype='soulseek_entry';
+   const plan=soulseekPopulateEntryChests(soulseekOriginalBuildFloorPlan(floor,params,opts));
+   delete game.forcedFloorArchetype;
+   return plan;
+  }
   if(game?.player?.soulseeker&&floor%3===0&&!game?.forcedFloorArchetype){
    if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
    game.forcedFloorArchetype='bossrush';
@@ -326,6 +350,7 @@ function soulseekPersistFloorProgress(){
    if(block){log(block,'combat');return}
    soulseekGrantFloorReward();
    game.floor++;game.maxFloorReached=Math.max(game.maxFloorReached||1,game.floor);soulseekPersistFloorProgress();soulseekApplyFloorPlan(game.floor);generateFloor();
+   if(game.floor===2&&!game.player.cls)openSoulseekerClassPicker();
   }
  };
 

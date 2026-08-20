@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.98.1';
+const APP_VERSION='0.99.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -1805,6 +1805,16 @@ const ROOM_TYPES={
 
 // weight(floor,total,tier) -> relative probability. 0 disables the archetype.
 const FLOOR_ARCHETYPES={
+ soulseek_entry:{
+  label:'Umbral sin clase', minFloor:1, cooldown:0, objective:'stairs',
+  desc:'Un piso breve antes de escoger una clase.',
+  weight:()=>0,
+  layout:{rooms:[5,7], size:[5,8], corridors:'normal', loops:.1, pillars:.65},
+  enemies:{density:1, elite:1, tierBias:0, bossOnEven:false, count:[12,20]},
+  rewards:{chests:1, rarity:0, itemChests:[1,3], potionChests:[1,3]},
+  roomWeights:{filler:28,combat:38,ambush:10,guardpost:8,shrine:8,creator:8},
+  soulseekEntry:true
+ },
  standard:{
   label:'Piso estándar', minFloor:1, cooldown:0, objective:'stairs',
   desc:'Mezcla equilibrada de salas. Referencia de dificultad.',
@@ -2402,7 +2412,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
  }
 
- const safeRoomCount=arch.objective==='survive'?1:2+rng(3);
+ const safeRoomCount=arch.soulseekEntry?1:(arch.objective==='survive'?1:2+rng(3));
  const excludedRooms=new Set([spawn,stairRoom,bossRoom]);
  const safeRooms=[...rooms].filter(r=>!excludedRooms.has(r)&&r.type!=='bossarena'&&distanceFromSpawn(r)>8).sort(()=>Math.random()-.5).slice(0,safeRoomCount).map((r,i)=>({...r,id:`safe-${floor}-${i}`,rested:false}));
  const safeCellKeys=new Set(safeRooms.flatMap(r=>[...roomCellSet(r)]));
@@ -2569,7 +2579,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
  }
  // baseline chest floor so no archetype is completely dry (only when config_chest has anything to place)
- const minChests=Math.round((8+Math.floor(floor*.6))*(R.chests||1));
+ const minChests=arch.soulseekEntry?0:Math.round((8+Math.floor(floor*.6))*(R.chests||1));
  while(chests.length<minChests){
   const chestDef=pickChestDefForFloor(floor);
   if(!chestDef)break; // config_chest is completely empty: no chests get placed on this floor
@@ -2577,7 +2587,7 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  }
  // --- enemies: budget from the archetype, composition from the room type ---
  const family=pickConfiguredFamilyForFloorWithParams(floor,params),enemies=[];
- const baseCount=Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
+ const baseCount=E.count?randBetween(E.count[0],E.count[1]):Math.round((30+floor*4.5+rng(11))*(E.density||1)*populationScale*pctMult(params.enemyCountPct));
  const combatRooms=rooms.filter(r=>r!==spawn&&(ROOM_TYPES[r.type]?.enemies?.[1]||0)>0);
  let placed=0;
  for(const r of combatRooms){
@@ -2600,6 +2610,15 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
  }
  while(placed<baseCount){const e=buildConfiguredEnemy(weightedFamilyEnemy(family,false,floor,params.floors,E.minTier),free(),floor,false);e.enemyFamily=family.name;enemies.push(e);placed++}
+
+ // The Soulseek threshold has deliberately small, separately balanced loot
+ // pools. They are placed after interiors have been extracted so they remain
+ // exterior loot and do not change each interior's own population rules.
+ if(arch.soulseekEntry){
+  chests.length=0;
+  const nearest=[...enemies].sort((a,b)=>(Math.abs(a.x-stairs.x)+Math.abs(a.y-stairs.y))-(Math.abs(b.x-stairs.x)+Math.abs(b.y-stairs.y)))[0];
+  if(nearest&&!nearest.boss&&!nearest.elite){nearest.elite=true;nearest.name='Elite '+nearest.name;nearest.maxHp=nearest.hp=Math.round(nearest.hp*1.5);nearest.atk=nearest.damage=Math.round((nearest.atk||nearest.damage||4)*1.28);nearest.xp=Math.round((nearest.xp||8)*1.8);assignEnemySkills(nearest)}
+ }
 
  // --- bosses ---
  let boss=null;const bosses=[];
@@ -2661,7 +2680,8 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
  const plan={
   floor,map,rooms,safeRooms,spawn:{x:spawn.cx,y:spawn.cy},stairs,doors,keys,chests,traps,altars,event,assets:assetPlacements,
   enemies,boss,family,archetype:archId,archetypeLabel:arch.label,archetypeDesc:arch.desc,
-  objective,tierExpected:tier,rewardRarityBonus:R.rarity||0,
+  objective,tierExpected:tier,rewardRarityBonus:R.rarity||0,soulseekEntry:!!arch.soulseekEntry,
+  soulseekEntryChestRanges:arch.soulseekEntry?{items:R.itemChests,potions:R.potionChests}:null,
   enemyFamily:family.name,enemyFamilyId:family.dbId||family.id||null,
   themeName:floorTileset.name,floorTileset,announce:!!arch.announce
  };

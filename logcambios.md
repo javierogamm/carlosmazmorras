@@ -1,3 +1,11 @@
+## v0.99.0 - 2026-08-20
+
+- Soulseek mantiene al personaje sin clase durante todo el piso 1 y abre la selección de clase nada más entrar al piso 2. La elección sigue aplicando los bonus de estadísticas de clase y encadena la elección de la primera habilidad.
+- El primer piso de Soulseek es ahora un umbral corto de 5-7 salas, 12-20 enemigos y exactamente 2 interiores cuando existen assets de puerta configurados; uno de ellos corresponde obligatoriamente a la sala de descanso garantizada.
+- El botín exterior del primer piso se limita a 1-3 cofres de objetos y 1-3 cofres de pociones, sin alterar los cofres propios que genere el contenido de los interiores.
+- Se garantiza un enemigo élite cerca de las escaleras de bajada del primer piso.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.99.0`.
+
 ## v0.98.1 - 2026-08-20
 
 - La tabla de puntuaciones Soulseek muestra ahora los **pisos terminados** de cada personaje en lugar del contador de dungeons completas, que siempre permanecía a cero en este modo infinito.
