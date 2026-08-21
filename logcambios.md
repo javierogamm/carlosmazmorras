@@ -1,3 +1,13 @@
+## v1.1.0 - 2026-08-21
+
+- Nueva sección **PJ → PACKS** en la tienda Soulseek: 4 filas de rareza (Común, Infrecuente, Raro, Épico) con 3 packs cada una (Starter, Advanced, Expert), desbloqueos permanentes de cuenta pagados con Soul Spikes.
+  - Común: Starter (50 souls) desbloquea la elección de una armadura y un casco comunes al empezar la partida (antes de las pociones); Advanced (100) desbloquea un anillo común; Expert (150) desbloquea un colgante común.
+  - Infrecuente (200/250/300), Raro (350/400/450) y Épico (500/550/600): el Starter de cada rareza sube la rareza elegible del arma inicial; el Advanced sube la del anillo; el Expert sube la del colgante.
+  - Cada pack requiere tener ya el pack a su izquierda en la misma fila y su equivalente en la fila de rareza inferior (progresión en rejilla).
+- El asistente de equipo inicial de Soulseek añade los pasos de armadura/casco/anillo/colgante cuando corresponda, antes de las pociones.
+- Nueva columna de cuenta `soulseek_starter_packs` (migración `supabase/add_soulseeker_starter_packs.sql`).
+- Sube la versión a 1.1.0 (APP_VERSION, package.json, título/badge y cache-busters de index.html).
+
 ## v0.100.0 - 2026-08-20
 
 - Nuevos niveles de elección de habilidad de clase: 5, 7, 10, 12, 15 y 20 (antes cada nivel impar desde el 3), iguales en modo normal y en Soulseek. Los tiers de habilidad se desbloquean ahora en los niveles 7 (Tier II), 12 (Tier III) y 20 (Tier IV, nuevo). El editor de clases admite Tier IV.
