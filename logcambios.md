@@ -1,3 +1,12 @@
+## v0.100.0 - 2026-08-20
+
+- Nuevos niveles de elección de habilidad de clase: 5, 7, 10, 12, 15 y 20 (antes cada nivel impar desde el 3), iguales en modo normal y en Soulseek. Los tiers de habilidad se desbloquean ahora en los niveles 7 (Tier II), 12 (Tier III) y 20 (Tier IV, nuevo). El editor de clases admite Tier IV.
+- Reorganizados los modificadores de raza: en vez de bonus planos de vida/stamina/maná máximos, la raza aplica un multiplicador porcentual directo a la vida/stamina/maná máximos del personaje (p. ej. +20% de vida máxima). Eliminado el bonus "Curación por piso"; añadida en su lugar una regeneración de vida por turno, igual que las ya existentes de stamina y maná. Eliminado también el bonus "Hallazgo rareza %" de raza (el efecto sigue disponible vía objetos/pasivas de equipo).
+- Todos los modificadores de raza en % (efecto de habilidades, crítico, daño crítico, evasión, multiplicador de XP, gasto de recursos y los nuevos multiplicadores de vida/stamina/maná) se configuran ahora con un selector fijo de -100% a +200% en pasos de 10%, admitiendo valores negativos.
+- Movida la lógica de subida de nivel (curva de XP, crecimiento por nivel, elección de habilidad de clase) a `src/pjlvl.js`, y la lógica de razas (editor de configuración, efectos, selección en creación de personaje) a `src/pjrace.js`.
+- Corregido el botón "REVIVIR (gasta Soul Spikes)" de Soulseek: con menos de 20 Soul Spikes el botón se deshabilitaba sin ningún cambio visual (parecía activo pero el clic no hacía nada). Los botones `.start` deshabilitados ahora se atenúan y muestran el cursor de bloqueado.
+- Actualizada la versión de runtime, paquete y cache-busting a `0.100.0`.
+
 ## v0.99.0 - 2026-08-20
 
 - Soulseek mantiene al personaje sin clase durante todo el piso 1 y abre la selección de clase nada más entrar al piso 2. La elección sigue aplicando los bonus de estadísticas de clase y encadena la elección de la primera habilidad.
