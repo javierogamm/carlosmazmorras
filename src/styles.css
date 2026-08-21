@@ -121,7 +121,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .vbMana i{background:linear-gradient(#cdbaff,#7857d6)}
 
 @media(max-width:600px){
- .mobileSkillbar{gap:3px;padding:4px}
+ .mobileSkillbar{gap:3px}
  .hudButton{width:32px;height:32px;font-size:15px}
  #minimap{width:84px;height:84px}
  .minimapWrap{right:6px;bottom:6px;padding:3px}
@@ -148,24 +148,31 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
 .statbox{background:#17101f;border:2px solid #4d395a;padding:7px}
 .statbox button{width:28px;height:28px;background:#49335a;color:#fff;border:1px solid #8d68a2}
-/* Single compact row: hotkey + icon + one-line name/cost. Full detail (dice, range, defense) lives in the title tooltip. */
-.mobileSkillbar{position:relative;z-index:35;background:#100b16ee;border:3px solid #654778;padding:5px;margin-top:6px;display:flex;gap:5px;justify-content:center;backdrop-filter:blur(5px);box-shadow:0 4px 16px #000b;transition:opacity .14s ease,transform .14s ease,max-height .14s ease,margin .14s ease,padding .14s ease}.targeting .mobileSkillbar{opacity:0;transform:translateY(8px);pointer-events:none;max-height:0;overflow:hidden;margin:0;padding-top:0;padding-bottom:0;border-width:0}
-.mobileSkill{display:flex;align-items:center;gap:5px;height:38px;flex:1;min-width:0;max-width:118px;background:linear-gradient(#4a3459,#291c34);color:#fff;border:2px solid #8a64a0;padding:3px 6px;position:relative;text-align:left}
+/* Skill thumbnails: small icon-only squares overlaid on the board itself
+   (bottom-center of #gameStage, not a row below it). Full name/cost/range
+   detail lives in the title tooltip instead of on-button text. */
+.mobileSkillbar{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:35;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:94%;transition:opacity .14s ease,transform .14s ease}.targeting .mobileSkillbar{opacity:0;transform:translate(-50%,8px);pointer-events:none}
+.mobileSkill{display:grid;place-items:center;width:34px;height:34px;flex:none;background:linear-gradient(#4a3459,#291c34);color:#fff;border:2px solid #8a64a0;padding:0;position:relative;box-shadow:0 2px 8px #000b}
 .mobileSkill:disabled{opacity:.42}
-.mobileSkill .slotKey{flex:none;color:#ffd365;font-size:9px}
-.mobileSkill .icon{flex:none;font-size:16px;line-height:1}
+.mobileSkill .slotKey{position:absolute;left:2px;top:1px;color:#ffd365;font-size:8px;line-height:1}
+.mobileSkill .icon{font-size:17px;line-height:1}
 .attackSkill{border-color:#c65d5d;background:linear-gradient(#65313a,#321b22)}
-.mobileSkill .skillText{display:flex;flex-direction:column;min-width:0;line-height:1.15}
-.mobileSkill b{display:block;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
-.costTag{display:block;font-size:8px;color:#e9d8a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cooldown{position:absolute;right:1px;top:1px;background:#000d;color:#ffd365;border-radius:50%;min-width:16px;height:16px;line-height:16px;font-size:9px}
-.targetHint{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
+.cooldown{position:absolute;right:1px;top:1px;background:#000d;color:#ffd365;border-radius:50%;min-width:14px;height:14px;line-height:14px;font-size:8px}
+@media(max-width:600px){.mobileSkill{width:30px;height:30px}.mobileSkill .icon{font-size:15px}}
+.targetHint{position:absolute;left:50%;bottom:80px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
 
-/* Remaining PA (action points): always centered at the bottom of the board,
-   independent of side panel / gameOnly layout, visible at every resolution. */
-.apBadge{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);z-index:9;background:#0c0910dd;border:2px solid #ffc35a;color:#ffd68b;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.04em;pointer-events:none;white-space:nowrap}
+/* Remaining PA (action points): centered above the skill thumbnail row, at
+   the bottom of the board, visible at every resolution. */
+.apBadge{position:absolute;left:50%;bottom:46px;transform:translateX(-50%);z-index:9;background:#0c0910dd;border:2px solid #ffc35a;color:#ffd68b;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.04em;pointer-events:none;white-space:nowrap}
 .apBadge b{color:#fff;margin-left:4px}
-@media(max-width:600px){.apBadge{font-size:10px;padding:3px 9px;bottom:6px}}
+@media(max-width:600px){.apBadge{font-size:10px;padding:3px 9px;bottom:38px}.targetHint{bottom:64px}}
+
+/* Quick-use potion: bottom-left of the board (mirrors the minimap's
+   bottom-right corner), same size as a skill thumbnail. Marked from the
+   Pociones tab (see .quickPotionMiniBtn) - only one at a time. */
+.quickPotionBadge{position:absolute;left:8px;bottom:6px;z-index:35;width:34px;height:34px;padding:0;border:2px solid #ffc35a;background:#0c0910dd;cursor:pointer;box-shadow:0 2px 8px #000b}
+.quickPotionBadge canvas{width:100%;height:100%;display:block;image-rendering:auto}
+@media(max-width:600px){.quickPotionBadge{width:30px;height:30px;left:6px;bottom:4px}}
 
 /* Long-press-and-drag basic attack (src/touch.js): a flowing dashed arrow
    from the hero to the finger, red/green depending on whether the cell under
@@ -258,6 +265,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .craftTabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}.craftTabs button{background:#251a2f;color:#fff;border:2px solid #684b7c;padding:9px 14px;cursor:pointer}.craftTabs button.active{background:#65447a;border-color:#ffc35a}.craftPane.hidden{display:none}
 .craftIconGrid{display:grid;grid-template-columns:repeat(auto-fill,44px);gap:5px;max-height:260px;overflow-y:auto;background:#120d18;border:1px solid #4d395a;padding:6px;margin:8px 0}.craftIconOption{background:#17101f;border:2px solid #4d395a;padding:1px;cursor:pointer;line-height:0}.craftIconOption:hover{border-color:#8b6b9d}.craftIconOption.selected{border-color:#ffc35a;box-shadow:0 0 6px #ffc35a88}
 .item{position:relative}.item.onCooldown{opacity:.5;cursor:default}.disenchantMiniBtn{position:absolute;top:4px;right:4px;width:22px;height:22px;padding:0;display:flex;align-items:center;justify-content:center;background:#31223c;border:1px solid #6a4d7d;cursor:pointer}.disenchantMiniBtn:hover{border-color:#ffc35a}.shardTierIcon{image-rendering:auto;flex:none}.shardRow{grid-template-columns:28px 1fr}.equipOffhandMiniBtn{position:absolute;top:4px;right:30px;height:22px;padding:0 6px;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;background:#223c31;border:1px solid #4d7d5e;color:#d8f5e2;cursor:pointer}.equipOffhandMiniBtn:hover{border-color:#5affa0}
+.quickPotionMiniBtn{position:absolute;top:4px;right:30px;width:22px;height:22px;padding:0;display:flex;align-items:center;justify-content:center;background:#31223c;border:1px solid #6a4d7d;color:#ffd68b;font-size:13px;line-height:1;cursor:pointer}.quickPotionMiniBtn:hover{border-color:#ffc35a}.quickPotionMiniBtn.active{background:#4a3a12;border-color:#ffc35a;color:#ffe28a}.item.quickPotionActive{border-color:#ffc35a;box-shadow:inset 0 0 0 1px #ffc35a55}
 .worldSettingsAccordion,.worldSettingsSubAccordion{background:#120d18;border:2px solid #4d395a;margin:10px 0}.worldSettingsAccordion>summary,.worldSettingsSubAccordion>summary{cursor:pointer;color:#ffd68b;background:#21162a;padding:9px 10px}.worldSettingsSubAccordion{margin:8px}.worldParamsGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px}.worldParamsGrid label,.worldStoryControls label{display:grid;gap:4px}.worldParamsGrid input,.worldStoryControls input,.worldFloorPlanRow select{background:#100b16;color:#f4ead5;border:2px solid #5b4269;padding:8px}.worldStoryControls{display:grid;gap:8px;padding:10px}.worldFloorPlanList{display:grid;gap:6px;max-height:260px;overflow:auto;padding-right:4px}.worldFloorPlanRow{display:grid;grid-template-columns:58px 1fr 1fr 1fr;gap:6px;align-items:end;background:#17101f;border:1px solid #4d395a;padding:6px}.worldFloorPlanRow b{color:#ffd68b}@media(max-width:600px){.worldParamsGrid,.worldFloorPlanRow{grid-template-columns:1fr}}
 
 .worldParamsGrid span{color:#ffd68b;font-size:10px;text-align:right}
@@ -286,7 +294,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 
 /* Dungeon configuration */
 .dungeonConfigLayout{grid-template-columns:minmax(390px,1fr) minmax(420px,1fr)}.dungeonPreviewNav{display:flex;justify-content:center;align-items:center;gap:14px;margin:8px}.dungeonPreviewNav button{background:#31223c;color:#fff;border:2px solid #6a4d7d;padding:7px 14px}.dungeonFloorRow{grid-template-columns:32px 1fr}.dungeonFloorControls{display:grid;grid-template-columns:1fr 1fr;gap:6px}.dungeonFloorControls label:last-child{grid-column:1/-1}.dungeonImportBtn{display:inline-block;width:auto;margin:0;padding:7px}.dungeonConfigLayout textarea{background:#100b16;color:#f4ead5;border:2px solid #5b4269;padding:8px}#dungeonGeometryPreview{display:block;width:100%;height:auto;max-height:65vh;background:#09070c;border:2px solid #684b7c;image-rendering:auto}@media(max-width:900px){.dungeonConfigLayout{grid-template-columns:1fr}.dungeonFloorControls{grid-template-columns:1fr}}
-.skillCard.raceSkill,.mobileSkill.raceSkill{border-color:#f3d77a;background:linear-gradient(135deg,#fffdf2,#c99b2e);color:#241603;box-shadow:0 0 10px #e8c45b66}.skillCard.raceSkill .small,.mobileSkill.raceSkill .costTag{color:#49340c}.raceChoiceIcon{width:42px;height:42px;object-fit:contain;image-rendering:auto}
+.skillCard.raceSkill,.mobileSkill.raceSkill{border-color:#f3d77a;background:linear-gradient(135deg,#fffdf2,#c99b2e);color:#241603;box-shadow:0 0 10px #e8c45b66}.skillCard.raceSkill .small{color:#49340c}.raceChoiceIcon{width:42px;height:42px;object-fit:contain;image-rendering:auto}
 .savedSessionRow{display:flex;gap:8px;align-items:stretch;margin-bottom:8px}
 .savedSessionRow .worldCard{flex:1;margin:0}
 .deleteSessionBtn{flex:0 0 auto;border-color:#8f3030;color:#ffaaaa;background:#2b1111;font-weight:700}

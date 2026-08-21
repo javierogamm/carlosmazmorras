@@ -13,12 +13,19 @@
 // initialised first.
 //
 // ---- Gesture design ---------------------------------------------------------
-// A single touch on the board can mean one of three things, disambiguated by
+// A single touch on the board can mean one of four things, disambiguated by
 // how it moves:
 //  - a TAP (little movement, released quickly): left alone entirely here -
-//    no touchend handling fires for it, so the browser's own synthetic
-//    'click' event still reaches the canvas 'click' listener in game.js
-//    unchanged (that's what keeps skill/potion targeting-by-tap working).
+//    no touchend handling fires for it beyond double-tap bookkeeping, so the
+//    browser's own synthetic 'click' event still reaches the canvas 'click'
+//    listener in game.js unchanged (that's what keeps skill/potion
+//    targeting-by-tap working).
+//  - a DOUBLE TAP (two taps in quick succession, near the same spot): the
+//    same action as clicking #waitBtn - enter/leave an interior, rest at a
+//    campfire, or just pass the turn, whichever applies at the hero's
+//    current tile (see updateRestButton() in game.js, which decides that
+//    per-tile). The second tap's synthetic click is suppressed so it can't
+//    also open the inspect popup underneath.
 //  - a SWIPE (moves past a small threshold before the long-press delay
 //    elapses): one grid step in the dominant direction via move(dx,dy),
 //    resolved on release - exactly like one arrow-key press.
@@ -27,13 +34,15 @@
 //    the finger, and on release attacks whatever enemy is under it, subject
 //    to the same weapon range/line-of-sight rules as the keyboard/gamepad
 //    basic attack.
-// None of this calls preventDefault: page scroll during the gesture is
+// Nothing here calls preventDefault except the double-tap's second touchend
+// (to swallow its synthetic click): page scroll during the gesture is
 // stopped by `touch-action:none` on #game (see styles.css) instead, which is
-// what keeps the browser's tap-vs-drag click synthesis intact.
+// what keeps the browser's tap-vs-drag click synthesis intact for every
+// other case.
 // ============================================================================
 
-const TOUCH_SWIPE_MOVE_PX=28,TOUCH_LONG_PRESS_MS=260,TOUCH_LONG_PRESS_JITTER_PX=14;
-let touchGesture=null,attackDragArrowEl=null;
+const TOUCH_SWIPE_MOVE_PX=28,TOUCH_LONG_PRESS_MS=260,TOUCH_LONG_PRESS_JITTER_PX=14,TOUCH_DOUBLE_TAP_MS=350,TOUCH_DOUBLE_TAP_PX=32;
+let touchGesture=null,attackDragArrowEl=null,lastBoardTapAt=0,lastBoardTapX=0,lastBoardTapY=0;
 
 function boardTouchAllowed(){return !!game&&!busy&&!game.over&&!pendingTargetAction&&!blockingModalOpen()}
 
@@ -97,6 +106,19 @@ boardTouchEl?.addEventListener('touchend',ev=>{
  }else if(gesture.mode==='attack'){
   if(t){const {x,y}=cellFromClientPoint(t.clientX,t.clientY);resolveDragAttack(x,y)}
   removeAttackDragArrow();
+ }else if(gesture.mode==='pending'&&t){
+  // A genuine tap (never grew past the long-press jitter threshold): check
+  // whether it lands close enough in time/space to the previous one to count
+  // as a double-tap. If not, just remember it as the new "last tap" and let
+  // the browser's synthetic click fire normally for it.
+  const now=Date.now();
+  if(now-lastBoardTapAt<=TOUCH_DOUBLE_TAP_MS&&Math.hypot(t.clientX-lastBoardTapX,t.clientY-lastBoardTapY)<=TOUCH_DOUBLE_TAP_PX){
+   lastBoardTapAt=0;
+   ev.preventDefault();
+   document.getElementById('waitBtn')?.click();
+  }else{
+   lastBoardTapAt=now;lastBoardTapX=t.clientX;lastBoardTapY=t.clientY;
+  }
  }
-},{passive:true});
+},{passive:false});
 boardTouchEl?.addEventListener('touchcancel',()=>{if(touchGesture){clearTimeout(touchGesture.timer);touchGesture=null}removeAttackDragArrow()},{passive:true});
