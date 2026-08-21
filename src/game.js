@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.100.0';
+const APP_VERSION='1.0.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -132,14 +132,26 @@ function applyOffhandGuarantee(item){
  }
  return item;
 }
-// A weapon-slot dagger or wand can also be equipped in the offhand slot (dual
-// wielding a secondary weapon) via equipItemAsOffhand() - same name/weaponType
-// detection convention as detectOffhandKind(), but restricted to actual
-// weapon-slot items instead of procedural offhand accessories.
+// A weapon-slot dagger, wand or space pistol can also be equipped in the
+// offhand slot (dual wielding a secondary weapon) via equipItemAsOffhand() -
+// same name/weaponType detection convention as detectOffhandKind(), but
+// restricted to actual weapon-slot items instead of procedural offhand
+// accessories.
 function isDualHandWeapon(item){
  if(!item||item.slot!=='weapon')return false;
- if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas';
- return /daga|varita/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+ if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas'||item.weaponType==='Pistolas espaciales';
+ return /daga|varita|pistola espacial/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+}
+// Unlike a dual-wielded dagger/wand (which only ever grant regen affixes
+// through the normal per-slot affix sum, and never touch damage/procs - see
+// maybeProcWeaponEffects), a space pistol is explicitly the one off-hand
+// weapon that also adds flat damage, on top of whatever stats its own
+// affixes carry. Only counts while it's actually sitting in the offhand
+// slot, not when equipped as the main weapon.
+const OFFHAND_WEAPON_DAMAGE_BONUS={'Pistolas espaciales':2};
+function offhandWeaponDamageBonus(p){
+ const item=p?.equipment?.offhand;
+ return item?.slot==='weapon'?(OFFHAND_WEAPON_DAMAGE_BONUS[item.weaponType]||0):0;
 }
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
@@ -162,7 +174,9 @@ function effectiveProgressFloor(floor,totalFloors){
 function currentTotalFloors(){return selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
  const level=balanceLevel(game?.floorEntryLevel||playerLevel);
- return level<4?0:level<8?1:level<13?2:level<19?3:level<25?4:5;
+ // Uncommon ("Infrecuente") unlocks a level earlier than it used to - from
+ // character level 3 on, not just level 4+.
+ return level<3?0:level<8?1:level<13?2:level<19?3:level<25?4:5;
 }
 function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
  const lvl=Math.max(1,Number(game?.floorEntryLevel||playerLevel)||1);
@@ -171,8 +185,12 @@ function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
 function lootProgressionRow(floor,totalFloors,playerLevel=1){
  const maxIndex=maxLootRarityIndexForProgress(floor,totalFloors,playerLevel),range=lootIlvlRangeForProgress(floor,totalFloors,playerLevel),ratio=lootProgressRatio(floor,totalFloors);
  const weights={...LOOT_RARITY_BASE_WEIGHTS};
- weights.common=Math.max(20,Math.round(72-ratio*54));
- weights.uncommon=Math.max(16,Math.round(22+ratio*14));
+ // Common starts lower and uncommon starts higher (both floor and base
+ // weight) than before, so once uncommon unlocks at level 3 it's a
+ // meaningfully more common drop instead of a rare treat, at the expense of
+ // common's dominance.
+ weights.common=Math.max(15,Math.round(60-ratio*50));
+ weights.uncommon=Math.max(20,Math.round(32+ratio*16));
  weights.rare=Math.max(6,Math.round(6+ratio*16));
  weights.epic=maxIndex>=3?Math.max(1,Math.round((ratio-.18)*18)):0;
  weights.legendary=maxIndex>=4?Math.max(1,Math.round((ratio-.50)*9)):0;
@@ -672,11 +690,11 @@ const weaponRows=[
  {category:'Armas míticas ciberpunk',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:8,legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Cañón del corazón azul', 'Guadaña del vacío violeta', 'Espada de plasma imperial', 'Hoja del reactor carmesí', 'Estrella de energía criónica', 'Rifle del arcángel mecánico', 'Hacha del señor de las máquinas', 'Lanza de fotones', 'Bastón de singularidad violeta', 'Núcleo del apocalipsis mecánico']}
 ];
 const weaponCategories=weaponRows.map(r=>r.category);
-const configWeaponTypes=['Espadas','Dagas','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Garras','Látigos','Drones','Granadas','Artefactos'];
-const WEAPON_ATTACK_AP_COST={Espadas:10,Dagas:7,Bastones:8,Martillos:10,Mazas:7,Pistolas:7,Rifles:10,Arcos:12,Ballestas:10,Látigos:8,Varitas:8,Garras:7};
+const configWeaponTypes=['Espadas','Dagas','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Garras','Látigos','Drones','Granadas','Artefactos','Pistolas espaciales'];
+const WEAPON_ATTACK_AP_COST={Espadas:10,Dagas:7,Bastones:8,Martillos:10,Mazas:7,Pistolas:7,Rifles:10,Arcos:12,Ballestas:10,Látigos:8,Varitas:8,Garras:7,'Pistolas espaciales':7};
 function weaponAttackApCost(item=equippedWeapon()){return WEAPON_ATTACK_AP_COST[item?.weaponType]??10}
-const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía'};
-const weaponTypeRanges={Varitas:{min:1,max:4},Arcos:{min:2,max:5},Ballestas:{min:1,max:4},Pistolas:{min:1,max:3},Rifles:{min:2,max:5},Escopetas:{min:1,max:2}};
+const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía','Pistolas espaciales':'Armas de energía orbital'};
+const weaponTypeRanges={Varitas:{min:1,max:4},Arcos:{min:2,max:5},Ballestas:{min:1,max:4},Pistolas:{min:1,max:3},Rifles:{min:2,max:5},Escopetas:{min:1,max:2},'Pistolas espaciales':{min:1,max:3}};
 const weaponCategoryStats=Object.fromEntries(weaponRows.flatMap(r=>[r.category,...r.legacy].map(c=>[c,r.stat])));
 function weaponRowForCategory(category){return Math.max(0,weaponRows.findIndex(r=>r.category===category||r.legacy.includes(category)))}
 function weaponPowerColumn(itemLevel,rarity,score=0){
@@ -1084,10 +1102,15 @@ function recomputeDerived(){
  const p=game.player,allStats={...p.stats},rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom'])allStats[k]=(allStats[k]||0)+(Number(rb[k])||0);
  const direct={armor:Number(rb.armor)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,hpRegen:Number(rb.hpRegen)||0};
- for(const item of Object.values(p.equipment||{}))if(item){
+ for(const [slot,item] of Object.entries(p.equipment||{}))if(item){
   for(const a of item.affixes||[]){
    // Legacy physicalPower/magicPower fields are deliberately ignored.
    if(a.key==='physicalPower'||a.key==='magicPower')continue;
+   // Per-turn regen is an offhand-exclusive mechanic (a wand's mana regen, a
+   // dagger's stamina regen) - only ever meant to matter while the item is
+   // actually sitting in the left hand, not when the same weapon is the main
+   // hand's weapon. Everything else still sums from whatever slot it's in.
+   if((a.key==='manaRegen'||a.key==='staminaRegen')&&slot!=='offhand')continue;
    if(a.key in allStats)allStats[a.key]+=Number(a.value)||0;else direct[a.key]=(direct[a.key]||0)+(Number(a.value)||0)
   }
   for(const pa of item.passives||[]){if(pa.stat==='physicalPower'||pa.stat==='magicPower')continue;direct[pa.stat]=(direct[pa.stat]||0)+(Number(pa.value)||0)}
@@ -3359,7 +3382,7 @@ const DEFENSE_STAT_LABELS={
 // flavor-name regex below so "basic attack" stat is deterministic by weapon
 // type rather than dependent on whatever flavor name it happened to roll:
 // daggers/claws/rifles/pistols use agility, shotguns use strength.
-const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
+const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength','Pistolas espaciales':'agility'};
 function inferWeaponDefenseStat(item){
  // Trust the stat already resolved onto the item (configuredItemFromRow sets
  // it from WEAPON_TYPE_STAT/weaponCategoryStats at creation time) before
@@ -3534,7 +3557,7 @@ function diceDamageLabel(id){
  return `${expr} + bonus automático de ${skillIsUtility(d)?'SAB':'INT'}`
 }
 
-function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
+function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='damage')v+=offhandWeaponDamageBonus(game.player);if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
 // Buff value for 'critChance' is read as flat percentage points (e.g. 10 =
 // +10%), same convention as the other %-based buffable stats below.
 function critChance(){const d=game.player.derived||{};return Math.min(.75,(d.critChance??4)/100)}
@@ -3654,21 +3677,22 @@ function kill(e){
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
-// Weapon on-hit procs: after a basic player attack lands, the
-// equipped weapon's own effects[] gets one independent procChance roll; on
-// success it fires at the same target through the exact same composable-
-// effects engine as skills/potions (see effectSourceDef/beginExternalEffectsCast).
-// One successful roll fires the complete effects[] stack.
+// Weapon on-hit procs: after a basic player attack lands, the equipped MAIN
+// weapon's own effects[] gets one independent procChance roll; on success it
+// fires at the same target through the exact same composable-effects engine
+// as skills/potions (see effectSourceDef/beginExternalEffectsCast). An
+// off-hand weapon (a dual-wielded dagger/wand, or a space pistol) never
+// procs here - only a genuine shield's own defensive proc
+// (maybeProcDefensiveEquipmentEffects) fires from the offhand slot.
 function maybeProcWeaponEffects(target){
- const weapons=[['weapon',equippedWeapon()],['offhand',game.player.equipment?.offhand]].filter(([,item])=>item?.slot==='weapon'&&Array.isArray(item.effects)&&item.effects.length);
- for(const [slot,weapon] of weapons){
-  const chance=Math.max(0,Math.min(100,(Number(weapon.procChance)||0)+(game.player.derived?.weaponProcLuckBonus||0)))/100;
-  if(chance<=0||Math.random()>=chance)continue;
-  procFx(target.x,target.y,{color:'#ffd45f',icon:'⚡'});
-  const castId=beginExternalEffectsCast(`equip:${slot}:proc`,weapon);
-  applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
-  endExternalEffectsCast();
- }
+ const weapon=equippedWeapon();
+ if(!weapon||!Array.isArray(weapon.effects)||!weapon.effects.length)return;
+ const chance=Math.max(0,Math.min(100,(Number(weapon.procChance)||0)+(game.player.derived?.weaponProcLuckBonus||0)))/100;
+ if(chance<=0||Math.random()>=chance)return;
+ procFx(target.x,target.y,{color:'#ffd45f',icon:'⚡'});
+ const castId=beginExternalEffectsCast('equip:weapon:proc',weapon);
+ applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
+ endExternalEffectsCast();
 }
 // Armor/shield defensive proc: every damage source funnels through damagePlayer(),
 // so rolling here after mitigation guarantees the proc is evaluated for
