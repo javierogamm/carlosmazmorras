@@ -426,7 +426,7 @@ async function soulseekBuySkill(id,cost){
 function soulseekStarterPackLabel(tier){return tier===1?'Starter':tier===2?'Advanced':'Expert'}
 function soulseekStarterPackDesc(rarity,tier){
  const label=(tierDefs[rarity]?.label||rarity).toLowerCase();
- if(tier===1)return rarity==='common'?`Desbloquea una armadura y un casco comunes a elegir al empezar la partida (antes de las pociones).`:`El arma inicial se puede elegir en rareza ${label}.`;
+ if(tier===1)return rarity==='common'?`Desbloquea una armadura y un casco comunes a elegir al empezar la partida (antes de las pociones).`:`El arma, la armadura y el casco iniciales se pueden elegir en rareza ${label}.`;
  if(tier===2)return rarity==='common'?`Desbloquea un anillo común a elegir al empezar la partida.`:`El anillo inicial se puede elegir en rareza ${label}.`;
  return rarity==='common'?`Desbloquea un colgante común a elegir al empezar la partida.`:`El colgante inicial se puede elegir en rareza ${label}.`;
 }

@@ -2,7 +2,7 @@
 
 - Nueva sección **PJ → PACKS** en la tienda Soulseek: 4 filas de rareza (Común, Infrecuente, Raro, Épico) con 3 packs cada una (Starter, Advanced, Expert), desbloqueos permanentes de cuenta pagados con Soul Spikes.
   - Común: Starter (50 souls) desbloquea la elección de una armadura y un casco comunes al empezar la partida (antes de las pociones); Advanced (100) desbloquea un anillo común; Expert (150) desbloquea un colgante común.
-  - Infrecuente (200/250/300), Raro (350/400/450) y Épico (500/550/600): el Starter de cada rareza sube la rareza elegible del arma inicial; el Advanced sube la del anillo; el Expert sube la del colgante.
+  - Infrecuente (200/250/300), Raro (350/400/450) y Épico (500/550/600): el Starter de cada rareza sube la rareza elegible del arma, la armadura y el casco iniciales a la vez; el Advanced sube la del anillo; el Expert sube la del colgante.
   - Cada pack requiere tener ya el pack a su izquierda en la misma fila y su equivalente en la fila de rareza inferior (progresión en rejilla).
 - El asistente de equipo inicial de Soulseek añade los pasos de armadura/casco/anillo/colgante cuando corresponda, antes de las pociones.
 - Los packs se guardan dentro de la columna ya existente `soulseek_classes` (como entradas extra con prefijo `pack:`), sin crear ninguna columna nueva.

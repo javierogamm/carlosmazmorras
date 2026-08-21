@@ -535,11 +535,14 @@ function soulseekRarityCappedRows(rows,capRarity){
  return soulseekLowestRarityRows(rows);
 }
 function soulseekCommonWeaponRows(){return soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='weapon'),soulseekWeaponRarityCap())}
-// v1.1 shop unlocks: armor+helmet (common only, unlocked - not upgraded - by
-// the Común Starter pack) and ring/necklace (unlocked by the Común Advanced/
-// Expert packs, rarity-capped by their higher-rarity counterparts).
-function soulseekArmorRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='chest'))}
-function soulseekHelmetRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='head'))}
+// v1.1 shop unlocks: armor+helmet (unlocked by the Común Starter pack, then
+// rarity-capped by the SAME tier-1 packs that cap the weapon - uncommon/
+// rare/epic Starter raise weapon, armor AND helmet together) and ring/
+// necklace (unlocked by the Común Advanced/Expert packs, rarity-capped by
+// their own higher-rarity counterparts).
+function soulseekArmorRarityCap(){return soulseekArmorUnlocked()?soulseekWeaponRarityCap():null}
+function soulseekArmorRows(){const cap=soulseekArmorRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='chest'),cap):[]}
+function soulseekHelmetRows(){const cap=soulseekArmorRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='head'),cap):[]}
 function soulseekRingRows(){const cap=soulseekRingRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>{const s=(r.item_json||r).slot||r.slot;return s==='ring1'||s==='ring2'}),cap):[]}
 function soulseekNecklaceRows(){const cap=soulseekNecklaceRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='neck'),cap):[]}
 
@@ -552,9 +555,10 @@ function soulseekNecklaceRows(){const cap=soulseekNecklaceRarityCap();return cap
 // "equivalent" pack in the previous row) - see soulseekStarterPackPrereqOk,
 // used by the buy UI in soulseek_shop.js.
 // Effects applied at loadout time (see the row-fetch functions above):
-//  - tier 1 (Starter): common unlocks a NEW armor+helmet pick; uncommon/rare/
-//    epic instead raise the WEAPON pick's rarity cap (the weapon slot is
-//    already offered for free at common - there's nothing to "unlock" there).
+//  - tier 1 (Starter): common unlocks NEW armor+helmet picks (the weapon
+//    slot is already offered for free at common - there's nothing to
+//    "unlock" there); uncommon/rare/epic raise the rarity cap of all three
+//    together - weapon, armor AND helmet.
 //  - tier 2 (Advanced): common unlocks a NEW ring pick; uncommon/rare/epic
 //    raise that ring pick's rarity cap.
 //  - tier 3 (Expert): common unlocks a NEW necklace pick; uncommon/rare/epic
