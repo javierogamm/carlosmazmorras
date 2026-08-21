@@ -3237,17 +3237,26 @@ function updateApBadge(){
  document.getElementById('apBadgeValue').textContent=game.player.ap;
  el.classList.remove('hidden');
 }
+// Mirrors #waitBtn's disabled/title onto the on-board pass-turn thumbnail
+// (#passTurnSkillBtn, see .boardActionBar) so the two stay in lockstep
+// without duplicating the entrance/exit/rest/pass-turn branching above.
+function syncPassTurnButton(waitBtnEl){
+ const el=document.getElementById('passTurnSkillBtn');if(!el)return;
+ el.disabled=waitBtnEl.disabled;
+ el.title=waitBtnEl.textContent;
+}
 function updateRestButton(){
  updateApBadge();
  const btn=document.getElementById('waitBtn');if(!btn)return;
  const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
- if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;return}
- if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;return}
+ if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;syncPassTurnButton(btn);return}
+ if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;syncPassTurnButton(btn);return}
  delete btn.dataset.interior;
  const room=campAtPlayer();
  if(room){btn.textContent=room.rested?'DESCANSADO':'DESCANSAR';btn.disabled=!!room.rested;btn.dataset.rest='1'}
  else if(apModeOn()){if(game.player.ap==null)startPlayerAP();btn.textContent=`PASAR TURNO (${game.player.ap} PA)`;btn.disabled=!!(game.multiplayer&&!game.myTurn);delete btn.dataset.rest}
  else{btn.textContent='ESPERAR';btn.disabled=false;delete btn.dataset.rest}
+ syncPassTurnButton(btn);
 }
 
 // A pet's pending order (see resolveCompanionCommand) references a live
@@ -11180,4 +11189,15 @@ document.getElementById('hudSkills')?.addEventListener('click',()=>{showTab('ski
 document.getElementById('hudMap')?.addEventListener('click',()=>{const w=document.getElementById('minimapWrap');w.classList.toggle('minimapHidden');document.getElementById('hudMap').textContent=w.classList.contains('minimapHidden')?'🗺':'✕'});
 document.getElementById('hudFullscreen')?.addEventListener('click',toggleGameOnly);
 document.getElementById('quickPotionBadge')?.addEventListener('click',()=>{if(game?.player?.quickPotionId)usePotion(game.player.quickPotionId)});
+// Pass-turn thumbnail: a stable element (unlike .mobileSkillbar's own
+// buttons, which updateUI() rebuilds from scratch every call) so the spin
+// animation actually gets to play instead of being wiped by the very
+// re-render the click itself triggers. Delegates to #waitBtn's own click
+// handler for the entrance/exit/rest/pass-turn branching (updateRestButton
+// keeps this button's disabled/title in sync with it).
+document.getElementById('passTurnSkillBtn')?.addEventListener('click',function(){
+ this.classList.remove('spin');void this.offsetWidth;this.classList.add('spin');
+ document.getElementById('waitBtn')?.click();
+});
+document.getElementById('passTurnSkillBtn')?.addEventListener('animationend',function(){this.classList.remove('spin')});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('gameOnly')});

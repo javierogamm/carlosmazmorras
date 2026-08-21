@@ -150,13 +150,23 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .statbox button{width:28px;height:28px;background:#49335a;color:#fff;border:1px solid #8d68a2}
 /* Skill thumbnails: small icon-only squares overlaid on the board itself
    (bottom-center of #gameStage, not a row below it). Full name/cost/range
-   detail lives in the title tooltip instead of on-button text. */
-.mobileSkillbar{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:35;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:94%;transition:opacity .14s ease,transform .14s ease}.targeting .mobileSkillbar{opacity:0;transform:translate(-50%,8px);pointer-events:none}
+   detail lives in the title tooltip instead of on-button text.
+   #passTurnSkillBtn sits to the left of them, in .boardActionBar - that
+   wrapper carries the positioning so the pass-turn button stays a stable
+   element (never rebuilt), unlike .mobileSkillbar's own children which are
+   re-rendered on every updateUI() call - that's what lets its spin
+   animation actually play instead of being wiped mid-frame. */
+.boardActionBar{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:35;display:flex;align-items:center;gap:4px;max-width:94%;transition:opacity .14s ease,transform .14s ease}.targeting .boardActionBar{opacity:0;transform:translate(-50%,8px);pointer-events:none}
+.mobileSkillbar{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
 .mobileSkill{display:grid;place-items:center;width:34px;height:34px;flex:none;background:linear-gradient(#4a3459,#291c34);color:#fff;border:2px solid #8a64a0;padding:0;position:relative;box-shadow:0 2px 8px #000b}
 .mobileSkill:disabled{opacity:.42}
 .mobileSkill .slotKey{position:absolute;left:2px;top:1px;color:#ffd365;font-size:8px;line-height:1}
 .mobileSkill .icon{font-size:17px;line-height:1}
 .attackSkill{border-color:#c65d5d;background:linear-gradient(#65313a,#321b22)}
+.waitSkill{border-color:#3d7fc4;background:linear-gradient(#254a73,#132538)}
+.waitSkill .icon{display:inline-block}
+.waitSkill.spin .icon{animation:hourglassSpin .6s ease-in-out}
+@keyframes hourglassSpin{to{transform:rotate(360deg)}}
 .cooldown{position:absolute;right:1px;top:1px;background:#000d;color:#ffd365;border-radius:50%;min-width:14px;height:14px;line-height:14px;font-size:8px}
 @media(max-width:600px){.mobileSkill{width:30px;height:30px}.mobileSkill .icon{font-size:15px}}
 .targetHint{position:absolute;left:50%;bottom:80px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
@@ -306,4 +316,4 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
    stat pick asks for confirmation while .statPointModal is still open). */
 .uiPromptModal{z-index:10050}.uiPromptBox{width:min(460px,100%)}.uiPromptBox h2{color:#ffd477;margin:0 0 8px}.uiPromptText{white-space:pre-line}.uiPromptField{display:block;margin:10px 0}.uiPromptField input{width:100%;box-sizing:border-box;padding:8px;background:#0e0a13;color:#f3eaf6;border:2px solid #59406b;font-family:inherit}.uiPromptField.hidden{display:none}
 @media(max-width:600px){.gamepadBindings{grid-template-columns:1fr}}
-body.gameOnly{margin:0;background:#09070c;overflow:hidden}body.gameOnly>#globalMenuBtn,body.gameOnly #app>header,body.gameOnly .log,body.gameOnly .controls,body.gameOnly .gamePanel>.small,body.gameOnly .floorObjective,body.gameOnly .mobileSkillbar{display:none!important}body.gameOnly #app{display:block!important;width:100vw;height:100vh;padding:4px;overflow:hidden}body.gameOnly #app .layout{height:100%;display:grid;grid-template-columns:minmax(150px,14vw) minmax(0,1fr) minmax(210px,18vw);gap:4px}body.gameOnly .heroPanel,body.gameOnly .gamePanel,body.gameOnly .sidePanel{display:block;height:100%;min-width:0;margin:0;overflow:auto}body.gameOnly .heroPanel{padding:7px}body.gameOnly .gamePanel{padding:3px}body.gameOnly .gameStage{width:100%;max-width:none;margin:0}body.gameOnly #game{display:block;width:100%;height:auto;max-width:none}body.gameOnly .sidePanel{max-height:none;padding:7px}body.gameOnly #hudFullscreen{opacity:.55}body.gameOnly #hudFullscreen:hover,body.gameOnly #hudFullscreen:focus{opacity:1}@media(max-width:900px){body.gameOnly #app{overflow:auto}body.gameOnly #app .layout{height:auto;min-height:100%;grid-template-columns:minmax(150px,20vw) minmax(520px,1fr) minmax(210px,25vw)}}
+body.gameOnly{margin:0;background:#09070c;overflow:hidden}body.gameOnly>#globalMenuBtn,body.gameOnly #app>header,body.gameOnly .log,body.gameOnly .controls,body.gameOnly .gamePanel>.small,body.gameOnly .floorObjective,body.gameOnly .boardActionBar{display:none!important}body.gameOnly #app{display:block!important;width:100vw;height:100vh;padding:4px;overflow:hidden}body.gameOnly #app .layout{height:100%;display:grid;grid-template-columns:minmax(150px,14vw) minmax(0,1fr) minmax(210px,18vw);gap:4px}body.gameOnly .heroPanel,body.gameOnly .gamePanel,body.gameOnly .sidePanel{display:block;height:100%;min-width:0;margin:0;overflow:auto}body.gameOnly .heroPanel{padding:7px}body.gameOnly .gamePanel{padding:3px}body.gameOnly .gameStage{width:100%;max-width:none;margin:0}body.gameOnly #game{display:block;width:100%;height:auto;max-width:none}body.gameOnly .sidePanel{max-height:none;padding:7px}body.gameOnly #hudFullscreen{opacity:.55}body.gameOnly #hudFullscreen:hover,body.gameOnly #hudFullscreen:focus{opacity:1}@media(max-width:900px){body.gameOnly #app{overflow:auto}body.gameOnly #app .layout{height:auto;min-height:100%;grid-template-columns:minmax(150px,20vw) minmax(520px,1fr) minmax(210px,25vw)}}
