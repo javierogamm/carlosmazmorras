@@ -203,10 +203,6 @@ function showStatPointModal(){
  grid.querySelectorAll('[data-stat-choice]').forEach(btn=>btn.addEventListener('click',async()=>{const stat=btn.dataset.statChoice;if(!await uiConfirm(`¿Confirmas +1 a ${labels[stat]}?`))return;const reward=(p.pendingLevelUpRewards||[]).shift()||{};p.stats[stat]=(p.stats[stat]||0)+1;p.unspentStatPoints--;recomputeDerived();updateUI();draw();banner(`+1 ${labels[stat].toUpperCase()}`);log(`Asignas 1 punto a ${labels[stat]}.`,'good');modal.classList.remove('open');if(reward.skillChoice){queueClassSkillChoice(reward.level)}else if(p.unspentStatPoints)showStatPointModal();else{queueMissingClassSkillChoices();processClassSkillChoices();if(game.pendingPlayerFinished&&!document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=false;playerFinished()}}}))
 }
 
-// A race's hpGainPct/staminaGainPct/manaGainPct is a percentage delta (0 =
-// unchanged, can be negative) applied to the per-level HP/stamina/mana growth
-// below - e.g. +20% means each level's gain is multiplied by 1.20.
-function raceLevelGainMultiplier(p,key){return 1+(Number(p.raceBonuses?.[key])||0)/100}
 function grantXp(v){
  const p=game.player;if(p.level>=LEVEL_CAP)return;
  const startLevel=p.level;
@@ -215,9 +211,9 @@ function grantXp(v){
   p.xp-=p.nextXp;p.level++;
   const g=levelGrowth(p.level);
   p.nextXp=p.level<LEVEL_CAP?xpNeededForLevel(p.level):0;
-  p.maxHp+=Math.round((g.hp+p.stats.vitality)*raceLevelGainMultiplier(p,'hpGainPct'));p.hp=p.maxHp;
-  p.maxStamina+=Math.round((g.stamina+Math.floor(p.stats.strength/3))*raceLevelGainMultiplier(p,'staminaGainPct'));p.stamina=p.maxStamina;
-  p.maxMana+=Math.round((g.mana+Math.floor((p.stats.wisdom*2+p.stats.intelligence)/3))*raceLevelGainMultiplier(p,'manaGainPct'));p.mana=p.maxMana;
+  p.maxHp+=g.hp+p.stats.vitality;p.hp=p.maxHp;
+  p.maxStamina+=g.stamina+Math.floor(p.stats.strength/3);p.stamina=p.maxStamina;
+  p.maxMana+=g.mana+Math.floor((p.stats.wisdom*2+p.stats.intelligence)/3);p.mana=p.maxMana;
   p.baseDamage+=g.damage;p.baseArmor+=g.armor;
   if(p.level%10===0){p.stats.strength++;p.stats.vitality++;p.stats.agility++;p.stats.luck++;p.stats.intelligence++;p.stats.wisdom++}
   banner(`NIVEL ${p.level}`);animateLevelUpThen(()=>queueStatPoint(p.level));

@@ -1083,7 +1083,7 @@ function enforceActiveSkillSlots(player=game.player){
 function recomputeDerived(){
  const p=game.player,allStats={...p.stats},rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom'])allStats[k]=(allStats[k]||0)+(Number(rb[k])||0);
- const direct={armor:Number(rb.armor)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,hpRegen:Number(rb.hpRegen)||0,rarityFind:Number(rb.rarityFind)||0};
+ const direct={armor:Number(rb.armor)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,hpRegen:Number(rb.hpRegen)||0};
  for(const item of Object.values(p.equipment||{}))if(item){
   for(const a of item.affixes||[]){
    // Legacy physicalPower/magicPower fields are deliberately ignored.
@@ -1098,9 +1098,9 @@ function recomputeDerived(){
  const d={
   damage:p.baseDamage+Math.floor((allStats.strength-(p.stats.strength||0))*1.2),
   armor:4+Math.floor(allStats.vitality/2)+(direct.armor||0),
-  maxHp:30+allStats.vitality*6+(direct.maxHp||0)+activeBuffFlatBonus('maxHp'),
-  maxStamina:45+allStats.strength*4+(direct.maxStamina||0),
-  maxMana:30+allStats.wisdom*5+allStats.intelligence*3+(direct.maxMana||0),
+  maxHp:Math.round((30+allStats.vitality*6+(direct.maxHp||0))*(1+(Number(rb.maxHpPct)||0)/100))+activeBuffFlatBonus('maxHp'),
+  maxStamina:Math.round((45+allStats.strength*4+(direct.maxStamina||0))*(1+(Number(rb.maxStaminaPct)||0)/100)),
+  maxMana:Math.round((30+allStats.wisdom*5+allStats.intelligence*3+(direct.maxMana||0))*(1+(Number(rb.maxManaPct)||0)/100)),
   critChance:4+allStats.luck*.75+(direct.critChance||0),critDamage:175+(direct.critDamage||0)+activeBuffFlatBonus('critDamage'),
   dodge:allStats.agility*.45+(direct.dodge||0),staminaRegen:(direct.staminaRegen||0)+activeBuffFlatBonus('staminaRegen'),manaRegen:(direct.manaRegen||0)+activeBuffFlatBonus('manaRegen'),hpRegen:(direct.hpRegen||0)+activeBuffFlatBonus('hpRegen'),rarityFind:direct.rarityFind||0,
   finalStats:allStats,vision:4+Math.floor(allStats.intelligence/4),weaponProcLuckBonus:Math.min(15,allStats.luck*.5)
@@ -8471,21 +8471,20 @@ function launchTestCombat(){
  const milestone=testMilestoneBonus(tstLevel),stats={...cls.stats};
  for(const k of Object.keys(TEST_STAT_LABELS))stats[k]=(stats[k]||0)+milestone+(tstStatAlloc[k]||0);
 
- const rb=raceDefs[tstRace]?.bonuses||{};
  let maxHp=30+stats.vitality*6;
  let maxStamina=45+stats.strength*4;
  let maxMana=30+stats.wisdom*5+stats.intelligence*3;
  let baseDamage=2+stats.strength,baseArmor=4+Math.floor(stats.vitality/2);
  // Approximates the real per-level grantXp() loop using the final (already
  // allocated) stats throughout - order-independent and close enough for a
- // sandbox character built to already be at `tstLevel`. Mirrors grantXp()'s
- // race hp/stamina/mana growth coefficients too, so the sandbox reflects the
- // chosen race the same way a real character would.
+ // sandbox character built to already be at `tstLevel`. The race's
+ // maxHpPct/maxStaminaPct/maxManaPct multipliers are applied afterward by the
+ // recomputeDerived() call below, same as a real character.
  for(let l=2;l<=tstLevel;l++){
   const g=levelGrowth(l);
-  maxHp+=Math.round(g.hp*(1+(Number(rb.hpGainPct)||0)/100));
-  maxStamina+=Math.round(g.stamina*(1+(Number(rb.staminaGainPct)||0)/100));
-  maxMana+=Math.round((g.mana+Math.floor((stats.wisdom*2+stats.intelligence)/3))*(1+(Number(rb.manaGainPct)||0)/100));
+  maxHp+=g.hp;
+  maxStamina+=g.stamina;
+  maxMana+=g.mana+Math.floor((stats.wisdom*2+stats.intelligence)/3);
   baseDamage+=g.damage;baseArmor+=g.armor;
  }
 
@@ -8522,6 +8521,7 @@ function launchTestCombat(){
    cooldowns:{},equipmentCooldowns:{},debuff:0,shards:{},unspentStatPoints:0,pendingLevelUpRewards:[]
   }
  };
+ const rb=raceDefs[tstRace]?.bonuses||{};
  game.player.raceName=raceDefs[tstRace]?.name||tstRace;
  game.player.raceBonuses={...rb};
  const racialSkill=raceDefs[tstRace]?.skill;if(racialSkill){skillDefs[racialSkill.id]=racialSkill;game.player.knownSkills.unshift(racialSkill.id);game.player.skillProgress[racialSkill.id]={level:1,xp:0};game.player.equippedSkills[0]=racialSkill.id}
@@ -8600,14 +8600,6 @@ function drawShardTierIconToCanvas(canvas,tier){
  q.fillStyle=tierColor(tier);q.beginPath();q.arc(canvas.width/2,canvas.height/2,canvas.width/2-2,0,Math.PI*2);q.fill();
 }
 
-// Percent-style fields (rendered as a fixed ±10%-step selector by
-// setupRaceConfigMode - see RACE_STAT_PERCENT_FIELDS) versus plain linear
-// ones (rendered as a free number input): hpGainPct/staminaGainPct/
-// manaGainPct are multipliers on the per-level HP/stamina/mana growth
-// (see grantXp()), replacing the old flat maxHp/maxStamina/maxMana bonus and
-// the removed floorHeal one-off heal. hpRegen/staminaRegen/manaRegen are
-// flat points regenerated per turn; apBonus is a flat addition to the PA
-// baseline every turn.
 async function responseJson(response){
  const text=await response.text();
  if(!text)return{};
