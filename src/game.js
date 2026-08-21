@@ -2401,14 +2401,61 @@ function buildFloorPlan(floor,params,{recent=[],populationScale=1}={}){
   }
  }
 
- // --- doors (locked ones gate vaults), keys, traps, altars, chests ---
- const doors=[];
- for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]===0&&!safeCellKeys.has(key(x,y))){
+ // --- locked doors + keys: 2-3 real gates per floor, each paired with exactly
+ // one key. A tile only becomes a door if blocking it is the ONLY way to cut
+ // its far side off from spawn (a genuine chokepoint - a second route means
+ // it gates nothing, so it's rejected outright) and that far side actually
+ // holds a real room, never a bare dead-end corridor. Chosen gates never nest
+ // inside one another, so every key can be dropped in the core area still
+ // reachable from spawn with every door shut - no key ever ends up behind a
+ // lock the player hasn't opened yet.
+ const dirs4=[[1,0],[-1,0],[0,1],[0,-1]];
+ const reachableFrom=(start,blockedKey)=>{
+  const seen=new Set([key(start.x,start.y)]),stack=[start];
+  while(stack.length){
+   const{x,y}=stack.pop();
+   for(const[dx,dy]of dirs4){
+    const nx=x+dx,ny=y+dy,k=key(nx,ny);
+    if(map[ny]?.[nx]===0&&k!==blockedKey&&!seen.has(k)){seen.add(k);stack.push({x:nx,y:ny})}
+   }
+  }
+  return seen;
+ };
+ const spawnPos={x:spawn.cx,y:spawn.cy};
+ const fullReach=reachableFrom(spawnPos,null);
+ const doorCandidates=[];
+ for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
+  const ck=key(x,y);
+  if(map[y][x]!==0||safeCellKeys.has(ck)||occ.has(ck)||!fullReach.has(ck))continue;
   const h=map[y][x-1]===0&&map[y][x+1]===0&&map[y-1][x]===1&&map[y+1][x]===1;
   const v=map[y-1][x]===0&&map[y+1][x]===0&&map[y][x-1]===1&&map[y][x+1]===1;
-  if((h||v)&&Math.random()<.065&&!occ.has(key(x,y))){doors.push({x,y,open:false,locked:Math.random()<.25});occ.add(key(x,y))}
+  if(!h&&!v)continue;
+  const reachWithout=reachableFrom(spawnPos,ck);
+  const region=new Set([...fullReach].filter(rk=>rk!==ck&&!reachWithout.has(rk)));
+  if(!region.size)continue; // a second path exists - this tile gates nothing
+  if([...region].some(rk=>safeCellKeys.has(rk)))continue; // never lock a rest room away
+  if(!rooms.some(r=>r!==spawn&&region.has(key(r.cx,r.cy))))continue; // no room back there - just a dead corridor
+  doorCandidates.push({x,y,region});
  }
- const keys=[];for(let i=0;i<Math.max(1,doors.filter(d=>d.locked).length);i++)keys.push(free());
+ doorCandidates.sort((a,b)=>a.region.size-b.region.size||Math.random()-.5);
+ const doorTarget=randBetween(2,3);
+ const doors=[],claimed=new Set();
+ for(const cand of doorCandidates){
+  if(doors.length>=doorTarget)break;
+  const ck=key(cand.x,cand.y);
+  if(claimed.has(ck)||[...cand.region].some(rk=>claimed.has(rk)))continue;
+  doors.push({x:cand.x,y:cand.y,open:false,locked:true});
+  occ.add(ck);claimed.add(ck);
+  for(const rk of cand.region)claimed.add(rk);
+ }
+ const coreCells=[...fullReach].filter(ck=>!claimed.has(ck)&&!occ.has(ck)).map(ck=>{const[cx,cy]=ck.split(',').map(Number);return{x:cx,y:cy}});
+ const keys=[];
+ for(let i=0;i<doors.length;i++){
+  const avail=coreCells.filter(p=>!occ.has(key(p.x,p.y)));
+  const p=avail.length?pick(avail):free();
+  occ.add(key(p.x,p.y));
+  keys.push(p);
+ }
 
  const traps=[],altars=[],chests=[];
  for(const r of rooms){
