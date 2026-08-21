@@ -5994,12 +5994,27 @@ function beginBasicAttack(){
  const targets=game.enemies.filter(enemy=>enemy.hp>0&&validateTargetCell(enemy.x,enemy.y,bounds.max,bounds.min));
  if(targets.length===1){const apCost=weaponAttackApCost();if(!apCan('attack',apCost))return;attack(targets[0],0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(bounds.max,false)});actionDone('attack',apCost);return}
  if(targets.length>1){beginTargeting({kind:'attack',mode:'enemy',range:bounds.max,minRange:bounds.min});return}
+ // No valid target at all - but if the only reason is that every visible
+ // enemy sits closer than the weapon's own minimum range (a ranged weapon
+ // that can't fire point-blank), say so specifically instead of the generic
+ // "out of range" message, since the fix there is "back off", not "get closer".
+ if(bounds.min>1&&game.enemies.some(enemy=>enemy.hp>0&&game.seen?.[enemy.y]?.[enemy.x]&&gridDistance(game.player,enemy)<bounds.min)){
+  log(`Estás demasiado cerca: el arma necesita al menos ${bounds.min} de distancia.`,'sys');
+  floating('Demasiado cerca',game.player.x,game.player.y,'#ff8a8a');
+  return
+ }
  log(`No hay ningún enemigo al alcance del arma (${bounds.min}-${bounds.max}).`,'sys')
 }
 function resolveBasicAttack(x,y){
  const bounds=weaponRangeBounds(),range=pendingTargetAction?.range||bounds.max,minRange=pendingTargetAction?.minRange||bounds.min,enemy=enemyAtCell(x,y);
  if(!enemy){log('Selecciona un enemigo.','sys');return false}
- if(!validateTargetCell(x,y,range,minRange)){log(`Enemigo fuera de alcance (${minRange}-${range}) o sin línea de visión.`,'sys');return false}
+ if(!validateTargetCell(x,y,range,minRange)){
+  if(gridDistance(game.player,{x,y})<minRange){
+   log(`Estás demasiado cerca: el arma necesita al menos ${minRange} de distancia.`,'sys');
+   floating('Demasiado cerca',game.player.x,game.player.y,'#ff8a8a');
+  }else log(`Enemigo fuera de alcance (${minRange}-${range}) o sin línea de visión.`,'sys');
+  return false
+ }
  const apCost=weaponAttackApCost();if(!apCan('attack',apCost))return false;
  attack(enemy,0,{dice:baseAttackDice(),multiplier:rangeDamageMultiplier(range,false)});cancelTargeting('');actionDone('attack',apCost);return true
 }
