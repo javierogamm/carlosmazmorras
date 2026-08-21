@@ -92,14 +92,31 @@ function procFx(x,y,{color='#ffd45f',icon='⚡'}={}){
 
 // ---- Buff/debuff floating call-out ---------------------------------------
 // Separate from floating() (used for damage/heal numbers): a small
-// up/down-triangle-prefixed label that reads as "a status was just applied"
-// rather than a number, fired from applyBuff/addEnemyStatus/
-// applyEnemyStatDebuff/applyMindControlStatus in game.js.
-function buffFloat(text,x,y,positive=true){
+// icon-prefixed label that reads as "a status was just applied" rather than
+// a number, fired from applyBuff/addEnemyStatus/applyEnemyStatDebuff/
+// applyMindControlStatus/applyEffectComponent in game.js. A handful of
+// effect kinds get their own distinct icon+color (EFFECT_FLOAT_STYLES)
+// instead of the plain ▲/▼ generic buff/debuff look, so execute/fear/
+// mesmer/drain/mark/pullroot/holyshield/invisible each read as their own
+// kind of event at a glance; pass that component's `kind` as the 5th arg to
+// opt in, or omit it for the generic buff(▲)/debuff(▼) look.
+const EFFECT_FLOAT_STYLES={
+ execute:{icon:'✂',color:'#ff3b3b'},
+ fear:{icon:'☹',color:'#b98cff'},
+ mesmer:{icon:'◐',color:'#e06cff'},
+ drain:{icon:'⟳',color:'#8e44ff'},
+ mark:{icon:'◎',color:'#ffcf5a'},
+ pullroot:{icon:'⇐',color:'#8ecbff'},
+ holyshield:{icon:'❖',color:'#8de8ff'},
+ invisible:{icon:'◌',color:'#b0b0ff'}
+};
+function buffFloat(text,x,y,positive=true,kind=null){
  if(x==null||y==null)return;
+ const special=kind&&EFFECT_FLOAT_STYLES[kind];
  const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');
- d.className=`floatText buffFloat ${positive?'positive':'negative'}`;
- d.textContent=`${positive?'▲':'▼'} ${text}`;
+ d.className=`floatText buffFloat ${positive?'positive':'negative'}${special?` effectFloat effectFloat-${kind}`:''}`;
+ if(special)d.style.color=special.color;
+ d.textContent=`${special?special.icon:(positive?'▲':'▼')} ${text}`;
  d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;
  d.style.top=`${r.top+(y-c.y+.05)*r.height/visibleTiles}px`;
  document.body.appendChild(d);

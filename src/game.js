@@ -3782,7 +3782,7 @@ function move(dx,dy){
  const e=enemyAtCell(nx,ny);
  if(e){const apCost=weaponAttackApCost();if(!apCan('attack',apCost))return;attack(e);actionDone('attack',apCost);return}
  if(!apCan('move'))return;
- const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
+ const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;anim.duration=140;anim.teleportFx=false;reveal(nx,ny);checkTile();
  companionsFollowPlayerStep();
  actionDone('move');
 }
@@ -4287,7 +4287,7 @@ function addEnemyStatus(e,type,turns,power=1,label=type){
  if(old){old.turns=Math.max(old.turns,turns);old.power=Math.max(old.power,power)}
  else e.statuses.push({type,turns,power,label});
  log(`${e.name}: ${label} durante ${turns} turnos.`,'combat');
- buffFloat(label,e.x,e.y,type==='regen');
+ buffFloat(label,e.x,e.y,type==='regen',type);
 }
 function enemyHasStatus(e,type){return(e.statuses||[]).some(s=>s.type===type&&s.turns>0)}
 function mindControlResistance(entity,type){
@@ -4297,7 +4297,7 @@ function mindControlResistance(entity,type){
 function applyMindControlStatus(entity,type,turns,caster,sourceName=type){
  const resistance=mindControlResistance(entity,type);
  if(Math.random()<resistance){log(`${entity.name||'El objetivo'} resiste ${type==='fear'?'Miedo':'Mesmer'} (${Math.round(resistance*100)}%).`,'good');return false}
- if(entity===game.player){entity.controlStatuses=entity.controlStatuses||[];const old=entity.controlStatuses.find(s=>s.type===type);if(old)old.turns=Math.max(old.turns,turns);else entity.controlStatuses.push({type,turns,sourceX:caster?.x,sourceY:caster?.y,label:sourceName});buffFloat(type==='fear'?'Miedo':'Mesmer',entity.x,entity.y,false);}
+ if(entity===game.player){entity.controlStatuses=entity.controlStatuses||[];const old=entity.controlStatuses.find(s=>s.type===type);if(old)old.turns=Math.max(old.turns,turns);else entity.controlStatuses.push({type,turns,sourceX:caster?.x,sourceY:caster?.y,label:sourceName});buffFloat(type==='fear'?'Miedo':'Mesmer',entity.x,entity.y,false,type);}
  else{addEnemyStatus(entity,type,turns,0,type==='fear'?'Miedo':'Mesmer');const status=entity.statuses.find(s=>s.type===type);if(status)status.skipFirstTick=true;if(type==='fear'){entity.fearSourceX=caster?.x;entity.fearSourceY=caster?.y}}
  return true;
 }
@@ -4864,7 +4864,16 @@ function tickSkillObjects(){
 }
 function teleportPlayerTo(x,y){
  if(blocked(x,y)||game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))return false;
- game.player.x=x;game.player.y=y;anim.heroX=anim.targetX=x;anim.heroY=anim.targetY=y;reveal(x,y);return true
+ // Blink instead of an instant snap: slides+fades from the old spot to the
+ // new one over anim.duration (see the hero-alpha dip in draw()), same
+ // heroX/targetX/t idiom move() uses for a normal step, just longer and
+ // flagged as teleportFx so the alpha dip kicks in.
+ const ox=game.player.x,oy=game.player.y;
+ combatFx('move',ox,oy,{to:{x,y},color:'#c9a6ff',accent:'#8de8ff',icon:'✦',theme:'arcane'});
+ game.player.x=x;game.player.y=y;
+ anim.heroX=ox;anim.heroY=oy;anim.targetX=x;anim.targetY=y;anim.t=0;anim.duration=320;anim.teleportFx=true;
+ reveal(x,y);requestGameFrame();
+ return true
 }
 // Free tile touching `target` (8 directions, diagonals included) closest to
 // the player's current spot - used to land an enemy-targeted teleport "next
@@ -4902,6 +4911,7 @@ function openTileAdjacentToOriginFor(entity,origin){
 // takes the established damage" instead of just stopping movement for free.
 function dashTowards(target,range,hitFn){
  const p=game.player,dx=Math.sign(target.x-p.x),dy=Math.sign(target.y-p.y);
+ const ox=p.x,oy=p.y;
  for(let i=0;i<range;i++){
   const nx=p.x+dx,ny=p.y+dy;
   if(blocked(nx,ny))break;
@@ -4911,6 +4921,15 @@ function dashTowards(target,range,hitFn){
   p.x=nx;p.y=ny;
  }
  reveal(p.x,p.y);
+ // Slide the whole hop in one continuous animation (origin straight to the
+ // tile the loop above actually landed on) instead of the instant snap a
+ // plain p.x=nx;p.y=ny left behind before - duration scales with distance
+ // travelled so a longer dash doesn't feel rushed next to a 1-tile one.
+ if(p.x!==ox||p.y!==oy){
+  const dist=Math.max(Math.abs(p.x-ox),Math.abs(p.y-oy));
+  anim.heroX=ox;anim.heroY=oy;anim.targetX=p.x;anim.targetY=p.y;anim.t=0;anim.duration=Math.max(140,dist*90);anim.teleportFx=false;
+  requestGameFrame();
+ }
 }
 
 // Applies a stat buff to the caster using the shared buffStat/buffStatMode/
@@ -4932,7 +4951,7 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  const hit=(e,m=1)=>attack(e,0,{skillId:id,multiplier:m});
 
  if(effect==='armorBreak'){hit(target,.9);status(target,'armorBreak',d.debuffTurns??4,.20,'Quebradura');return true}
- if(effect==='pullRoot'){hit(target,.8);const spot=openTileAdjacentToOriginFor(target,p);if(spot){target.x=spot.x;target.y=spot.y}return true}
+ if(effect==='pullRoot'){hit(target,.8);const spot=openTileAdjacentToOriginFor(target,p);if(spot){target.x=spot.x;target.y=spot.y}buffFloat('Atraer',target.x,target.y,false,'pullroot');return true}
  if(effect==='counter'){p.shield+=8+lvl*2;p.counterReady={turns:5,damage:'1d8+'+lvl};applyCreativeBuff(id,d,lvl,{armor:.12},5);return true}
  // Self-damage then a stat buff - the exact "dmg(self)+buff(self)" combo the
  // new composable effects list expresses directly; this hardcoded version
@@ -4980,7 +4999,7 @@ function applyCreativeClassEffect(id,target,x,y){
  if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',d.debuffTurns??(2+Math.floor(lvl/4)),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
  if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect==='poison'?'poison':effect==='decayDot'?'decayDot':'dot',d.dotTurns??(4+Math.floor(lvl/4)),dotPowerFor(d,2+lvl*.8),d.name);return true}
- if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);const power=Math.round(dicePowerFor(d,5+lvl*2,p)*tierMult);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
+ if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);buffFloat('Drenaje',target.x,target.y,false,'drain');const power=Math.round(dicePowerFor(d,5+lvl*2,p)*tierMult);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
  if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,d.debuffTurns??(2+Math.floor(lvl/5)),1,d.name);return true}
  if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
@@ -5212,7 +5231,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='drain'){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const power=Math.round(dicePowerFor(comp,5+lvl*2,p)*utilitySkillMultiplier(p)*tierMult);
-  for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
+  for(const e of targets){attack(e,0,{skillId:id,multiplier:.8});buffFloat('Drenaje',e.x,e.y,false,'drain')}
   // The target always loses HP via the attack() above (the only pool
   // enemies have); the resource picker only controls what the CASTER gets
   // back, independent of the skill's own casting resource.
@@ -5291,6 +5310,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='invisible'){
   p.invisibleTurns=Math.max(1,comp.turns??2);
   p.invisibleBreaksOnAttack=comp.breakOnAttack!==false;
+  buffFloat('Invisibilidad',p.x,p.y,true,'invisible');
   return true
  }
  if(comp.kind==='hot'){
@@ -5328,7 +5348,7 @@ function applyEffectComponent(id,comp,ctx){
   for(const e of targets){
    const lowHp=e.maxHp>0&&(e.hp/e.maxHp)<threshold;
    attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||1,statDefLike});
-   if(lowHp&&e.hp>0)attack(e,0,{skillId:id,dice:execExpr,multiplier:1,statDefLike:execStatDefLike,allowWeaponProc:false});
+   if(lowHp&&e.hp>0){buffFloat('EJECUTAR',e.x,e.y,false,'execute');attack(e,0,{skillId:id,dice:execExpr,multiplier:1,statDefLike:execStatDefLike,allowWeaponProc:false})}
   }
   return true
  }
@@ -5341,6 +5361,7 @@ function applyEffectComponent(id,comp,ctx){
    attack(e,0,{skillId:id,multiplier:comp.multiplier||.8});
    const spot=openTileAdjacentToOriginFor(e,p);
    if(spot){e.x=spot.x;e.y=spot.y}
+   buffFloat('Atraer',e.x,e.y,false,'pullroot');
   }
   return true
  }
@@ -5374,6 +5395,7 @@ function applyEffectComponent(id,comp,ctx){
   const amount=Math.max(1,Math.round((base+contribution)*utilitySkillMultiplier(p)));
   p.holyShield=(p.holyShield||0)+amount;
   if(comp.turns)p.holyShieldTurns=Math.max(p.holyShieldTurns||0,comp.turns);
+  buffFloat('Escudo',p.x,p.y,true,'holyshield');
   return true
  }
  if(comp.kind==='lineshot'){
@@ -5493,6 +5515,7 @@ function apCan(kind,cost=AP_COSTS[kind]){
  if(game.player.ap==null)startPlayerAP();
  if(game.player.ap>=cost)return true;
  log('No tienes PA suficientes.','sys');
+ floating('PA insuficientes',game.player.x,game.player.y,'#ffcf5a');
  return false;
 }
 // Replaces the old per-action playerFinished(): spends points and keeps the turn.
@@ -5919,7 +5942,7 @@ function resolveTargetedSkill(slot,x,y){
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');cancelTargeting('');return false}
  const targetedCost=effectiveSkillCost(d);
- if(game.player[d.resource]<targetedCost){log(`Necesitas ${targetedCost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
+ if(game.player[d.resource]<targetedCost){log(`Necesitas ${targetedCost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');floating(d.resource==='mana'?'Maná insuficiente':'Stamina insuficiente',game.player.x,game.player.y,'#8ecbff');cancelTargeting('');return false}
  const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(hasEffectsList(id)){
@@ -5992,7 +6015,7 @@ function useSkill(slot){
  const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
- if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
+ if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');floating(def.resource==='mana'?'Maná insuficiente':'Stamina insuficiente',game.player.x,game.player.y,'#8ecbff');return}
  if(!apCan('skill',skillApCost(id)))return;
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:effectiveSkillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
@@ -6031,7 +6054,7 @@ function useSkill(slot){
   else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7),{skillId:id});used=true}
   else if(def.classEffect==='utility'){const radius=7+lvl,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
   else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25),{skillId:id}));used=true}
-  else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)),{skillId:id});used=true}
+  else if(def.classEffect==='execute'&&nearest){const lowHp=nearest.hp/nearest.maxHp<.4;if(lowHp)buffFloat('EJECUTAR',nearest.x,nearest.y,false,'execute');attack(nearest,Math.round(base*(lowHp?2.5:1)),{skillId:id});used=true}
   else if(def.classEffect==='buff'){const turns=def.buffTurns??(6+Math.floor(lvl/2));const stat=def.buffStat||'strength';const mode=def.buffStatMode||'add';const value=def.buffStatCoef??(mode==='mult'?1.2:5);applyBuff(id,def.name,turns,{[stat]:{mode,value}});game.player.shield+=5+lvl*2;used=true}
   else if(def.classEffect==='massive'&&visible.length){visible.forEach(e=>attack(e,Math.round(base*1.7),{skillId:id}));used=true}
  }
@@ -6228,7 +6251,7 @@ function animate(now=performance.now()){
  animationFrame=0;const dt=Math.min(50,Math.max(0,now-(lastAnimationTime||now)));lastAnimationTime=now;
  const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone','trap'].includes(o.kind)&&o.turns>0)
   ||(game?.companions||[]).some(hasCompanionAreaPulse);
- if(anim.t<1)anim.t=Math.min(1,anim.t+dt/140);
+ if(anim.t<1)anim.t=Math.min(1,anim.t+dt/(anim.duration||140));
  draw();
  if(anim.t<1||hasAnimatedArea)animationFrame=requestAnimationFrame(animate)
 }
@@ -6312,7 +6335,13 @@ function draw(){
  for(const ally of game.companions||[])if(((ally.hp>0&&ally.turns>0)||(ally.permanent&&ally.hp<=0))&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;
- if(isPlayerInvisible()){ctx.save();ctx.globalAlpha=.45;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
+ // A 'blink' teleport dips the hero's own alpha out and back in over the
+ // move (down to ~0 right at the midpoint, t=.5), instead of just sliding
+ // like a normal step/dash - cleared once the animation finishes so it
+ // never affects a later plain walk that happens to reuse anim.t.
+ const teleportAlpha=(anim.teleportFx&&anim.t<1)?Math.max(.12,Math.abs(anim.t-.5)*2):1;
+ const heroAlpha=(isPlayerInvisible()?.45:1)*teleportAlpha;
+ if(heroAlpha<1){ctx.save();ctx.globalAlpha=heroAlpha;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
  drawPlayerStatusFrames(hx,hy);
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
@@ -6409,6 +6438,7 @@ function updateGameHud(){
  set('hudXpFill','hudXpText',p.level>=LEVEL_CAP?1:p.xp,need,'hudXpBar');if(p.level>=LEVEL_CAP){const t=document.getElementById('hudXpText');if(t)t.textContent='MÁX'}
  set('hudStaminaFill','hudStaminaText',p.stamina,p.maxStamina,'hudStaminaBar');
  set('hudManaFill','hudManaText',p.mana,p.maxMana,'hudManaBar');
+ document.getElementById('gameStage')?.classList.toggle('lowHpPulse',p.hp>0&&p.maxHp>0&&p.hp/p.maxHp<=.1);
  drawMinimap();
 }
 function drawMinimap(){
