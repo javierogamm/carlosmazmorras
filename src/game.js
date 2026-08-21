@@ -29,7 +29,7 @@ let mpGamePollTimer=null;
 let mpTradePollTimer=null;
 let mpPollBusy=false;
 let rtConfig=undefined,rtClient=null,rtChannel=null,rtChannelSessionId=null,rtReady=false;
-const APP_VERSION='0.100.0';
+const APP_VERSION='1.0.0';
 const INT_OFFENSIVE_SKILL_BONUS_PER_POINT=0.01;
 const WIS_UTILITY_SKILL_BONUS_PER_POINT=0.01;
 let configItems=[];
@@ -132,14 +132,26 @@ function applyOffhandGuarantee(item){
  }
  return item;
 }
-// A weapon-slot dagger or wand can also be equipped in the offhand slot (dual
-// wielding a secondary weapon) via equipItemAsOffhand() - same name/weaponType
-// detection convention as detectOffhandKind(), but restricted to actual
-// weapon-slot items instead of procedural offhand accessories.
+// A weapon-slot dagger, wand or pistol can also be equipped in the offhand
+// slot (dual wielding a secondary weapon) via equipItemAsOffhand() - same
+// name/weaponType detection convention as detectOffhandKind(), but
+// restricted to actual weapon-slot items instead of procedural offhand
+// accessories.
 function isDualHandWeapon(item){
  if(!item||item.slot!=='weapon')return false;
- if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas';
- return /daga|varita/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+ if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas'||item.weaponType==='Pistolas';
+ return /daga|varita|pistola/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+}
+// Unlike a dual-wielded dagger/wand (which only ever grant regen affixes
+// through the normal per-slot affix sum, and never touch damage/procs - see
+// maybeProcWeaponEffects), a pistol is explicitly the one off-hand weapon
+// that also adds flat damage, on top of whatever stats its own affixes
+// carry. Only counts while it's actually sitting in the offhand slot, not
+// when equipped as the main weapon.
+const OFFHAND_WEAPON_DAMAGE_BONUS={Pistolas:2};
+function offhandWeaponDamageBonus(p){
+ const item=p?.equipment?.offhand;
+ return item?.slot==='weapon'?(OFFHAND_WEAPON_DAMAGE_BONUS[item.weaponType]||0):0;
 }
 const LOOT_RARITY_MIN_PLAYER_LEVEL={common:1,uncommon:1,rare:1,epic:4,legendary:9,artifact:14};
 const LOOT_RARITY_BASE_WEIGHTS={common:72,uncommon:22,rare:6,epic:0,legendary:0,artifact:0};
@@ -162,7 +174,9 @@ function effectiveProgressFloor(floor,totalFloors){
 function currentTotalFloors(){return selectedDungeonWorld?.world_json?.lootTable?.length||worldParams().floors||DEFAULT_WORLD_PARAMS.floors}
 function maxLootRarityIndexForProgress(floor,totalFloors,playerLevel=1){
  const level=balanceLevel(game?.floorEntryLevel||playerLevel);
- return level<4?0:level<8?1:level<13?2:level<19?3:level<25?4:5;
+ // Uncommon ("Infrecuente") unlocks a level earlier than it used to - from
+ // character level 3 on, not just level 4+.
+ return level<3?0:level<8?1:level<13?2:level<19?3:level<25?4:5;
 }
 function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
  const lvl=Math.max(1,Number(game?.floorEntryLevel||playerLevel)||1);
@@ -171,8 +185,12 @@ function lootIlvlRangeForProgress(floor,totalFloors,playerLevel=1){
 function lootProgressionRow(floor,totalFloors,playerLevel=1){
  const maxIndex=maxLootRarityIndexForProgress(floor,totalFloors,playerLevel),range=lootIlvlRangeForProgress(floor,totalFloors,playerLevel),ratio=lootProgressRatio(floor,totalFloors);
  const weights={...LOOT_RARITY_BASE_WEIGHTS};
- weights.common=Math.max(20,Math.round(72-ratio*54));
- weights.uncommon=Math.max(16,Math.round(22+ratio*14));
+ // Common starts lower and uncommon starts higher (both floor and base
+ // weight) than before, so once uncommon unlocks at level 3 it's a
+ // meaningfully more common drop instead of a rare treat, at the expense of
+ // common's dominance.
+ weights.common=Math.max(15,Math.round(60-ratio*50));
+ weights.uncommon=Math.max(20,Math.round(32+ratio*16));
  weights.rare=Math.max(6,Math.round(6+ratio*16));
  weights.epic=maxIndex>=3?Math.max(1,Math.round((ratio-.18)*18)):0;
  weights.legendary=maxIndex>=4?Math.max(1,Math.round((ratio-.50)*9)):0;
@@ -1084,10 +1102,15 @@ function recomputeDerived(){
  const p=game.player,allStats={...p.stats},rb=p.raceBonuses||raceDefs[p.race]?.bonuses||{};
  for(const k of ['strength','vitality','agility','luck','intelligence','wisdom'])allStats[k]=(allStats[k]||0)+(Number(rb[k])||0);
  const direct={armor:Number(rb.armor)||0,critChance:Number(rb.critChance)||0,critDamage:Number(rb.critDamage)||0,dodge:Number(rb.dodge)||0,staminaRegen:Number(rb.staminaRegen)||0,manaRegen:Number(rb.manaRegen)||0,hpRegen:Number(rb.hpRegen)||0};
- for(const item of Object.values(p.equipment||{}))if(item){
+ for(const [slot,item] of Object.entries(p.equipment||{}))if(item){
   for(const a of item.affixes||[]){
    // Legacy physicalPower/magicPower fields are deliberately ignored.
    if(a.key==='physicalPower'||a.key==='magicPower')continue;
+   // Per-turn regen is an offhand-exclusive mechanic (a wand's mana regen, a
+   // dagger's stamina regen) - only ever meant to matter while the item is
+   // actually sitting in the left hand, not when the same weapon is the main
+   // hand's weapon. Everything else still sums from whatever slot it's in.
+   if((a.key==='manaRegen'||a.key==='staminaRegen')&&slot!=='offhand')continue;
    if(a.key in allStats)allStats[a.key]+=Number(a.value)||0;else direct[a.key]=(direct[a.key]||0)+(Number(a.value)||0)
   }
   for(const pa of item.passives||[]){if(pa.stat==='physicalPower'||pa.stat==='magicPower')continue;direct[pa.stat]=(direct[pa.stat]||0)+(Number(pa.value)||0)}
@@ -1610,7 +1633,6 @@ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,
   uiAlert('Error al preparar la elección de habilidad inicial: '+e.message);
  }
 }
-storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
 // ============================================================================
 // FLOOR ARCHETYPES + ROOM TYPOLOGIES
@@ -2641,6 +2663,7 @@ function loadPrecomputedFloor(){
  Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
+ game.floorSpawn={x:data.spawn.x,y:data.spawn.y};
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
  scaleFloorForPlayerLevel();
  scaleFloorForParty();
@@ -3298,6 +3321,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
   objective:plan.objective,rewardRarityBonus:plan.rewardRarityBonus,precomputedEvent:plan.event||null,partyScaled:0
  });
  applyPreservedSoulReviveLoot();
+ game.floorSpawn={x:plan.spawn.x,y:plan.spawn.y};
  game.player.x=plan.spawn.x;game.player.y=plan.spawn.y;anim.heroX=anim.targetX=plan.spawn.x;anim.heroY=anim.targetY=plan.spawn.y;anim.t=1;reveal(plan.spawn.x,plan.spawn.y);
  const extra=difficultyScale().count;
  for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
@@ -3533,7 +3557,7 @@ function diceDamageLabel(id){
  return `${expr} + bonus automático de ${skillIsUtility(d)?'SAB':'INT'}`
 }
 
-function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
+function total(stat){let v=stat==='damage'?game.player.baseDamage:stat==='armor'?game.player.baseArmor:0;for(const item of Object.values(game.player.equipment))if(item?.stat===stat)v+=item.power;if(stat==='damage')v+=offhandWeaponDamageBonus(game.player);if(stat==='armor')v+=game.player.shield;if(stat==='maxHp')v=game.player.maxHp;if(stat==='armor'||stat==='damage')v=Math.round(v*activeBuffMultFactor(stat)+activeBuffFlatBonus(stat));return v}
 // Buff value for 'critChance' is read as flat percentage points (e.g. 10 =
 // +10%), same convention as the other %-based buffable stats below.
 function critChance(){const d=game.player.derived||{};return Math.min(.75,(d.critChance??4)/100)}
@@ -3653,21 +3677,22 @@ function kill(e){
  log(`${e.name} ha sido eliminado.`,'good');
  if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
 }
-// Weapon on-hit procs: after a basic player attack lands, the
-// equipped weapon's own effects[] gets one independent procChance roll; on
-// success it fires at the same target through the exact same composable-
-// effects engine as skills/potions (see effectSourceDef/beginExternalEffectsCast).
-// One successful roll fires the complete effects[] stack.
+// Weapon on-hit procs: after a basic player attack lands, the equipped MAIN
+// weapon's own effects[] gets one independent procChance roll; on success it
+// fires at the same target through the exact same composable-effects engine
+// as skills/potions (see effectSourceDef/beginExternalEffectsCast). An
+// off-hand weapon (a dual-wielded dagger/wand, or a space pistol) never
+// procs here - only a genuine shield's own defensive proc
+// (maybeProcDefensiveEquipmentEffects) fires from the offhand slot.
 function maybeProcWeaponEffects(target){
- const weapons=[['weapon',equippedWeapon()],['offhand',game.player.equipment?.offhand]].filter(([,item])=>item?.slot==='weapon'&&Array.isArray(item.effects)&&item.effects.length);
- for(const [slot,weapon] of weapons){
-  const chance=Math.max(0,Math.min(100,(Number(weapon.procChance)||0)+(game.player.derived?.weaponProcLuckBonus||0)))/100;
-  if(chance<=0||Math.random()>=chance)continue;
-  procFx(target.x,target.y,{color:'#ffd45f',icon:'⚡'});
-  const castId=beginExternalEffectsCast(`equip:${slot}:proc`,weapon);
-  applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
-  endExternalEffectsCast();
- }
+ const weapon=equippedWeapon();
+ if(!weapon||!Array.isArray(weapon.effects)||!weapon.effects.length)return;
+ const chance=Math.max(0,Math.min(100,(Number(weapon.procChance)||0)+(game.player.derived?.weaponProcLuckBonus||0)))/100;
+ if(chance<=0||Math.random()>=chance)return;
+ procFx(target.x,target.y,{color:'#ffd45f',icon:'⚡'});
+ const castId=beginExternalEffectsCast('equip:weapon:proc',weapon);
+ applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
+ endExternalEffectsCast();
 }
 // Armor/shield defensive proc: every damage source funnels through damagePlayer(),
 // so rolling here after mitigation guarantees the proc is evaluated for
@@ -5686,14 +5711,18 @@ function handlePlayerDeath(){
 function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){
  const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');modal.querySelectorAll('button').forEach(b=>b.disabled=false);
- const staysHere=(game.player.souls||0)>=50,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Con 50 o más Soul Spikes revivirás en esta misma casilla, conservarás 10 y los enemigos mantendrán su estado.':'Con 20-49 Soul Spikes volverás al inicio del piso 1, conservarás 1 y los enemigos se regenerarán sin regenerar el loot.';
+ const staysHere=(game.player.souls||0)>=50,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Con 50 o más Soul Spikes revivirás en esta misma casilla, conservarás 10 y los enemigos mantendrán su estado.':'Con 20-49 Soul Spikes volverás al punto de origen de este piso, conservarás 1 y los enemigos se regenerarán sin regenerar el loot.';
  const render=n=>{count.innerHTML=`${soulIconHtml('soulMiniIcon')} <b>${n}</b>`;setTimeout(()=>renderIdentityMiniIcons(game.player),0)};render(game.player.souls);
  document.getElementById('rejectSoulRevive').onclick=()=>{modal.classList.remove('open');permanentDeath()};
  document.getElementById('acceptSoulRevive').onclick=()=>{const from=game.player.souls,to=from>=50?10:1;modal.querySelectorAll('button').forEach(b=>b.disabled=true);const started=performance.now(),tick=now=>{const n=Math.round(from-(from-to)*Math.min(1,(now-started)/1200));render(n);if(n>to)requestAnimationFrame(tick);else setTimeout(()=>{game.player.souls=to;persistSouls();modal.classList.remove('open');if(from>=50){reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE')}else restartDungeonAfterSoulRevive()},250)};requestAnimationFrame(tick)};
 }
+// Stays on the SAME floor (the "origin point" of wherever the player died,
+// not floor 1) - only the floor's own chest loot is preserved across the
+// regeneration, since enemies/layout reset but the chests already opened
+// (or already emptied by earlier kills) must not respawn their contents.
 function restartDungeonAfterSoulRevive(){
- const loot={};for(const [floor,snap] of Object.entries(game.sessionFloors||{}))if(snap?.chests)loot[String(floor)]=JSON.parse(JSON.stringify(snap.chests));loot[String(game.floor)]=JSON.parse(JSON.stringify(game.chests||[]));
- game.preservedSoulReviveLoot=loot;game.sessionFloors={};game.floor=1;game.turn=0;generateFloor();reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE · PISO 1');
+ game.preservedSoulReviveLoot={...(game.preservedSoulReviveLoot||{}),[String(game.floor)]:JSON.parse(JSON.stringify(game.chests||[]))};
+ game.turn=0;generateFloor();reviveAtCurrentPosition(100);persistTurnState();banner(`SOUL REVIVE · PISO ${game.floor}`);
 }
 function permanentDeath(){
  const p=game.player;game.over=true;
@@ -10981,8 +11010,9 @@ function mpHandleDefeatWhileWaiting(){
  mpClearLiveTimers();
  finalizeCharacterDeath();
  storyTitle.textContent='HAS CAÍDO';
- storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p></div>';
+ storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p><div class="startActions"><button id="closeMpDefeat">Cerrar</button></div></div>';
  storyOverlay.classList.remove('hidden');
+ setTimeout(()=>document.getElementById('closeMpDefeat')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
 }
 
 // advance: soy el jugador activo y acabo de terminar mi acción -> avanzar el
