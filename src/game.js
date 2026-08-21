@@ -9292,7 +9292,7 @@ async function deleteSavedSession(sessionId){
 
 async function resumeSession(sessionId){
  try{
-  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();await ensureWorldObjectIcons();
+  await ensureConfigItemsHydrated();if(!configChests.length)fetchConfigChests();if(!configClasses.length)fetchConfigClasses();if(!configRacesLoaded)await fetchConfigRaces();await ensureWorldObjectIcons();
   const statusRes=await fetch(`/api/dungeon-status?id=${encodeURIComponent(sessionId)}`);
   const session=await statusRes.json();if(!statusRes.ok)throw new Error(session.error||session.message||'No se pudo cargar la sesión');
   let ids=[];try{ids=JSON.parse(session.players_ID||'[]')}catch(e){}
