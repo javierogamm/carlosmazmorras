@@ -3211,7 +3211,19 @@ function restInSafeRoom(){
  updateUI();draw();banner('DESCANSO COMPLETO');
  log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.${revived.length?` ${revived.join(', ')} revive${revived.length>1?'n':''} con toda su vida.`:''}`,'good')
 }
+// Remaining PA badge: bottom-center of the board, shown at every resolution
+// whenever the PA/AP combat mode is active. Kept independent of the early
+// returns below (entrance/exit/rest states) since the PA count still applies
+// in all of them.
+function updateApBadge(){
+ const el=document.getElementById('apBadge');if(!el)return;
+ if(!apModeOn()){el.classList.add('hidden');return}
+ if(game.player.ap==null)startPlayerAP();
+ document.getElementById('apBadgeValue').textContent=game.player.ap;
+ el.classList.remove('hidden');
+}
 function updateRestButton(){
+ updateApBadge();
  const btn=document.getElementById('waitBtn');if(!btn)return;
  const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
  if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;return}

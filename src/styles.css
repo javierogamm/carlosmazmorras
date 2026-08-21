@@ -95,7 +95,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .classCard canvas{width:64px;height:64px;image-rendering:auto;background:#100b16;border:2px solid #4c3859}
 .classCard .classCopy{min-width:0}
 .equipmentHeroCanvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:192px;height:288px;image-rendering:auto;filter:drop-shadow(0 10px 10px #000)}
-#game{image-rendering:auto;cursor:crosshair;width:100%;max-width:640px;display:block;margin:auto}
+#game{image-rendering:auto;cursor:crosshair;width:100%;max-width:640px;display:block;margin:auto;touch-action:none}
 .gameStage{position:relative;width:100%;max-width:640px;margin:auto}
 
 /* Toolbar above the board: zoom + quick-access buttons. Nothing here overlaps the canvas. */
@@ -159,7 +159,23 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .mobileSkill b{display:block;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
 .costTag{display:block;font-size:8px;color:#e9d8a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cooldown{position:absolute;right:1px;top:1px;background:#000d;color:#ffd365;border-radius:50%;min-width:16px;height:16px;line-height:16px;font-size:9px}
-.targetHint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
+.targetHint{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);z-index:36;background:#09060ddd;border:2px solid #ffd365;color:#fff;padding:7px 11px;font-size:11px;pointer-events:none}.targeting #game{cursor:crosshair;filter:brightness(1.08)}
+
+/* Remaining PA (action points): always centered at the bottom of the board,
+   independent of side panel / gameOnly layout, visible at every resolution. */
+.apBadge{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);z-index:9;background:#0c0910dd;border:2px solid #ffc35a;color:#ffd68b;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.04em;pointer-events:none;white-space:nowrap}
+.apBadge b{color:#fff;margin-left:4px}
+@media(max-width:600px){.apBadge{font-size:10px;padding:3px 9px;bottom:6px}}
+
+/* Long-press-and-drag basic attack (src/touch.js): a flowing dashed arrow
+   from the hero to the finger, red/green depending on whether the cell under
+   it currently holds an enemy in weapon range. position:fixed + viewport
+   coordinates, same approach as .rangedTracer above. */
+.attackDragArrow{position:fixed;left:0;top:0;height:6px;transform-origin:0 50%;pointer-events:none;z-index:75;border-radius:3px;--arrow-color:#ffd365;background:repeating-linear-gradient(90deg,var(--arrow-color) 0 10px,transparent 10px 20px);background-size:28px 100%;animation:attackDragFlow .5s linear infinite;box-shadow:0 0 8px var(--arrow-color)}
+.attackDragArrow::after{content:'';position:absolute;right:-3px;top:50%;width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:16px solid var(--arrow-color);transform:translateY(-50%);filter:drop-shadow(0 0 4px var(--arrow-color))}
+.attackDragArrow.valid{--arrow-color:#7cffd4}
+.attackDragArrow.invalid{--arrow-color:#ff6969}
+@keyframes attackDragFlow{from{background-position:0 0}to{background-position:28px 0}}
 .zoomControl{background:#17101f;border:2px solid #493653;padding:6px 10px;color:#f4ead5;font-size:11px;display:flex;align-items:center;gap:8px}
 .zoomControl label{display:flex;align-items:center;gap:8px;color:#ffd68b;white-space:nowrap}
 .zoomControl input{width:130px;accent-color:#ffc35a}
