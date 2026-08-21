@@ -1610,7 +1610,6 @@ game={floor:1,themeIndex:0,turn:0,dungeonWorldId:selectedDungeonWorld?.id||null,
   uiAlert('Error al preparar la elección de habilidad inicial: '+e.message);
  }
 }
-storyContinue.onclick=()=>{storyOverlay.classList.add('hidden');if(!game.map)generateFloor();updateUI()};
 
 // ============================================================================
 // FLOOR ARCHETYPES + ROOM TYPOLOGIES
@@ -2641,6 +2640,7 @@ function loadPrecomputedFloor(){
  Object.assign(game,{map:data.map,rooms:data.rooms,interiorEntrances:hydrateInteriorEntrances(data.interiorEntrances,game.player.level),activeInteriorId:null,exteriorScene:null,exteriorPosition:null,safeRooms:data.safeRooms||[],stairs:data.stairs,doors:data.doors,keys:data.keys,chests:floorChests,traps:(data.traps||[]).map(t=>({...t})),altars:(data.altars||[]).map(a=>({...a})),assets:(data.assets||[]).map(a=>({...a})),precomputedEvent:data.event||null,enemies:(data.enemies||[]).map(e=>hydratePrecomputedEnemy(assignEnemySkills({...e}))),enemyFamily:data.enemyFamily,floorTileset,seen:Array.from({length:ROWS},()=>Array(COLS).fill(false)),boss:data.boss?hydratePrecomputedEnemy({...data.boss}):null,
   floorArchetype:data.archetype||'standard',floorArchetypeLabel:data.archetypeLabel||'Piso estándar',floorArchetypeDesc:data.archetypeDesc||'',
   objective:data.objective?{...data.objective}:{type:'stairs',label:'Encuentra la salida'},rewardRarityBonus:data.rewardRarityBonus||0,partyScaled:0});
+ game.floorSpawn={x:data.spawn.x,y:data.spawn.y};
  game.player.x=data.spawn.x;game.player.y=data.spawn.y;anim.heroX=anim.targetX=data.spawn.x;anim.heroY=anim.targetY=data.spawn.y;anim.t=1;reveal(data.spawn.x,data.spawn.y);
  scaleFloorForPlayerLevel();
  scaleFloorForParty();
@@ -3298,6 +3298,7 @@ function generateFloor(){clearCompanionOrders();game.floorEntryLevel=Math.max(1,
   objective:plan.objective,rewardRarityBonus:plan.rewardRarityBonus,precomputedEvent:plan.event||null,partyScaled:0
  });
  applyPreservedSoulReviveLoot();
+ game.floorSpawn={x:plan.spawn.x,y:plan.spawn.y};
  game.player.x=plan.spawn.x;game.player.y=plan.spawn.y;anim.heroX=anim.targetX=plan.spawn.x;anim.heroY=anim.targetY=plan.spawn.y;anim.t=1;reveal(plan.spawn.x,plan.spawn.y);
  const extra=difficultyScale().count;
  for(let i=0;i<extra;i++){const room=pick(game.rooms||[]);if(room){const exPos={x:room.x+rng(Math.max(1,room.w)),y:room.y+rng(Math.max(1,room.h))};if(game.map[exPos.y]?.[exPos.x]===0&&!isSafeCell(exPos.x,exPos.y)){const ex=buildConfiguredEnemy(weightedFamilyEnemy(plan.family,false,game.floor,worldParams().floors||10),exPos,game.floor,false);ex.enemyFamily=plan.family.name;game.enemies.push(ex)}}}
@@ -5686,14 +5687,18 @@ function handlePlayerDeath(){
 function reviveAtCurrentPosition(hpPercent=100){game.over=false;game.player.hp=Math.max(1,Math.round(game.player.maxHp*hpPercent/100));game.player.stamina=game.player.maxStamina;game.player.mana=game.player.maxMana;updateUI();draw()}
 function showSoulReviveModal(){
  const modal=document.getElementById('soulReviveModal'),count=document.getElementById('soulReviveCount');modal.classList.add('open');modal.querySelectorAll('button').forEach(b=>b.disabled=false);
- const staysHere=(game.player.souls||0)>=50,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Con 50 o más Soul Spikes revivirás en esta misma casilla, conservarás 10 y los enemigos mantendrán su estado.':'Con 20-49 Soul Spikes volverás al inicio del piso 1, conservarás 1 y los enemigos se regenerarán sin regenerar el loot.';
+ const staysHere=(game.player.souls||0)>=50,text=document.getElementById('soulReviveText');if(text)text.textContent=staysHere?'Con 50 o más Soul Spikes revivirás en esta misma casilla, conservarás 10 y los enemigos mantendrán su estado.':'Con 20-49 Soul Spikes volverás al punto de origen de este piso, conservarás 1 y los enemigos se regenerarán sin regenerar el loot.';
  const render=n=>{count.innerHTML=`${soulIconHtml('soulMiniIcon')} <b>${n}</b>`;setTimeout(()=>renderIdentityMiniIcons(game.player),0)};render(game.player.souls);
  document.getElementById('rejectSoulRevive').onclick=()=>{modal.classList.remove('open');permanentDeath()};
  document.getElementById('acceptSoulRevive').onclick=()=>{const from=game.player.souls,to=from>=50?10:1;modal.querySelectorAll('button').forEach(b=>b.disabled=true);const started=performance.now(),tick=now=>{const n=Math.round(from-(from-to)*Math.min(1,(now-started)/1200));render(n);if(n>to)requestAnimationFrame(tick);else setTimeout(()=>{game.player.souls=to;persistSouls();modal.classList.remove('open');if(from>=50){reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE')}else restartDungeonAfterSoulRevive()},250)};requestAnimationFrame(tick)};
 }
+// Stays on the SAME floor (the "origin point" of wherever the player died,
+// not floor 1) - only the floor's own chest loot is preserved across the
+// regeneration, since enemies/layout reset but the chests already opened
+// (or already emptied by earlier kills) must not respawn their contents.
 function restartDungeonAfterSoulRevive(){
- const loot={};for(const [floor,snap] of Object.entries(game.sessionFloors||{}))if(snap?.chests)loot[String(floor)]=JSON.parse(JSON.stringify(snap.chests));loot[String(game.floor)]=JSON.parse(JSON.stringify(game.chests||[]));
- game.preservedSoulReviveLoot=loot;game.sessionFloors={};game.floor=1;game.turn=0;generateFloor();reviveAtCurrentPosition(100);persistTurnState();banner('SOUL REVIVE · PISO 1');
+ game.preservedSoulReviveLoot={...(game.preservedSoulReviveLoot||{}),[String(game.floor)]:JSON.parse(JSON.stringify(game.chests||[]))};
+ game.turn=0;generateFloor();reviveAtCurrentPosition(100);persistTurnState();banner(`SOUL REVIVE · PISO ${game.floor}`);
 }
 function permanentDeath(){
  const p=game.player;game.over=true;
@@ -10981,8 +10986,9 @@ function mpHandleDefeatWhileWaiting(){
  mpClearLiveTimers();
  finalizeCharacterDeath();
  storyTitle.textContent='HAS CAÍDO';
- storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p></div>';
+ storyBody.innerHTML='<div class="narrative gameOverBox"><p class="gameOverName"><b>Tu personaje ha muerto en la partida multijugador.</b></p><div class="startActions"><button id="closeMpDefeat">Cerrar</button></div></div>';
  storyOverlay.classList.remove('hidden');
+ setTimeout(()=>document.getElementById('closeMpDefeat')?.addEventListener('click',()=>storyOverlay.classList.add('hidden')),0);
 }
 
 // advance: soy el jugador activo y acabo de terminar mi acción -> avanzar el
