@@ -57,7 +57,7 @@ function soulseekLegendaryItemCost(rarity,baseCost){
 const SOULSEEK_WEAPON_TYPE_GROUPS={
  'Espadas y Dagas':['Espadas','Dagas','Sables'],
  'Martillos y Hachas':['Hachas','Mazas','Martillos','Armas pesadas','Guanteletes'],
- 'Armas de Fuego':['Pistolas','Rifles','Escopetas','Pistolas espaciales'],
+ 'Armas de Fuego':['Pistolas','Rifles','Escopetas'],
  'Arcos y ballestas':['Arcos','Ballestas'],
  'Bastones y lanzas':['Bastones','Lanzas'],
  'Armas exóticas':['Garras','Látigos','Drones','Granadas','Artefactos'],

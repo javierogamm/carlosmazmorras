@@ -132,23 +132,23 @@ function applyOffhandGuarantee(item){
  }
  return item;
 }
-// A weapon-slot dagger, wand or space pistol can also be equipped in the
-// offhand slot (dual wielding a secondary weapon) via equipItemAsOffhand() -
-// same name/weaponType detection convention as detectOffhandKind(), but
+// A weapon-slot dagger, wand or pistol can also be equipped in the offhand
+// slot (dual wielding a secondary weapon) via equipItemAsOffhand() - same
+// name/weaponType detection convention as detectOffhandKind(), but
 // restricted to actual weapon-slot items instead of procedural offhand
 // accessories.
 function isDualHandWeapon(item){
  if(!item||item.slot!=='weapon')return false;
- if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas'||item.weaponType==='Pistolas espaciales';
- return /daga|varita|pistola espacial/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
+ if(item.weaponType)return item.weaponType==='Dagas'||item.weaponType==='Varitas'||item.weaponType==='Pistolas';
+ return /daga|varita|pistola/i.test(`${item.name||''} ${item.weaponCategory||''} ${item.theme||''}`);
 }
 // Unlike a dual-wielded dagger/wand (which only ever grant regen affixes
 // through the normal per-slot affix sum, and never touch damage/procs - see
-// maybeProcWeaponEffects), a space pistol is explicitly the one off-hand
-// weapon that also adds flat damage, on top of whatever stats its own
-// affixes carry. Only counts while it's actually sitting in the offhand
-// slot, not when equipped as the main weapon.
-const OFFHAND_WEAPON_DAMAGE_BONUS={'Pistolas espaciales':2};
+// maybeProcWeaponEffects), a pistol is explicitly the one off-hand weapon
+// that also adds flat damage, on top of whatever stats its own affixes
+// carry. Only counts while it's actually sitting in the offhand slot, not
+// when equipped as the main weapon.
+const OFFHAND_WEAPON_DAMAGE_BONUS={Pistolas:2};
 function offhandWeaponDamageBonus(p){
  const item=p?.equipment?.offhand;
  return item?.slot==='weapon'?(OFFHAND_WEAPON_DAMAGE_BONUS[item.weaponType]||0):0;
@@ -690,11 +690,11 @@ const weaponRows=[
  {category:'Armas míticas ciberpunk',iconFolder:SWORD_ICON_FOLDER,iconAssetRow:8,legacy:['Armas artefacto y armas míticas'],stat:'wisdom',names:['Cañón del corazón azul', 'Guadaña del vacío violeta', 'Espada de plasma imperial', 'Hoja del reactor carmesí', 'Estrella de energía criónica', 'Rifle del arcángel mecánico', 'Hacha del señor de las máquinas', 'Lanza de fotones', 'Bastón de singularidad violeta', 'Núcleo del apocalipsis mecánico']}
 ];
 const weaponCategories=weaponRows.map(r=>r.category);
-const configWeaponTypes=['Espadas','Dagas','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Garras','Látigos','Drones','Granadas','Artefactos','Pistolas espaciales'];
-const WEAPON_ATTACK_AP_COST={Espadas:10,Dagas:7,Bastones:8,Martillos:10,Mazas:7,Pistolas:7,Rifles:10,Arcos:12,Ballestas:10,Látigos:8,Varitas:8,Garras:7,'Pistolas espaciales':7};
+const configWeaponTypes=['Espadas','Dagas','Sables','Hachas','Mazas','Martillos','Lanzas','Bastones','Varitas','Arcos','Ballestas','Pistolas','Rifles','Escopetas','Armas pesadas','Guanteletes','Garras','Látigos','Drones','Granadas','Artefactos'];
+const WEAPON_ATTACK_AP_COST={Espadas:10,Dagas:7,Bastones:8,Martillos:10,Mazas:7,Pistolas:7,Rifles:10,Arcos:12,Ballestas:10,Látigos:8,Varitas:8,Garras:7};
 function weaponAttackApCost(item=equippedWeapon()){return WEAPON_ATTACK_AP_COST[item?.weaponType]??10}
-const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía','Pistolas espaciales':'Armas de energía orbital'};
-const weaponTypeRanges={Varitas:{min:1,max:4},Arcos:{min:2,max:5},Ballestas:{min:1,max:4},Pistolas:{min:1,max:3},Rifles:{min:2,max:5},Escopetas:{min:1,max:2},'Pistolas espaciales':{min:1,max:3}};
+const configWeaponTypeCategories={Espadas:'Armas blancas steampunk básicas',Dagas:'Armas blancas steampunk básicas',Sables:'Armas de latón refinadas',Hachas:'Armas pesadas steampunk',Mazas:'Armas pesadas steampunk',Martillos:'Armas pesadas steampunk',Lanzas:'Espadas eléctricas iniciales',Bastones:'Armas criogénicas',Varitas:'Armas criogénicas',Arcos:'Armas a distancia mecánicas',Ballestas:'Armas a distancia mecánicas',Pistolas:'Armas de fuego ciberpunk',Rifles:'Armamento steampunk avanzado',Escopetas:'Armas de pólvora industrial','Armas pesadas':'Artillería steampunk',Guanteletes:'Armas ciberpunk pesadas',Látigos:'Armas térmicas',Drones:'Armas ciberpunk pesadas',Granadas:'Armas tóxicas y biotecnológicas',Artefactos:'Artefactos de energía'};
+const weaponTypeRanges={Varitas:{min:1,max:4},Arcos:{min:2,max:5},Ballestas:{min:1,max:4},Pistolas:{min:1,max:3},Rifles:{min:2,max:5},Escopetas:{min:1,max:2}};
 const weaponCategoryStats=Object.fromEntries(weaponRows.flatMap(r=>[r.category,...r.legacy].map(c=>[c,r.stat])));
 function weaponRowForCategory(category){return Math.max(0,weaponRows.findIndex(r=>r.category===category||r.legacy.includes(category)))}
 function weaponPowerColumn(itemLevel,rarity,score=0){
@@ -3382,7 +3382,7 @@ const DEFENSE_STAT_LABELS={
 // flavor-name regex below so "basic attack" stat is deterministic by weapon
 // type rather than dependent on whatever flavor name it happened to roll:
 // daggers/claws/rifles/pistols use agility, shotguns use strength.
-const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength','Pistolas espaciales':'agility'};
+const WEAPON_TYPE_STAT={Dagas:'agility',Guanteletes:'agility',Rifles:'agility',Pistolas:'agility',Escopetas:'strength'};
 function inferWeaponDefenseStat(item){
  // Trust the stat already resolved onto the item (configuredItemFromRow sets
  // it from WEAPON_TYPE_STAT/weaponCategoryStats at creation time) before
