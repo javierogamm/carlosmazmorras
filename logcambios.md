@@ -5,7 +5,8 @@
   - Infrecuente (200/250/300), Raro (350/400/450) y Épico (500/550/600): el Starter de cada rareza sube la rareza elegible del arma inicial; el Advanced sube la del anillo; el Expert sube la del colgante.
   - Cada pack requiere tener ya el pack a su izquierda en la misma fila y su equivalente en la fila de rareza inferior (progresión en rejilla).
 - El asistente de equipo inicial de Soulseek añade los pasos de armadura/casco/anillo/colgante cuando corresponda, antes de las pociones.
-- Nueva columna de cuenta `soulseek_starter_packs` (migración `supabase/add_soulseeker_starter_packs.sql`).
+- Los packs se guardan dentro de la columna ya existente `soulseek_classes` (como entradas extra con prefijo `pack:`), sin crear ninguna columna nueva.
+- **Corrección**: la versión inicial de este cambio añadía una columna `soulseek_starter_packs` inexistente en la base de datos de producción a la consulta de login, lo que impedía iniciar sesión a todos los usuarios. Revertido: `api/user.js` vuelve a ser idéntico al de antes de esta función.
 - Sube la versión a 1.1.0 (APP_VERSION, package.json, título/badge y cache-busters de index.html).
 
 ## v0.100.0 - 2026-08-20

@@ -8,19 +8,27 @@ function supabaseConfig(){
  return {url:url.replace(/\/$/,''),key};
 }
 function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
-// soulseek_races/classes/skills/starter_packs are permanent account-level
-// unlock pools (Fase 3's shop, starter_packs added in v1.1); soulseek_session_items
-// is the ephemeral item stash the shop fills, consumed by the next Soulseeker
-// character created and cleared on that character's death. All five are json
-// columns - parse defensively since a fresh row (or a legacy one predating a
-// given feature) may still have the SQL default '[]' as a string, null, or
-// already-parsed json depending on the driver.
+// soulseek_races/classes/skills are permanent account-level unlock pools
+// (Fase 3's shop); soulseek_session_items is the ephemeral item stash the
+// shop fills, consumed by the next Soulseeker character created and
+// cleared on that character's death. All four are json columns - parse
+// defensively since a fresh row (or a legacy one predating this feature)
+// may still have the SQL default '[]' as a string, null, or already-parsed
+// json depending on the driver.
+// v1.1 starter packs do NOT get their own column: they are stored inside
+// soulseek_classes itself, as extra array entries prefixed "pack:" (see
+// SOULSEEK_STARTER_PACK_PREFIX in soulseek.js) - a new column would need a
+// Supabase migration to be run in production before this endpoint's SELECT
+// could safely reference it, and referencing a column that doesn't exist yet
+// breaks EVERY login (Postgrest errors the whole query, not just that field).
+// Piggybacking on the already-existing soulseek_classes column sidesteps
+// that entirely.
 function parseJsonArray(v){
  if(Array.isArray(v))return v;
  if(typeof v==='string'){try{const p=JSON.parse(v||'[]');return Array.isArray(p)?p:[]}catch{return []}}
  return [];
 }
-function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config,max_pj_lv:Number(row.max_pj_lv)||0,accumulated_points:Number(row.accumulated_points)||0,souls:Number(row.souls)||0,soulseek_races:parseJsonArray(row.soulseek_races),soulseek_classes:parseJsonArray(row.soulseek_classes),soulseek_skills:parseJsonArray(row.soulseek_skills),soulseek_session_items:parseJsonArray(row.soulseek_session_items),soulseek_starter_packs:parseJsonArray(row.soulseek_starter_packs)};}
+function publicUser(row){return {id:row.id,nombre:row.nombre,admin:!!row.config,max_pj_lv:Number(row.max_pj_lv)||0,accumulated_points:Number(row.accumulated_points)||0,souls:Number(row.souls)||0,soulseek_races:parseJsonArray(row.soulseek_races),soulseek_classes:parseJsonArray(row.soulseek_classes),soulseek_skills:parseJsonArray(row.soulseek_skills),soulseek_session_items:parseJsonArray(row.soulseek_session_items)};}
 // Recomputes max_pj_lv/accumulated_points straight from user_pj on every
 // login, instead of trusting the cached columns - self-heals any user whose
 // aggregates went stale (character saved before this feature existed, a
@@ -66,7 +74,7 @@ module.exports=async(req,res)=>{
    // same endpoint - only touch a field the caller actually sent, so a
    // plain souls-only PUT (revive-or-bank on death) never has to know
    // about them.
-   for(const field of ['soulseek_races','soulseek_classes','soulseek_skills','soulseek_session_items','soulseek_starter_packs'])
+   for(const field of ['soulseek_races','soulseek_classes','soulseek_skills','soulseek_session_items'])
     if(Object.prototype.hasOwnProperty.call(req.body||{},field))patch[field]=Array.isArray(req.body[field])?req.body[field]:[];
    const patched=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?nombre=eq.${encodeURIComponent(nombre)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(patch)});
    const data=await patched.json();
@@ -80,7 +88,7 @@ module.exports=async(req,res)=>{
   const nombre=String(req.body?.nombre||'').trim();
   const pass=String(req.body?.pass||'').trim();
   if(!nombre||!pass)return res.status(400).json({error:'Faltan usuario o contraseña'});
-  const selectUrl=`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pass,config,max_pj_lv,accumulated_points,souls,soulseek_races,soulseek_classes,soulseek_skills,soulseek_session_items,soulseek_starter_packs&nombre=eq.${encodeURIComponent(nombre)}&limit=1`;
+  const selectUrl=`${url}/rest/v1/${SUPABASE_TABLE}?select=id,created_at,nombre,pass,config,max_pj_lv,accumulated_points,souls,soulseek_races,soulseek_classes,soulseek_skills,soulseek_session_items&nombre=eq.${encodeURIComponent(nombre)}&limit=1`;
   const found=await fetch(selectUrl,{headers:headers(key)});
   const users=await found.json();
   if(!found.ok)return res.status(found.status).json(users);

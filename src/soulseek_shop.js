@@ -25,11 +25,15 @@
 //   the next Soulseeker character's creation drains into its starting
 //   inventory and clears (also cleared defensively on any soulseeker death,
 //   in case a character was never actually created after a purchase).
-// - v1.1: a fourth permanent account-level pool, user.soulseek_starter_packs,
-//   sold in PJ > Packs - 4 rarity rows x 3 tiers unlocking/upgrading the
-//   starting-loadout wizard's armor+casco/anillo/colgante picks and the
-//   weapon pick's rarity cap. See soulseek.js's starter-pack block for the
-//   actual unlock/prereq logic; this file only renders the shop tab.
+// - v1.1: starter packs, sold in PJ > Packs - 4 rarity rows x 3 tiers
+//   unlocking/upgrading the starting-loadout wizard's armor+casco/anillo/
+//   colgante picks and the weapon pick's rarity cap. No new column: they are
+//   piggybacked onto user.soulseek_classes as "pack:"-prefixed entries (see
+//   SOULSEEK_STARTER_PACK_PREFIX in soulseek.js and soulseekRawStoredClasses/
+//   soulseekUnlockedClasses below) so the login endpoint never has to
+//   reference a column that might not exist yet in production. See
+//   soulseek.js's starter-pack block for the actual unlock/prereq logic;
+//   this file only renders the shop tab.
 // ============================================================================
 
 let soulseekShopTab='pj';
@@ -85,7 +89,16 @@ function soulseekSortByRarity(rows){
 // -- every login and every purchase (see soulseekSpendSouls), same pattern
 // -- as soulseek.js's soulseekAccountSouls()/soulseekSetAccountSouls(). --
 function soulseekUnlockedRaces(){return Array.isArray(window.currentUser?.soulseek_races)?window.currentUser.soulseek_races:[]}
-function soulseekUnlockedClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
+// Raw storage array behind soulseek_classes - v1.1 starter packs (see
+// soulseek.js's SOULSEEK_STARTER_PACK_PREFIX) are piggybacked onto this same
+// column as "pack:"-prefixed entries, so writers must always start from this
+// UNFILTERED array (never from soulseekUnlockedClasses() below) or they'd
+// silently drop whichever kind of entry they didn't know about.
+function soulseekRawStoredClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
+// Real classes only - strips the piggybacked pack entries back out, so the
+// class cost-by-count formula and the "owns at least one class" gate below
+// behave exactly as before v1.1 (a bought pack must never look like a class).
+function soulseekUnlockedClasses(){return soulseekRawStoredClasses().filter(id=>typeof id!=='string'||!id.startsWith(SOULSEEK_STARTER_PACK_PREFIX))}
 function soulseekUnlockedSkills(){return Array.isArray(window.currentUser?.soulseek_skills)?window.currentUser.soulseek_skills:[]}
 function soulseekSessionItems(){return Array.isArray(window.currentUser?.soulseek_session_items)?window.currentUser.soulseek_session_items:[]}
 function soulseekRaceUnlocked(id){return soulseekUnlockedRaces().includes(id)}
@@ -342,7 +355,9 @@ async function soulseekBuyClass(id,price){
  if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
  if(!await uiConfirm(`¿Desbloquear la clase ${resolveClassDef(id)?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
  try{
-  const next=[...new Set([...soulseekUnlockedClasses(),id])];
+  // Raw array, not soulseekUnlockedClasses() - must preserve any "pack:"
+  // entries already stored in this column (see soulseekRawStoredClasses).
+  const next=[...new Set([...soulseekRawStoredClasses(),id])];
   await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
@@ -448,8 +463,12 @@ async function soulseekBuyStarterPack(rarity,tier,price){
  if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
  if(!await uiConfirm(`¿Desbloquear ${soulseekStarterPackLabel(tier)} Pack ${tierDefs[rarity]?.label||rarity} por ${price} souls?`))return;
  try{
-  const next=[...new Set([...soulseekUnlockedStarterPacks(),soulseekStarterPackId(rarity,tier)])];
-  await soulseekSpendSouls(price,{soulseek_starter_packs:next});
+  // Piggybacked on soulseek_classes (see SOULSEEK_STARTER_PACK_PREFIX in
+  // soulseek.js) - starts from the raw array so any real classes already
+  // owned are preserved, and writes back through the same soulseek_classes
+  // field soulseekBuyClass uses.
+  const next=[...new Set([...soulseekRawStoredClasses(),SOULSEEK_STARTER_PACK_PREFIX+soulseekStarterPackId(rarity,tier)])];
+  await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
  }catch(e){uiAlert('Error al desbloquear: '+e.message)}

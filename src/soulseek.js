@@ -562,7 +562,21 @@ function soulseekNecklaceRows(){const cap=soulseekNecklaceRarityCap();return cap
 // ============================================================================
 const SOULSEEK_STARTER_PACK_RARITIES=['common','uncommon','rare','epic'];
 const SOULSEEK_STARTER_PACK_COSTS={common:[50,100,150],uncommon:[200,250,300],rare:[350,400,450],epic:[500,550,600]};
-function soulseekUnlockedStarterPacks(){return Array.isArray(window.currentUser?.soulseek_starter_packs)?window.currentUser.soulseek_starter_packs:[]}
+// No dedicated column: a new soulseek_starter_packs column would need a
+// Supabase migration run in production first, and api/user.js referencing a
+// column that doesn't exist there yet breaks the login SELECT for every
+// account, not just this feature. Starter packs are piggybacked onto the
+// already-existing soulseek_classes column instead, as extra array entries
+// prefixed "pack:" - real class ids never start with that prefix, so they
+// can never collide. soulseek_shop.js's soulseekUnlockedClasses()/
+// soulseekBuyClass() filter these back out before treating the array as
+// "which classes does this account own" (cost-by-count, the "own at least
+// one class" gate, etc.) - see the comment there.
+const SOULSEEK_STARTER_PACK_PREFIX='pack:';
+function soulseekUnlockedStarterPacks(){
+ const raw=Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[];
+ return raw.filter(id=>typeof id==='string'&&id.startsWith(SOULSEEK_STARTER_PACK_PREFIX)).map(id=>id.slice(SOULSEEK_STARTER_PACK_PREFIX.length));
+}
 function soulseekStarterPackId(rarity,tier){return `${rarity}_${tier}`}
 function soulseekStarterPackOwned(rarity,tier){return soulseekUnlockedStarterPacks().includes(soulseekStarterPackId(rarity,tier))}
 function soulseekStarterPackCost(rarity,tier){return SOULSEEK_STARTER_PACK_COSTS[rarity]?.[tier-1]??0}
