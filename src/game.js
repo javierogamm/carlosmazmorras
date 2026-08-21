@@ -1188,6 +1188,21 @@ function finishPotionUse(item,x=game.player.x,y=game.player.y){
  potionSplash(item,x,y);
  log(`${item.name} usada: ${describePotionEffects(item)||item.desc||'sin efectos'}.`,'loot');
 }
+// Quick-use potion: at most one at a time, toggled from the Pociones tab
+// (.quickPotionMiniBtn). The marked potion's icon sits on the board itself
+// (see updateQuickPotionBadge) for a one-tap consume.
+function toggleQuickPotion(id){
+ if(!game?.player)return;
+ game.player.quickPotionId=game.player.quickPotionId===id?null:id;
+ updateUI();
+}
+function updateQuickPotionBadge(){
+ const badge=document.getElementById('quickPotionBadge');if(!badge||!game?.player)return;
+ const item=game.inventory.find(i=>i.id===game.player.quickPotionId);
+ if(!item){game.player.quickPotionId=null;badge.classList.add('hidden');return}
+ badge.classList.remove('hidden');
+ drawItemIcon(document.getElementById('quickPotionIcon'),item);
+}
 // All-self effects (heal/buff/hot/utility/etc, same as a self-cast skill)
 // resolve instantly on click, exactly like today; any component targeting
 // an enemy/area/ally makes the potion a thrown, single-use weapon instead -
@@ -3211,16 +3226,37 @@ function restInSafeRoom(){
  updateUI();draw();banner('DESCANSO COMPLETO');
  log(`Descansas junto al fuego: +${p.hp-before.hp} vida, +${p.stamina-before.stamina} stamina y +${p.mana-before.mana} maná.${revived.length?` ${revived.join(', ')} revive${revived.length>1?'n':''} con toda su vida.`:''}`,'good')
 }
+// Remaining PA badge: bottom-center of the board, shown at every resolution
+// whenever the PA/AP combat mode is active. Kept independent of the early
+// returns below (entrance/exit/rest states) since the PA count still applies
+// in all of them.
+function updateApBadge(){
+ const el=document.getElementById('apBadge');if(!el)return;
+ if(!apModeOn()){el.classList.add('hidden');return}
+ if(game.player.ap==null)startPlayerAP();
+ document.getElementById('apBadgeValue').textContent=game.player.ap;
+ el.classList.remove('hidden');
+}
+// Mirrors #waitBtn's disabled/title onto the on-board pass-turn thumbnail
+// (#passTurnSkillBtn, see .boardActionBar) so the two stay in lockstep
+// without duplicating the entrance/exit/rest/pass-turn branching above.
+function syncPassTurnButton(waitBtnEl){
+ const el=document.getElementById('passTurnSkillBtn');if(!el)return;
+ el.disabled=waitBtnEl.disabled;
+ el.title=waitBtnEl.textContent;
+}
 function updateRestButton(){
+ updateApBadge();
  const btn=document.getElementById('waitBtn');if(!btn)return;
  const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
- if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;return}
- if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;return}
+ if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;syncPassTurnButton(btn);return}
+ if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;syncPassTurnButton(btn);return}
  delete btn.dataset.interior;
  const room=campAtPlayer();
  if(room){btn.textContent=room.rested?'DESCANSADO':'DESCANSAR';btn.disabled=!!room.rested;btn.dataset.rest='1'}
  else if(apModeOn()){if(game.player.ap==null)startPlayerAP();btn.textContent=`PASAR TURNO (${game.player.ap} PA)`;btn.disabled=!!(game.multiplayer&&!game.myTurn);delete btn.dataset.rest}
  else{btn.textContent='ESPERAR';btn.disabled=false;delete btn.dataset.rest}
+ syncPassTurnButton(btn);
 }
 
 // A pet's pending order (see resolveCompanionCommand) references a live
@@ -4582,7 +4618,7 @@ function companionCommandButtonHtml(c,i){
  const label=companionCommandLabel(c),icon=companionCommandIcon(c),resource=c.commandResource||'mana',cost=c.commandCost||0;
  const disabled=busy||(cost>0&&game.player[resource]<cost);
  const detail=`Ordenar a ${c.name}: ${label}${cost>0?` · ${cost} ${resource==='mana'?'maná':'stamina'}`:''} · no gasta PA`;
- return `<button class="mobileSkill companionCommand" ${disabled?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${icon}</span><span class="skillText"><b>${label}</b>${cost>0?`<span class="costTag">${cost}${resource==='mana'?'✦':'⚡'}</span>`:''}</span></button>`;
+ return `<button class="mobileSkill companionCommand" ${disabled?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${icon}</span></button>`;
 }
 function payCompanionCommandCost(c){
  const resource=c.commandResource||'mana',cost=c.commandCost||0;
@@ -6130,8 +6166,9 @@ function updateUI(){
  equipmentMini.innerHTML=['weapon','chest','ring1','neck'].map(s=>`<div class="small">${slotNames[s]}: <b>${p.equipment[s]?.name||'—'}</b></div>`).join('');
  const equipmentItems=game.inventory.filter(i=>i.type!=='potion'),potionItems=game.inventory.filter(i=>i.type==='potion');
  inventory.innerHTML=equipmentItems.length?equipmentItems.map(i=>{const canDisenchant=i.slot!=='consumable';return `<div class="item" onclick="equipItem('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}</b><span class="itemLevel">${slotNames[i.slot]} · ${i.label} · Nivel ${i.itemLevel||1}</span><span class="itemScore">Poder de objeto: ${i.score||0}</span>${describeItem(i)}</div>${isDualHandWeapon(i)?`<button type="button" class="equipOffhandMiniBtn" title="Equipar en mano izquierda" onclick="event.stopPropagation();equipItemAsOffhand('${i.id}')">Izq.</button>`:''}${canDisenchant?`<button type="button" class="disenchantMiniBtn" title="Deshacer: 3-5 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button>`:''}</div>`}).join(''):'<p class="small">La mochila solo contiene pelusas.</p>';
- const potionsEl=document.getElementById('potions');
- if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div><button type="button" class="disenchantMiniBtn" title="Deshacer una poción: 1-3 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button></div>`).join(''):'<p class="small">No llevas pociones.</p>';
+ const potionsEl=document.getElementById('potions'),quickPotionId=p.quickPotionId;
+ if(potionsEl)potionsEl.innerHTML=potionItems.length?potionItems.map(i=>`<div class="item${i.id===quickPotionId?' quickPotionActive':''}" onclick="usePotion('${i.id}')"><canvas class="itemThumb" width="48" height="48" data-item="${i.id}"></canvas><div><b class="${i.rarity}">${i.name}${i.quantity>1?` x${i.quantity}`:''}</b><span class="itemLevel">Poción · ${i.label} · Nivel ${i.itemLevel||1}</span>${describeItem(i)}</div><button type="button" class="quickPotionMiniBtn${i.id===quickPotionId?' active':''}" title="${i.id===quickPotionId?'Quitar de uso rápido':'Marcar como poción de uso rápido (solo puede haber una)'}" onclick="event.stopPropagation();toggleQuickPotion('${i.id}')">${i.id===quickPotionId?'★':'☆'}</button><button type="button" class="disenchantMiniBtn" title="Deshacer una poción: 1-3 shards de ${tierDefs[i.rarity]?.label||i.rarity}" onclick="event.stopPropagation();confirmDisenchantItem('${i.id}')"><canvas class="shardTierIcon" width="16" height="16" data-shard-tier="${i.rarity}"></canvas></button></div>`).join(''):'<p class="small">No llevas pociones.</p>';
+ updateQuickPotionBadge();
  // Trinkets/rings with a configured effects[] show up here instead of the
  // inventory - they stay equipped (see useEquipmentActive), so their icon is
  // drawn via the same data-equipped-slot lookup as the paperdoll slots below.
@@ -6149,14 +6186,15 @@ function updateUI(){
  skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard ${d.raceSkill?'raceSkill':''}"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${Array.from({length:activeSkillSlotsFor()},(_,n)=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
- // Compact one-row cards: hotkey+icon+short cost only. Full dice/range/defense
- // detail moves into the title tooltip instead of stacking extra lines.
- mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span><span class="skillText"><b>Atacar</b></span></button>`+p.equippedSkills.map((id,i)=>{
+ // Small icon-only thumbnails overlaid on the board itself (see .mobileSkill
+ // in styles.css). Full name/cost/range detail moves into the title tooltip
+ // instead of stacking extra lines on the button.
+ mobileSkillbar.innerHTML=`<button class="mobileSkill attackSkill" ${busy?'disabled':''} onclick="beginBasicAttack()" title="Ataque básico · ${baseAttackDice()} · ${attackRangeLabel()}"><span class="slotKey">A</span><span class="icon">⚔</span></button>`+p.equippedSkills.map((id,i)=>{
   if(!id)return'';
   const activeCompanion=permanentCompanionForSkill(id);
   if(activeCompanion)return companionCommandButtonHtml(activeCompanion,i);
   const d=skillDefs[id],cd=p.cooldowns[id]||0,cost=effectiveSkillCost(d),detail=`${d.name} · ${cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;
-  return`<button class="mobileSkill ${d.raceSkill?'raceSkill':''}" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span><span class="skillText"><b>${d.name}</b><span class="costTag">${cost}${d.resource==='mana'?'✦':'⚡'}</span></span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`
+  return`<button class="mobileSkill ${d.raceSkill?'raceSkill':''}" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`
  }).join('');
  setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
@@ -11150,4 +11188,16 @@ document.getElementById('hudEquipment')?.addEventListener('click',()=>{showTab('
 document.getElementById('hudSkills')?.addEventListener('click',()=>{showTab('skills')});
 document.getElementById('hudMap')?.addEventListener('click',()=>{const w=document.getElementById('minimapWrap');w.classList.toggle('minimapHidden');document.getElementById('hudMap').textContent=w.classList.contains('minimapHidden')?'🗺':'✕'});
 document.getElementById('hudFullscreen')?.addEventListener('click',toggleGameOnly);
+document.getElementById('quickPotionBadge')?.addEventListener('click',()=>{if(game?.player?.quickPotionId)usePotion(game.player.quickPotionId)});
+// Pass-turn thumbnail: a stable element (unlike .mobileSkillbar's own
+// buttons, which updateUI() rebuilds from scratch every call) so the spin
+// animation actually gets to play instead of being wiped by the very
+// re-render the click itself triggers. Delegates to #waitBtn's own click
+// handler for the entrance/exit/rest/pass-turn branching (updateRestButton
+// keeps this button's disabled/title in sync with it).
+document.getElementById('passTurnSkillBtn')?.addEventListener('click',function(){
+ this.classList.remove('spin');void this.offsetWidth;this.classList.add('spin');
+ document.getElementById('waitBtn')?.click();
+});
+document.getElementById('passTurnSkillBtn')?.addEventListener('animationend',function(){this.classList.remove('spin')});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('gameOnly')});
