@@ -392,8 +392,12 @@ function soulseekPopulateEntryChests(plan){
  const soulseekOriginalGoToMainMenu=goToMainMenu;
  document.getElementById('globalMenuBtn').onclick=async function(){
   if(game?.player?.soulseeker&&!game.testingMode){
-   if(!await uiConfirm('¿Volver al menú principal? Soulseek Mode no guarda partidas: tu personaje morirá permanentemente.'))return;
-   permanentDeath();
+   if(!await uiConfirm('¿Volver al menú principal? Soulseek Mode no guarda partidas: tu personaje morirá permanentemente y sus Soul Spikes se ingresarán en tu cuenta.'))return;
+   // Same consequence as dying in combat and choosing "banca tus Soul
+   // Spikes y muere" (soulseekBankSoulsAndDie, soulseek.js): otherwise
+   // leaving through the menu quietly discarded the run's souls instead of
+   // crediting them to the account like every other permanent-death path.
+   await soulseekBankSoulsAndDie();
    return;
   }
   soulseekOriginalGoToMainMenu();

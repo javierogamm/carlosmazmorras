@@ -791,14 +791,15 @@ function soulseekPersistAfterClassChoice(){
 // ============================================================================
 function soulseekHandleDeath(){
  soulseekEnsureDom();
- const automatic=configuredReviveSource();
- if(automatic){
-  automatic.consume();
-  if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}
-  reviveAtCurrentPosition(automatic.effect.hpPercent||50);
-  banner('REVIVIR');
-  return;
- }
+ // tryAutoRevive() (game.js) already had its shot at this fatal hit before
+ // handlePlayerDeath() - and thus soulseekHandleDeath() - was ever called
+ // (see damagePlayer/finishEnemyTurn): reaching here means no cheatdeath
+ // charge or active revive buff was up, so this is a real death. This used
+ // to re-check a separate configuredReviveSource() helper here, but that
+ // function was removed when tryAutoRevive() replaced it upstream, leaving
+ // this call throwing a ReferenceError on every Soulseeker death - the
+ // skull/death-choice UI below never rendered, hp stayed frozen at 0 with
+ // game.over already true (immobile), and nothing ever showed a death screen.
  // Same 2s skull as the normal game before the death choice appears.
  playDeathSkullAnimation(soulseekShowDeathChoiceModal);
 }

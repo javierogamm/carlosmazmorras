@@ -3212,6 +3212,7 @@ function syncPassTurnButton(waitBtnEl){
 function updateRestButton(){
  updateApBadge();
  const btn=document.getElementById('waitBtn');if(!btn)return;
+ if(game.over){btn.disabled=true;syncPassTurnButton(btn);return}
  const entrance=interiorEntranceAtPlayer(),exit=interiorExitAtPlayer();
  if(entrance){btn.textContent='ENTRAR';btn.disabled=false;btn.dataset.interior='enter';delete btn.dataset.rest;syncPassTurnButton(btn);return}
  if(exit){btn.textContent='SALIR';btn.disabled=false;btn.dataset.interior='exit';delete btn.dataset.rest;syncPassTurnButton(btn);return}
@@ -5530,6 +5531,11 @@ function actionDone(kind,cost=AP_COSTS[kind]){
  if(game.player.ap<5){log('Sin puntos de acción suficientes: turno pasado automáticamente.','sys');playerFinished()}
 }
 function playerFinished(){
+ // Every other player action (move/useSkill/attack/...) already bails out on
+ // game.over; this one didn't, so a dead-but-stuck run (game.over true, UI
+ // frozen - see soulseekHandleDeath's ReferenceError bug) could still be
+ // advanced turn after turn via "PASAR TURNO" as if nothing had happened.
+ if(game.over)return;
  if(document.getElementById('statPointModal')?.classList.contains('open')||document.getElementById('skillChoiceModal')?.classList.contains('open')){game.pendingPlayerFinished=true;busy=false;updateUI();draw();return}
  if(game.multiplayer){
   if(!game.myTurn){busy=true;return}
