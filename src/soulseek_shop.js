@@ -25,6 +25,15 @@
 //   the next Soulseeker character's creation drains into its starting
 //   inventory and clears (also cleared defensively on any soulseeker death,
 //   in case a character was never actually created after a purchase).
+// - v1.1: starter packs, sold in PJ > Packs - 4 rarity rows x 3 tiers
+//   unlocking/upgrading the starting-loadout wizard's armor+casco/anillo/
+//   colgante picks and the weapon pick's rarity cap. No new column: they are
+//   piggybacked onto user.soulseek_classes as "pack:"-prefixed entries (see
+//   SOULSEEK_STARTER_PACK_PREFIX in soulseek.js and soulseekRawStoredClasses/
+//   soulseekUnlockedClasses below) so the login endpoint never has to
+//   reference a column that might not exist yet in production. See
+//   soulseek.js's starter-pack block for the actual unlock/prereq logic;
+//   this file only renders the shop tab.
 // ============================================================================
 
 let soulseekShopTab='pj';
@@ -80,7 +89,16 @@ function soulseekSortByRarity(rows){
 // -- every login and every purchase (see soulseekSpendSouls), same pattern
 // -- as soulseek.js's soulseekAccountSouls()/soulseekSetAccountSouls(). --
 function soulseekUnlockedRaces(){return Array.isArray(window.currentUser?.soulseek_races)?window.currentUser.soulseek_races:[]}
-function soulseekUnlockedClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
+// Raw storage array behind soulseek_classes - v1.1 starter packs (see
+// soulseek.js's SOULSEEK_STARTER_PACK_PREFIX) are piggybacked onto this same
+// column as "pack:"-prefixed entries, so writers must always start from this
+// UNFILTERED array (never from soulseekUnlockedClasses() below) or they'd
+// silently drop whichever kind of entry they didn't know about.
+function soulseekRawStoredClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
+// Real classes only - strips the piggybacked pack entries back out, so the
+// class cost-by-count formula and the "owns at least one class" gate below
+// behave exactly as before v1.1 (a bought pack must never look like a class).
+function soulseekUnlockedClasses(){return soulseekRawStoredClasses().filter(id=>typeof id!=='string'||!id.startsWith(SOULSEEK_STARTER_PACK_PREFIX))}
 function soulseekUnlockedSkills(){return Array.isArray(window.currentUser?.soulseek_skills)?window.currentUser.soulseek_skills:[]}
 function soulseekSessionItems(){return Array.isArray(window.currentUser?.soulseek_session_items)?window.currentUser.soulseek_session_items:[]}
 function soulseekRaceUnlocked(id){return soulseekUnlockedRaces().includes(id)}
@@ -128,6 +146,11 @@ async function soulseekSpendSouls(cost,extraFields={}){
   .soulseekShopCard{background:#1c1224;border:3px solid #4d395a;padding:14px;display:flex;flex-direction:column;gap:6px;position:relative;text-align:left;color:#f4ead5;font-family:inherit}
   button.soulseekShopCard{cursor:pointer}
   .soulseekShopCard.unlocked{border-color:#5fce7a}
+  .soulseekShopCard.soulseekShopCardLocked{opacity:.5;cursor:default}
+  .soulseekShopPackRow{margin-bottom:18px}
+  .soulseekShopPackRow h3{margin:0 0 6px}
+  .soulseekShopPackGrid{grid-template-columns:repeat(3,minmax(160px,1fr))}
+  @media(max-width:700px){.soulseekShopPackGrid{grid-template-columns:1fr}}
   .soulseekShopCardIconWrap{display:flex;align-items:center;justify-content:center;height:64px;font-size:32px}
   .soulseekShopCardIconWrap canvas{width:56px;height:56px}
   .soulseekShopLock{position:absolute;top:10px;right:10px;font-size:20px;filter:grayscale(1) opacity(.6)}
@@ -196,6 +219,7 @@ function soulseekCloseDetailModal(){document.getElementById('soulseekShopDetailM
 async function soulseekEnsureTabData(tab,subTab){
  if(tab==='pj'){
   if(subTab==='razas'){if(!configRacesLoaded)await fetchConfigRaces()}
+  else if(subTab==='packs'){/* starter packs need nothing beyond the already-loaded account data */}
   else if(!configClasses.length)await fetchConfigClasses(); // clases + skills both need classSkillTrees, populated from configClasses
  }else{
   await ensureConfigItemsHydrated(); // objetos + pociones both read configItems
@@ -235,7 +259,7 @@ function soulseekRenderShop(){
  soulseekRenderShopHeader();
  document.querySelectorAll('[data-shop-main]').forEach(b=>b.classList.toggle('active',b.dataset.shopMain===soulseekShopTab));
  const subRoot=document.getElementById('soulseekShopSubTabs');
- const subTabs=soulseekShopTab==='pj'?['razas','clases','skills']:['objetos','pociones'];
+ const subTabs=soulseekShopTab==='pj'?['razas','clases','skills','packs']:['objetos','pociones'];
  const activeSub=soulseekShopTab==='pj'?soulseekShopPjTab:soulseekShopObjTab;
  subRoot.innerHTML=subTabs.map(t=>`<button type="button" class="${t===activeSub?'active':''}" data-shop-sub="${t}">${t.toUpperCase()}</button>`).join('');
  subRoot.querySelectorAll('[data-shop-sub]').forEach(b=>b.onclick=()=>{
@@ -245,6 +269,7 @@ function soulseekRenderShop(){
  if(soulseekShopTab==='pj'){
   if(soulseekShopPjTab==='razas')soulseekRenderShopRaces();
   else if(soulseekShopPjTab==='clases')soulseekRenderShopClasses();
+  else if(soulseekShopPjTab==='packs')soulseekRenderShopStarterPacks();
   else soulseekRenderShopSkills();
  }else soulseekRenderShopObjects();
 }
@@ -330,7 +355,9 @@ async function soulseekBuyClass(id,price){
  if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
  if(!await uiConfirm(`¿Desbloquear la clase ${resolveClassDef(id)?.name} por ${price===0?'GRATIS':price+' souls'}?`))return;
  try{
-  const next=[...new Set([...soulseekUnlockedClasses(),id])];
+  // Raw array, not soulseekUnlockedClasses() - must preserve any "pack:"
+  // entries already stored in this column (see soulseekRawStoredClasses).
+  const next=[...new Set([...soulseekRawStoredClasses(),id])];
   await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
@@ -381,6 +408,67 @@ async function soulseekBuySkill(id,cost){
  try{
   const next=[...new Set([...soulseekUnlockedSkills(),id])];
   await soulseekSpendSouls(cost,{soulseek_skills:next});
+  soulseekCloseDetailModal();
+  soulseekRenderShop();
+ }catch(e){uiAlert('Error al desbloquear: '+e.message)}
+}
+
+// ============================================================================
+// PJ > Packs (v1.1) - starter pack unlocks, permanent account-level (like
+// razas/clases/skills above), spent from the same Soul Spikes balance. Four
+// rarity rows (soulseek.js's SOULSEEK_STARTER_PACK_RARITIES), three tiers
+// each drawn left to right (Starter/Advanced/Expert) - see soulseek.js's
+// starter-pack block (soulseekStarterPackOwned/soulseekStarterPackPrereqOk)
+// for what each cell actually unlocks at loadout time and the grid gating
+// (a cell needs the cell to its left, same row, AND the same-tier cell one
+// rarity below).
+// ============================================================================
+function soulseekStarterPackLabel(tier){return tier===1?'Starter':tier===2?'Advanced':'Expert'}
+function soulseekStarterPackDesc(rarity,tier){
+ const label=(tierDefs[rarity]?.label||rarity).toLowerCase();
+ if(tier===1)return rarity==='common'?`Desbloquea una armadura y un casco comunes a elegir al empezar la partida (antes de las pociones).`:`El arma, la armadura y el casco iniciales se pueden elegir en rareza ${label}.`;
+ if(tier===2)return rarity==='common'?`Desbloquea un anillo común a elegir al empezar la partida.`:`El anillo inicial se puede elegir en rareza ${label}.`;
+ return rarity==='common'?`Desbloquea un colgante común a elegir al empezar la partida.`:`El colgante inicial se puede elegir en rareza ${label}.`;
+}
+function soulseekRenderShopStarterPacks(){
+ const root=document.getElementById('soulseekShopContent');
+ root.innerHTML=SOULSEEK_STARTER_PACK_RARITIES.map(rarity=>{
+  const tierInfo=tierDefs[rarity]||{label:rarity,color:'#fff'};
+  const cards=[1,2,3].map(tier=>{
+   const owned=soulseekStarterPackOwned(rarity,tier),cost=soulseekStarterPackCost(rarity,tier),prereqOk=soulseekStarterPackPrereqOk(rarity,tier),label=soulseekStarterPackLabel(tier),locked=!owned&&!prereqOk;
+   return `<button type="button" class="soulseekShopCard ${owned?'unlocked':''}${locked?' soulseekShopCardLocked':''}" data-shop-pack-rarity="${rarity}" data-shop-pack-tier="${tier}">
+    <span class="soulseekShopLock">${owned?'🔓':'🔒'}</span>
+    <b style="color:${tierInfo.color}">${label} Pack ${tierInfo.label}</b>
+    <p>${soulseekStarterPackDesc(rarity,tier)}</p>
+    <span class="soulseekShopCardPrice">${owned?'Desbloqueado':(locked?'Requiere el pack anterior':cost+' souls')}</span>
+   </button>`;
+  }).join('');
+  return `<div class="soulseekShopPackRow"><h3 style="color:${tierInfo.color}">${tierInfo.label}</h3><div class="soulseekShopGrid soulseekShopPackGrid">${cards}</div></div>`;
+ }).join('');
+ root.querySelectorAll('[data-shop-pack-rarity]').forEach(btn=>btn.onclick=()=>soulseekOpenStarterPackDetail(btn.dataset.shopPackRarity,Number(btn.dataset.shopPackTier)));
+}
+function soulseekOpenStarterPackDetail(rarity,tier){
+ const owned=soulseekStarterPackOwned(rarity,tier),cost=soulseekStarterPackCost(rarity,tier),prereqOk=soulseekStarterPackPrereqOk(rarity,tier),label=soulseekStarterPackLabel(tier),tierInfo=tierDefs[rarity]||{label:rarity,color:'#fff'};
+ const box=document.getElementById('soulseekShopDetailBox');
+ box.innerHTML=`<h2>${label} Pack ${tierInfo.label}</h2>
+  <p class="small">${soulseekStarterPackDesc(rarity,tier)}</p>
+  ${(!owned&&!prereqOk)?'<p class="small">Necesitas tener antes el pack de la izquierda en esta rareza y/o su equivalente en la rareza inferior.</p>':''}
+  <div class="startActions">${owned?'<span class="soulseekShopUnlockedTag">DESBLOQUEADO</span>':`<button id="soulseekShopUnlockBtn" class="start" ${prereqOk?'':'disabled'}>DESBLOQUEAR (${cost} souls)</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
+ document.getElementById('soulseekShopDetailModal').classList.add('open');
+ document.getElementById('soulseekShopDetailCloseBtn').onclick=soulseekCloseDetailModal;
+ document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyStarterPack(rarity,tier,cost));
+}
+async function soulseekBuyStarterPack(rarity,tier,price){
+ if(!soulseekStarterPackPrereqOk(rarity,tier))return;
+ if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
+ if(!await uiConfirm(`¿Desbloquear ${soulseekStarterPackLabel(tier)} Pack ${tierDefs[rarity]?.label||rarity} por ${price} souls?`))return;
+ try{
+  // Piggybacked on soulseek_classes (see SOULSEEK_STARTER_PACK_PREFIX in
+  // soulseek.js) - starts from the raw array so any real classes already
+  // owned are preserved, and writes back through the same soulseek_classes
+  // field soulseekBuyClass uses.
+  const next=[...new Set([...soulseekRawStoredClasses(),SOULSEEK_STARTER_PACK_PREFIX+soulseekStarterPackId(rarity,tier)])];
+  await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
  }catch(e){uiAlert('Error al desbloquear: '+e.message)}

@@ -15,6 +15,14 @@ function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-
 // defensively since a fresh row (or a legacy one predating this feature)
 // may still have the SQL default '[]' as a string, null, or already-parsed
 // json depending on the driver.
+// v1.1 starter packs do NOT get their own column: they are stored inside
+// soulseek_classes itself, as extra array entries prefixed "pack:" (see
+// SOULSEEK_STARTER_PACK_PREFIX in soulseek.js) - a new column would need a
+// Supabase migration to be run in production before this endpoint's SELECT
+// could safely reference it, and referencing a column that doesn't exist yet
+// breaks EVERY login (Postgrest errors the whole query, not just that field).
+// Piggybacking on the already-existing soulseek_classes column sidesteps
+// that entirely.
 function parseJsonArray(v){
  if(Array.isArray(v))return v;
  if(typeof v==='string'){try{const p=JSON.parse(v||'[]');return Array.isArray(p)?p:[]}catch{return []}}

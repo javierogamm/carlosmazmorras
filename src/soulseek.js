@@ -449,8 +449,17 @@ async function soulseekStartCharacter(){
 let soulseekLoadoutStep='weaponType';
 let soulseekLoadoutWeaponType=null;
 let soulseekLoadoutWeaponPickId=null;
+let soulseekLoadoutArmorPickId=null;
+let soulseekLoadoutHelmetPickId=null;
+let soulseekLoadoutRingPickId=null;
+let soulseekLoadoutNecklacePickId=null;
 let soulseekLoadoutPotionPickId=null;
 let soulseekLoadoutChosenPotions=[];
+// Ordered list of picker steps between weaponPick and the potion phase,
+// built fresh each time the wizard opens (soulseekResetLoadoutSteps) from
+// whichever starter packs the account owns - see soulseekArmorUnlocked/
+// soulseekRingRarityCap/soulseekNecklaceRarityCap above.
+let soulseekLoadoutStepOrder=['weaponPick'];
 // ---- Catalogue the wizard lists from ---------------------------------------
 // In Soulseek mode the ONLY thing that ever loads config_items is
 // ensureConfigItemsHydrated() in soulseekStartCharacter, and that asks for
@@ -514,7 +523,81 @@ function soulseekLowestRarityRows(rows){
  return rows;
 }
 function soulseekCommonPotionRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(isConfiguredPotionRow))}
-function soulseekCommonWeaponRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='weapon'))}
+// Like soulseekLowestRarityRows but bounded above by capRarity - used by the
+// weapon/ring/necklace pickers once a starter pack has raised their rarity
+// cap, so the wizard never offers something the player hasn't unlocked.
+function soulseekRarityCappedRows(rows,capRarity){
+ const capIdx=SOULSEEK_LOADOUT_RARITIES.indexOf(capRarity);
+ for(let i=capIdx;i>=0;i--){
+  const match=rows.filter(r=>soulseekRowRarity(r)===SOULSEEK_LOADOUT_RARITIES[i]);
+  if(match.length)return match;
+ }
+ return soulseekLowestRarityRows(rows);
+}
+function soulseekCommonWeaponRows(){return soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='weapon'),soulseekWeaponRarityCap())}
+// v1.1 shop unlocks: armor+helmet (unlocked by the Común Starter pack, then
+// rarity-capped by the SAME tier-1 packs that cap the weapon - uncommon/
+// rare/epic Starter raise weapon, armor AND helmet together) and ring/
+// necklace (unlocked by the Común Advanced/Expert packs, rarity-capped by
+// their own higher-rarity counterparts).
+function soulseekArmorRarityCap(){return soulseekArmorUnlocked()?soulseekWeaponRarityCap():null}
+function soulseekArmorRows(){const cap=soulseekArmorRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='chest'),cap):[]}
+function soulseekHelmetRows(){const cap=soulseekArmorRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='head'),cap):[]}
+function soulseekRingRows(){const cap=soulseekRingRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>{const s=(r.item_json||r).slot||r.slot;return s==='ring1'||s==='ring2'}),cap):[]}
+function soulseekNecklaceRows(){const cap=soulseekNecklaceRarityCap();return cap?soulseekRarityCappedRows(soulseekLoadoutCatalogRows().filter(r=>((r.item_json||r).slot||r.slot)==='neck'),cap):[]}
+
+// ============================================================================
+// Starter pack unlocks (v1.1) - permanent account-level unlocks bought in the
+// shop (soulseek_shop.js), stored as user.soulseek_starter_packs: an array of
+// "<rarity>_<tier>" ids (tier 1=Starter/2=Advanced/3=Expert). Four rarity rows
+// (common/uncommon/rare/epic), three tiers each. A cell requires the cell to
+// its left in the same row (tier-1) AND the same tier one rarity below (the
+// "equivalent" pack in the previous row) - see soulseekStarterPackPrereqOk,
+// used by the buy UI in soulseek_shop.js.
+// Effects applied at loadout time (see the row-fetch functions above):
+//  - tier 1 (Starter): common unlocks NEW armor+helmet picks (the weapon
+//    slot is already offered for free at common - there's nothing to
+//    "unlock" there); uncommon/rare/epic raise the rarity cap of all three
+//    together - weapon, armor AND helmet.
+//  - tier 2 (Advanced): common unlocks a NEW ring pick; uncommon/rare/epic
+//    raise that ring pick's rarity cap.
+//  - tier 3 (Expert): common unlocks a NEW necklace pick; uncommon/rare/epic
+//    raise that necklace pick's rarity cap.
+// ============================================================================
+const SOULSEEK_STARTER_PACK_RARITIES=['common','uncommon','rare','epic'];
+const SOULSEEK_STARTER_PACK_COSTS={common:[50,100,150],uncommon:[200,250,300],rare:[350,400,450],epic:[500,550,600]};
+// No dedicated column: a new soulseek_starter_packs column would need a
+// Supabase migration run in production first, and api/user.js referencing a
+// column that doesn't exist there yet breaks the login SELECT for every
+// account, not just this feature. Starter packs are piggybacked onto the
+// already-existing soulseek_classes column instead, as extra array entries
+// prefixed "pack:" - real class ids never start with that prefix, so they
+// can never collide. soulseek_shop.js's soulseekUnlockedClasses()/
+// soulseekBuyClass() filter these back out before treating the array as
+// "which classes does this account own" (cost-by-count, the "own at least
+// one class" gate, etc.) - see the comment there.
+const SOULSEEK_STARTER_PACK_PREFIX='pack:';
+function soulseekUnlockedStarterPacks(){
+ const raw=Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[];
+ return raw.filter(id=>typeof id==='string'&&id.startsWith(SOULSEEK_STARTER_PACK_PREFIX)).map(id=>id.slice(SOULSEEK_STARTER_PACK_PREFIX.length));
+}
+function soulseekStarterPackId(rarity,tier){return `${rarity}_${tier}`}
+function soulseekStarterPackOwned(rarity,tier){return soulseekUnlockedStarterPacks().includes(soulseekStarterPackId(rarity,tier))}
+function soulseekStarterPackCost(rarity,tier){return SOULSEEK_STARTER_PACK_COSTS[rarity]?.[tier-1]??0}
+function soulseekStarterPackPrereqOk(rarity,tier){
+ if(tier>1&&!soulseekStarterPackOwned(rarity,tier-1))return false;
+ const rIdx=SOULSEEK_STARTER_PACK_RARITIES.indexOf(rarity);
+ if(rIdx>0&&!soulseekStarterPackOwned(SOULSEEK_STARTER_PACK_RARITIES[rIdx-1],tier))return false;
+ return true;
+}
+function soulseekStarterPackBestOwnedRarity(tier,rarities){
+ for(let i=rarities.length-1;i>=0;i--)if(soulseekStarterPackOwned(rarities[i],tier))return rarities[i];
+ return null;
+}
+function soulseekWeaponRarityCap(){return soulseekStarterPackBestOwnedRarity(1,['uncommon','rare','epic'])||'common'}
+function soulseekArmorUnlocked(){return soulseekStarterPackOwned('common',1)}
+function soulseekRingRarityCap(){return soulseekStarterPackOwned('common',2)?(soulseekStarterPackBestOwnedRarity(2,['uncommon','rare','epic'])||'common'):null}
+function soulseekNecklaceRarityCap(){return soulseekStarterPackOwned('common',3)?(soulseekStarterPackBestOwnedRarity(3,['uncommon','rare','epic'])||'common'):null}
 // Weapons of the type picked in step 1 (or every weapon when the catalogue
 // only has one group / none at all). Shared by the render and the confirm
 // step so they can never disagree about whether there is anything to pick.
@@ -531,10 +614,21 @@ function soulseekLoadoutWeaponGroups(){
  return [...new Set(soulseekCommonWeaponRows().map(r=>groupFor(soulseekRowWeaponType(r))))];
 }
 function soulseekResetLoadoutSteps(){
- soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+ soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutArmorPickId=null;soulseekLoadoutHelmetPickId=null;soulseekLoadoutRingPickId=null;soulseekLoadoutNecklacePickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+ soulseekLoadoutStepOrder=['weaponPick'];
+ if(soulseekArmorUnlocked())soulseekLoadoutStepOrder.push('armorPick','helmetPick');
+ if(soulseekRingRarityCap())soulseekLoadoutStepOrder.push('ringPick');
+ if(soulseekNecklaceRarityCap())soulseekLoadoutStepOrder.push('necklacePick');
  const groups=soulseekLoadoutWeaponGroups();
  if(groups.length<=1){soulseekLoadoutWeaponType=groups[0]||null;soulseekLoadoutStep='weaponPick'}
  else soulseekLoadoutStep='weaponType';
+}
+// Next step after `current` in soulseekLoadoutStepOrder, or 'potion' once the
+// order is exhausted (potion is always last and repeats up to 4 times, so it
+// isn't itself part of the order array).
+function soulseekNextLoadoutStep(current){
+ const idx=soulseekLoadoutStepOrder.indexOf(current);
+ return (idx===-1||idx+1>=soulseekLoadoutStepOrder.length)?'potion':soulseekLoadoutStepOrder[idx+1];
 }
 async function openSoulseekerLoadoutModal(){
  soulseekEnsureDom();
@@ -616,6 +710,74 @@ function renderSoulseekLoadoutStep(){
   confirmBtn.disabled=rows.length?!soulseekLoadoutWeaponPickId:false;
   return;
  }
+ // v1.1 starter-pack picks (armor/helmet/ring/necklace) - only reached when
+ // soulseekResetLoadoutSteps actually put them in soulseekLoadoutStepOrder,
+ // i.e. the account owns the pack that unlocks them. Same shape as weaponPick
+ // above, one per slot.
+ if(soulseekLoadoutStep==='armorPick'){
+  const rows=soulseekArmorRows();
+  title.textContent='ELIGE TU ARMADURA';
+  status.textContent=rows.length?'Elige una armadura y confirma.':'No hay armaduras configuradas en el catálogo: continuarás sin ella.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Armadura')).join('')}</div>`:'<p class="small">Sin armaduras disponibles.</p>';
+  soulseekWireLoadoutCardIcons(body,rows);
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+   soulseekLoadoutArmorPickId=card.dataset.soulseekPick;
+   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutArmorPickId));
+   confirmBtn.disabled=false;
+  });
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent=rows.length?'CONFIRMAR ARMADURA':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutArmorPickId:false;
+  return;
+ }
+ if(soulseekLoadoutStep==='helmetPick'){
+  const rows=soulseekHelmetRows();
+  title.textContent='ELIGE TU CASCO';
+  status.textContent=rows.length?'Elige un casco y confirma.':'No hay cascos configurados en el catálogo: continuarás sin él.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Casco')).join('')}</div>`:'<p class="small">Sin cascos disponibles.</p>';
+  soulseekWireLoadoutCardIcons(body,rows);
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+   soulseekLoadoutHelmetPickId=card.dataset.soulseekPick;
+   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutHelmetPickId));
+   confirmBtn.disabled=false;
+  });
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent=rows.length?'CONFIRMAR CASCO':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutHelmetPickId:false;
+  return;
+ }
+ if(soulseekLoadoutStep==='ringPick'){
+  const rows=soulseekRingRows();
+  title.textContent='ELIGE TU ANILLO';
+  status.textContent=rows.length?'Elige un anillo y confirma.':'No hay anillos configurados en el catálogo: continuarás sin él.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Anillo')).join('')}</div>`:'<p class="small">Sin anillos disponibles.</p>';
+  soulseekWireLoadoutCardIcons(body,rows);
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+   soulseekLoadoutRingPickId=card.dataset.soulseekPick;
+   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutRingPickId));
+   confirmBtn.disabled=false;
+  });
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent=rows.length?'CONFIRMAR ANILLO':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutRingPickId:false;
+  return;
+ }
+ if(soulseekLoadoutStep==='necklacePick'){
+  const rows=soulseekNecklaceRows();
+  title.textContent='ELIGE TU COLGANTE';
+  status.textContent=rows.length?'Elige un colgante y confirma.':'No hay colgantes configurados en el catálogo: continuarás sin él.';
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Colgante')).join('')}</div>`:'<p class="small">Sin colgantes disponibles.</p>';
+  soulseekWireLoadoutCardIcons(body,rows);
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
+   soulseekLoadoutNecklacePickId=card.dataset.soulseekPick;
+   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutNecklacePickId));
+   confirmBtn.disabled=false;
+  });
+  confirmBtn.classList.remove('hidden');
+  confirmBtn.textContent=rows.length?'CONFIRMAR COLGANTE':'CONTINUAR';
+  confirmBtn.disabled=rows.length?!soulseekLoadoutNecklacePickId:false;
+  return;
+ }
  // potion step, one at a time, up to 4
  const idx=soulseekLoadoutChosenPotions.length+1;
  const rows=soulseekCommonPotionRows();
@@ -639,7 +801,31 @@ async function soulseekLoadoutConfirmStep(){
   // Nothing configured to choose from: CONTINUAR just moves on (the
   // automatic starter weapon is applied in soulseekFinalizeLoadout).
   if(!soulseekLoadoutWeaponPickId&&soulseekLoadoutWeaponChoices().length)return;
-  soulseekLoadoutStep='potion';
+  soulseekLoadoutStep=soulseekNextLoadoutStep('weaponPick');
+  renderSoulseekLoadoutStep();
+  return;
+ }
+ if(soulseekLoadoutStep==='armorPick'){
+  if(!soulseekLoadoutArmorPickId&&soulseekArmorRows().length)return;
+  soulseekLoadoutStep=soulseekNextLoadoutStep('armorPick');
+  renderSoulseekLoadoutStep();
+  return;
+ }
+ if(soulseekLoadoutStep==='helmetPick'){
+  if(!soulseekLoadoutHelmetPickId&&soulseekHelmetRows().length)return;
+  soulseekLoadoutStep=soulseekNextLoadoutStep('helmetPick');
+  renderSoulseekLoadoutStep();
+  return;
+ }
+ if(soulseekLoadoutStep==='ringPick'){
+  if(!soulseekLoadoutRingPickId&&soulseekRingRows().length)return;
+  soulseekLoadoutStep=soulseekNextLoadoutStep('ringPick');
+  renderSoulseekLoadoutStep();
+  return;
+ }
+ if(soulseekLoadoutStep==='necklacePick'){
+  if(!soulseekLoadoutNecklacePickId&&soulseekNecklaceRows().length)return;
+  soulseekLoadoutStep=soulseekNextLoadoutStep('necklacePick');
   renderSoulseekLoadoutStep();
   return;
  }
@@ -663,6 +849,25 @@ async function soulseekFinalizeLoadout(){
  try{
   const weaponRow=await soulseekHydrateItemRow(soulseekCommonWeaponRows().find(r=>String(r.id)===soulseekLoadoutWeaponPickId));
   game.player.equipment.weapon=weaponRow?configuredItemFromRow(weaponRow,{itemLevel:{min:1,max:2}},1):makeStarterWeapon(null);
+  // v1.1 starter-pack picks - only set (and only reach here) when the
+  // corresponding step actually ran, i.e. soulseekLoadoutArmorPickId etc. is
+  // set from a step that soulseekResetLoadoutSteps put in the wizard order.
+  if(soulseekLoadoutArmorPickId){
+   const row=await soulseekHydrateItemRow(soulseekArmorRows().find(r=>String(r.id)===soulseekLoadoutArmorPickId));
+   if(row)game.player.equipment.chest=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+  }
+  if(soulseekLoadoutHelmetPickId){
+   const row=await soulseekHydrateItemRow(soulseekHelmetRows().find(r=>String(r.id)===soulseekLoadoutHelmetPickId));
+   if(row)game.player.equipment.head=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+  }
+  if(soulseekLoadoutRingPickId){
+   const row=await soulseekHydrateItemRow(soulseekRingRows().find(r=>String(r.id)===soulseekLoadoutRingPickId));
+   if(row)game.player.equipment.ring1=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+  }
+  if(soulseekLoadoutNecklacePickId){
+   const row=await soulseekHydrateItemRow(soulseekNecklaceRows().find(r=>String(r.id)===soulseekLoadoutNecklacePickId));
+   if(row)game.player.equipment.neck=configuredItemFromRow(row,{itemLevel:{min:1,max:2}},1);
+  }
   const potionRows=soulseekCommonPotionRows();
   let addedPotions=0;
   for(const id of soulseekLoadoutChosenPotions){
