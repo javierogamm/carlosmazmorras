@@ -4,6 +4,7 @@
 - Reorganizados los modificadores de raza: en vez de bonus planos de vida/stamina/maná máximos, la raza aplica un multiplicador porcentual directo a la vida/stamina/maná máximos del personaje (p. ej. +20% de vida máxima). Eliminado el bonus "Curación por piso"; añadida en su lugar una regeneración de vida por turno, igual que las ya existentes de stamina y maná. Eliminado también el bonus "Hallazgo rareza %" de raza (el efecto sigue disponible vía objetos/pasivas de equipo).
 - Todos los modificadores de raza en % (efecto de habilidades, crítico, daño crítico, evasión, multiplicador de XP, gasto de recursos y los nuevos multiplicadores de vida/stamina/maná) se configuran ahora con un selector fijo de -100% a +200% en pasos de 10%, admitiendo valores negativos.
 - Movida la lógica de subida de nivel (curva de XP, crecimiento por nivel, elección de habilidad de clase) a `src/pjlvl.js`, y la lógica de razas (editor de configuración, efectos, selección en creación de personaje) a `src/pjrace.js`.
+- Corregido el botón "REVIVIR (gasta Soul Spikes)" de Soulseek: con menos de 20 Soul Spikes el botón se deshabilitaba sin ningún cambio visual (parecía activo pero el clic no hacía nada). Los botones `.start` deshabilitados ahora se atenúan y muestran el cursor de bloqueado.
 - Actualizada la versión de runtime, paquete y cache-busting a `0.100.0`.
 
 ## v0.99.0 - 2026-08-20

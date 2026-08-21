@@ -144,7 +144,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 
 .classStats{font-size:11px;color:#bdaec4;margin-top:5px}
 
-.start{width:100%;margin-top:13px;background:#af6725;color:#fff;border:3px solid #f5bd6a;padding:12px;font-weight:bold}
+.start{width:100%;margin-top:13px;background:#af6725;color:#fff;border:3px solid #f5bd6a;padding:12px;font-weight:bold}.start:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.6)}
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
 .statbox{background:#17101f;border:2px solid #4d395a;padding:7px}
 .statbox button{width:28px;height:28px;background:#49335a;color:#fff;border:1px solid #8d68a2}
