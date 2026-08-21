@@ -201,6 +201,13 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .rangedTracer{--tracer-color:#9be8ff;position:fixed;height:3px;transform-origin:0 50%;pointer-events:none;z-index:65;background:linear-gradient(90deg,transparent,var(--tracer-color) 35%,var(--tracer-color) 85%,transparent);box-shadow:0 0 6px 1px var(--tracer-color);animation:rangedTracerFade .26s ease-out forwards}
 @keyframes rangedTracerFade{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
 @keyframes floatUp{0%{transform:translateY(0) scale(.8);opacity:1}30%{transform:translateY(-12px) scale(1.15)}100%{transform:translateY(-52px);opacity:0}}
+.buffFloat{font-size:16px;text-shadow:1px 1px #000;letter-spacing:.02em}
+.buffFloat.positive{color:#7cffb0}
+.buffFloat.negative{color:#ff8a8a}
+.areaPulse{position:absolute;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:2;border:2px solid var(--pulse-color,#b98cff);background:radial-gradient(circle,color-mix(in srgb,var(--pulse-color,#b98cff) 32%,transparent),transparent 72%);animation:areaPulseFx .65s ease-out forwards}
+@keyframes areaPulseFx{0%{opacity:0;transform:translate(-50%,-50%) scale(.55)}28%{opacity:.9;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.12)}}
+.procFx{position:absolute;transform:translate(-50%,-50%);pointer-events:none;z-index:5;font-style:normal;font-weight:700;font-size:24px;color:var(--proc-color,#ffd45f);text-shadow:0 0 8px var(--proc-color,#ffd45f),0 0 18px #fff8;animation:procBurstFx .6s ease-out forwards}
+@keyframes procBurstFx{0%{opacity:0;transform:translate(-50%,-50%) scale(.3) rotate(-20deg)}35%{opacity:1;transform:translate(-50%,-50%) scale(1.5) rotate(6deg)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.1) rotate(0deg)}}
 .shake{animation:shake .18s linear}.flash{animation:flash .18s linear}
 @keyframes shake{0%,100%{transform:translate(0)}25%{transform:translate(-4px,2px)}50%{transform:translate(4px,-2px)}75%{transform:translate(-2px,-1px)}}
 @keyframes flash{0%{filter:brightness(2)}100%{filter:brightness(1)}}
