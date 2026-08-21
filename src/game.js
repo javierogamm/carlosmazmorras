@@ -1510,45 +1510,10 @@ document.getElementById('uiPromptInput')?.addEventListener('keydown',e=>{
 function banner(text){const d=document.createElement('div');d.className='banner';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2100)}
 function mapDimensions(){return{rows:game?.map?.length||ROWS,cols:game?.map?.[0]?.length||COLS}}
 function camera(){const{rows,cols}=mapDimensions();return{x:Math.max(0,Math.min(Math.max(0,cols-visibleTiles),game.player.x-Math.floor(visibleTiles/2))),y:Math.max(0,Math.min(Math.max(0,rows-visibleTiles),game.player.y-Math.floor(visibleTiles/2)))}}
-function floating(text,x,y,color='#fff'){const r=canvas.getBoundingClientRect(),c=camera(),d=document.createElement('div');d.className='floatText';d.textContent=text;d.style.color=color;d.style.left=`${r.left+(x-c.x+.45)*r.width/visibleTiles}px`;d.style.top=`${r.top+(y-c.y+.25)*r.height/visibleTiles}px`;document.body.appendChild(d);setTimeout(()=>d.remove(),850)}
-// GSAP effects are independent DOM particles: they keep canvas art crisp and
-// avoid spritesheets while still covering movement, attacks and every skill component.
-const CLASS_FX_THEMES={
- yunque:{color:'#b9c3c9',accent:'#ff9f43',icon:'▰',theme:'forge'},berserker:{color:'#ff3f81',accent:'#ff8b3d',icon:'╳',theme:'rage'},necromancer:{color:'#78d66b',accent:'#9b6cff',icon:'☠',theme:'necrotic'},paladin:{color:'#ffe07a',accent:'#8de8ff',icon:'✚',theme:'holy'},
- jester:{color:'#e06cff',accent:'#58f2d2',icon:'◇',theme:'chaos'},sniper:{color:'#80eaff',accent:'#ffcf5a',icon:'⌖',theme:'rune'},shaman:{color:'#66dfff',accent:'#c88cff',icon:'ϟ',theme:'storm'},thief:{color:'#8d75ff',accent:'#46f1dc',icon:'◈',theme:'quantum'},
- cleric:{color:'#fff0a0',accent:'#70dc9b',icon:'✧',theme:'silicon'},entropyMage:{color:'#b05cff',accent:'#ff557f',icon:'◌',theme:'entropy'},bountyHunter:{color:'#ff9b4a',accent:'#54d7ff',icon:'⌁',theme:'bounty'},druid:{color:'#77c76a',accent:'#d0ad62',icon:'❧',theme:'nature'},
- monk:{color:'#f4d06f',accent:'#75e6dd',icon:'◎',theme:'loop'},engineer:{color:'#ffb14e',accent:'#84ffb1',icon:'⚗',theme:'alchemy'},seer:{color:'#8fa7ff',accent:'#e783ff',icon:'◉',theme:'abyss'},beastGuardian:{color:'#58e8ff',accent:'#9cff71',icon:'➵',theme:'plasma'}
-};
-function skillFxProfile(id,kind='attack'){
- const d=effectSourceDef(id)||skillDefs[id]||{},base=CLASS_FX_THEMES[d.classId||game?.player?.cls]||{color:'#b98cff',accent:'#ffd45f',icon:'✦',theme:'arcane'};
- const utility=['buff','heal','shield','hot'].includes(kind),dot=kind==='dot';
- return {...base,color:dot?'#e06b72':utility?base.accent:base.color,icon:dot?'·':utility?'○':base.icon}
-}
-function combatFx(kind,x,y,{to=null,color='#ffd45f',accent=color,icon='·',theme='neutral',subtle=false}={}){
- const layer=document.getElementById('combatFxLayer');if(!layer||!game)return;
- const c=camera(),el=document.createElement('i'),pct=100/visibleTiles;
- el.className=`combatFx ${kind} fx-${theme}${subtle?' subtle':''}`;el.textContent=icon;el.style.color=color;el.style.setProperty('--fx-accent',accent);el.style.left=`${(x-c.x+.5)*pct}%`;el.style.top=`${(y-c.y+.5)*pct}%`;layer.appendChild(el);
- const end=to?{left:`${(to.x-c.x+.5)*pct}%`,top:`${(to.y-c.y+.5)*pct}%`}:{};
- if(window.gsap)gsap.fromTo(el,{scale:.35,opacity:0,rotation:kind==='melee'?-35:-12},{...end,scale:subtle?.85:kind==='attack'?1.35:1.15,opacity:subtle?.62:.92,rotation:kind==='buff'?120:kind==='melee'?35:12,duration:kind==='move'?.22:subtle?.2:.34,ease:'power2.out',onComplete:()=>gsap.to(el,{scale:.35,opacity:0,duration:subtle?.16:.26,onComplete:()=>el.remove()})});
- else{el.animate([{opacity:0,transform:'scale(.25)'},{opacity:1,transform:'scale(1.2)'},{opacity:0,transform:'scale(.2)'}],{duration:650}).onfinish=()=>el.remove()}
-}
-// Brief tracer line for any hit landed from more than 1 tile away (ranged
-// weapons, ranged skills, enemy ranged attacks) - a plain DOM overlay like
-// floating(), not a canvas draw, so it doesn't need to hook into the
-// animate()/draw() loop to fade out on its own.
-function rangedTracer(x1,y1,x2,y2,color='#9be8ff'){
- const r=canvas.getBoundingClientRect(),c=camera(),scale=r.width/visibleTiles;
- const sx1=r.left+(x1-c.x+.5)*scale,sy1=r.top+(y1-c.y+.5)*scale;
- const sx2=r.left+(x2-c.x+.5)*scale,sy2=r.top+(y2-c.y+.5)*scale;
- const dx=sx2-sx1,dy=sy2-sy1,len=Math.hypot(dx,dy),angle=Math.atan2(dy,dx)*180/Math.PI;
- const d=document.createElement('div');
- d.className='rangedTracer';
- d.style.left=`${sx1}px`;d.style.top=`${sy1}px`;d.style.width=`${len}px`;
- d.style.setProperty('--tracer-color',color);
- d.style.transform=`rotate(${angle}deg)`;
- document.body.appendChild(d);
- setTimeout(()=>d.remove(),260);
-}
+// floating(), CLASS_FX_THEMES, skillFxProfile(), combatFx(), rangedTracer(),
+// effect(), areaPulse(), procFx(), buffFloat() and playDeathSkullAnimation()
+// now live in src/animations.js (loaded before this file) - moved verbatim,
+// not reimplemented, so every call site below keeps working unchanged.
 
 function setVisibleTiles(value){
  visibleTiles=Math.max(MIN_VISIBLE_TILES,Math.min(MAX_VISIBLE_TILES,Number(value)||8));
@@ -1578,7 +1543,6 @@ function restoreEntityResource(entity,resource,amount,x=entity.x??game.player.x,
  return restored
 }
 
-function effect(cls){canvas.classList.remove(cls);void canvas.offsetWidth;canvas.classList.add(cls)}
 // A NaN/undefined/zero vision radius (e.g. a custom Advanced-mode class
 // whose stats object was missing agility, or any other corrupt player.vision
 // value) must never silently turn this into a no-op: NaN bounds make every
@@ -3651,6 +3615,7 @@ function maybeProcWeaponEffects(target){
  for(const [slot,weapon] of weapons){
   const chance=Math.max(0,Math.min(100,(Number(weapon.procChance)||0)+(game.player.derived?.weaponProcLuckBonus||0)))/100;
   if(chance<=0||Math.random()>=chance)continue;
+  procFx(target.x,target.y,{color:'#ffd45f',icon:'⚡'});
   const castId=beginExternalEffectsCast(`equip:${slot}:proc`,weapon);
   applySkillEffectsList(castId,{x:target.x,y:target.y,clickedEnemy:target,nearest:target});
   endExternalEffectsCast();
@@ -3666,10 +3631,32 @@ function maybeProcDefensiveEquipmentEffects(){
  for(const [slot,item] of sources){
   const chance=Math.max(0,Math.min(100,Number(item.procChance)||0))/100;
   if(chance<=0||Math.random()>=chance)continue;
+  procFx(game.player.x,game.player.y,{color:'#8ecbff',icon:'🛡'});
   const castId=beginExternalEffectsCast(`equip:${slot}:defensive-proc`,item);
   applySkillEffectsList(castId,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
   endExternalEffectsCast();
  }
+}
+// Any way the player could be about to die routes through here first: a
+// fatal hit only actually kills if neither save is up. 'cheatdeath' just
+// digs its heels in at 1 HP (single guaranteed save, no HP restore);
+// 'revive' (the reviveTurns/reviveHpPercent pair, set by the 'revive'
+// composable component when cast) is a real death-and-comeback - HP/mana/
+// stamina restored, optionally paying souls at the moment it triggers, only
+// while its own cast duration is still running.
+function tryAutoRevive(){
+ const p=game?.player;if(!p||p.hp>0)return false;
+ if(p.cheatDeathTurns>0){p.hp=1;p.cheatDeathTurns=0;banner('TE NIEGAS A MORIR');log('La habilidad evita la muerte y te deja con 1 de vida.','good');return true}
+ if(p.reviveTurns>0){
+  p.reviveTurns=0;
+  const pct=Math.max(1,Math.min(100,p.reviveHpPercent||50));
+  p.hp=Math.max(1,Math.round((p.maxHp||1)*pct/100));
+  p.stamina=p.maxStamina;p.mana=p.maxMana;
+  if(p.reviveSoulsCost){p.souls=Math.max(0,(p.souls||0)-p.reviveSoulsCost);persistSouls()}
+  banner('REVIVES AUTOMÁTICAMENTE');log('Un efecto de revivir automático te trae de vuelta de la muerte.','good');
+  return true
+ }
+ return false
 }
 function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',options={}){
  const originalAmount=amount;
@@ -3701,7 +3688,7 @@ function damagePlayer(amount,defenseStat='vitality',sourceName='Ataque enemigo',
  if(p.counterReady&&d>0){p.counterReady.turns--;const attacker=(game.enemies||[]).filter(e=>e.hp>0).sort((a,b)=>gridDistance(p,a)-gridDistance(p,b))[0];if(attacker)attack(attacker,0,{dice:p.counterReady.damage,multiplier:.8,allowWeaponProc:false});p.counterReady=null}
  p.hp-=d;
  if(d>0)maybeProcDefensiveEquipmentEffects();
- if(p.hp<=0&&p.cheatDeathTurns>0){p.hp=1;p.cheatDeathTurns=0;banner('TE NIEGAS A MORIR');log('La habilidad evita la muerte y te deja con 1 de vida.','good')}
+ if(p.hp<=0)tryAutoRevive();
  floating(d?`-${d}`:'EVITA',p.x,p.y,d?'#ff6666':'#70dc9b');effect(d?'shake':'flash');
  log(`${sourceName}: ${result}. 1d20 (${defenseDie}) + ${defenseBonus} contra CD ${attackDC}. ${d?`Recibes ${d} de daño.`:'No recibes daño.'} [base ${Math.round(originalAmount)} → ${amount}]`,'combat');
  if(p.hp<=0){p.hp=0;game.over=true;updateUI();draw();handlePlayerDeath()}
@@ -3795,7 +3782,7 @@ function move(dx,dy){
  const e=enemyAtCell(nx,ny);
  if(e){const apCost=weaponAttackApCost();if(!apCan('attack',apCost))return;attack(e);actionDone('attack',apCost);return}
  if(!apCan('move'))return;
- const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;reveal(nx,ny);checkTile();
+ const from={x:p.x,y:p.y};sendMpAction('move',{entityType:'player',entityId:game.pjId,from,to:{x:nx,y:ny},direction:dx||dy});anim.heroX=p.x;anim.heroY=p.y;p.x=nx;p.y=ny;anim.targetX=nx;anim.targetY=ny;anim.t=0;anim.duration=140;anim.teleportFx=false;reveal(nx,ny);checkTile();
  companionsFollowPlayerStep();
  actionDone('move');
 }
@@ -4220,7 +4207,8 @@ function applyBuff(id,name,turns,effects={}){
  const p=game.player;p.activeBuffs=p.activeBuffs||[];
  p.activeBuffs=p.activeBuffs.filter(b=>b.id!==id);
  p.activeBuffs.push({id,name,turns,effects});
- recomputeDerived();log(`${name} activo durante ${turns} turnos.`,'good')
+ recomputeDerived();log(`${name} activo durante ${turns} turnos.`,'good');
+ buffFloat(name,p.x,p.y,true);
 }
 function tickBuffs(){
  const p=game.player;if(!p?.activeBuffs)return;
@@ -4273,6 +4261,14 @@ function tickPlayerInvisibility(){
  p.invisibleTurns--;
  if(p.invisibleTurns<=0){p.invisibleTurns=0;p.invisibleBreaksOnAttack=false}
 }
+// Ticks down the 'revive' composable effect's own timer, same idiom as
+// tickPlayerInvisibility - once it hits 0 the buff is simply gone, no more
+// auto-revive on the next fatal hit (see tryAutoRevive).
+function tickPlayerRevive(){
+ const p=game.player;if(!(p?.reviveTurns>0))return;
+ p.reviveTurns--;
+ if(p.reviveTurns<=0)p.reviveTurns=0;
+}
 function activeEffectsHtml(){
  // Potion-driven buffs/HOTs/shields now go through the exact same
  // activeBuffs/holyShield/invisibleTurns state as skills (see
@@ -4280,7 +4276,8 @@ function activeEffectsHtml(){
  const buffs=(game.player.activeBuffs||[]).map(b=>`<span class="effectBadge buff">${b.name}: ${b.turns}T</span>`);
  const shield=game.player.holyShield>0?[`<span class="effectBadge buff">Escudo: ${game.player.holyShield}${game.player.holyShieldTurns>0?` (${game.player.holyShieldTurns}T)`:''}</span>`]:[];
  const invisible=game.player.invisibleTurns>0?[`<span class="effectBadge buff">Invisibilidad: ${game.player.invisibleTurns}T</span>`]:[];
- return[...buffs,...shield,...invisible].join('')
+ const revive=game.player.reviveTurns>0?[`<span class="effectBadge buff">Revivir automático: ${game.player.reviveTurns}T</span>`]:[];
+ return[...buffs,...shield,...invisible,...revive].join('')
 }
 
 
@@ -4289,7 +4286,8 @@ function addEnemyStatus(e,type,turns,power=1,label=type){
  const old=e.statuses.find(s=>s.type===type);
  if(old){old.turns=Math.max(old.turns,turns);old.power=Math.max(old.power,power)}
  else e.statuses.push({type,turns,power,label});
- log(`${e.name}: ${label} durante ${turns} turnos.`,'combat')
+ log(`${e.name}: ${label} durante ${turns} turnos.`,'combat');
+ buffFloat(label,e.x,e.y,type==='regen',type);
 }
 function enemyHasStatus(e,type){return(e.statuses||[]).some(s=>s.type===type&&s.turns>0)}
 function mindControlResistance(entity,type){
@@ -4299,7 +4297,7 @@ function mindControlResistance(entity,type){
 function applyMindControlStatus(entity,type,turns,caster,sourceName=type){
  const resistance=mindControlResistance(entity,type);
  if(Math.random()<resistance){log(`${entity.name||'El objetivo'} resiste ${type==='fear'?'Miedo':'Mesmer'} (${Math.round(resistance*100)}%).`,'good');return false}
- if(entity===game.player){entity.controlStatuses=entity.controlStatuses||[];const old=entity.controlStatuses.find(s=>s.type===type);if(old)old.turns=Math.max(old.turns,turns);else entity.controlStatuses.push({type,turns,sourceX:caster?.x,sourceY:caster?.y,label:sourceName});}
+ if(entity===game.player){entity.controlStatuses=entity.controlStatuses||[];const old=entity.controlStatuses.find(s=>s.type===type);if(old)old.turns=Math.max(old.turns,turns);else entity.controlStatuses.push({type,turns,sourceX:caster?.x,sourceY:caster?.y,label:sourceName});buffFloat(type==='fear'?'Miedo':'Mesmer',entity.x,entity.y,false,type);}
  else{addEnemyStatus(entity,type,turns,0,type==='fear'?'Miedo':'Mesmer');const status=entity.statuses.find(s=>s.type===type);if(status)status.skipFirstTick=true;if(type==='fear'){entity.fearSourceX=caster?.x;entity.fearSourceY=caster?.y}}
  return true;
 }
@@ -4333,7 +4331,8 @@ function applyEnemyStatDebuff(e,stat,mode,value,turns,label){
   e.stats[stat]=mode==='mult'?before*value:before-value;
   e.statuses.push({type:'statDebuff',stat,before,turns,label});
  }
- log(`${e.name}: ${label} (${DEFENSE_STAT_LABELS[stat]||stat} ${mode==='mult'?`×${value}`:`-${value}`}) durante ${turns} turnos.`,'combat')
+ log(`${e.name}: ${label} (${DEFENSE_STAT_LABELS[stat]||stat} ${mode==='mult'?`×${value}`:`-${value}`}) durante ${turns} turnos.`,'combat');
+ buffFloat(label,e.x,e.y,false);
 }
 function tickEnemyStatuses(){
  for(const e of [...game.enemies]){
@@ -4865,7 +4864,16 @@ function tickSkillObjects(){
 }
 function teleportPlayerTo(x,y){
  if(blocked(x,y)||game.enemies.some(e=>e.hp>0&&e.x===x&&e.y===y))return false;
- game.player.x=x;game.player.y=y;anim.heroX=anim.targetX=x;anim.heroY=anim.targetY=y;reveal(x,y);return true
+ // Blink instead of an instant snap: slides+fades from the old spot to the
+ // new one over anim.duration (see the hero-alpha dip in draw()), same
+ // heroX/targetX/t idiom move() uses for a normal step, just longer and
+ // flagged as teleportFx so the alpha dip kicks in.
+ const ox=game.player.x,oy=game.player.y;
+ combatFx('move',ox,oy,{to:{x,y},color:'#c9a6ff',accent:'#8de8ff',icon:'✦',theme:'arcane'});
+ game.player.x=x;game.player.y=y;
+ anim.heroX=ox;anim.heroY=oy;anim.targetX=x;anim.targetY=y;anim.t=0;anim.duration=320;anim.teleportFx=true;
+ reveal(x,y);requestGameFrame();
+ return true
 }
 // Free tile touching `target` (8 directions, diagonals included) closest to
 // the player's current spot - used to land an enemy-targeted teleport "next
@@ -4878,6 +4886,50 @@ function openTileAdjacentTo(target){
  if(!options.length)return null;
  options.sort((a,b)=>gridDistance(game.player,a)-gridDistance(game.player,b));
  return options[0];
+}
+// Pull: yanks `entity` straight onto the free tile touching `origin` that's
+// closest to the entity's OWN current position (not to the origin), so it
+// travels the shortest possible hop instead of always landing on a fixed
+// side - used by the 'Atraer' effect (pullroot component / pullRoot
+// classEffect), which no longer roots the target afterward. Excludes the
+// puller's own tile explicitly since origin===the caster, whose cell is
+// otherwise not "blocked" from the puller's own point of view.
+function openTileAdjacentToOriginFor(entity,origin){
+ const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+ const options=dirs.map(([dx,dy])=>({x:origin.x+dx,y:origin.y+dy}))
+  .filter(pos=>!(pos.x===origin.x&&pos.y===origin.y)&&!blocked(pos.x,pos.y)&&!isSafeCell(pos.x,pos.y)&&!game.enemies.some(e=>e!==entity&&e.hp>0&&e.x===pos.x&&e.y===pos.y)&&!(game.companions||[]).some(c=>c.hp>0&&c.x===pos.x&&c.y===pos.y));
+ if(!options.length)return null;
+ options.sort((a,b)=>gridDistance(entity,a)-gridDistance(entity,b));
+ return options[0];
+}
+// Dash movement shared by the composable 'move' component and the legacy
+// 'dash' classEffect tag: walks the player step by step toward `target`,
+// stopping one tile short of it (the caller lands next to it, then hits it
+// separately) same as before. If another enemy sits on a tile along that
+// straight line, it already silently blocked the dash early - now it also
+// takes the skill's own damage via hitFn, matching "an enemy in the way
+// takes the established damage" instead of just stopping movement for free.
+function dashTowards(target,range,hitFn){
+ const p=game.player,dx=Math.sign(target.x-p.x),dy=Math.sign(target.y-p.y);
+ const ox=p.x,oy=p.y;
+ for(let i=0;i<range;i++){
+  const nx=p.x+dx,ny=p.y+dy;
+  if(blocked(nx,ny))break;
+  const blocker=game.enemies.find(e=>e!==target&&e.hp>0&&e.x===nx&&e.y===ny);
+  if(blocker){hitFn(blocker);break}
+  if(target.x===nx&&target.y===ny)break;
+  p.x=nx;p.y=ny;
+ }
+ reveal(p.x,p.y);
+ // Slide the whole hop in one continuous animation (origin straight to the
+ // tile the loop above actually landed on) instead of the instant snap a
+ // plain p.x=nx;p.y=ny left behind before - duration scales with distance
+ // travelled so a longer dash doesn't feel rushed next to a 1-tile one.
+ if(p.x!==ox||p.y!==oy){
+  const dist=Math.max(Math.abs(p.x-ox),Math.abs(p.y-oy));
+  anim.heroX=ox;anim.heroY=oy;anim.targetX=p.x;anim.targetY=p.y;anim.t=0;anim.duration=Math.max(140,dist*90);anim.teleportFx=false;
+  requestGameFrame();
+ }
 }
 
 // Applies a stat buff to the caster using the shared buffStat/buffStatMode/
@@ -4899,7 +4951,7 @@ function applyClassEffectState(effect,id,target,x,y,lvl){
  const hit=(e,m=1)=>attack(e,0,{skillId:id,multiplier:m});
 
  if(effect==='armorBreak'){hit(target,.9);status(target,'armorBreak',d.debuffTurns??4,.20,'Quebradura');return true}
- if(effect==='pullRoot'){hit(target,.8);const dx=Math.sign(p.x-target.x),dy=Math.sign(p.y-target.y);const nx=target.x+dx,ny=target.y+dy;if(!blocked(nx,ny)&&!game.enemies.some(e=>e!==target&&e.x===nx&&e.y===ny)){target.x=nx;target.y=ny}status(target,'root',d.debuffTurns??2,0,'Inmovilizado');return true}
+ if(effect==='pullRoot'){hit(target,.8);const spot=openTileAdjacentToOriginFor(target,p);if(spot){target.x=spot.x;target.y=spot.y}buffFloat('Atraer',target.x,target.y,false,'pullroot');return true}
  if(effect==='counter'){p.shield+=8+lvl*2;p.counterReady={turns:5,damage:'1d8+'+lvl};applyCreativeBuff(id,d,lvl,{armor:.12},5);return true}
  // Self-damage then a stat buff - the exact "dmg(self)+buff(self)" combo the
  // new composable effects list expresses directly; this hardcoded version
@@ -4947,7 +4999,7 @@ function applyCreativeClassEffect(id,target,x,y){
  if(['root','pullRoot','rootBleed','bountyRoot'].includes(effect)){hit(target);addEnemyStatus(target,'root',d.debuffTurns??(2+Math.floor(lvl/4)),0,'Inmovilizado');if(effect.includes('Bleed'))addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['freeze','delayedFreeze'].includes(effect)){hit(target,.8);addEnemyStatus(target,'freeze',d.debuffTurns??2,0,'Congelado');return true}
  if(['bleed','burn','poison','dot','decayDot','echoDot','delayedPoison'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect==='poison'?'poison':effect==='decayDot'?'decayDot':'dot',d.dotTurns??(4+Math.floor(lvl/4)),dotPowerFor(d,2+lvl*.8),d.name);return true}
- if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);const power=Math.round(dicePowerFor(d,5+lvl*2,p)*tierMult);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
+ if(['drain','holyLeech','steal'].includes(effect)){hit(target,.8);buffFloat('Drenaje',target.x,target.y,false,'drain');const power=Math.round(dicePowerFor(d,5+lvl*2,p)*tierMult);healEntity(p,power);p[d.resource]=Math.min(p[d.resource==='mana'?'maxMana':'maxStamina'],p[d.resource]+power);return true}
  if(['stun','silence','age','wither','doomMark','mark','bountyMark','holyMark'].includes(effect)){hit(target,.75);addEnemyStatus(target,effect,d.debuffTurns??(2+Math.floor(lvl/5)),1,d.name);return true}
  if(['shadowStrike','holyDash','leapBuff'].includes(effect)){teleportPlayerTo(Math.max(1,target.x-Math.sign(target.x-p.x)),Math.max(1,target.y-Math.sign(target.y-p.y)));hit(target,1.15);if(effect==='shadowStrike')addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
  if(['hookBleed'].includes(effect)){hit(target,.9);addEnemyStatus(target,'dot',d.dotTurns??4,dotPowerFor(d,2+lvl*.5),'Sangrado');return true}
@@ -4995,7 +5047,7 @@ function applyCreativeClassEffect(id,target,x,y){
 // debuff all at once" gets expressed going forward, and how a caster
 // targeting itself with a 'dmg' component becomes self-damage directly,
 // with no need for a dedicated bloodBuff-style hack.
-function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',fear:'Miedo (huye y gasta todos sus PA)',mesmer:'Mesmer (cambia de bando)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer + enraizar',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',revive:'Revivir automáticamente',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
+function effectKindLabel(kind){return {dmg:'Daño',dot:'Daño periódico (DOT)',buff:'Buff (mejora propia)',debuff:'Debuff (empeora al enemigo)',heal:'Curación',move:'Movimiento (dash/teleport)',cc:'Control (aturdir/congelar/silenciar)',fear:'Miedo (huye y gasta todos sus PA)',mesmer:'Mesmer (cambia de bando)',drain:'Drenaje (daña y absorbe HP/maná/stamina)',aoe:'AOE (daño en área)',multihit:'Multihit (varios impactos)',mark:'Marca (aumenta el daño recibido)',summon:'Invocación (aliado temporal)',summonturret:'Invocación-torreta (aliado estático a distancia)',utility:'Utilidad',hot:'Curación periódica (HOT)',execute:'Ejecutar (umbral de % de vida)',pullroot:'Atraer',counter:'Contraataque',cheatdeath:'Desafiar a la muerte',revive:'Revivir automáticamente',holyshield:'Escudo (absorbe daño antes que la vida)',lineshot:'Disparo en línea (perfora enemigos)',trap:'Trampa (se activa al pisarla)',clones:'Clones (invocan copias que luchan contigo)',linkdamage:'Daño en cadena (salta entre enemigos)',invisible:'Invisibilidad (evita la respuesta enemiga)',transform:'Transformación (icono propio y stats en %)',ascend:'Ascensión (cambia el coste de recursos de las skills)'}[kind]||kind}
 // Potions now run through the exact same composable-effects engine as
 // skills (applyEffectComponent/applySkillEffectsList below), instead of a
 // separate bespoke potionEffectType system - a potion "cast" just registers
@@ -5015,7 +5067,12 @@ function hasEffectsList(id){const d=effectSourceDef(id);return Array.isArray(d?.
 // existing self-cast classEffect skills behave.
 const GROUND_TARGET_EFFECT_KINDS=new Set(['aoe','trap','summon','summonturret','clones']);
 function effectsListTargetModeFor(list){
- if(list.some(c=>c.target==='enemy'))return'enemy';
+ // A lineshot component always needs an aim point, even though it has no
+ // 'target' field of its own (it walks a line from the caster instead of
+ // hitting a single clicked cell) - without this it fell through to "no
+ // click needed" and always auto-aimed at the nearest enemy with no way to
+ // pick a different one.
+ if(list.some(c=>c.target==='enemy'||c.kind==='lineshot'))return'enemy';
  if(list.some(c=>c.target==='area'||(GROUND_TARGET_EFFECT_KINDS.has(c.kind)&&!c.permanent)||(c.kind==='move'&&c.mode==='teleport')))return'area';
  if(list.some(c=>c.target==='ally'))return'ally';
  return null
@@ -5024,6 +5081,7 @@ function effectsListTargetMode(id){return effectsListTargetModeFor(effectSourceD
 function resolveComponentEnemyTargets(comp,ctx){
  if(comp.target==='area'){
   const radius=comp.range||2;
+  areaPulse(ctx.x,ctx.y,radius,{color:AREA_PULSE_COLORS[comp.kind]});
   return game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(game.player,e));
  }
  return ctx.clickedEnemy?[ctx.clickedEnemy]:(ctx.nearest?[ctx.nearest]:[]);
@@ -5056,6 +5114,7 @@ function resolveLineEnemyTargets(comp,ctx){
 function resolveComponentAllyTargets(comp,ctx){
  if(comp.target==='area'){
   const cx=ctx.x??game.player.x,cy=ctx.y??game.player.y,radius=comp.range||2;
+  areaPulse(cx,cy,radius,{color:AREA_PULSE_COLORS[comp.kind]||'#70dc9b'});
   const companions=(game.companions||[]).filter(c=>c.hp>0&&Math.max(Math.abs(c.x-cx),Math.abs(c.y-cy))<=radius);
   const others=(game.otherPlayers||[]).filter(pl=>pl.hp>0&&Math.max(Math.abs(pl.x-cx),Math.abs(pl.y-cy))<=radius);
   return [...companions,...others];
@@ -5155,9 +5214,8 @@ function applyEffectComponent(id,comp,ctx){
    return teleportPlayerTo(ctx.x,ctx.y)
   }
   const dashTarget=ctx.clickedEnemy||ctx.nearest;if(!dashTarget)return false;
-  const dx=Math.sign(dashTarget.x-p.x),dy=Math.sign(dashTarget.y-p.y);
-  for(let i=0;i<range;i++){const nx=p.x+dx,ny=p.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==dashTarget&&e.x===nx&&e.y===ny)||(dashTarget.x===nx&&dashTarget.y===ny))break;p.x=nx;p.y=ny}
-  reveal(p.x,p.y);attack(dashTarget,0,{skillId:id,multiplier:comp.multiplier||1});
+  dashTowards(dashTarget,range,blocker=>attack(blocker,0,{skillId:id,multiplier:comp.multiplier||1}));
+  attack(dashTarget,0,{skillId:id,multiplier:comp.multiplier||1});
   return true
  }
  if(comp.kind==='cc'){
@@ -5173,7 +5231,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='drain'){
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   const power=Math.round(dicePowerFor(comp,5+lvl*2,p)*utilitySkillMultiplier(p)*tierMult);
-  for(const e of targets)attack(e,0,{skillId:id,multiplier:.8});
+  for(const e of targets){attack(e,0,{skillId:id,multiplier:.8});buffFloat('Drenaje',e.x,e.y,false,'drain')}
   // The target always loses HP via the attack() above (the only pool
   // enemies have); the resource picker only controls what the CASTER gets
   // back, independent of the skill's own casting resource.
@@ -5185,6 +5243,7 @@ function applyEffectComponent(id,comp,ctx){
  }
  if(comp.kind==='aoe'){
   const radius=Math.max(1,comp.range||2);
+  areaPulse(ctx.x,ctx.y,radius,{color:AREA_PULSE_COLORS.aoe});
   const targets=game.enemies.filter(e=>e.hp>0&&Math.max(Math.abs(e.x-ctx.x),Math.abs(e.y-ctx.y))<=radius&&hasLineOfSight(p,e));
   if(!targets.length)return false;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
@@ -5251,6 +5310,7 @@ function applyEffectComponent(id,comp,ctx){
  if(comp.kind==='invisible'){
   p.invisibleTurns=Math.max(1,comp.turns??2);
   p.invisibleBreaksOnAttack=comp.breakOnAttack!==false;
+  buffFloat('Invisibilidad',p.x,p.y,true,'invisible');
   return true
  }
  if(comp.kind==='hot'){
@@ -5275,19 +5335,33 @@ function applyEffectComponent(id,comp,ctx){
   return true
  }
  if(comp.kind==='execute'){
+  // Fixed behaviour: base damage always lands; a target already below the
+  // configured HP% threshold (checked BEFORE the base hit, so the base hit
+  // itself can't push it under and "steal" the bonus) also takes a second,
+  // independent damage roll with its own dice/stat modifiers - not a flat
+  // multiplier on the same roll like the old execMultiplier did.
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
-  const threshold=(comp.threshold??35)/100,execMult=comp.execMultiplier??2.5;
+  const threshold=(comp.threshold??35)/100;
   const expr=comp.dmgDice>0?`${comp.dmgDice}d${comp.dmgDie||6}`:undefined;
-  for(const e of targets)attack(e,0,{skillId:id,dice:expr,multiplier:(e.hp/e.maxHp)<threshold?execMult:(comp.multiplier||1),statDefLike});
+  const execExpr=comp.execDmgDice>0?`${comp.execDmgDice}d${comp.execDmgDie||6}`:'2d8';
+  const execStatDefLike={dmgStat:comp.execDmgStat,dmgStatMode:comp.execDmgStatMode,dmgStatCoef:comp.execDmgStatCoef};
+  for(const e of targets){
+   const lowHp=e.maxHp>0&&(e.hp/e.maxHp)<threshold;
+   attack(e,0,{skillId:id,dice:expr,multiplier:comp.multiplier||1,statDefLike});
+   if(lowHp&&e.hp>0){buffFloat('EJECUTAR',e.x,e.y,false,'execute');attack(e,0,{skillId:id,dice:execExpr,multiplier:1,statDefLike:execStatDefLike,allowWeaponProc:false})}
+  }
   return true
  }
  if(comp.kind==='pullroot'){
+  // 'Atraer': pulls the target straight onto the free tile adjacent to the
+  // caster closest to the target's own position - no more root/immobilize
+  // afterward, just the pull.
   const targets=resolveComponentEnemyTargets(comp,ctx);if(!targets.length)return false;
   for(const e of targets){
    attack(e,0,{skillId:id,multiplier:comp.multiplier||.8});
-   const dx=Math.sign(p.x-e.x),dy=Math.sign(p.y-e.y),nx=e.x+dx,ny=e.y+dy;
-   if(!blocked(nx,ny)&&!game.enemies.some(o=>o!==e&&o.x===nx&&o.y===ny)){e.x=nx;e.y=ny}
-   addEnemyStatus(e,'root',comp.turns??2,0,d.name);
+   const spot=openTileAdjacentToOriginFor(e,p);
+   if(spot){e.x=spot.x;e.y=spot.y}
+   buffFloat('Atraer',e.x,e.y,false,'pullroot');
   }
   return true
  }
@@ -5301,6 +5375,16 @@ function applyEffectComponent(id,comp,ctx){
   p.cheatDeathTurns=Math.max(1,comp.turns??5);
   return true
  }
+ if(comp.kind==='revive'){
+  // 'Revivir automático': a timed buff, not a passive always-on trait - it
+  // only does anything if the player actually dies (hp<=0) while
+  // reviveTurns is still running (see tryAutoRevive), at which point it
+  // restores hp/mana/stamina and optionally spends souls, exactly once.
+  p.reviveTurns=Math.max(1,comp.turns??5);
+  p.reviveHpPercent=Math.max(1,Math.min(100,comp.hpPercent??50));
+  p.reviveSoulsCost=Math.max(0,comp.soulsCost??0);
+  return true
+ }
  if(comp.kind==='holyshield'){
   // Absorb-shield pool: consumed by damagePlayer() before HP, separate from
   // the flat armor-boost p.shield used elsewhere. Same dice/stat-scaling
@@ -5311,6 +5395,7 @@ function applyEffectComponent(id,comp,ctx){
   const amount=Math.max(1,Math.round((base+contribution)*utilitySkillMultiplier(p)));
   p.holyShield=(p.holyShield||0)+amount;
   if(comp.turns)p.holyShieldTurns=Math.max(p.holyShieldTurns||0,comp.turns);
+  buffFloat('Escudo',p.x,p.y,true,'holyshield');
   return true
  }
  if(comp.kind==='lineshot'){
@@ -5430,6 +5515,7 @@ function apCan(kind,cost=AP_COSTS[kind]){
  if(game.player.ap==null)startPlayerAP();
  if(game.player.ap>=cost)return true;
  log('No tienes PA suficientes.','sys');
+ floating('PA insuficientes',game.player.x,game.player.y,'#ffcf5a');
  return false;
 }
 // Replaces the old per-action playerFinished(): spends points and keeps the turn.
@@ -5451,7 +5537,7 @@ function playerFinished(){
  }
  busy=true;persistTurnState();game.turn++;tickFloorObjective();classSkillConsistencyGuard();tickBuffs();tickPlayerHots();tickPlayerRegen();tickHolyShield();tickPlayerControlStatuses();tickEnemyStatuses();tickSkillObjects();companionTurn();for(const id in game.player.cooldowns)if(game.player.cooldowns[id]>0)game.player.cooldowns[id]--;tickEquipmentCooldowns();if(game.player.shield>0)game.player.shield--;
  updateUI();requestGameFrame();
- setTimeout(()=>{enemyTurn(()=>{tickPlayerInvisibility();startPlayerAP();busy=false;updateUI();draw()})},500);
+ setTimeout(()=>{enemyTurn(()=>{tickPlayerInvisibility();tickPlayerRevive();startPlayerAP();busy=false;updateUI();draw()})},500);
 }
 async function playerFinishedMultiplayer(){
  busy=true;
@@ -5479,7 +5565,7 @@ async function playerFinishedMultiplayer(){
      // as it happens, so enemies act consecutively for every client instead
      // of a synchronous burst followed by a separate fake local replay.
      await new Promise(resolve=>enemyTurn(resolve));
-     tickPlayerInvisibility();
+     tickPlayerInvisibility();tickPlayerRevive();
      if(MP_DEBUG_LATENCY)mpDebugEvent('enemy_phase_duration',{ms:performance.now()-t0,enemyCount:(game.enemies||[]).length});
      sendMpAction('enemy_phase_end',{});
     }
@@ -5535,51 +5621,12 @@ function persistSouls(){
  const souls=Math.max(0,Number(game.player.souls)||0);
  soulsPersistChain=soulsPersistChain.then(()=>fetch(`/api/user-pj?id=${encodeURIComponent(game.pjId)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({souls,minimal:true})})).catch(e=>console.error('No se pudieron guardar las souls',e));
 }
-function configuredReviveSource(){
- const p=game.player,candidates=[];
- for(const id of p.equippedSkills||[]){const d=skillDefs[id];for(const effect of d?.effects||[])if(effect.kind==='revive'&&!(p.cooldowns?.[id]>0))candidates.push({effect,consume:()=>{p.cooldowns[id]=Math.max(1,effect.cooldown??d.cd??1)}})}
- for(const [slot,item] of Object.entries(p.equipment||{}))for(const effect of item?.effects||[])if(effect.kind==='revive'&&!(p.equipmentCooldowns?.[slot]>0))candidates.push({effect,consume:()=>{p.equipmentCooldowns[slot]=Math.max(1,effect.cooldown??item.cooldown??1)}});
- for(const item of game.inventory||[])if(item.type==='potion')for(const effect of item.effects||[])if(effect.kind==='revive')candidates.push({effect,consume:()=>{if((item.quantity||1)>1)item.quantity--;else game.inventory=game.inventory.filter(x=>x!==item)}});
- return candidates.find(x=>(x.effect.soulsCost||0)<=(p.souls||0))||null;
-}
-// Two seconds of a skull rising and spinning over the corpse before any
-// death screen opens. Deliberately driven from the death HANDLERS rather
-// than from permanentDeath(): that function is also reached from "volver al
-// menú" in Soulseek and from banking souls, and a skull flying up because
-// you clicked a menu button would make no sense.
-// game.over is already true by the time either handler runs (see the two
-// call sites), so the player cannot act during the animation.
-const DEATH_SKULL_MS=2000;
-function playDeathSkullAnimation(done){
- // Parented to #gameStage, not to #combatFxLayer: that layer is
- // overflow:hidden and would clip the skull as it climbs out of the tile.
- // Both boxes are the same size (the layer is inset:0 on the stage), so the
- // percentage positioning below is identical either way.
- const stage=document.getElementById('gameStage');
- if(!stage||!game?.player){done();return}
- const c=camera(),pct=100/visibleTiles;
- const el=document.createElement('i');
- el.className='deathSkull';
- el.textContent='☠';
- el.style.left=`${(game.player.x-c.x+.5)*pct}%`;
- el.style.top=`${(game.player.y-c.y+.5)*pct}%`;
- stage.appendChild(el);
- const finish=()=>{el.remove();done()};
- if(window.gsap){
-  gsap.fromTo(el,{scale:.2,opacity:0,rotation:0,yPercent:0},
-   {scale:1.9,opacity:1,rotation:720,yPercent:-260,duration:DEATH_SKULL_MS/1000,ease:'power1.out',
-    onComplete:()=>gsap.to(el,{opacity:0,duration:.25,onComplete:finish})});
- }else{
-  el.animate([{opacity:0,transform:'translate(-50%,-50%) scale(.2) rotate(0deg)'},
-              {opacity:1,transform:'translate(-50%,-160%) scale(1.9) rotate(540deg)',offset:.75},
-              {opacity:0,transform:'translate(-50%,-260%) scale(1.9) rotate(720deg)'}],
-             {duration:DEATH_SKULL_MS,easing:'ease-out'}).onfinish=finish;
-  setTimeout(finish,DEATH_SKULL_MS+400);
- }
-}
+// playDeathSkullAnimation()/DEATH_SKULL_MS now live in src/animations.js.
+// tryAutoRevive() already had first crack at any fatal hit (see damagePlayer
+// and the other hp<=0 checkpoints) - reaching here means neither a
+// cheatdeath charge nor an active 'revive' buff was up, so this is a real
+// death: soul-shop revive if affordable, else permanent death.
 function handlePlayerDeath(){
- const automatic=configuredReviveSource();
- if(automatic){automatic.consume();if(automatic.effect.soulsCost){game.player.souls-=automatic.effect.soulsCost;persistSouls()}reviveAtCurrentPosition(automatic.effect.hpPercent||50);banner('REVIVIR');return}
  const next=((game.player.souls||0)>=20&&!game.multiplayer)?showSoulReviveModal:permanentDeath;
  playDeathSkullAnimation(next);
 }
@@ -5709,7 +5756,7 @@ function enemyTurn(onDone){if(game.over){onDone?.();return}if(isPlayerInvisible(
   return 0;
  };
  const finishEnemyTurn=()=>{
-  if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;updateUI();draw();handlePlayerDeath();onDone?.();return}
+  if(game.player.hp<=0&&!game.over){if(tryAutoRevive()){updateUI();draw()}else{game.player.hp=0;game.over=true;updateUI();draw();handlePlayerDeath()}onDone?.();return}
   onDone?.();
  };
  if(!apModeOn()){
@@ -5895,7 +5942,7 @@ function resolveTargetedSkill(slot,x,y){
  if(cd>0){log('La habilidad está en enfriamiento.','sys');return false}
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');cancelTargeting('');return false}
  const targetedCost=effectiveSkillCost(d);
- if(game.player[d.resource]<targetedCost){log(`Necesitas ${targetedCost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');cancelTargeting('');return false}
+ if(game.player[d.resource]<targetedCost){log(`Necesitas ${targetedCost} ${d.resource==='mana'?'de maná':'de stamina'}; tienes ${game.player[d.resource]}.`,'sys');floating(d.resource==='mana'?'Maná insuficiente':'Stamina insuficiente',game.player.x,game.player.y,'#8ecbff');cancelTargeting('');return false}
  const mode=mode0,rangeMult=rangeDamageMultiplier(range,mode==='area'),base=Math.max(1,Math.round(targetedSkillDamage(id)*rangeMult));let used=false;
  if(game.multiplayer)sendMpAction('spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},target:{x,y},spellId:id,icon:d.icon});
  if(hasEffectsList(id)){
@@ -5968,7 +6015,7 @@ function useSkill(slot){
  const def=skillDefs[id],cd=game.player.cooldowns[id]||0;if(cd>0){log('La habilidad está en enfriamiento.','sys');return}
  if(skillsBlockedByTransform()){log('Tu transformación no permite lanzar otras habilidades.','sys');return}
  const cost=effectiveSkillCost(def);
- if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');return}
+ if(game.player[def.resource]<cost){log(`No tienes suficiente ${def.resource==='mana'?'maná':'stamina'}.`,'sys');floating(def.resource==='mana'?'Maná insuficiente':'Stamina insuficiente',game.player.x,game.player.y,'#8ecbff');return}
  if(!apCan('skill',skillApCost(id)))return;
  const targetMode=skillTargetMode(id);if(targetMode){beginTargeting({kind:'skill',slot,mode:targetMode,range:effectiveSkillRange(id),minRange:targetMode==='ally'?0:1});return}
  if(game.multiplayer)sendMpAction(def.classEffect==='heal'?'heal':'spell',{casterId:game.pjId,origin:{x:game.player.x,y:game.player.y},spellId:id,icon:def.icon});
@@ -6000,14 +6047,14 @@ function useSkill(slot){
   const base=resolveSkillPower(id);
   if(def.classEffect==='ranged'&&nearest){attack(nearest,base,{skillId:id});used=true}
   else if(def.classEffect==='shield'){const turns=def.buffTurns??(4+Math.floor(lvl/2));applyBuff(id,def.name,turns,{armor:.22+lvl*.01});game.player.shield+=resolveSkillPower(id);used=true}
-  else if(def.classEffect==='dash'&&nearest){const dx=Math.sign(nearest.x-game.player.x),dy=Math.sign(nearest.y-game.player.y);for(let i=0;i<3;i++){const nx=game.player.x+dx,ny=game.player.y+dy;if(blocked(nx,ny)||game.enemies.some(e=>e!==nearest&&e.x===nx&&e.y===ny)||nearest.x===nx&&nearest.y===ny)break;game.player.x=nx;game.player.y=ny}attack(nearest,base,{skillId:id});reveal(game.player.x,game.player.y);used=true}
+  else if(def.classEffect==='dash'&&nearest){dashTowards(nearest,3,blocker=>attack(blocker,base,{skillId:id}));attack(nearest,base,{skillId:id});used=true}
   else if(def.classEffect==='debuff'&&nearest){attack(nearest,base,{skillId:id});const turns=def.debuffTurns??(2+Math.floor(lvl/3));if(def.debuffStat){const mode=def.debuffStatMode||'add';applyEnemyStatDebuff(nearest,def.debuffStat,mode,mode==='mult'?1-(1-(def.debuffStatCoef??.8))*offensiveSkillMultiplier(game.player):(def.debuffStatCoef??2)*offensiveSkillMultiplier(game.player),turns,def.name)}else nearest.weakened=turns;used=true}
   else if(def.classEffect==='aoe'){const a=near(2+Math.floor(lvl/5));if(a.length){a.forEach(e=>attack(e,Math.round(base*.8),{skillId:id}));used=true}}
   else if(def.classEffect==='heal'){healEntity(game.player,base*2);game.player[def.resource]=Math.min(game.player[def.resource==='mana'?'maxMana':'maxStamina'],game.player[def.resource]+base);used=true}
   else if(def.classEffect==='multihit'&&visible.length){for(let i=0;i<Math.min(3+Math.floor(lvl/3),visible.length+1);i++)attack(pick(visible),Math.round(base*.7),{skillId:id});used=true}
   else if(def.classEffect==='utility'){const radius=7+lvl,dim=mapDimensions();for(let y=Math.max(0,game.player.y-radius);y<Math.min(dim.rows,game.player.y+radius+1);y++)for(let x=Math.max(0,game.player.x-radius);x<Math.min(dim.cols,game.player.x+radius+1);x++)if(Math.hypot(x-game.player.x,y-game.player.y)<=radius)game.seen[y][x]=true;game.player.shadowVeil=1;used=true}
   else if(def.classEffect==='ultimate'&&visible.length){visible.slice(0,6+lvl).forEach(e=>attack(e,Math.round(base*1.25),{skillId:id}));used=true}
-  else if(def.classEffect==='execute'&&nearest){attack(nearest,Math.round(base*(nearest.hp/nearest.maxHp<.4?2.5:1)),{skillId:id});used=true}
+  else if(def.classEffect==='execute'&&nearest){const lowHp=nearest.hp/nearest.maxHp<.4;if(lowHp)buffFloat('EJECUTAR',nearest.x,nearest.y,false,'execute');attack(nearest,Math.round(base*(lowHp?2.5:1)),{skillId:id});used=true}
   else if(def.classEffect==='buff'){const turns=def.buffTurns??(6+Math.floor(lvl/2));const stat=def.buffStat||'strength';const mode=def.buffStatMode||'add';const value=def.buffStatCoef??(mode==='mult'?1.2:5);applyBuff(id,def.name,turns,{[stat]:{mode,value}});game.player.shield+=5+lvl*2;used=true}
   else if(def.classEffect==='massive'&&visible.length){visible.forEach(e=>attack(e,Math.round(base*1.7),{skillId:id}));used=true}
  }
@@ -6202,9 +6249,9 @@ function updateUI(){
 let animationFrame=0,lastAnimationTime=0;
 function animate(now=performance.now()){
  animationFrame=0;const dt=Math.min(50,Math.max(0,now-(lastAnimationTime||now)));lastAnimationTime=now;
- const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone'].includes(o.kind)&&o.turns>0)
+ const hasAnimatedArea=(game?.skillObjects||[]).some(o=>['totem','zone','trap'].includes(o.kind)&&o.turns>0)
   ||(game?.companions||[]).some(hasCompanionAreaPulse);
- if(anim.t<1)anim.t=Math.min(1,anim.t+dt/140);
+ if(anim.t<1)anim.t=Math.min(1,anim.t+dt/(anim.duration||140));
  draw();
  if(anim.t<1||hasAnimatedArea)animationFrame=requestAnimationFrame(animate)
 }
@@ -6288,7 +6335,13 @@ function draw(){
  for(const ally of game.companions||[])if(((ally.hp>0&&ally.turns>0)||(ally.permanent&&ally.hp<=0))&&game.seen[ally.y]?.[ally.x]){let p=sc(ally.x,ally.y);companionSprite(p.x,p.y,ally)}
  for(const rp of game.otherPlayers||[])if(rp.hp>0&&game.seen[rp.y]?.[rp.x]){const t=rp.animT??1,ix=(rp.prevX??rp.x)+(rp.x-(rp.prevX??rp.x))*t,iy=(rp.prevY??rp.y)+(rp.y-(rp.prevY??rp.y))*t;let p=sc(ix,iy);remotePlayerSprite(p.x,p.y,rp)}
  const hx=(anim.heroX+(anim.targetX-anim.heroX)*anim.t-c.x)*TILE,hy=(anim.heroY+(anim.targetY-anim.heroY)*anim.t-c.y)*TILE;
- if(isPlayerInvisible()){ctx.save();ctx.globalAlpha=.45;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
+ // A 'blink' teleport dips the hero's own alpha out and back in over the
+ // move (down to ~0 right at the midpoint, t=.5), instead of just sliding
+ // like a normal step/dash - cleared once the animation finishes so it
+ // never affects a later plain walk that happens to reuse anim.t.
+ const teleportAlpha=(anim.teleportFx&&anim.t<1)?Math.max(.12,Math.abs(anim.t-.5)*2):1;
+ const heroAlpha=(isPlayerInvisible()?.45:1)*teleportAlpha;
+ if(heroAlpha<1){ctx.save();ctx.globalAlpha=heroAlpha;heroSprite(hx,hy,pick([0,0]));ctx.restore()}else heroSprite(hx,hy,pick([0,0]));
  drawPlayerStatusFrames(hx,hy);
  const center=CANVAS_SIZE/2;const g=ctx.createRadialGradient(center,center,CANVAS_SIZE*.27,center,center,CANVAS_SIZE*.73);g.addColorStop(0,'#0000');g.addColorStop(1,'#000a');ctx.fillStyle=g;ctx.fillRect(0,0,CANVAS_SIZE,CANVAS_SIZE)
  drawTargetingOverlay();
@@ -6303,9 +6356,13 @@ function draw(){
 // bold anchor icon from skillObjectSprite still reads as the focal point.
 function drawSkillObjectGroundOverlay(sc){
  for(const o of game.skillObjects||[]){
-  if(!['totem','zone'].includes(o.kind)||o.turns<=0)continue;
+  // Traps get the same persisting pulse as totems/zones while they're armed
+  // (o.turns>0) - previously only their static board icon (skillObjectSprite)
+  // hinted at their activation radius; now the radius itself stays visibly
+  // pulsing for as long as the trap does, same as any other area effect.
+  if(!['totem','zone','trap'].includes(o.kind)||o.turns<=0)continue;
   const radius=Math.max(1,o.radius||1),pulse=.5+.5*Math.sin(performance.now()/360);
-  const color=o.kind==='totem'?'#9f7bff':'#64e0a0';
+  const color=o.kind==='totem'?'#9f7bff':o.kind==='trap'?'#ffcc55':'#64e0a0';
   ctx.save();ctx.lineWidth=2;
   for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
    if(Math.max(Math.abs(dx),Math.abs(dy))>radius)continue;
@@ -6381,6 +6438,7 @@ function updateGameHud(){
  set('hudXpFill','hudXpText',p.level>=LEVEL_CAP?1:p.xp,need,'hudXpBar');if(p.level>=LEVEL_CAP){const t=document.getElementById('hudXpText');if(t)t.textContent='MÁX'}
  set('hudStaminaFill','hudStaminaText',p.stamina,p.maxStamina,'hudStaminaBar');
  set('hudManaFill','hudManaText',p.mana,p.maxMana,'hudManaBar');
+ document.getElementById('gameStage')?.classList.toggle('lowHpPulse',p.hp>0&&p.maxHp>0&&p.hp/p.maxHp<=.1);
  drawMinimap();
 }
 function drawMinimap(){
@@ -7079,7 +7137,7 @@ function effectSummaryTag(comp){
   case 'utility':return 'Utilidad';
   case 'hot':return withTarget('HOT');
   case 'execute':return 'Ejecutar';
-  case 'pullroot':return 'Atraer+Root';
+  case 'pullroot':return 'Atraer';
   case 'counter':return 'Contraataque';
   case 'cheatdeath':return 'Desafiar muerte';
   case 'holyshield':return 'Escudo';
@@ -7137,11 +7195,11 @@ function defaultComponentFor(kind){
  if(kind==='linkdamage')return {...base,dmgDice:2,dmgDie:6,dmgStat:'intelligence',dmgStatMode:'add',dmgStatCoef:1,jumps:3,falloff:25,range:4};
  if(kind==='utility')return {...base,mode:'reveal',value:10};
  if(kind==='hot')return {...base,target:'self',resource:'hp',dmgDice:1,dmgDie:6,dmgStat:'wisdom',dmgStatMode:'add',dmgStatCoef:.5,turns:4};
- if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execMultiplier:2.5};
- if(kind==='pullroot')return {...base,target:'enemy',turns:2};
+ if(kind==='execute')return {...base,target:'enemy',dmgDice:2,dmgDie:6,dmgStat:'strength',dmgStatMode:'add',dmgStatCoef:1,threshold:35,execDmgDice:2,execDmgDie:8,execDmgStat:'strength',execDmgStatMode:'add',execDmgStatCoef:1};
+ if(kind==='pullroot')return {...base,target:'enemy'};
  if(kind==='counter')return {...base,shield:10,dmgDice:1,dmgDie:8,dmgStat:'',dmgStatMode:'add',dmgStatCoef:1,turns:5};
  if(kind==='cheatdeath')return {...base,turns:5};
- if(kind==='revive')return {...base,hpPercent:50,cooldown:10,soulsCost:0};
+ if(kind==='revive')return {...base,hpPercent:50,turns:5,soulsCost:0};
  if(kind==='holyshield')return {...base,target:'self',value:20,stat:'',mode:'add',statCoef:1,turns:0};
  if(kind==='invisible')return {...base,turns:2,breakOnAttack:true};
  if(kind==='ascend')return {...base,resource:'any',value:150,turns:6,allowSkills:true,iconImage:''};
@@ -7226,20 +7284,21 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='dot')fields=`${effectDiceFieldsHtml(comp,i,'dot')}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Etiqueta visual <select data-effect-idx="${i}" data-effect-field="flavor"><option value="dot" ${comp.flavor==='dot'?'selected':''}>Genérico</option><option value="bleed" ${comp.flavor==='bleed'?'selected':''}>Sangrado</option><option value="burn" ${comp.flavor==='burn'?'selected':''}>Quemadura</option><option value="poison" ${comp.flavor==='poison'?'selected':''}>Veneno</option></select></label>`;
  else if(comp.kind==='buff'||comp.kind==='debuff')fields=`<label>Stat <select data-effect-idx="${i}" data-effect-field="stat">${statOptionsHtml(comp.stat,comp.kind==='buff'?['armor','damage','ap','skilleffect','dodge','critChance','blockChance','manaRegen','staminaRegen']:['damage','ap','skilleffect'])}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (+N)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (×N)</option></select></label><label>Valor <input type="number" step="0.1" value="${comp.value??(comp.kind==='buff'?5:2)}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??(comp.kind==='buff'?6:3)}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.kind==='debuff'&&comp.stat==='ap'?'<span class="small">En modo Sumatorio el valor son puntos porcentuales de PA (p.ej. 15 = -15% PA).</span>':''}${comp.kind==='buff'&&['dodge','critChance','blockChance'].includes(comp.stat)?'<span class="small">Solo en modo Sumatorio: el valor son puntos porcentuales (p.ej. 10 = +10%).</span>':''}`;
  else if(comp.kind==='move')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="mode"><option value="dash" ${comp.mode!=='teleport'?'selected':''}>Dash (avanza y golpea)</option><option value="teleport" ${comp.mode==='teleport'?'selected':''}>Teletransporte</option></select></label><label>Alcance (casillas) <input type="number" min="1" value="${comp.range||3}" data-effect-idx="${i}" data-effect-field="range"></label>`;
- else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
- else if(comp.kind==='fear'||comp.kind==='mesmer')fields=`<p class="small">${comp.kind==='fear'?'El afectado huye y consume todos sus PA moviéndose. Resistencia por SAB, máximo 30%.':'El afectado cambia de bando mientras dure. Resistencia por INT, máximo 30%.'}</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='cc')fields=`<label>Tipo <select data-effect-idx="${i}" data-effect-field="type"><option value="stun" ${comp.type==='stun'?'selected':''}>Aturdir</option><option value="freeze" ${comp.type==='freeze'?'selected':''}>Congelar</option><option value="silence" ${comp.type==='silence'?'selected':''}>Silenciar</option><option value="root" ${comp.type==='root'?'selected':''}>Enraizar</option></select></label><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.target==='area'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label><p class="small">En modo Área, selecciona cualquier casilla dentro de alcance como centro (no hace falta que haya un enemigo justo ahí); afecta a todos los enemigos dentro del radio.</p>`:''}`;
+ else if(comp.kind==='fear'||comp.kind==='mesmer')fields=`<p class="small">${comp.kind==='fear'?'El afectado huye y consume todos sus PA moviéndose. Resistencia por SAB, máximo 30%.':'El afectado cambia de bando mientras dure. Resistencia por INT, máximo 30%.'}</p><label>Turnos <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>${comp.target==='area'?`<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label><p class="small">En modo Área, selecciona cualquier casilla dentro de alcance como centro (no hace falta que haya un enemigo justo ahí); afecta a todos los enemigos dentro del radio.</p>`:''}`;
  else if(comp.kind==='aoe')fields=`${effectDiceFieldsHtml(comp,i)}<label>Radio de área (casillas) <input type="number" min="1" value="${comp.range??2}" data-effect-idx="${i}" data-effect-field="range"></label>`;
  else if(comp.kind==='multihit')fields=`<label>Nº de impactos <input type="number" min="1" value="${comp.hits??3}" data-effect-idx="${i}" data-effect-field="hits"></label>${effectDiceFieldsHtml(comp,i)}`;
  else if(comp.kind==='mark')fields=`<label>% de daño adicional recibido <input type="number" min="1" value="${comp.value??25}" data-effect-idx="${i}" data-effect-field="value"></label><label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
- else if(comp.kind==='revive')fields=`<label>Vida al revivir (%) <input type="number" min="1" max="100" value="${comp.hpPercent??50}" data-effect-idx="${i}" data-effect-field="hpPercent"></label><label>Cooldown <input type="number" min="0" value="${comp.cooldown??10}" data-effect-idx="${i}" data-effect-field="cooldown"></label><label>Coste opcional de souls <input type="number" min="0" value="${comp.soulsCost??0}" data-effect-idx="${i}" data-effect-field="soulsCost"></label>`;
+ else if(comp.kind==='revive')fields=`<p class="small">Al lanzarse, te protege durante los turnos indicados: si mueres mientras esté activo, revives automáticamente (una sola vez) en vez de morir.</p><label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label><label>Vida al revivir (%) <input type="number" min="1" max="100" value="${comp.hpPercent??50}" data-effect-idx="${i}" data-effect-field="hpPercent"></label><label>Coste opcional de souls (al revivir) <input type="number" min="0" value="${comp.soulsCost??0}" data-effect-idx="${i}" data-effect-field="soulsCost"></label>`;
  else if(comp.kind==='summon'){
   const effectType=comp.effectType||'damage',permanent=!!comp.permanent;
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??20}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label>STAT reservado <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${(!comp.reserveResource||comp.reserveResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.reserveResource==='stamina'?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
-  <label>Reserva (%) <input type="number" min="1" max="100" value="${comp.reservePct??20}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
   <p class="small">Las invocaciones quedan vinculadas hasta desinvocarlas desde la pestaña Compañeros.</p>
   ${!permanent?`<label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>`:`<div class="configForm">
+   <p class="small">Solo un compañero permanente reserva un % de tu maná/stamina/vida máximos mientras esté vivo.</p>
+   <label>STAT reservado <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${(!comp.reserveResource||comp.reserveResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.reserveResource==='stamina'?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
+   <label>Reserva (%) <input type="number" min="1" max="100" value="${comp.reservePct??20}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
    <label>Recurso de uso del compañero <select data-effect-idx="${i}" data-effect-field="commandResource"><option value="mana" ${(!comp.commandResource||comp.commandResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.commandResource==='stamina'?'selected':''}>Stamina</option></select></label>
    <label>Coste de uso del compañero <input type="number" min="0" value="${comp.commandCost??0}" data-effect-idx="${i}" data-effect-field="commandCost"></label>
    <p class="small">Un compañero permanente ya no lucha por su cuenta: solo te sigue y es invulnerable. Mientras esté vivo, su misma skill se convierte en el botón para ordenarle atacar/curar/usar su habilidad (sin gastar tu PA); este es el coste de recurso que pagas cada vez que le das esa orden.</p>
@@ -7278,8 +7337,6 @@ function effectComponentCardHtml(comp,i){
  else if(comp.kind==='summonturret'){
   const effectType=comp.effectType||'damage',damageMode=comp.damageMode||'nearest';
   fields=`<label>HP de la invocación <input type="number" min="1" value="${comp.hp??16}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label>STAT reservado <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${(!comp.reserveResource||comp.reserveResource==='mana')?'selected':''}>Maná</option><option value="stamina" ${comp.reserveResource==='stamina'?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
-  <label>Reserva (%) <input type="number" min="1" max="100" value="${comp.reservePct??20}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA de la invocación (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Tipo de torreta <select data-effect-idx="${i}" data-effect-field="effectType">
@@ -7324,8 +7381,6 @@ function effectComponentCardHtml(comp,i){
   const cloneEffectType=comp.effectType||'damage';
   fields=`<label>Nº de clones <input type="number" min="1" max="4" value="${comp.count??2}" data-effect-idx="${i}" data-effect-field="count"></label>
   <label>HP de cada clon <input type="number" min="1" value="${comp.hp??14}" data-effect-idx="${i}" data-effect-field="hp"></label>
-  <label>STAT reservado por clon <select data-effect-idx="${i}" data-effect-field="reserveResource"><option value="mana" ${comp.reserveResource==='mana'?'selected':''}>Maná</option><option value="stamina" ${(!comp.reserveResource||comp.reserveResource==='stamina')?'selected':''}>Stamina</option><option value="hp" ${comp.reserveResource==='hp'?'selected':''}>Vida</option></select></label>
-  <label>Reserva por clon (%) <input type="number" min="1" max="100" value="${comp.reservePct??10}" data-effect-idx="${i}" data-effect-field="reservePct"></label>
   <label>Turnos de vida <input type="number" min="1" value="${comp.turns??8}" data-effect-idx="${i}" data-effect-field="turns"></label>
   <label>PA del clon (cada 10 = 1 acción/turno) <input type="number" min="10" step="10" value="${comp.ap??10}" data-effect-idx="${i}" data-effect-field="ap"></label>
   <label>Efecto de cada clon <select data-effect-idx="${i}" data-effect-field="effectType">
@@ -7365,8 +7420,8 @@ function effectComponentCardHtml(comp,i){
   ${mode!=='stealth'?`<label>${mode==='reveal'?'Radio':mode==='shield'?'Cantidad de escudo':'Cantidad restaurada'} <input type="number" min="1" value="${comp.value??10}" data-effect-idx="${i}" data-effect-field="value"></label>`:''}`;
  }
  else if(comp.kind==='hot')fields=`<label>Recurso regenerado <select data-effect-idx="${i}" data-effect-field="resource"><option value="hp" ${!comp.resource||comp.resource==='hp'?'selected':''}>Vida</option><option value="mana" ${comp.resource==='mana'?'selected':''}>Maná</option><option value="stamina" ${comp.resource==='stamina'?'selected':''}>Stamina</option></select></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos <input type="number" min="1" value="${comp.turns??4}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
- else if(comp.kind==='execute')fields=`${effectDiceFieldsHtml(comp,i)}<label>Umbral de vida del objetivo (%) <input type="number" min="1" max="99" value="${comp.threshold??35}" data-effect-idx="${i}" data-effect-field="threshold"></label><label>Multiplicador de ejecución (por debajo del umbral) <input type="number" step="0.1" min="1" value="${comp.execMultiplier??2.5}" data-effect-idx="${i}" data-effect-field="execMultiplier"></label>`;
- else if(comp.kind==='pullroot')fields=`<label>Turnos enraizado <input type="number" min="1" value="${comp.turns??2}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
+ else if(comp.kind==='execute')fields=`<p class="small">Daño base (siempre se aplica):</p>${effectDiceFieldsHtml(comp,i)}<label>Umbral de vida del objetivo (%) <input type="number" min="1" max="99" value="${comp.threshold??35}" data-effect-idx="${i}" data-effect-field="threshold"></label><p class="small">Tirada de daño adicional (solo si el objetivo está por debajo del umbral):</p>${effectDiceFieldsHtml(comp,i,'execDmg')}`;
+ else if(comp.kind==='pullroot')fields=`<p class="small">Atrae al objetivo hasta la casilla libre adyacente a ti más cercana a su posición actual. No lo inmoviliza.</p>`;
  else if(comp.kind==='counter')fields=`<label>Escudo otorgado <input type="number" min="0" value="${comp.shield??10}" data-effect-idx="${i}" data-effect-field="shield"></label>${effectDiceFieldsHtml(comp,i)}<label>Turnos de ventana (hasta el próximo golpe) <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='cheatdeath')fields=`<label>Turnos activo <input type="number" min="1" value="${comp.turns??5}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
  else if(comp.kind==='holyshield')fields=`<label>Puntos de escudo base <input type="number" min="0" value="${comp.value??20}" data-effect-idx="${i}" data-effect-field="value"></label><label>Stat que lo potencia <select data-effect-idx="${i}" data-effect-field="stat"><option value="">Ninguna</option>${statOptionsHtml(comp.stat)}</select></label><label>Modo <select data-effect-idx="${i}" data-effect-field="mode"><option value="add" ${comp.mode!=='mult'?'selected':''}>Sumatorio (puntos + stat×coef)</option><option value="mult" ${comp.mode==='mult'?'selected':''}>Multiplicador (puntos × (1 + stat×coef))</option></select></label><label>Coeficiente de stat <input type="number" step="0.1" value="${comp.statCoef??1}" data-effect-idx="${i}" data-effect-field="statCoef"></label><label>Turnos (0 = sin límite de tiempo, dura hasta romperse) <input type="number" min="0" value="${comp.turns??0}" data-effect-idx="${i}" data-effect-field="turns"></label>`;
@@ -10208,7 +10263,7 @@ function mpApplyLiveTurn(p){
   game.mpRecentEvents.push(ev.m);if(game.mpRecentEvents.length>12)game.mpRecentEvents.shift();
  }
  game.activePlayerIndex=Number(p.nextIdx)||0;
- if(game.player.hp<=0&&!game.over){game.player.hp=0;game.over=true;recomputeDerived();updateUI();draw();mpHandleDefeatWhileWaiting();return}
+ if(game.player.hp<=0&&!game.over){if(tryAutoRevive()){recomputeDerived();updateUI();draw()}else{game.player.hp=0;game.over=true;recomputeDerived();updateUI();draw();mpHandleDefeatWhileWaiting()}return}
  recomputeDerived();
  mpSetMyTurn(String((game.turnOrder||[])[game.activePlayerIndex])===String(game.pjId));
  updateUI();draw();
@@ -10833,7 +10888,7 @@ function mpApplyRemoteState(st){
  }
  mpSyncOtherPlayers(st);
  if(myPos&&typeof myPos.hp==='number'&&!game.myTurn){
-  if(myPos.hp<=0&&game.player.hp>0){game.player.hp=0;game.over=true;updateUI();draw();mpHandleDefeatWhileWaiting();return}
+  if(myPos.hp<=0&&game.player.hp>0){game.player.hp=0;if(tryAutoRevive()){updateUI();draw()}else{game.over=true;updateUI();draw();mpHandleDefeatWhileWaiting()}return}
   if(myPos.hp>0&&myPos.hp!==game.player.hp){
    const diff=myPos.hp-game.player.hp;
    game.player.hp=Math.min(game.player.maxHp,myPos.hp);
