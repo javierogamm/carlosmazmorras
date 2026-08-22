@@ -1535,10 +1535,13 @@ if(typeof loadPrecomputedFloor==='function'){
  loadPrecomputedFloor=function(){
   try{
    // Soulseeker runs always have selectedDungeonWorld unset too (see
-   // soulseeker-dungeons.js's own header comment) but use their own floor
-   // numbering/pacing - only apply to normal procedurally-generated runs.
-   if(!selectedDungeonWorld&&!game?.forcedFloorArchetype&&!game?.player?.soulseeker&&pisoRuntimeCatalog.length){
-    if(game.floor===1)game._pisoUsedThisRun=false; // fresh run: reset the best-effort "at least one" guarantee
+   // soulseeker-dungeons.js's own header comment) and CAN use custom pisos -
+   // just never on a floor%3===0 floor, since Soulseek guarantees those as a
+   // megaboss/bossrush floor (see buildFloorPlan's wrap in
+   // soulseeker-dungeons.js) and a custom piso carries no guaranteed boss.
+   const isSoulseeker=!!game?.player?.soulseeker;
+   if(!selectedDungeonWorld&&!game?.forcedFloorArchetype&&!(isSoulseeker&&game.floor%3===0)&&pisoRuntimeCatalog.length){
+    if(game.floor===1){game._pisoUsedThisRun=false;game._pisoLastForcedFloor=0} // fresh run: reset the best-effort "at least one" guarantee
     const eligible=pisoEligibleForFloor(game.floor);
     if(eligible.length){
      const total=(typeof worldParams==='function'?worldParams().floors:null)||DUNGEON_FLOORS;
@@ -1548,7 +1551,12 @@ if(typeof loadPrecomputedFloor==='function'){
      // per eligible floor. Not a mathematical guarantee for every possible
      // `nivel` configuration (e.g. one only matching the very last floor),
      // just a reasonable best effort.
-     const mustForce=!game._pisoUsedThisRun&&game.floor===total-1;
+     // Soulseeker runs never end at `total`, so re-arm this guarantee every
+     // `total` floors instead of once per run (game._pisoLastForcedFloor
+     // tracks the last floor it fired on).
+     const mustForce=isSoulseeker
+      ?(!game._pisoUsedThisRun||game.floor-(game._pisoLastForcedFloor||0)>=total)
+      :(!game._pisoUsedThisRun&&game.floor===total-1);
      if(mustForce||Math.random()<.4){
       const entry=eligible[Math.floor(Math.random()*eligible.length)];
       const data=pisoBuildFloorData(entry,game.floor);
@@ -1557,7 +1565,7 @@ if(typeof loadPrecomputedFloor==='function'){
       let ok=false;
       try{ok=pisoOrigLoadPrecomputedFloor()}finally{selectedDungeonWorld=savedWorld}
       if(ok){
-       game._pisoUsedThisRun=true;
+       game._pisoUsedThisRun=true;if(mustForce)game._pisoLastForcedFloor=game.floor;
        // loadPrecomputedFloor() always sizes game.seen off the fixed ROWS/
        // COLS constants (matching every OTHER precomputed floor, which are
        // always exactly that size); a custom piso can be any size, so redo
