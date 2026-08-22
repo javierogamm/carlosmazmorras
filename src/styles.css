@@ -185,6 +185,13 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .quickPotionBadge{position:absolute;left:8px;bottom:6px;z-index:35;width:34px;height:34px;padding:0;border:2px solid #ffc35a;background:#0c0910dd;cursor:pointer;box-shadow:0 2px 8px #000b}
 .quickPotionBadge canvas{width:100%;height:100%;display:block;image-rendering:auto}
 @media(max-width:600px){.quickPotionBadge{width:30px;height:30px;left:6px;bottom:4px}}
+/* Same idea as .quickPotionBadge, sat next to it, for a favorited activable
+   (trinket/ring) - marked from the Activables tab (.quickActivableMiniBtn),
+   only one at a time. Dims and ignores clicks while on cooldown. */
+.quickActivableBadge{position:absolute;left:48px;bottom:6px;z-index:35;width:34px;height:34px;padding:0;border:2px solid #ffc35a;background:#0c0910dd;cursor:pointer;box-shadow:0 2px 8px #000b}
+.quickActivableBadge canvas{width:100%;height:100%;display:block;image-rendering:auto}
+.quickActivableBadge.onCooldown{opacity:.5;cursor:default}
+@media(max-width:600px){.quickActivableBadge{width:30px;height:30px;left:42px;bottom:4px}}
 
 /* Long-press-and-drag basic attack (src/touch.js): a flowing dashed arrow
    from the hero to the finger, red/green depending on whether the cell under
@@ -223,6 +230,7 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .gameOverStats b{display:block;font-size:26px;color:#ffd68b;margin-top:4px}
 .enemyTheme{color:#d6b7e6;font-size:12px;margin-bottom:6px}
 .skillCard.locked{opacity:.5}
+.skillSlotBtn.locked{opacity:.4;color:#8a8a8a;border-color:#555;cursor:not-allowed}
 .equippedTag{color:#7ee2a2}
 @media(max-width:960px){
  #app{padding:6px 6px 112px}

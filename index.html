@@ -52,6 +52,7 @@
 <div class="inspectPopup" id="inspectPopup"><button class="closeInspect" id="closeInspect">×</button><div id="inspectContent"></div></div>
 <div class="targetHint hidden" id="targetHint"></div>
 <div class="quickPotionBadge hidden" id="quickPotionBadge" title="Poción de uso rápido"><canvas width="48" height="48" id="quickPotionIcon"></canvas></div>
+<div class="quickActivableBadge hidden" id="quickActivableBadge" title="Activable de uso rápido"><canvas width="48" height="48" id="quickActivableIcon"></canvas></div>
 <div class="apBadge hidden" id="apBadge">PA <b id="apBadgeValue">0</b></div>
 <div class="boardActionBar" id="boardActionBar">
  <button type="button" class="mobileSkill waitSkill" id="passTurnSkillBtn" title="Pasar turno"><span class="icon">⏳</span></button>
@@ -622,7 +623,7 @@
     <h2>Editor de cofres del tesoro</h2>
     <p class="small">Cada cofre generado se elige exclusivamente de <code>config_chest</code>, que fija su tipo. El tier se sortea al iniciar el piso con pesos dependientes del nivel del personaje; el objeto concreto se sortea solo al abrir.</p>
     <div class="configForm">
-     <label>Tipo <select id="configChestType"><option value="equipment">Equipo</option><option value="weapon">Arma</option><option value="potion">Poción</option><option value="skill">Habilidad</option></select></label>
+     <label>Tipo <select id="configChestType"><option value="equipment">Equipo</option><option value="weapon">Arma</option><option value="potion">Poción</option></select></label>
      <label id="configChestSlotFilterWrap">Slot <select id="configChestSlotFilter"><option value="all">Todas</option><option value="head">Cabeza</option><option value="chest">Pecho</option><option value="hands">Manos</option><option value="legs">Piernas</option><option value="boots">Botas</option><option value="neck">Cuello</option><option value="ring1">Anillo I</option><option value="ring2">Anillo II</option><option value="trinket1">Trinket I</option><option value="trinket2">Trinket II</option></select></label>
      <label id="configChestWeaponTypeFilterWrap">Tipo de arma <select id="configChestWeaponTypeFilter"><option value="all">Todas</option></select></label>
      <label>Nombre <input id="configChestName" maxlength="80" placeholder="Cofre de fuego..."></label>
