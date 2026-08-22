@@ -715,6 +715,8 @@
     <div class="configForm">
      <label>Nombre <input id="pisoName" maxlength="80" placeholder="Cripta olvidada..."></label>
      <label>Nivel(es) de aparición <input id="pisoNivel" maxlength="60" placeholder="Ej: 3 · 3,5,8-10 · vacío = cualquiera"></label>
+     <label>Ancho (tiles) <input id="pisoCols" type="number" min="9" max="99" value="49"></label>
+     <label>Alto (tiles) <input id="pisoRows" type="number" min="9" max="99" value="49"></label>
     </div>
     <div class="configItemActions">
      <button class="start" id="savePisoBtn" type="button">GUARDAR PISO</button>
@@ -752,6 +754,7 @@
      <div class="pisoDragGhost hidden" id="pisoDragGhost"></div>
     </div>
     <div id="pisoSelectionMenu" class="pisoSelectionMenu hidden"></div>
+    <div id="pisoMultiSelectBar" class="pisoInspector hidden"></div>
     <div id="pisoInspector" class="pisoInspector hidden"></div>
    </section>
    <section class="panel pisoPalettePanel">
@@ -764,6 +767,7 @@
      <button type="button" data-piso-palette="keys">Llaves</button>
      <button type="button" data-piso-palette="traps">Trampas</button>
      <button type="button" data-piso-palette="doors">Puertas</button>
+     <button type="button" data-piso-palette="salas">Salas</button>
     </div>
     <label>Tileset de referencia <select id="pisoTilesetSelect"></select></label>
     <p class="small">Solo para previsualizar en el editor: en juego el piso usará el sistema habitual de tilesets del motor.</p>

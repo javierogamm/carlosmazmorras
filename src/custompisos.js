@@ -73,12 +73,18 @@ function pisoNewDraft(cols,rows){
  return {
   id:null,name:'',nivel:'',cols,rows,
   grid:Array.from({length:rows},()=>Array(cols).fill(1)),
-  tileRefs:{},doors:[],assets:[],enemies:[],chests:[],keys:[],traps:[],salas:[],
+  tileRefs:{},doors:[],assets:[],enemies:[],chests:[],keys:[],traps:[],altars:[],salas:[],
   spawn:null,stairs:null,interiors:{}
  };
 }
+// Piso size is only hard-capped for sanity (huge grids get slow to paint/
+// render); it is NOT tied to the engine's own COLS/ROWS constants - camera(),
+// blocked() and reveal() all size themselves off game.map's own dimensions
+// (see mapDimensions() in game.js), so a differently-sized custom piso works
+// live too. See the loadPrecomputedFloor wrap near the bottom of this file
+// for the one thing that still needs a manual fix-up: game.seen's size.
 function pisoResizeGrid(draft,cols,rows){
- cols=pisoClamp(Math.round(cols)||draft.cols,9,49);rows=pisoClamp(Math.round(rows)||draft.rows,9,49);
+ cols=pisoClamp(Math.round(cols)||draft.cols,9,99);rows=pisoClamp(Math.round(rows)||draft.rows,9,99);
  const grid=Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>draft.grid[y]?.[x]??1));
  const tileRefs={};
  for(const k in draft.tileRefs){const [x,y]=k.split(',').map(Number);if(x<cols&&y<rows)tileRefs[k]=draft.tileRefs[k]}
@@ -86,7 +92,7 @@ function pisoResizeGrid(draft,cols,rows){
  draft.cols=cols;draft.rows=rows;draft.grid=grid;draft.tileRefs=tileRefs;
  draft.doors=draft.doors.filter(inBounds);draft.assets=draft.assets.filter(a=>a.x+a.cols<=cols&&a.y+a.rows<=rows);
  draft.enemies=draft.enemies.filter(inBounds);draft.chests=draft.chests.filter(inBounds);
- draft.keys=draft.keys.filter(inBounds);draft.traps=draft.traps.filter(inBounds);
+ draft.keys=draft.keys.filter(inBounds);draft.traps=draft.traps.filter(inBounds);draft.altars=draft.altars.filter(inBounds);
  draft.salas=draft.salas.filter(s=>s.x+s.w<=cols&&s.y+s.h<=rows);
  if(draft.spawn&&!inBounds(draft.spawn))draft.spawn=null;
  if(draft.stairs&&!inBounds(draft.stairs))draft.stairs=null;
@@ -98,7 +104,7 @@ function pisoDraftToColumns(draft){
   tiles_doors:{cols:draft.cols,rows:draft.rows,grid:draft.grid,tileRefs:draft.tileRefs,doors:draft.doors,spawn:draft.spawn,stairs:draft.stairs,tilesetId:draft.tilesetId||null},
   assets:draft.assets,
   enemigos:draft.enemies,
-  chests_keys_traps:{chests:draft.chests,keys:draft.keys,traps:draft.traps},
+  chests_keys_traps:{chests:draft.chests,keys:draft.keys,traps:draft.traps,altars:draft.altars},
   interiors:Object.fromEntries(Object.entries(draft.interiors||{}).map(([iid,sub])=>[iid,pisoDraftToColumns(sub)])),
   salas:draft.salas
  };
@@ -117,6 +123,7 @@ function pisoColumnsToDraft(row){
  draft.chests=Array.isArray(ckt.chests)?ckt.chests:[];
  draft.keys=Array.isArray(ckt.keys)?ckt.keys:[];
  draft.traps=Array.isArray(ckt.traps)?ckt.traps:[];
+ draft.altars=Array.isArray(ckt.altars)?ckt.altars:[];
  draft.salas=Array.isArray(row.salas)?row.salas:[];
  draft.interiors={};
  for(const [iid,sub] of Object.entries(row.interiors||{}))
@@ -137,6 +144,10 @@ const PISO_CELL_BASE=22;
 let pisoSelectedInstance=null; // {kind,iid} for the inspector
 let pisoSelectionRect=null; // {x0,y0,x1,y1} grid coords, while/after marquee drag
 let pisoEnemyIconRequests=new Set();
+let pisoBrushSize=1; // 1/2/3, centered NxN brush for tile/wall/door painting
+let pisoDragPreview=null; // {x,y,cols,rows,valid} live asset-footprint highlight while dragging
+let pisoMultiSelection=new Set(); // Set of "kind:iid" strings, used by the multiselect tool
+let pisoClipboard=null; // {anchorX,anchorY,items:[{kind,obj}]} from copy/cut
 
 function pisoCurrentDraft(){
  let d=pisoRootDraft;
@@ -145,6 +156,46 @@ function pisoCurrentDraft(){
   d=d.interiors[ctx.assetIid];
  }
  return d;
+}
+
+// ============================================================================
+// UNDO / REDO
+// ============================================================================
+// Whole-tree snapshots (JSON strings of pisoDraftToColumns(pisoRootDraft)) are
+// simple and correct for a document this size, and cover interior edits too
+// since interiors nest inside the same root draft. Call pisoPushHistory()
+// once at the START of a mutating gesture/action (not per intermediate step -
+// a whole paint stroke or drag is one undo step), never after the fact.
+let pisoUndoStack=[],pisoRedoStack=[];
+const PISO_HISTORY_LIMIT=60;
+function pisoPushHistory(){
+ try{
+  pisoUndoStack.push(JSON.stringify(pisoDraftToColumns(pisoRootDraft)));
+  if(pisoUndoStack.length>PISO_HISTORY_LIMIT)pisoUndoStack.shift();
+  pisoRedoStack.length=0;
+  pisoSyncHistoryButtons();
+ }catch(e){/* history is a convenience, never block the actual edit over it */}
+}
+function pisoRestoreSnapshot(json){
+ const parsed=JSON.parse(json);
+ pisoRootDraft=pisoColumnsToDraft(parsed);
+ pisoSelectedInstance=null;pisoMultiSelection.clear();pisoSelectionRect=null;pisoDragPreview=null;
+ pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();pisoSyncHistoryButtons();
+}
+function pisoUndo(){
+ if(!pisoUndoStack.length)return;
+ pisoRedoStack.push(JSON.stringify(pisoDraftToColumns(pisoRootDraft)));
+ pisoRestoreSnapshot(pisoUndoStack.pop());
+}
+function pisoRedo(){
+ if(!pisoRedoStack.length)return;
+ pisoUndoStack.push(JSON.stringify(pisoDraftToColumns(pisoRootDraft)));
+ pisoRestoreSnapshot(pisoRedoStack.pop());
+}
+function pisoSyncHistoryButtons(){
+ const u=document.getElementById('pisoUndoBtn'),r=document.getElementById('pisoRedoBtn');
+ if(u)u.disabled=!pisoUndoStack.length;
+ if(r)r.disabled=!pisoRedoStack.length;
 }
 function pisoInInterior(){return pisoContextStack.length>0}
 
@@ -217,12 +268,12 @@ function pisoBuildPaletteEntries(){
  }
  if(cat==='assets'){
   const list=typeof listConfigAssets==='function'?listConfigAssets():[];
-  return list.map(a=>({cat:'assets',kind:'asset',asset:a,label:a.name,icon:a.icon}));
+  return list.map(a=>({cat:'assets',kind:'asset',asset:a,label:a.name,icon:a.icon,group:a.ambiente||'Sin ambiente'}));
  }
  if(cat==='enemies'){
   const families=typeof normalizedEnemyFamilies==='function'?normalizedEnemyFamilies():[];
   const out=[];
-  for(const fam of families)for(const en of fam.enemies||[])out.push({cat:'enemies',kind:'enemy',enemy:en,family:fam.name,label:`${en.name} (${fam.name})`,icon:en.icon});
+  for(const fam of families)for(const en of fam.enemies||[])out.push({cat:'enemies',kind:'enemy',enemy:en,family:fam.name,label:en.name,icon:en.icon,group:fam.name});
   return out;
  }
  if(cat==='chests'){
@@ -230,7 +281,30 @@ function pisoBuildPaletteEntries(){
  }
  if(cat==='keys')return [{cat:'keys',kind:'key',label:'Llave',glyph:'🔑'}];
  if(cat==='traps')return [{cat:'traps',kind:'trap',label:'Trampa',glyph:'☠️'}];
+ if(cat==='salas')return ROOM_ARCHETYPES.map(rt=>({cat:'salas',kind:'sala',roomType:rt,label:rt.label,color:rt.color,glyph:'▦'}));
  return [];
+}
+function pisoBuildPaletteRow(entry,idx){
+ const row=document.createElement('div');
+ row.className='pisoPaletteItem';row.dataset.pisoEntryIdx=String(idx);
+ if(pisoActiveEntry===entry)row.classList.add('active');
+ const thumb=document.createElement('div');thumb.className='pisoPaletteThumb';
+ if(entry.icon)thumb.appendChild(pisoIconCanvas(entry.icon,30));
+ else if(entry.glyph)thumb.textContent=entry.glyph;
+ else if(entry.color){thumb.style.background=entry.color}
+ else thumb.textContent='?';
+ const name=document.createElement('div');name.className='pisoPaletteName';
+ name.innerHTML=`<b>${(entry.label||'').replace(/</g,'&lt;')}</b>`+(entry.kind==='wall'?'<span>Muro · '+(entry.tile?.direction||'auto')+'</span>':entry.kind==='asset'?`<span>${entry.asset.cols}×${entry.asset.rows}</span>`:'');
+ row.appendChild(thumb);row.appendChild(name);
+ pisoWirePaletteDrag(row,entry);
+ // lazily fetch icons the catalog doesn't ship in its light/list form
+ if(entry.kind==='asset'&&!entry.icon&&typeof fetchConfigWorldObjectDetail==='function'){
+  fetchConfigWorldObjectDetail(entry.asset.key).then(row2=>{if(row2?.icon){entry.icon=row2.icon;if(pisoActivePaletteTab==='assets')pisoRenderPalette()}}).catch(()=>{});
+ }
+ if(entry.kind==='enemy'&&!entry.icon&&entry.enemy?.id){
+  pisoRequestEnemyIcon(entry.enemy.id,hex=>{entry.icon=hex;if(pisoActivePaletteTab==='enemies')pisoRenderPalette()});
+ }
+ return row;
 }
 function pisoRenderPalette(){
  const root=document.getElementById('pisoPaletteList');if(!root)return;
@@ -240,28 +314,27 @@ function pisoRenderPalette(){
   return;
  }
  root.innerHTML='';
+ const grouped=pisoActivePaletteTab==='enemies'||pisoActivePaletteTab==='assets';
+ if(!grouped){
+  pisoPaletteEntries.forEach((entry,idx)=>root.appendChild(pisoBuildPaletteRow(entry,idx)));
+  return;
+ }
+ // Enemies grouped by family, assets grouped by "ambiente" - both as
+ // collapsible <details> (same pattern as .configSlotGroup elsewhere).
+ const groups=new Map();
  pisoPaletteEntries.forEach((entry,idx)=>{
-  const row=document.createElement('div');
-  row.className='pisoPaletteItem';row.dataset.pisoEntryIdx=String(idx);
-  if(pisoActiveEntry===entry)row.classList.add('active');
-  const thumb=document.createElement('div');thumb.className='pisoPaletteThumb';
-  if(entry.icon)thumb.appendChild(pisoIconCanvas(entry.icon,30));
-  else if(entry.glyph)thumb.textContent=entry.glyph;
-  else if(entry.color){thumb.style.background=entry.color}
-  else thumb.textContent='?';
-  const name=document.createElement('div');name.className='pisoPaletteName';
-  name.innerHTML=`<b>${(entry.label||'').replace(/</g,'&lt;')}</b>`+(entry.kind==='wall'?'<span>Muro · '+(entry.tile?.direction||'auto')+'</span>':entry.kind==='asset'?`<span>${entry.asset.cols}×${entry.asset.rows}</span>`:'');
-  row.appendChild(thumb);row.appendChild(name);
-  pisoWirePaletteDrag(row,entry);
-  root.appendChild(row);
-  // lazily fetch icons the catalog doesn't ship in its light/list form
-  if(entry.kind==='asset'&&!entry.icon&&typeof fetchConfigWorldObjectDetail==='function'){
-   fetchConfigWorldObjectDetail(entry.asset.key).then(row2=>{if(row2?.icon){entry.icon=row2.icon;if(pisoActivePaletteTab==='assets')pisoRenderPalette()}}).catch(()=>{});
-  }
-  if(entry.kind==='enemy'&&!entry.icon&&entry.enemy?.id){
-   pisoRequestEnemyIcon(entry.enemy.id,hex=>{entry.icon=hex;if(pisoActivePaletteTab==='enemies')pisoRenderPalette()});
-  }
+  const g=entry.group||'—';
+  if(!groups.has(g))groups.set(g,[]);
+  groups.get(g).push({entry,idx});
  });
+ for(const [label,items] of groups){
+  const details=document.createElement('details');details.className='configSlotGroup';details.open=groups.size<=3;
+  const summary=document.createElement('summary');summary.innerHTML=`<span>${label.replace(/</g,'&lt;')}</span><b>${items.length}</b>`;
+  const body=document.createElement('div');body.className='configSlotItems';
+  for(const {entry,idx} of items)body.appendChild(pisoBuildPaletteRow(entry,idx));
+  details.appendChild(summary);details.appendChild(body);
+  root.appendChild(details);
+ }
 }
 
 // ============================================================================
@@ -284,18 +357,24 @@ function pisoDraw(){
   if(ref?.icon)pisoDrawIconAt(ctx,ref.icon,x*cell,y*cell,cell,cell);
   ctx.strokeStyle='#00000050';ctx.lineWidth=1;ctx.strokeRect(x*cell+.5,y*cell+.5,cell-1,cell-1);
  }
- // salas outlines
- ctx.lineWidth=2;ctx.strokeStyle='#6ab7ff';ctx.font=`${Math.max(9,cell*.4)}px sans-serif`;ctx.fillStyle='#bcdcff';
+ // salas outlines, colored by archetype when the sala has one
+ ctx.lineWidth=2;ctx.font=`${Math.max(9,cell*.4)}px sans-serif`;
  for(const s of draft.salas||[]){
+  const arch=ROOM_ARCHETYPES.find(a=>a.id===s.type);
+  ctx.strokeStyle=arch?.color||'#6ab7ff';ctx.fillStyle=arch?.color||'#bcdcff';
   ctx.strokeRect(s.x*cell+2,s.y*cell+2,s.w*cell-4,s.h*cell-4);
   if(s.name)ctx.fillText(s.name,s.x*cell+5,s.y*cell+14);
  }
- // doors (map-level door tiles)
+ // doors (map-level door tiles): green=open, orange=closed unlocked, red=closed+locked
  for(const d of draft.doors||[]){
-  ctx.fillStyle=d.locked===false?'#5affa0':'#ff9d4f';
+  ctx.fillStyle=d.open?'#5affa0':(d.locked===false?'#ffcf70':'#ff6b6b');
   ctx.fillRect(d.x*cell+cell*.15,d.y*cell+cell*.15,cell*.7,cell*.7);
-  ctx.strokeStyle='#000';ctx.strokeRect(d.x*cell+cell*.15,d.y*cell+cell*.15,cell*.7,cell*.7);
+  ctx.strokeStyle=pisoSelectedInstance?.kind==='door'&&pisoSelectedInstance.iid===d.iid?'#ffc35a':'#000';
+  ctx.lineWidth=pisoSelectedInstance?.kind==='door'&&pisoSelectedInstance.iid===d.iid?3:1;
+  ctx.strokeRect(d.x*cell+cell*.15,d.y*cell+cell*.15,cell*.7,cell*.7);
  }
+ // altars (auto-placed by salas, or removed by hand)
+ for(const al of draft.altars||[])pisoDrawGlyphOrIcon(ctx,null,'⛩️',al.x*cell,al.y*cell,cell,'#ffe28a');
  // assets (multi-cell)
  for(const a of draft.assets||[]){
   ctx.fillStyle='#3c2a4a';ctx.fillRect(a.x*cell,a.y*cell,a.cols*cell,a.rows*cell);
@@ -315,11 +394,28 @@ function pisoDraw(){
  // spawn/stairs markers
  if(draft.spawn)pisoDrawMarker(ctx,draft.spawn,'🚩',cell);
  if(draft.stairs)pisoDrawMarker(ctx,draft.stairs,'🏁',cell);
+ // multi-selection outlines
+ if(pisoMultiSelection.size){
+  ctx.strokeStyle='#7cffd4';ctx.lineWidth=3;
+  for(const k of pisoMultiSelection){
+   const [kind,iid]=k.split(':'),list=pisoInstanceListFor(draft,kind),o=list?.find(x=>x.iid===iid);if(!o)continue;
+   const w=kind==='asset'?o.cols:1,h=kind==='asset'?o.rows:1;
+   ctx.strokeRect(o.x*cell+1,o.y*cell+1,w*cell-2,h*cell-2);
+  }
+ }
  // selection rectangle
  if(pisoSelectionRect){
   const r=pisoNormalizedRect(pisoSelectionRect);
   ctx.fillStyle='#ffc35a33';ctx.fillRect(r.x*cell,r.y*cell,(r.x1-r.x+1)*cell,(r.y1-r.y+1)*cell);
   ctx.strokeStyle='#ffc35a';ctx.lineWidth=2;ctx.strokeRect(r.x*cell+1,r.y*cell+1,(r.x1-r.x+1)*cell-2,(r.y1-r.y+1)*cell-2);
+ }
+ // live asset drag/reposition footprint preview
+ if(pisoDragPreview){
+  const p=pisoDragPreview;
+  ctx.fillStyle=p.valid?'#5affa055':'#ff5c5c55';
+  ctx.fillRect(p.x*cell,p.y*cell,p.cols*cell,p.rows*cell);
+  ctx.strokeStyle=p.valid?'#5affa0':'#ff5c5c';ctx.lineWidth=2;
+  ctx.strokeRect(p.x*cell+1,p.y*cell+1,p.cols*cell-2,p.rows*cell-2);
  }
  const zl=document.getElementById('pisoZoomLabel');if(zl)zl.textContent=Math.round(pisoZoom*100)+'%';
 }
@@ -346,17 +442,24 @@ function pisoInstanceAt(x,y){
  const chest=(draft.chests||[]).find(c=>c.x===x&&c.y===y);if(chest)return {kind:'chest',iid:chest.iid,obj:chest};
  const key=(draft.keys||[]).find(k=>k.x===x&&k.y===y);if(key)return {kind:'key',iid:key.iid,obj:key};
  const trap=(draft.traps||[]).find(t=>t.x===x&&t.y===y);if(trap)return {kind:'trap',iid:trap.iid,obj:trap};
+ const altar=(draft.altars||[]).find(a=>a.x===x&&a.y===y);if(altar)return {kind:'altar',iid:altar.iid,obj:altar};
  const door=(draft.doors||[]).find(d=>d.x===x&&d.y===y);if(door)return {kind:'door',iid:door.iid,obj:door};
  return null;
 }
 function pisoInstanceListFor(draft,kind){
- return {asset:draft.assets,enemy:draft.enemies,chest:draft.chests,key:draft.keys,trap:draft.traps,door:draft.doors}[kind];
+ return {asset:draft.assets,enemy:draft.enemies,chest:draft.chests,key:draft.keys,trap:draft.traps,altar:draft.altars,door:draft.doors}[kind];
 }
 function pisoRemoveInstance(kind,iid){
  const draft=pisoCurrentDraft(),list=pisoInstanceListFor(draft,kind);if(!list)return;
  const idx=list.findIndex(o=>o.iid===iid);if(idx>=0)list.splice(idx,1);
  if(kind==='asset')delete draft.interiors[iid];
  if(pisoSelectedInstance?.iid===iid)pisoSelectedInstance=null;
+ pisoMultiSelection.delete(kind+':'+iid);
+}
+// Deep-cloned copy of an instance with a fresh iid, offset by (dx,dy).
+function pisoCloneInstance(kind,obj,dx,dy){
+ const c=JSON.parse(JSON.stringify(obj));c.iid=pisoUid();c.x+=dx;c.y+=dy;
+ return c;
 }
 function pisoCanPlaceAssetAt(draft,x,y,cols,rows,ignoreIid){
  if(x<0||y<0||x+cols>draft.cols||y+rows>draft.rows)return false;
@@ -388,7 +491,42 @@ function pisoApplyTileEntry(entry,x,y){
   const existing=(draft.doors||[]).find(d=>d.x===x&&d.y===y);
   if(!existing)draft.doors.push({iid:pisoUid(),x,y,open:false,locked:true});
  }
+}
+// Applies a tile/wall/door entry to the centered pisoBrushSize×pisoBrushSize
+// block around (cx,cy) - size 1 is just the single cell, unchanged behaviour.
+// Redraws once at the end regardless of brush size, instead of letting each
+// underlying pisoApplyTileEntry() call redraw the whole grid on its own.
+function pisoApplyTileBrush(entry,cx,cy){
+ const draft=pisoCurrentDraft(),size=pisoClamp(pisoBrushSize,1,3),off=Math.floor(size/2);
+ for(let dy=-off;dy<size-off;dy++)for(let dx=-off;dx<size-off;dx++){
+  const x=cx+dx,y=cy+dy;
+  if(x<0||y<0||x>=draft.cols||y>=draft.rows)continue;
+  pisoApplyTileEntry(entry,x,y);
+ }
  pisoDraw();
+}
+// Signature used to decide which neighbouring cells the bucket considers
+// "the same" as the clicked cell: open/wall state plus the painted tile's
+// own name (or 'vacio' when nothing has been painted there yet).
+function pisoCellSignature(draft,x,y){return draft.grid[y][x]+':'+(draft.tileRefs[pisoKey(x,y)]?.name||'')}
+const PISO_BUCKET_LIMIT=4000;
+function pisoBucketFill(entry,sx,sy){
+ const draft=pisoCurrentDraft();
+ if(sx<0||sy<0||sx>=draft.cols||sy>=draft.rows)return;
+ const target=pisoCellSignature(draft,sx,sy);
+ const seenCells=new Set([pisoKey(sx,sy)]),stack=[[sx,sy]];
+ let guard=0;
+ while(stack.length&&guard<PISO_BUCKET_LIMIT){
+  const [x,y]=stack.pop();guard++;
+  pisoApplyTileEntry(entry,x,y);
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+   const nx=x+dx,ny=y+dy,k=pisoKey(nx,ny);
+   if(nx<0||ny<0||nx>=draft.cols||ny>=draft.rows||seenCells.has(k))continue;
+   seenCells.add(k);
+   if(pisoCellSignature(draft,nx,ny)===target)stack.push([nx,ny]);
+  }
+ }
+ if(guard>=PISO_BUCKET_LIMIT)pisoSetStatus('Relleno detenido: el hueco era demasiado grande (límite '+PISO_BUCKET_LIMIT+' casillas).');
 }
 function pisoPlaceInstance(entry,x,y){
  const draft=pisoCurrentDraft();
@@ -408,6 +546,8 @@ function pisoPlaceInstance(entry,x,y){
  }else if(entry.kind==='trap'){
   if(draft.grid[y][x]!==0){pisoSetStatus('Coloca trampas sobre suelo.');return}
   draft.traps.push({iid:pisoUid(),x,y,dmgDice:'1d6+2',effects:[]});
+ }else if(entry.kind==='sala'){
+  pisoPlaceDefaultRoom(entry.roomType,x,y);
  }
  pisoSetStatus('');pisoDraw();
 }
@@ -466,19 +606,28 @@ function pisoWirePaletteDrag(row,entry){
      ghost.style.left=e.clientX+'px';ghost.style.top=e.clientY+'px';
     }
    },
-   onMove:ev=>{if(ghost){ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px'}},
+   onMove:ev=>{
+    if(ghost){ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px'}
+    if(entry.cat==='assets'){
+     const c=pisoCellFromPoint(ev.clientX,ev.clientY);
+     pisoDragPreview=c?{x:c.x,y:c.y,cols:entry.asset.cols,rows:entry.asset.rows,valid:pisoCanPlaceAssetAt(pisoCurrentDraft(),c.x,c.y,entry.asset.cols,entry.asset.rows)}:null;
+     pisoDraw();
+    }
+   },
    onEnd:(ev,completed,moved)=>{
     if(ghost)ghost.classList.add('hidden');
-    if(!completed)return;
+    pisoDragPreview=null;
+    if(!completed){pisoDraw();return}
     const cell=moved?pisoCellFromPoint(ev.clientX,ev.clientY):null;
     if(cell){
      pisoActiveEntry=entry;pisoActivePaletteTab=entry.cat;
-     if(entry.cat==='tiles'||entry.cat==='doors')pisoApplyTileEntry(entry,cell.x,cell.y);
+     pisoPushHistory();
+     if(entry.cat==='tiles'||entry.cat==='doors')pisoApplyTileBrush(entry,cell.x,cell.y);
      else pisoPlaceInstance(entry,cell.x,cell.y);
     }else{
      // plain click (or an aborted drag): select this entry as the active
      // "brush" so clicking/painting the canvas directly keeps using it.
-     pisoActiveEntry=entry;pisoTool='paint';pisoSyncToolButtons();pisoRenderPalette();
+     pisoActiveEntry=entry;pisoTool=entry.cat==='salas'?'room':'paint';pisoSyncToolButtons();pisoRenderPalette();pisoDraw();
     }
    }
   });
@@ -495,28 +644,107 @@ function pisoCellFromPoint(clientX,clientY){
  return {x,y};
 }
 
+// Every instance kind whose footprint the given rect touches (assets use
+// their full cols×rows box; everything else is a single cell). Doors are
+// deliberately excluded from multi-select: they stay pinned to the grid
+// cell they were painted on (see pisoWireCanvas's paint-tool door branch),
+// so they can't be dragged/moved as part of a group either.
+function pisoInstancesInRect(draft,r){
+ const out=[];
+ const test=(kind,list)=>{
+  for(const o of list||[]){
+   const w=kind==='asset'?o.cols:1,h=kind==='asset'?o.rows:1;
+   if(o.x<r.x1+1&&o.x+w>r.x&&o.y<r.y1+1&&o.y+h>r.y)out.push({kind,iid:o.iid,obj:o});
+  }
+ };
+ test('asset',draft.assets);test('enemy',draft.enemies);test('chest',draft.chests);
+ test('key',draft.keys);test('trap',draft.traps);test('altar',draft.altars);
+ return out;
+}
 function pisoWireCanvas(){
  const canvas=pisoCanvasEl();if(!canvas)return;
  canvas.addEventListener('pointerdown',e=>{
   if(e.button!==undefined&&e.button>0)return;
   const startCell=pisoCellFromPoint(e.clientX,e.clientY);if(!startCell)return;
   const panEl=document.getElementById('pisoCanvasWrap');
-  if(pisoTool==='select'||pisoTool==='room'){
+  if(pisoTool==='multiselect'){
+   const rawHit=pisoInstanceAt(startCell.x,startCell.y);
+   const hit=rawHit?.kind==='door'?null:rawHit; // doors don't join multi-select, see pisoInstancesInRect's comment
+   if(rawHit?.kind==='door'){
+    pisoBeginPointerDrag(e,{panEl,onStart:()=>{},onMove:()=>{},onEnd:(ev,completed,moved)=>{if(!moved)pisoSelectInstance('door',rawHit.iid)}});
+    return;
+   }
+   const hitKey=hit?hit.kind+':'+hit.iid:null;
+   if(hit&&pisoMultiSelection.has(hitKey)){
+    // already-selected instance: drag moves the whole group together
+    const draft=pisoCurrentDraft();
+    const group=[...pisoMultiSelection].map(k=>{const [kind,iid]=k.split(':');const list=pisoInstanceListFor(draft,kind);const obj=list?.find(o=>o.iid===iid);return obj?{kind,obj,startX:obj.x,startY:obj.y}:null}).filter(Boolean);
+    let historyPushed=false;
+    pisoBeginPointerDrag(e,{
+     panEl,onStart:()=>{},
+     onMove:ev=>{
+      const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(!c)return;
+      const dx=c.x-startCell.x,dy=c.y-startCell.y;
+      if(!historyPushed){pisoPushHistory();historyPushed=true}
+      for(const g of group){g.obj.x=g.startX+dx;g.obj.y=g.startY+dy}
+      pisoDraw();
+     },
+     onEnd:()=>pisoDraw()
+    });
+    return;
+   }
+   pisoBeginPointerDrag(e,{
+    panEl,
+    onStart:()=>{pisoSelectionRect={x0:startCell.x,y0:startCell.y,x1:startCell.x,y1:startCell.y};pisoDraw()},
+    onMove:ev=>{const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c){pisoSelectionRect.x1=c.x;pisoSelectionRect.y1=c.y;pisoDraw()}},
+    onEnd:(ev,completed,moved)=>{
+     const r=pisoNormalizedRect(pisoSelectionRect||{x0:startCell.x,y0:startCell.y,x1:startCell.x,y1:startCell.y});
+     pisoSelectionRect=null;
+     if(!moved&&hit){pisoMultiSelection.add(hitKey)} // single click on a not-yet-selected instance: add it
+     else{const found=pisoInstancesInRect(pisoCurrentDraft(),r);if(found.length)for(const f of found)pisoMultiSelection.add(f.kind+':'+f.iid);else pisoMultiSelection.clear()}
+     pisoRenderMultiSelectBar();pisoDraw();
+    }
+   });
+   return;
+  }
+  if(pisoTool==='select'){
+   const hit=pisoInstanceAt(startCell.x,startCell.y);
+   if(hit){
+    pisoBeginPointerDrag(e,{panEl,onStart:()=>{},onMove:()=>{},onEnd:(ev,completed,moved)=>{if(!moved)pisoSelectInstance(hit.kind,hit.iid)}});
+    return;
+   }
    pisoBeginPointerDrag(e,{
     panEl,
     onStart:()=>{pisoSelectionRect={x0:startCell.x,y0:startCell.y,x1:startCell.x,y1:startCell.y};pisoHideSelectionMenu();pisoDraw()},
     onMove:ev=>{const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c){pisoSelectionRect.x1=c.x;pisoSelectionRect.y1=c.y;pisoDraw()}},
-    onEnd:()=>{if(pisoTool==='select')pisoShowSelectionMenu();else pisoPromptRoomName()}
+    onEnd:()=>pisoShowSelectionMenu()
+   });
+   return;
+  }
+  if(pisoTool==='room'){
+   pisoBeginPointerDrag(e,{
+    panEl,
+    onStart:()=>{pisoSelectionRect={x0:startCell.x,y0:startCell.y,x1:startCell.x,y1:startCell.y};pisoHideSelectionMenu();pisoDraw()},
+    onMove:ev=>{const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c){pisoSelectionRect.x1=c.x;pisoSelectionRect.y1=c.y;pisoDraw()}},
+    onEnd:()=>{
+     if(pisoActiveEntry?.cat==='salas'){const r=pisoNormalizedRect(pisoSelectionRect);pisoSelectionRect=null;pisoFinishRoomFromCatalog(pisoActiveEntry.roomType,r)}
+     else pisoPromptRoomName();
+    }
    });
    return;
   }
   if(pisoTool==='erase'){
    pisoBeginPointerDrag(e,{
     panEl,
-    onStart:()=>pisoEraseAt(startCell.x,startCell.y),
+    onStart:()=>{pisoPushHistory();pisoEraseAt(startCell.x,startCell.y)},
     onMove:ev=>{const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c)pisoEraseAt(c.x,c.y)},
     onEnd:()=>{}
    });
+   return;
+  }
+  if(pisoTool==='bucket'){
+   if(!pisoActiveEntry||(pisoActiveEntry.cat!=='tiles'&&pisoActiveEntry.cat!=='doors')){pisoSetStatus('Elige un tile o puerta de la paleta primero.');return}
+   pisoBeginPointerDrag(e,{panEl,onStart:()=>{pisoPushHistory();pisoBucketFill(pisoActiveEntry,startCell.x,startCell.y)},onMove:()=>{},onEnd:()=>{}});
    return;
   }
   if(pisoTool==='spawn'||pisoTool==='stairs'){
@@ -532,25 +760,35 @@ function pisoWireCanvas(){
    return;
   }
   if(hit){
+   let historyPushed=false;
    pisoBeginPointerDrag(e,{
     panEl,
     onStart:()=>{},
-    onMove:ev=>{const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(!c)return;
-     if(hit.kind==='asset'){if(!pisoCanPlaceAssetAt(pisoCurrentDraft(),c.x,c.y,hit.obj.cols,hit.obj.rows,hit.iid))return}
-     else if(pisoCurrentDraft().grid[c.y][c.x]!==0)return;
+    onMove:ev=>{
+     const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(!c)return;
+     if(hit.kind==='asset'){
+      const valid=pisoCanPlaceAssetAt(pisoCurrentDraft(),c.x,c.y,hit.obj.cols,hit.obj.rows,hit.iid);
+      pisoDragPreview={x:c.x,y:c.y,cols:hit.obj.cols,rows:hit.obj.rows,valid};
+      if(!valid){pisoDraw();return}
+     }else if(pisoCurrentDraft().grid[c.y][c.x]!==0)return;
+     if(!historyPushed){pisoPushHistory();historyPushed=true}
      hit.obj.x=c.x;hit.obj.y=c.y;pisoDraw();
     },
-    onEnd:(ev,completed,moved)=>{if(!moved)pisoSelectInstance(hit.kind,hit.iid)}
+    onEnd:(ev,completed,moved)=>{pisoDragPreview=null;if(!moved)pisoSelectInstance(hit.kind,hit.iid);else pisoDraw()}
    });
    return;
   }
   if(!pisoActiveEntry){pisoSetStatus('Elige algo de la paleta primero.');return}
   pisoBeginPointerDrag(e,{
    panEl,
-   onStart:()=>{if(pisoActiveEntry.cat==='tiles'||pisoActiveEntry.cat==='doors')pisoApplyTileEntry(pisoActiveEntry,startCell.x,startCell.y);else pisoPlaceInstance(pisoActiveEntry,startCell.x,startCell.y)},
+   onStart:()=>{
+    pisoPushHistory();
+    if(pisoActiveEntry.cat==='tiles'||pisoActiveEntry.cat==='doors')pisoApplyTileBrush(pisoActiveEntry,startCell.x,startCell.y);
+    else pisoPlaceInstance(pisoActiveEntry,startCell.x,startCell.y);
+   },
    onMove:ev=>{
     if(pisoActiveEntry.cat!=='tiles'&&pisoActiveEntry.cat!=='doors')return; // instances only place once per stroke
-    const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c)pisoApplyTileEntry(pisoActiveEntry,c.x,c.y);
+    const c=pisoCellFromPoint(ev.clientX,ev.clientY);if(c)pisoApplyTileBrush(pisoActiveEntry,c.x,c.y);
    },
    onEnd:()=>{}
   });
@@ -568,7 +806,58 @@ function pisoEraseAt(x,y){
 function pisoPlaceMarker(kind,x,y){
  const draft=pisoCurrentDraft();
  if(draft.grid[y][x]!==0){pisoSetStatus('El '+(kind==='spawn'?'punto de entrada':'punto de salida')+' debe ir sobre una casilla de suelo.');return}
+ pisoPushHistory();
  draft[kind]={x,y};pisoSetStatus('');pisoDraw();
+}
+
+// ============================================================================
+// SALAS (room archetypes) - picking one from the palette and drawing a room
+// with it tags draft.salas with a type AND, for the three archetypes that
+// have a real in-game altar counterpart, auto-places the matching activable
+// (draft.altars, rendered/consumed exactly like a normal altar - see
+// useAltar() in game.js: kind 'disenchant' opens the craft modal, kind
+// 'soulmerchant' the soul shop, anything else is a heal/shield/power buff).
+// ============================================================================
+const ROOM_ARCHETYPES=[
+ {id:'rest',label:'Descanso',color:'#5fd97a',altar:'heal'},
+ {id:'craft',label:'Creador (forja)',color:'#7ad9d9',altar:'disenchant'},
+ {id:'merchant',label:'Comerciante',color:'#d7a72e',altar:'soulmerchant'},
+ {id:'treasure',label:'Tesoro',color:'#ffd24f',altar:null},
+ {id:'horde',label:'Horda',color:'#ff6b6b',altar:null},
+ {id:'boss',label:'Jefe',color:'#b26bff',altar:null},
+ {id:'alchemist',label:'Alquimista',color:'#7ad98f',altar:null},
+ {id:'cave',label:'Cueva',color:'#8f7355',altar:null},
+ {id:'maze',label:'Laberinto',color:'#9b9b9b',altar:null},
+ {id:'combat',label:'Combate',color:'#e08b6b',altar:null}
+];
+// Finds an open (floor) cell to drop the auto-altar on, preferring the
+// room's own center; falls back to a scan of the room, then gives up.
+function pisoFindOpenCellInRoom(draft,r){
+ if(draft.grid[r.y+Math.floor(r.h/2)]?.[r.x+Math.floor(r.w/2)]===0)return {x:r.x+Math.floor(r.w/2),y:r.y+Math.floor(r.h/2)};
+ for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)if(draft.grid[y]?.[x]===0&&!pisoInstanceAt(x,y))return {x,y};
+ return null;
+}
+function pisoApplyRoomArchetype(roomType,rect){
+ const draft=pisoCurrentDraft();
+ const room={x:rect.x,y:rect.y,w:rect.x1-rect.x+1,h:rect.y1-rect.y+1,name:roomType.label,type:roomType.id};
+ draft.salas.push(room);
+ if(roomType.altar){
+  const cell=pisoFindOpenCellInRoom(draft,room);
+  if(cell)draft.altars.push({iid:pisoUid(),x:cell.x,y:cell.y,kind:roomType.altar,used:false});
+  else pisoSetStatus('Sala "'+roomType.label+'" definida, pero no había suelo libre para el activable: colócalo a mano.');
+ }
+}
+function pisoFinishRoomFromCatalog(roomType,rect){
+ pisoPushHistory();
+ pisoApplyRoomArchetype(roomType,rect);
+ pisoDraw();
+}
+// Single-cell drop from the palette (no rectangle drawn): a small default
+// footprint centered on the drop point.
+function pisoPlaceDefaultRoom(roomType,x,y){
+ const draft=pisoCurrentDraft(),w=5,h=5;
+ const rx=pisoClamp(x-Math.floor(w/2),0,Math.max(0,draft.cols-w)),ry=pisoClamp(y-Math.floor(h/2),0,Math.max(0,draft.rows-h));
+ pisoApplyRoomArchetype(roomType,{x:rx,y:ry,x1:Math.min(draft.cols,rx+w)-1,y1:Math.min(draft.rows,ry+h)-1});
 }
 
 // ---- marquee "place on selection" menu ------------------------------------
@@ -584,7 +873,7 @@ function pisoShowSelectionMenu(){
  menu.style.top=Math.round(rect.top+r.y*cell*scaleY)+'px';
  const w=r.x1-r.x+1,h=r.y1-r.y+1;
  menu.innerHTML=`<div class="small">Selección ${w}×${h}</div>`;
- const addBtn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>{fn();pisoHideSelectionMenu();pisoSelectionRect=null;pisoDraw()};menu.appendChild(b)};
+ const addBtn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>{pisoPushHistory();fn();pisoHideSelectionMenu();pisoSelectionRect=null;pisoDraw()};menu.appendChild(b)};
  if(pisoActiveEntry&&(pisoActiveEntry.cat==='tiles'||pisoActiveEntry.cat==='doors'))
   addBtn('Rellenar con «'+(pisoActiveEntry.label||'')+'»',()=>{for(let y=r.y;y<=r.y1;y++)for(let x=r.x;x<=r.x1;x++)pisoApplyTileEntry(pisoActiveEntry,x,y)});
  addBtn('Vaciar (muro)',()=>{const draft=pisoCurrentDraft();for(let y=r.y;y<=r.y1;y++)for(let x=r.x;x<=r.x1;x++){const hit=pisoInstanceAt(x,y);if(hit)pisoRemoveInstance(hit.kind,hit.iid);draft.grid[y][x]=1;delete draft.tileRefs[pisoKey(x,y)]}});
@@ -598,6 +887,7 @@ async function pisoPromptRoomName(){
  const name=await uiTextPrompt('Nombre de la sala (solo organizativo):','Sala');
  pisoSelectionRect=null;pisoHideSelectionMenu();
  if(name===null||name===undefined){pisoDraw();return}
+ pisoPushHistory();
  pisoCurrentDraft().salas.push({x:r.x,y:r.y,w:r.x1-r.x+1,h:r.y1-r.y+1,name:name||'Sala'});
  pisoDraw();
 }
@@ -626,26 +916,31 @@ function pisoRenderInspector(){
  }else if(kind==='asset'){
   const isDoor=!!(obj.door&&window.DungeonInteriors?.parseDoor(obj.door,obj.cols,obj.rows));
   html+=`<p class="small">${obj.name} · ${obj.cols}×${obj.rows}</p>`;
-  if(isDoor&&!pisoInInterior())html+='<button type="button" id="pisoOpenInterior">Editar interior de esta puerta →</button>';
+  if(isDoor&&!pisoInInterior())html+=`<button type="button" id="pisoOpenInterior">${draft.interiors?.[obj.iid]?'Editar sala interior →':'Definir sala interior →'}</button>`;
   else if(isDoor)html+='<p class="small">Los interiores no pueden anidarse más de un nivel.</p>';
  }else if(kind==='enemy'){
   html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoEnemyBoss" ${obj.boss?'checked':''}> Es un boss (nivel/estadísticas de jefe)</label>`;
  }else if(kind==='chest'){
   html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoChestLocked" ${obj.locked?'checked':''}> Cofre cerrado (requiere llave)</label>`;
  }else if(kind==='door'){
-  html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoDoorLocked" ${obj.locked!==false?'checked':''}> Puerta cerrada (requiere llave)</label>`;
+  html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoDoorOpen" ${obj.open?'checked':''}> Abierta (se puede cruzar sin abrirla)</label>
+   <label class="tileRotateLabel"><input type="checkbox" id="pisoDoorLocked" ${obj.locked!==false?'checked':''}> Cerrada con llave (hace falta una llave para abrirla)</label>`;
+ }else if(kind==='altar'){
+  html+=`<p class="small">Activable de sala (${ROOM_ARCHETYPES.find(r=>r.altar===obj.kind)?.label||obj.kind}). Se generó solo al definir la sala; bórralo si no lo quieres.</p>`;
  }
  html+='<div class="configItemActions"><button type="button" id="pisoDeleteInstance">ELIMINAR</button><button type="button" id="pisoCloseInspector">CERRAR</button></div>';
  root.innerHTML=html;
- document.getElementById('pisoDeleteInstance').onclick=()=>{pisoRemoveInstance(kind,obj.iid);pisoRenderInspector();pisoDraw()};
+ document.getElementById('pisoDeleteInstance').onclick=()=>{pisoPushHistory();pisoRemoveInstance(kind,obj.iid);pisoRenderInspector();pisoDraw()};
  document.getElementById('pisoCloseInspector').onclick=()=>{pisoSelectedInstance=null;pisoRenderInspector();pisoDraw()};
  if(kind==='trap'){
+  document.getElementById('pisoTrapDice').onfocus=()=>pisoPushHistory(); // one undo step per editing session, not per keystroke
   document.getElementById('pisoTrapDice').oninput=e=>{obj.dmgDice=e.target.value};
   document.getElementById('pisoTrapRoll').onclick=()=>{
    const out=document.getElementById('pisoTrapRollResult');
    try{out.textContent='Tirada: '+rollDice(obj.dmgDice||'1d6')}catch(e){out.textContent='Expresión de dados no válida (ej: 1d6+2).'}
   };
   document.getElementById('pisoTrapAddEffect').onclick=()=>{
+   pisoPushHistory();
    const kindSel=document.getElementById('pisoTrapEffectKind').value;
    obj.effects=obj.effects||[];
    obj.effects.push({kind:kindSel,target:'self',params:{}});
@@ -656,12 +951,15 @@ function pisoRenderInspector(){
  if(kind==='asset'){
   document.getElementById('pisoOpenInterior')?.addEventListener('click',()=>pisoOpenInterior(obj));
  }
- if(kind==='enemy')document.getElementById('pisoEnemyBoss').onchange=e=>{obj.boss=e.target.checked};
- if(kind==='chest')document.getElementById('pisoChestLocked').onchange=e=>{obj.locked=e.target.checked};
- if(kind==='door')document.getElementById('pisoDoorLocked').onchange=e=>{obj.locked=e.target.checked};
+ if(kind==='enemy')document.getElementById('pisoEnemyBoss').onchange=e=>{pisoPushHistory();obj.boss=e.target.checked};
+ if(kind==='chest')document.getElementById('pisoChestLocked').onchange=e=>{pisoPushHistory();obj.locked=e.target.checked};
+ if(kind==='door'){
+  document.getElementById('pisoDoorOpen').onchange=e=>{pisoPushHistory();obj.open=e.target.checked;pisoDraw()};
+  document.getElementById('pisoDoorLocked').onchange=e=>{pisoPushHistory();obj.locked=e.target.checked};
+ }
 }
 function pisoInspectorTitle(kind,obj){
- return {trap:'Trampa',asset:'Asset: '+(obj.name||''),enemy:'Enemigo: '+(obj.name||''),chest:'Cofre: '+(obj.name||''),door:'Puerta',key:'Llave'}[kind]||kind;
+ return {trap:'Trampa',asset:'Asset: '+(obj.name||''),enemy:'Enemigo: '+(obj.name||''),chest:'Cofre: '+(obj.name||''),door:'Puerta',key:'Llave',altar:'Altar'}[kind]||kind;
 }
 const PISO_EFFECT_KINDS=[
  {id:'dmg',label:'Daño'},{id:'dot',label:'Daño periódico (DOT)'},{id:'debuff',label:'Debuff'},
@@ -679,9 +977,86 @@ function pisoRenderTrapEffects(trap){
    </div>
    <label>Parámetros (JSON libre: dice, amount, duration, chance, stat...) <textarea data-fx-field="params" data-idx="${i}" rows="2">${JSON.stringify(fx.params||{})}</textarea></label>
   </details>`).join('');
- root.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=()=>{trap.effects.splice(Number(b.dataset.removeEffect),1);pisoRenderTrapEffects(trap)});
+ root.querySelectorAll('[data-remove-effect]').forEach(b=>b.onclick=()=>{pisoPushHistory();trap.effects.splice(Number(b.dataset.removeEffect),1);pisoRenderTrapEffects(trap)});
  root.querySelectorAll('[data-fx-field="target"]').forEach(s=>s.onchange=()=>{trap.effects[Number(s.dataset.idx)].target=s.value});
  root.querySelectorAll('[data-fx-field="params"]').forEach(t=>t.onchange=()=>{try{trap.effects[Number(t.dataset.idx)].params=JSON.parse(t.value||'{}')}catch(e){pisoSetStatus('JSON de parámetros no válido en un efecto de trampa.')}});
+}
+
+// ============================================================================
+// MULTI-SELECT ACTION BAR + CLIPBOARD (copy/cut/paste)
+// ============================================================================
+function pisoRenderMultiSelectBar(){
+ const root=document.getElementById('pisoMultiSelectBar');if(!root)return;
+ if(pisoTool!=='multiselect'||!pisoMultiSelection.size){root.classList.add('hidden');root.innerHTML='';return}
+ root.classList.remove('hidden');
+ root.innerHTML=`<h3>${pisoMultiSelection.size} elemento(s) seleccionados</h3>
+  <div class="configItemActions">
+   <button type="button" id="pisoMultiCopyBtn">⧉ Copiar</button>
+   <button type="button" id="pisoMultiCutBtn">✂ Cortar</button>
+   <button type="button" id="pisoMultiDeleteBtn">ELIMINAR</button>
+   <button type="button" id="pisoMultiClearBtn">Cancelar selección</button>
+  </div>`;
+ document.getElementById('pisoMultiCopyBtn').onclick=()=>pisoCopySelection(false);
+ document.getElementById('pisoMultiCutBtn').onclick=()=>pisoCopySelection(true);
+ document.getElementById('pisoMultiDeleteBtn').onclick=()=>{
+  pisoPushHistory();
+  for(const k of pisoMultiSelection){const [kind,iid]=k.split(':');pisoRemoveInstance(kind,iid)}
+  pisoMultiSelection.clear();pisoRenderMultiSelectBar();pisoDraw();
+ };
+ document.getElementById('pisoMultiClearBtn').onclick=()=>{pisoMultiSelection.clear();pisoRenderMultiSelectBar();pisoDraw()};
+}
+// Builds the clipboard from either the multi-selection (multiselect tool) or
+// the single instance currently open in the inspector (paint/select tools) -
+// whichever has something. Coordinates are stored relative to the
+// selection's own top-left so paste can drop them anywhere.
+function pisoCopySelection(cut){
+ const draft=pisoCurrentDraft();
+ let refs=[];
+ if(pisoMultiSelection.size){
+  refs=[...pisoMultiSelection].map(k=>{const [kind,iid]=k.split(':');const list=pisoInstanceListFor(draft,kind);const obj=list?.find(o=>o.iid===iid);return obj?{kind,obj}:null}).filter(Boolean);
+ }else if(pisoSelectedInstance){
+  const list=pisoInstanceListFor(draft,pisoSelectedInstance.kind),obj=list?.find(o=>o.iid===pisoSelectedInstance.iid);
+  if(obj)refs=[{kind:pisoSelectedInstance.kind,obj}];
+ }
+ if(!refs.length){pisoSetStatus('No hay nada seleccionado para copiar.');return}
+ const anchorX=Math.min(...refs.map(r=>r.obj.x)),anchorY=Math.min(...refs.map(r=>r.obj.y));
+ pisoClipboard={anchorX,anchorY,items:refs.map(r=>({kind:r.kind,obj:JSON.parse(JSON.stringify(r.obj))}))};
+ pisoSetStatus((cut?'Cortado':'Copiado')+' '+refs.length+' elemento(s).');
+ if(cut){
+  pisoPushHistory();
+  for(const r of refs)pisoRemoveInstance(r.kind,r.obj.iid);
+  pisoMultiSelection.clear();pisoRenderMultiSelectBar();pisoDraw();
+ }
+}
+// Pastes at a fixed +2/+2 offset from the copied anchor (clamped to the
+// grid) - simple and predictable, no extra "click to place" step needed.
+// Asset drops that no longer fit (or land off a repainted floor) are
+// skipped defensively rather than corrupting the draft.
+function pisoPasteClipboard(){
+ if(!pisoClipboard){pisoSetStatus('No hay nada copiado.');return}
+ const draft=pisoCurrentDraft(),dx=2,dy=2;
+ pisoPushHistory();
+ let placed=0;
+ pisoMultiSelection.clear();
+ for(const item of pisoClipboard.items){
+  const relX=item.obj.x-pisoClipboard.anchorX,relY=item.obj.y-pisoClipboard.anchorY;
+  const x=pisoClamp(pisoClipboard.anchorX+dx+relX,0,draft.cols-1),y=pisoClamp(pisoClipboard.anchorY+dy+relY,0,draft.rows-1);
+  if(item.kind==='asset'){
+   if(!pisoCanPlaceAssetAt(draft,x,y,item.obj.cols,item.obj.rows))continue;
+   const clone=pisoCloneInstance('asset',item.obj,x-item.obj.x,y-item.obj.y);
+   draft.assets.push(clone);pisoMultiSelection.add('asset:'+clone.iid);placed++;
+  }else if(item.kind==='door'){
+   if(draft.grid[y]?.[x]!==0)continue;
+   const clone=pisoCloneInstance('door',item.obj,x-item.obj.x,y-item.obj.y);
+   draft.doors.push(clone);pisoMultiSelection.add('door:'+clone.iid);placed++;
+  }else{
+   const list=pisoInstanceListFor(draft,item.kind);if(!list||draft.grid[y]?.[x]!==0)continue;
+   const clone=pisoCloneInstance(item.kind,item.obj,x-item.obj.x,y-item.obj.y);
+   list.push(clone);pisoMultiSelection.add(item.kind+':'+clone.iid);placed++;
+  }
+ }
+ pisoSetStatus('Pegado(s) '+placed+' de '+pisoClipboard.items.length+' elemento(s).');
+ pisoRenderMultiSelectBar();pisoDraw();
 }
 
 // ============================================================================
@@ -726,12 +1101,25 @@ function pisoSyncToolButtons(){
 function pisoWireToolbar(){
  const toolGroup=document.getElementById('pisoToolButtons');
  if(toolGroup&&!toolGroup.querySelector('[data-piso-tool="spawn"]')){
-  const spawnBtn=document.createElement('button');spawnBtn.type='button';spawnBtn.dataset.pisoTool='spawn';spawnBtn.textContent='📍 Entrada';
-  const stairsBtn=document.createElement('button');stairsBtn.type='button';stairsBtn.dataset.pisoTool='stairs';stairsBtn.textContent='🏁 Salida';
-  toolGroup.appendChild(spawnBtn);toolGroup.appendChild(stairsBtn);
+  const mk=(tool,label)=>{const b=document.createElement('button');b.type='button';b.dataset.pisoTool=tool;b.textContent=label;return b};
+  toolGroup.appendChild(mk('bucket','🪣 Rellenar'));
+  toolGroup.appendChild(mk('multiselect','⬚ Selector múltiple'));
+  toolGroup.appendChild(mk('spawn','📍 Entrada'));
+  toolGroup.appendChild(mk('stairs','🏁 Salida'));
  }
- document.querySelectorAll('[data-piso-tool]').forEach(b=>b.addEventListener('click',()=>{pisoTool=b.dataset.pisoTool;pisoSyncToolButtons();pisoHideSelectionMenu();pisoSelectionRect=null;pisoDraw()}));
+ document.querySelectorAll('[data-piso-tool]').forEach(b=>b.addEventListener('click',()=>{
+  pisoTool=b.dataset.pisoTool;pisoSyncToolButtons();pisoHideSelectionMenu();pisoSelectionRect=null;
+  if(pisoTool!=='multiselect'){pisoMultiSelection.clear()}
+  pisoRenderMultiSelectBar();pisoDraw();
+ }));
  pisoSyncToolButtons();
+ // Brush size (only meaningful for paint/bucket with a tiles/doors entry active)
+ if(toolGroup&&!document.getElementById('pisoBrushSizeSelect')){
+  const wrap=document.createElement('label');wrap.className='small';wrap.style.display='flex';wrap.style.alignItems='center';wrap.style.gap='4px';
+  wrap.innerHTML='Pincel <select id="pisoBrushSizeSelect"><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option></select>';
+  toolGroup.appendChild(wrap);
+  document.getElementById('pisoBrushSizeSelect').onchange=e=>{pisoBrushSize=Number(e.target.value)||1};
+ }
  document.getElementById('pisoZoomInBtn')?.addEventListener('click',()=>{pisoZoom=pisoClamp(pisoZoom*1.25,.3,3);pisoDraw()});
  document.getElementById('pisoZoomOutBtn')?.addEventListener('click',()=>{pisoZoom=pisoClamp(pisoZoom/1.25,.3,3);pisoDraw()});
  document.getElementById('pisoCanvasWrap')?.addEventListener('wheel',e=>{
@@ -743,12 +1131,45 @@ function pisoWireToolbar(){
   if(document.fullscreenElement)document.exitFullscreen?.();
   else wrap.requestFullscreen?.().catch(()=>pisoSetStatus('Pantalla completa no disponible en este navegador.'));
  });
+ // History / clipboard group, injected once next to the zoom controls.
+ const zoomGroup=document.getElementById('pisoZoomInBtn')?.parentElement;
+ if(zoomGroup&&!document.getElementById('pisoUndoBtn')){
+  const histGroup=document.createElement('div');histGroup.className='pisoToolGroup';
+  histGroup.innerHTML=`<button type="button" id="pisoUndoBtn" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
+   <button type="button" id="pisoRedoBtn" title="Rehacer (Ctrl+Y)">↷ Rehacer</button>
+   <button type="button" id="pisoCopyBtn" title="Copiar (Ctrl+C)">⧉ Copiar</button>
+   <button type="button" id="pisoCutBtn" title="Cortar (Ctrl+X)">✂ Cortar</button>
+   <button type="button" id="pisoPasteBtn" title="Pegar (Ctrl+V)">📋 Pegar</button>`;
+  zoomGroup.insertAdjacentElement('afterend',histGroup);
+  document.getElementById('pisoUndoBtn').onclick=pisoUndo;
+  document.getElementById('pisoRedoBtn').onclick=pisoRedo;
+  document.getElementById('pisoCopyBtn').onclick=()=>pisoCopySelection(false);
+  document.getElementById('pisoCutBtn').onclick=()=>pisoCopySelection(true);
+  document.getElementById('pisoPasteBtn').onclick=pisoPasteClipboard;
+  pisoSyncHistoryButtons();
+ }
  document.querySelectorAll('[data-piso-palette]').forEach(b=>b.addEventListener('click',()=>{
   pisoActivePaletteTab=b.dataset.pisoPalette;
   document.querySelectorAll('[data-piso-palette]').forEach(x=>x.classList.toggle('active',x===b));
   pisoRenderPalette();
  }));
  document.getElementById('pisoTilesetSelect')?.addEventListener('change',e=>pisoOnTilesetChange(e.target.value));
+ document.addEventListener('keydown',pisoOnKeyDown);
+}
+// Ignored while typing in any text field (including the piso's own name/
+// nivel/trap-dice inputs) so shortcuts never hijack normal text editing.
+function pisoOnKeyDown(e){
+ const el=document.activeElement,tag=el?.tagName;
+ if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||el?.isContentEditable)return;
+ if(document.getElementById('configTabCustompisos')?.classList.contains('hidden'))return;
+ const mod=e.ctrlKey||e.metaKey;
+ if(!mod)return;
+ const k=e.key.toLowerCase();
+ if(k==='z'&&!e.shiftKey){e.preventDefault();pisoUndo()}
+ else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();pisoRedo()}
+ else if(k==='c'){e.preventDefault();pisoCopySelection(false)}
+ else if(k==='x'){e.preventDefault();pisoCopySelection(true)}
+ else if(k==='v'){e.preventDefault();pisoPasteClipboard()}
 }
 
 // ============================================================================
@@ -783,8 +1204,9 @@ async function pisoLoadForEdit(id){
   const data=await pisoResponseJson(r);
   if(!r.ok||!data)throw new Error(data?.error||'No se pudo cargar el piso');
   pisoRootDraft=pisoColumnsToDraft(data);
-  pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;
-  pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoDraw();
+  pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;pisoMultiSelection.clear();pisoDragPreview=null;
+  pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();
+  pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();
   pisoSetStatus('Piso "'+(pisoRootDraft.name||'')+'" cargado.');
  }catch(e){pisoSetStatus('Error: '+e.message)}
 }
@@ -794,14 +1216,30 @@ async function pisoDeletePiso(id){
  try{
   const r=await fetch('/api/config-floor?kind=custompiso&id='+encodeURIComponent(id),{method:'DELETE'});
   if(!r.ok){const d=await pisoResponseJson(r);throw new Error(d?.error||'No se pudo borrar')}
-  if(pisoRootDraft.id===Number(id)){pisoRootDraft=pisoNewDraft(COLS,ROWS);pisoContextStack=[];pisoSyncFormFromDraft();pisoDraw()}
+  if(pisoRootDraft.id===Number(id)){pisoRootDraft=pisoNewDraft(COLS,ROWS);pisoContextStack=[];pisoSelectedInstance=null;pisoMultiSelection.clear();pisoDragPreview=null;pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();pisoSyncFormFromDraft();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw()}
   await pisoFetchList();
  }catch(e){pisoSetStatus('Error borrando: '+e.message)}
 }
 function pisoSyncFormFromDraft(){
  const nameInput=document.getElementById('pisoName'),nivelInput=document.getElementById('pisoNivel');
+ const colsInput=document.getElementById('pisoCols'),rowsInput=document.getElementById('pisoRows');
  if(nameInput)nameInput.value=pisoRootDraft.name||'';
  if(nivelInput)nivelInput.value=pisoRootDraft.nivel||'';
+ if(colsInput)colsInput.value=pisoRootDraft.cols;
+ if(rowsInput)rowsInput.value=pisoRootDraft.rows;
+}
+// Resizing while mid-way through editing an interior would silently resize
+// the WRONG draft (pisoResizeGrid always targets pisoCurrentDraft()), so the
+// root size controls are only wired to actually resize while at the root.
+function pisoWirePisoSizeInputs(){
+ const apply=()=>{
+  if(pisoInInterior())return;
+  const c=Number(document.getElementById('pisoCols')?.value),r=Number(document.getElementById('pisoRows')?.value);
+  if(!c||!r)return;
+  pisoPushHistory();pisoResizeGrid(pisoRootDraft,c,r);pisoSyncFormFromDraft();pisoDraw();
+ };
+ document.getElementById('pisoCols')?.addEventListener('change',apply);
+ document.getElementById('pisoRows')?.addEventListener('change',apply);
 }
 async function pisoSave(){
  pisoRootDraft.name=document.getElementById('pisoName')?.value||'';
@@ -822,8 +1260,9 @@ async function pisoSave(){
  }catch(e){pisoSetStatus('Error guardando: '+e.message)}
 }
 function pisoNewPiso(){
- pisoRootDraft=pisoNewDraft(COLS,ROWS);pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;
- pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoDraw();
+ pisoRootDraft=pisoNewDraft(COLS,ROWS);pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;pisoMultiSelection.clear();pisoDragPreview=null;
+ pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();
+ pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();
  pisoSetStatus('Nuevo piso: dibuja el suelo, marca entrada/salida y coloca lo que necesites.');
 }
 async function pisoDeleteCurrent(){
@@ -852,8 +1291,9 @@ function pisoImportJson(file){
    const keepId=pisoRootDraft.id;
    pisoRootDraft=pisoColumnsToDraft(parsed);
    pisoRootDraft.id=parsed.id??keepId??null; // importing edits the currently open piso unless the JSON itself carries an id
-   pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;
-   pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoDraw();
+   pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;pisoMultiSelection.clear();pisoDragPreview=null;
+   pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();
+   pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();
    pisoSetStatus('JSON importado en memoria. Pulsa GUARDAR PISO para persistirlo.');
   }catch(e){pisoSetStatus('JSON no válido: '+e.message)}
  };
@@ -866,7 +1306,7 @@ function pisoImportJson(file){
 let pisoModeReady=false;
 function pisoSetupMode(){
  if(pisoModeReady)return;pisoModeReady=true;
- pisoWireToolbar();pisoWireCanvas();
+ pisoWireToolbar();pisoWireCanvas();pisoWirePisoSizeInputs();
  document.getElementById('savePisoBtn')?.addEventListener('click',pisoSave);
  document.getElementById('newPisoBtn')?.addEventListener('click',pisoNewPiso);
  document.getElementById('deletePisoBtn')?.addEventListener('click',pisoDeleteCurrent);
@@ -936,7 +1376,12 @@ function pisoPrefetchRuntimeCatalog(){
 }
 pisoPrefetchRuntimeCatalog();
 
-function pisoEligibleForFloor(floor){return pisoRuntimeCatalog.filter(p=>pisoNivelMatches(p.nivel,floor)&&p.draft.cols===COLS&&p.draft.rows===ROWS&&p.draft.spawn&&p.draft.stairs)}
+// Any grid size works live: camera()/blocked()/reveal() all size themselves
+// off game.map's own dimensions (mapDimensions() in game.js), not the fixed
+// COLS/ROWS constants - see pisoResizeGrid's comment. The one thing that
+// doesn't self-size is game.seen, patched manually right after the
+// loadPrecomputedFloor() wrap below successfully applies the floor.
+function pisoEligibleForFloor(floor){return pisoRuntimeCatalog.filter(p=>pisoNivelMatches(p.nivel,floor)&&p.draft.spawn&&p.draft.stairs)}
 
 function pisoBuildInteriorState(sub,floor){
  if(!sub?.spawn)return null;
@@ -950,8 +1395,9 @@ function pisoBuildInteriorState(sub,floor){
  const chests=(sub.chests||[]).map(c=>{const row=chestRows.find(r=>String(r.id)===String(c.configChestId));if(!row)return null;return {x:c.x,y:c.y,opened:false,locked:!!c.locked,chestDef:{...row.chest_json,configChestId:row.id}}}).filter(Boolean);
  const traps=(sub.traps||[]).map(t=>({x:t.x,y:t.y,dmg:6,revealed:false,sprung:false,dmgDice:t.dmgDice||null,effects:Array.isArray(t.effects)?t.effects:[]}));
  const keys=(sub.keys||[]).map(k=>({x:k.x,y:k.y}));
+ const altars=(sub.altars||[]).map(a=>({x:a.x,y:a.y,kind:a.kind,used:false}));
  const room={x:0,y:0,w:sub.cols,h:sub.rows,cx:sub.spawn.x,cy:sub.spawn.y};
- return {map,rooms:[room],safeRooms:[],stairs:{x:-1,y:-1},doors:[{x:sub.spawn.x,y:sub.spawn.y,open:true,locked:false,interiorExit:true}],keys,chests,traps,altars:[],assets:[],enemies,boss:enemies.find(e=>e.boss)||null,spawn:{...sub.spawn},floorTileset:null};
+ return {map,rooms:[room],safeRooms:[],stairs:{x:-1,y:-1},doors:[{x:sub.spawn.x,y:sub.spawn.y,open:true,locked:false,interiorExit:true}],keys,chests,traps,altars,assets:[],enemies,boss:enemies.find(e=>e.boss)||null,spawn:{...sub.spawn},floorTileset:null};
 }
 function pisoBuildFloorData(entry,floor){
  const draft=entry.draft;
@@ -977,10 +1423,11 @@ function pisoBuildFloorData(entry,floor){
   interiorEntrances.push({x:a.x+doorTile.x,y:a.y+doorTile.y,interiorId:id,assetKey:a.key,interior:{id,type:'custom',geometry:'rooms',doorAsset:{key:a.key,name:a.name,tile:{...doorTile}},floorTileset:null,state}});
  }
  const assets=(draft.assets||[]).map(a=>({key:a.key,name:a.name,x:a.x,y:a.y,cols:a.cols,rows:a.rows,interiorId:interiorIds[a.iid]||undefined}));
+ const altars=(draft.altars||[]).map(a=>({x:a.x,y:a.y,kind:a.kind,used:false}));
  const rooms=[{x:0,y:0,w:draft.cols,h:draft.rows,cx:draft.spawn.x,cy:draft.spawn.y,type:'filler'},
   ...(draft.salas||[]).map(s=>({x:s.x,y:s.y,w:s.w,h:s.h,cx:s.x+Math.floor(s.w/2),cy:s.y+Math.floor(s.h/2),type:s.name||'sala'}))];
  return {
-  map,rooms,safeRooms:[],spawn:{...draft.spawn},stairs:{...draft.stairs},doors,keys,chests,traps,altars:[],assets,event:null,
+  map,rooms,safeRooms:[],spawn:{...draft.spawn},stairs:{...draft.stairs},doors,keys,chests,traps,altars,assets,event:null,
   archetype:'customPiso',archetypeLabel:'Piso especial',archetypeDesc:entry.name||'Piso diseñado a mano.',
   objective:{type:'stairs',label:'Encuentra la salida'},tierExpected:null,rewardRarityBonus:0,
   enemies,enemyFamily:'Personalizado',enemyFamilyId:null,themeName:entry.name||'Piso especial',floorTileset:null,boss,interiorEntrances
@@ -1037,6 +1484,15 @@ if(typeof loadPrecomputedFloor==='function'){
       try{ok=pisoOrigLoadPrecomputedFloor()}finally{selectedDungeonWorld=savedWorld}
       if(ok){
        game._pisoUsedThisRun=true;
+       // loadPrecomputedFloor() always sizes game.seen off the fixed ROWS/
+       // COLS constants (matching every OTHER precomputed floor, which are
+       // always exactly that size); a custom piso can be any size, so redo
+       // it here to match data.map's real dimensions, then re-reveal the
+       // spawn cell that fog-of-war reset just wiped.
+       if(data.map.length!==ROWS||data.map[0].length!==COLS){
+        game.seen=Array.from({length:data.map.length},()=>Array(data.map[0].length).fill(false));
+        if(typeof reveal==='function')reveal(data.spawn.x,data.spawn.y);
+       }
        if(typeof banner==='function')banner('¡PISO ESPECIAL!');
        if(typeof log==='function')log('Este piso ha sido diseñado a mano: '+(entry.name||''),'story');
        return true;
