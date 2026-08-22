@@ -55,6 +55,18 @@ let soulseekClassPickerOpen=false;
   .soulseekLoadoutTypeCard{background:#251a2f;border:2px solid #684b7c;padding:12px;text-align:center;color:#fff;font-family:inherit;font-size:inherit;cursor:pointer}
   .soulseekLoadoutTypeCard:hover,.soulseekLoadoutTypeCard.selected{border-color:#ffc35a;background:#3a2748}
   #soulseekLoadoutConfirmBtn:disabled{opacity:.5;cursor:not-allowed}
+  .soulseekLoadoutDetailBox{width:min(480px,94vw);max-height:88vh;overflow:auto}
+  .soulseekLoadoutDetailHead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .soulseekLoadoutDetailHead canvas{width:48px;height:48px;background:#1c1224;border:2px solid #59406b;flex:0 0 auto}
+  .soulseekLoadoutDetailHead h2{margin:0;font-size:16px}
+  .soulseekLoadoutDetailBody{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+  .soulseekPotionCard{cursor:default}
+  .soulseekPotionIconBtn{background:none;border:none;padding:0;cursor:pointer}
+  .soulseekPotionIconBtn canvas{width:48px;height:48px}
+  .soulseekPotionStepper{display:flex;align-items:center;gap:10px;margin-top:2px}
+  .soulseekPotionStepper button{width:26px;height:26px;background:#251a2f;color:#fff;border:2px solid #684b7c;cursor:pointer;font-size:15px;line-height:1;font-family:inherit}
+  .soulseekPotionStepper button:disabled{opacity:.4;cursor:not-allowed}
+  .soulseekPotionStepper span{min-width:14px;text-align:center;font-weight:bold;color:#ffd68b}
  `;
  document.head.appendChild(style);
 })();
@@ -234,6 +246,15 @@ function soulseekEnsureDom(){
    <button class="start" id="soulseekLoadoutConfirmBtn" disabled>CONFIRMAR</button>
   </div>
  </div>
+</div>
+
+<!-- Item detail modal for the starting-loadout picks: clicking any card in
+     the weapon/armor/helmet/ring/necklace steps, or a potion's icon, opens
+     this instead of selecting straight away. SELECCIONAR both records the
+     pick and advances the wizard; CANCELAR/CERRAR just closes it, no
+     change. See soulseekOpenLoadoutPickDetail/soulseekOpenLoadoutPotionDetail. -->
+<div class="statPointModal" id="soulseekLoadoutItemDetailModal">
+ <div class="statPointBox soulseekLoadoutDetailBox" id="soulseekLoadoutItemDetailBox"></div>
 </div>`;
  while(wrap.firstElementChild)document.body.appendChild(wrap.firstElementChild);
 }
@@ -266,7 +287,12 @@ async function openSoulseekerScores(){
   if(!r.ok)throw new Error(data.error||'No se pudieron cargar las puntuaciones');
   if(!data.length){status.textContent='Todavía no hay personajes Soulseeker.';return}
   status.textContent=`${data.length} personaje(s).`;
-  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Élites</th><th>Jefes</th><th>Megaboss</th><th>Pisos terminados</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const f=normalizeFeats(c.feats),completedFloors=Math.max(0,(Number(c.max_floor_reached)||1)-1);return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${c.class_name||'Sin clase'}</td><td>${c.race_name||'-'}</td><td>${c.level||1}</td><td>${f.elites}</td><td>${f.bosses}</td><td>${f.megabosses}</td><td>${completedFloors}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
+  // SOULSEEK_DIFFICULTIES is a const declared in soulseeker-dungeons.js
+  // (loaded after this file) - safe to reference here since this function
+  // only ever runs later, on user interaction, once every script has
+  // finished loading and every top-level const/let is bound (same shared
+  // top-level scope this whole feature relies on - see this file's header).
+  table.innerHTML=`<table class="scoresGrid"><thead><tr><th>#</th><th>Personaje</th><th>Usuario</th><th>Estado</th><th>Clase</th><th>Raza</th><th>Nivel</th><th>Dificultad</th><th>Élites</th><th>Jefes</th><th>Megaboss</th><th>Pisos terminados</th><th>Score</th><th>Último uso</th></tr></thead><tbody>${data.map((c,i)=>{const f=normalizeFeats(c.feats),completedFloors=Math.max(0,(Number(c.max_floor_reached)||1)-1),difficultyLabel=(typeof SOULSEEK_DIFFICULTIES!=='undefined'&&SOULSEEK_DIFFICULTIES[c.difficulty]?.label)||(c.soulseeker?'-':'—');return `<tr class="${c.pj_status==='dead'?'deadRow':''}"><td>${i+1}</td><td>${c.pj_name||'-'}</td><td>${c.nombre||'-'}</td><td>${c.pj_status==='dead'?'Muerto':'Vivo'}</td><td>${c.class_name||'Sin clase'}</td><td>${c.race_name||'-'}</td><td>${c.level||1}</td><td>${difficultyLabel}</td><td>${f.elites}</td><td>${f.bosses}</td><td>${f.megabosses}</td><td>${completedFloors}</td><td>${Math.round(c.pj_score||0)}</td><td>${c.last_use?new Date(c.last_use).toLocaleString():'-'}</td></tr>`}).join('')}</tbody></table>`;
  }catch(e){status.textContent=`Error: ${e.message}`}
 }
 function closeSoulseekerScores(){
@@ -453,7 +479,8 @@ let soulseekLoadoutArmorPickId=null;
 let soulseekLoadoutHelmetPickId=null;
 let soulseekLoadoutRingPickId=null;
 let soulseekLoadoutNecklacePickId=null;
-let soulseekLoadoutPotionPickId=null;
+// Array of chosen potion row ids, one entry per copy (a type can repeat) -
+// populated live by the +/- steppers on the potion step, up to 4 total.
 let soulseekLoadoutChosenPotions=[];
 // Ordered list of picker steps between weaponPick and the potion phase,
 // built fresh each time the wizard opens (soulseekResetLoadoutSteps) from
@@ -522,7 +549,18 @@ function soulseekLowestRarityRows(rows){
  }
  return rows;
 }
-function soulseekCommonPotionRows(){return soulseekLowestRarityRows(soulseekLoadoutCatalogRows().filter(isConfiguredPotionRow))}
+// v2: any common potion is selectable (not just one type at a time) - a
+// Potion Tier unlock (soulseek_shop.js's soulseekSelectablePotionTier(),
+// costs 100/200/350/500 for uncommon/rare/epic/legendary) can SUBSTITUTE
+// which rarity is offered here instead of the common default. Falls back to
+// the lowest rarity actually configured if the target tier has nothing in
+// the catalogue, same safety net soulseekLowestRarityRows always provided.
+function soulseekCommonPotionRows(){
+ const potions=soulseekLoadoutCatalogRows().filter(isConfiguredPotionRow);
+ const tier=typeof soulseekSelectablePotionTier==='function'?soulseekSelectablePotionTier():'common';
+ const atTier=potions.filter(r=>soulseekRowRarity(r)===tier);
+ return atTier.length?atTier:soulseekLowestRarityRows(potions);
+}
 // Like soulseekLowestRarityRows but bounded above by capRarity - used by the
 // weapon/ring/necklace pickers once a starter pack has raised their rarity
 // cap, so the wizard never offers something the player hasn't unlocked.
@@ -614,7 +652,7 @@ function soulseekLoadoutWeaponGroups(){
  return [...new Set(soulseekCommonWeaponRows().map(r=>groupFor(soulseekRowWeaponType(r))))];
 }
 function soulseekResetLoadoutSteps(){
- soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutArmorPickId=null;soulseekLoadoutHelmetPickId=null;soulseekLoadoutRingPickId=null;soulseekLoadoutNecklacePickId=null;soulseekLoadoutPotionPickId=null;soulseekLoadoutChosenPotions=[];
+ soulseekLoadoutWeaponType=null;soulseekLoadoutWeaponPickId=null;soulseekLoadoutArmorPickId=null;soulseekLoadoutHelmetPickId=null;soulseekLoadoutRingPickId=null;soulseekLoadoutNecklacePickId=null;soulseekLoadoutChosenPotions=[];
  soulseekLoadoutStepOrder=['weaponPick'];
  if(soulseekArmorUnlocked())soulseekLoadoutStepOrder.push('armorPick','helmetPick');
  if(soulseekRingRarityCap())soulseekLoadoutStepOrder.push('ringPick');
@@ -630,6 +668,42 @@ function soulseekNextLoadoutStep(current){
  const idx=soulseekLoadoutStepOrder.indexOf(current);
  return (idx===-1||idx+1>=soulseekLoadoutStepOrder.length)?'potion':soulseekLoadoutStepOrder[idx+1];
 }
+function soulseekAdvanceLoadoutStep(stepKey){
+ soulseekLoadoutStep=soulseekNextLoadoutStep(stepKey);
+ renderSoulseekLoadoutStep();
+}
+// ============================================================================
+// Shared definition for the 5 "pick one item" steps (weapon/armor/helmet/
+// ring/necklace): same shape everywhere - a grid of cards, clicking one
+// opens the detail modal (dice/stats/habilidades via describeItem), and
+// SELECCIONAR both records the pick and advances the wizard. get/set close
+// over each step's own soulseekLoadoutXPickId variable so this table can
+// reassign it without `window[...]` - these are plain top-level `let`s,
+// shared across script tags via the page's global lexical scope (see this
+// file's header comment), not window properties.
+// ============================================================================
+const SOULSEEK_LOADOUT_ITEM_STEPS={
+ weaponPick:{title:'ELIGE TU ARMA',fallbackName:'Arma',
+  rows:()=>soulseekLoadoutWeaponChoices(),
+  statusText:rows=>rows.length?`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Toca un arma para ver sus detalles y elegirla.`:'No hay armas configuradas en el catálogo: empezarás con el arma inicial automática.',
+  set:v=>{soulseekLoadoutWeaponPickId=v}},
+ armorPick:{title:'ELIGE TU ARMADURA',fallbackName:'Armadura',
+  rows:()=>soulseekArmorRows(),
+  statusText:rows=>rows.length?'Toca una armadura para ver sus detalles y elegirla.':'No hay armaduras configuradas en el catálogo: continuarás sin ella.',
+  set:v=>{soulseekLoadoutArmorPickId=v}},
+ helmetPick:{title:'ELIGE TU CASCO',fallbackName:'Casco',
+  rows:()=>soulseekHelmetRows(),
+  statusText:rows=>rows.length?'Toca un casco para ver sus detalles y elegirlo.':'No hay cascos configurados en el catálogo: continuarás sin él.',
+  set:v=>{soulseekLoadoutHelmetPickId=v}},
+ ringPick:{title:'ELIGE TU ANILLO',fallbackName:'Anillo',
+  rows:()=>soulseekRingRows(),
+  statusText:rows=>rows.length?'Toca un anillo para ver sus detalles y elegirlo.':'No hay anillos configurados en el catálogo: continuarás sin él.',
+  set:v=>{soulseekLoadoutRingPickId=v}},
+ necklacePick:{title:'ELIGE TU COLGANTE',fallbackName:'Colgante',
+  rows:()=>soulseekNecklaceRows(),
+  statusText:rows=>rows.length?'Toca un colgante para ver sus detalles y elegirlo.':'No hay colgantes configurados en el catálogo: continuarás sin él.',
+  set:v=>{soulseekLoadoutNecklacePickId=v}}
+};
 async function openSoulseekerLoadoutModal(){
  soulseekEnsureDom();
  // Open first, then load: on a big catalogue the request takes a moment and
@@ -651,6 +725,76 @@ function soulseekWireLoadoutCardIcons(root,rows){
   const row=rows.find(r=>String(r.id)===c.dataset.soulseekLoadoutIcon),it=row&&(row.item_json||row);
   if(it)drawItemIcon(c,{icon:it.icon,rarity:it.rarity||'common'});
  });
+}
+function soulseekPotionPickCardHtml(row){
+ const it=row.item_json||row,rarity=it.rarity||row.tier||'common',name=it.name||row.nombre||'Poción';
+ return `<div class="soulseekLoadoutCard soulseekPotionCard" data-soulseek-potion-card="${row.id}">
+  <button type="button" class="soulseekPotionIconBtn" data-soulseek-potion-icon-wrap title="Ver efecto"><canvas width="48" height="48" data-soulseek-loadout-icon="${row.id}"></canvas></button>
+  <b style="color:${tierDefs[rarity]?.color||'#ffd68b'}">${name}</b>
+  <div class="soulseekPotionStepper"><button type="button" data-soulseek-potion-minus>−</button><span data-soulseek-potion-count>0</span><button type="button" data-soulseek-potion-plus>+</button></div>
+ </div>`;
+}
+// ============================================================================
+// Item detail modal - built from the SAME hydrate+build pipeline as
+// soulseekFinalizeLoadout (soulseekHydrateItemRow + configuredItemFromRow/
+// configuredPotionFromRow) so what the player reads here (icon, damage
+// dice, stat affixes, passives, skills, potion effect) is exactly what
+// they'll actually get, then rendered with describeItem() - the same
+// summary the in-dungeon equipped-item panel uses (game.js).
+// ============================================================================
+async function soulseekBuildLoadoutPreviewItem(row){
+ const hydrated=await soulseekHydrateItemRow(row);
+ if(!hydrated)return null;
+ const lootRow={itemLevel:{min:1,max:2}};
+ return isConfiguredPotionRow(hydrated)?configuredPotionFromRow(hydrated,lootRow,1):configuredItemFromRow(hydrated,lootRow,1);
+}
+function soulseekRenderLoadoutItemDetail(item,{onSelect,onCancel,cancelLabel='CANCELAR'}={}){
+ const box=document.getElementById('soulseekLoadoutItemDetailBox');
+ const desc=describeItem(item);
+ box.innerHTML=`<div class="soulseekLoadoutDetailHead"><canvas id="soulseekLoadoutDetailIcon" width="48" height="48"></canvas><div><h2 style="color:${tierDefs[item.rarity]?.color||'#ffd68b'}">${item.name}</h2><span class="raceTag">${tierDefs[item.rarity]?.label||item.rarity}</span></div></div>
+  <div class="soulseekLoadoutDetailBody">${desc||'<span class="small">Sin efectos adicionales.</span>'}</div>
+  <div class="startActions">${onSelect?'<button id="soulseekLoadoutDetailSelectBtn" class="start">SELECCIONAR</button>':''}<button id="soulseekLoadoutDetailCancelBtn">${cancelLabel}</button></div>`;
+ setTimeout(()=>drawItemIcon(document.getElementById('soulseekLoadoutDetailIcon'),item),0);
+ if(onSelect)document.getElementById('soulseekLoadoutDetailSelectBtn').onclick=onSelect;
+ document.getElementById('soulseekLoadoutDetailCancelBtn').onclick=onCancel;
+}
+function soulseekCloseLoadoutItemDetail(){document.getElementById('soulseekLoadoutItemDetailModal')?.classList.remove('open')}
+function soulseekLoadoutDetailLoadError(message){
+ const box=document.getElementById('soulseekLoadoutItemDetailBox');
+ box.innerHTML=`<p class="small">${message}</p><div class="startActions"><button id="soulseekLoadoutDetailCancelBtn">CERRAR</button></div>`;
+ document.getElementById('soulseekLoadoutDetailCancelBtn').onclick=soulseekCloseLoadoutItemDetail;
+}
+// weapon/armor/helmet/ring/necklace: SELECCIONAR records the pick AND
+// advances the wizard on its own - there is no separate confirm step for
+// these any more (see renderSoulseekLoadoutStep/soulseekLoadoutConfirmStep).
+async function soulseekOpenLoadoutPickDetail(itemStep,row,stepKey){
+ if(!row)return;
+ const modal=document.getElementById('soulseekLoadoutItemDetailModal');
+ document.getElementById('soulseekLoadoutItemDetailBox').innerHTML='<p class="small">Cargando...</p>';
+ modal.classList.add('open');
+ const item=await soulseekBuildLoadoutPreviewItem(row);
+ if(!modal.classList.contains('open'))return; // closed while loading
+ if(!item){soulseekLoadoutDetailLoadError('No se ha podido cargar este objeto.');return}
+ soulseekRenderLoadoutItemDetail(item,{
+  onSelect:()=>{
+   itemStep.set(String(row.id));
+   soulseekCloseLoadoutItemDetail();
+   soulseekAdvanceLoadoutStep(stepKey);
+  },
+  onCancel:soulseekCloseLoadoutItemDetail
+ });
+}
+// Potion cards are picked via their own +/- steppers, not this modal -
+// clicking the icon only shows the effect (info-only, CERRAR instead of
+// SELECCIONAR/CANCELAR).
+async function soulseekOpenLoadoutPotionDetail(row){
+ const modal=document.getElementById('soulseekLoadoutItemDetailModal');
+ document.getElementById('soulseekLoadoutItemDetailBox').innerHTML='<p class="small">Cargando...</p>';
+ modal.classList.add('open');
+ const item=await soulseekBuildLoadoutPreviewItem(row);
+ if(!modal.classList.contains('open'))return;
+ if(!item){soulseekLoadoutDetailLoadError('No se ha podido cargar esta poción.');return}
+ soulseekRenderLoadoutItemDetail(item,{onCancel:soulseekCloseLoadoutItemDetail,cancelLabel:'CERRAR'});
 }
 function renderSoulseekLoadoutStep(){
  const title=document.getElementById('soulseekLoadoutTitle'),status=document.getElementById('soulseekLoadoutStatus'),body=document.getElementById('soulseekLoadoutBody'),confirmBtn=document.getElementById('soulseekLoadoutConfirmBtn');
@@ -692,149 +836,73 @@ function renderSoulseekLoadoutStep(){
   confirmBtn.classList.add('hidden');
   return;
  }
- if(soulseekLoadoutStep==='weaponPick'){
-  const rows=soulseekLoadoutWeaponChoices();
-  title.textContent='ELIGE TU ARMA';
-  status.textContent=rows.length?`Tipo: ${soulseekLoadoutWeaponType||'Armas'}. Elige un arma y confirma.`:'No hay armas configuradas en el catálogo: empezarás con el arma inicial automática.';
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Arma')).join('')}</div>`:'<p class="small">Sin armas disponibles.</p>';
+ // The 5 "pick one item" steps (weapon/armor/helmet/ring/necklace, the
+ // latter four only reached when soulseekResetLoadoutSteps put them in
+ // soulseekLoadoutStepOrder - i.e. the account owns the starter pack that
+ // unlocks them) all share the same shape: a grid of cards, clicking one
+ // opens the detail modal instead of selecting instantly, and SELECCIONAR
+ // in that modal both records the pick and advances the wizard on its own.
+ // The footer button is only ever needed as a plain "skip" when the
+ // catalogue has nothing to offer for this slot.
+ const itemStep=SOULSEEK_LOADOUT_ITEM_STEPS[soulseekLoadoutStep];
+ if(itemStep){
+  const rows=itemStep.rows();
+  title.textContent=itemStep.title;
+  status.textContent=itemStep.statusText(rows);
+  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,itemStep.fallbackName)).join('')}</div>`:`<p class="small">Sin ${itemStep.fallbackName.toLowerCase()}s disponibles.</p>`;
   soulseekWireLoadoutCardIcons(body,rows);
-  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-   soulseekLoadoutWeaponPickId=card.dataset.soulseekPick;
-   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutWeaponPickId));
-   confirmBtn.disabled=false;
+  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>{
+   const row=rows.find(r=>String(r.id)===card.dataset.soulseekPick);
+   card.onclick=()=>soulseekOpenLoadoutPickDetail(itemStep,row,soulseekLoadoutStep);
   });
-  confirmBtn.classList.remove('hidden');
-  // With nothing to pick the button becomes a plain "carry on" so an empty
-  // catalogue can never strand the player on this step.
-  confirmBtn.textContent=rows.length?'CONFIRMAR ARMA':'CONTINUAR';
-  confirmBtn.disabled=rows.length?!soulseekLoadoutWeaponPickId:false;
-  return;
- }
- // v1.1 starter-pack picks (armor/helmet/ring/necklace) - only reached when
- // soulseekResetLoadoutSteps actually put them in soulseekLoadoutStepOrder,
- // i.e. the account owns the pack that unlocks them. Same shape as weaponPick
- // above, one per slot.
- if(soulseekLoadoutStep==='armorPick'){
-  const rows=soulseekArmorRows();
-  title.textContent='ELIGE TU ARMADURA';
-  status.textContent=rows.length?'Elige una armadura y confirma.':'No hay armaduras configuradas en el catálogo: continuarás sin ella.';
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Armadura')).join('')}</div>`:'<p class="small">Sin armaduras disponibles.</p>';
-  soulseekWireLoadoutCardIcons(body,rows);
-  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-   soulseekLoadoutArmorPickId=card.dataset.soulseekPick;
-   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutArmorPickId));
-   confirmBtn.disabled=false;
-  });
-  confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent=rows.length?'CONFIRMAR ARMADURA':'CONTINUAR';
-  confirmBtn.disabled=rows.length?!soulseekLoadoutArmorPickId:false;
-  return;
- }
- if(soulseekLoadoutStep==='helmetPick'){
-  const rows=soulseekHelmetRows();
-  title.textContent='ELIGE TU CASCO';
-  status.textContent=rows.length?'Elige un casco y confirma.':'No hay cascos configurados en el catálogo: continuarás sin él.';
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Casco')).join('')}</div>`:'<p class="small">Sin cascos disponibles.</p>';
-  soulseekWireLoadoutCardIcons(body,rows);
-  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-   soulseekLoadoutHelmetPickId=card.dataset.soulseekPick;
-   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutHelmetPickId));
-   confirmBtn.disabled=false;
-  });
-  confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent=rows.length?'CONFIRMAR CASCO':'CONTINUAR';
-  confirmBtn.disabled=rows.length?!soulseekLoadoutHelmetPickId:false;
-  return;
- }
- if(soulseekLoadoutStep==='ringPick'){
-  const rows=soulseekRingRows();
-  title.textContent='ELIGE TU ANILLO';
-  status.textContent=rows.length?'Elige un anillo y confirma.':'No hay anillos configurados en el catálogo: continuarás sin él.';
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Anillo')).join('')}</div>`:'<p class="small">Sin anillos disponibles.</p>';
-  soulseekWireLoadoutCardIcons(body,rows);
-  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-   soulseekLoadoutRingPickId=card.dataset.soulseekPick;
-   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutRingPickId));
-   confirmBtn.disabled=false;
-  });
-  confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent=rows.length?'CONFIRMAR ANILLO':'CONTINUAR';
-  confirmBtn.disabled=rows.length?!soulseekLoadoutRingPickId:false;
-  return;
- }
- if(soulseekLoadoutStep==='necklacePick'){
-  const rows=soulseekNecklaceRows();
-  title.textContent='ELIGE TU COLGANTE';
-  status.textContent=rows.length?'Elige un colgante y confirma.':'No hay colgantes configurados en el catálogo: continuarás sin él.';
-  body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Colgante')).join('')}</div>`:'<p class="small">Sin colgantes disponibles.</p>';
-  soulseekWireLoadoutCardIcons(body,rows);
-  body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-   soulseekLoadoutNecklacePickId=card.dataset.soulseekPick;
-   body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutNecklacePickId));
-   confirmBtn.disabled=false;
-  });
-  confirmBtn.classList.remove('hidden');
-  confirmBtn.textContent=rows.length?'CONFIRMAR COLGANTE':'CONTINUAR';
-  confirmBtn.disabled=rows.length?!soulseekLoadoutNecklacePickId:false;
-  return;
- }
- // potion step, one at a time, up to 4
- const idx=soulseekLoadoutChosenPotions.length+1;
- const rows=soulseekCommonPotionRows();
- title.textContent=`ELIGE TU POCIÓN (${idx}/4)`;
- status.textContent=rows.length?'Elige una poción y confirma. Puedes repetir el mismo tipo.':'No hay pociones configuradas en el catálogo: empezarás con las pociones iniciales automáticas.';
- body.innerHTML=rows.length?`<div class="soulseekLoadoutGrid">${rows.map(row=>soulseekLoadoutCardHtml(row,'Poción')).join('')}</div>`:'<p class="small">Sin pociones disponibles.</p>';
- soulseekWireLoadoutCardIcons(body,rows);
- body.querySelectorAll('[data-soulseek-pick]').forEach(card=>card.onclick=()=>{
-  soulseekLoadoutPotionPickId=card.dataset.soulseekPick;
-  body.querySelectorAll('[data-soulseek-pick]').forEach(c=>c.classList.toggle('selected',c.dataset.soulseekPick===soulseekLoadoutPotionPickId));
+  confirmBtn.classList.toggle('hidden',rows.length>0);
+  confirmBtn.textContent='CONTINUAR';
   confirmBtn.disabled=false;
+  return;
+ }
+ // potion step - a single screen: any mix of common (or unlocked-tier, see
+ // soulseekCommonPotionRows) potions via +/- steppers, up to 4 total.
+ // Clicking a potion's icon just shows its effect (soulseekOpenLoadoutPotionDetail).
+ const potionRows=soulseekCommonPotionRows(),potionTotal=soulseekLoadoutChosenPotions.length;
+ title.textContent='ELIGE TUS POCIONES';
+ status.textContent=potionRows.length?`Añade hasta 4 pociones con los botones +/-. Elegidas: ${potionTotal}/4. Toca el icono para ver el efecto.`:'No hay pociones configuradas en el catálogo: empezarás con las pociones iniciales automáticas.';
+ body.innerHTML=potionRows.length?`<div class="soulseekLoadoutGrid">${potionRows.map(row=>soulseekPotionPickCardHtml(row)).join('')}</div>`:'<p class="small">Sin pociones disponibles.</p>';
+ soulseekWireLoadoutCardIcons(body,potionRows);
+ potionRows.forEach(row=>{
+  const card=body.querySelector(`[data-soulseek-potion-card="${row.id}"]`);if(!card)return;
+  const count=soulseekLoadoutChosenPotions.filter(id=>id===String(row.id)).length;
+  card.querySelector('[data-soulseek-potion-count]').textContent=count;
+  const minusBtn=card.querySelector('[data-soulseek-potion-minus]'),plusBtn=card.querySelector('[data-soulseek-potion-plus]');
+  minusBtn.disabled=count<=0;
+  minusBtn.onclick=()=>{
+   const idx=soulseekLoadoutChosenPotions.lastIndexOf(String(row.id));
+   if(idx>=0){soulseekLoadoutChosenPotions.splice(idx,1);renderSoulseekLoadoutStep()}
+  };
+  plusBtn.disabled=potionTotal>=4;
+  plusBtn.onclick=()=>{
+   if(soulseekLoadoutChosenPotions.length>=4)return;
+   soulseekLoadoutChosenPotions.push(String(row.id));
+   renderSoulseekLoadoutStep();
+  };
+  card.querySelector('[data-soulseek-potion-icon-wrap]').onclick=()=>soulseekOpenLoadoutPotionDetail(row);
  });
  confirmBtn.classList.remove('hidden');
- confirmBtn.textContent=rows.length?`CONFIRMAR POCIÓN ${idx}/4`:'EMPEZAR LA PARTIDA';
- confirmBtn.disabled=rows.length?!soulseekLoadoutPotionPickId:false;
+ confirmBtn.textContent=potionTotal>0?`EMPEZAR LA PARTIDA (${potionTotal}/4 pociones)`:'EMPEZAR LA PARTIDA';
+ confirmBtn.disabled=false;
 }
 async function soulseekLoadoutConfirmStep(){
  if(soulseekLoadoutStep==='loading')return;
  if(soulseekLoadoutCatalogError){await soulseekFinalizeLoadout();return}
- if(soulseekLoadoutStep==='weaponPick'){
-  // Nothing configured to choose from: CONTINUAR just moves on (the
-  // automatic starter weapon is applied in soulseekFinalizeLoadout).
-  if(!soulseekLoadoutWeaponPickId&&soulseekLoadoutWeaponChoices().length)return;
-  soulseekLoadoutStep=soulseekNextLoadoutStep('weaponPick');
-  renderSoulseekLoadoutStep();
-  return;
- }
- if(soulseekLoadoutStep==='armorPick'){
-  if(!soulseekLoadoutArmorPickId&&soulseekArmorRows().length)return;
-  soulseekLoadoutStep=soulseekNextLoadoutStep('armorPick');
-  renderSoulseekLoadoutStep();
-  return;
- }
- if(soulseekLoadoutStep==='helmetPick'){
-  if(!soulseekLoadoutHelmetPickId&&soulseekHelmetRows().length)return;
-  soulseekLoadoutStep=soulseekNextLoadoutStep('helmetPick');
-  renderSoulseekLoadoutStep();
-  return;
- }
- if(soulseekLoadoutStep==='ringPick'){
-  if(!soulseekLoadoutRingPickId&&soulseekRingRows().length)return;
-  soulseekLoadoutStep=soulseekNextLoadoutStep('ringPick');
-  renderSoulseekLoadoutStep();
-  return;
- }
- if(soulseekLoadoutStep==='necklacePick'){
-  if(!soulseekLoadoutNecklacePickId&&soulseekNecklaceRows().length)return;
-  soulseekLoadoutStep=soulseekNextLoadoutStep('necklacePick');
-  renderSoulseekLoadoutStep();
-  return;
- }
- if(!soulseekCommonPotionRows().length){await soulseekFinalizeLoadout();return}
- if(!soulseekLoadoutPotionPickId)return;
- soulseekLoadoutChosenPotions.push(soulseekLoadoutPotionPickId);
- soulseekLoadoutPotionPickId=null;
- if(soulseekLoadoutChosenPotions.length>=4)await soulseekFinalizeLoadout();
- else renderSoulseekLoadoutStep();
+ // The 5 item-pick steps only ever reach this handler with nothing
+ // configured to choose from - the footer button is hidden whenever there
+ // IS something to pick (see renderSoulseekLoadoutStep). A real choice
+ // always happens inside the detail modal (soulseekOpenLoadoutPickDetail),
+ // which advances the wizard itself and never goes through here.
+ const itemStep=SOULSEEK_LOADOUT_ITEM_STEPS[soulseekLoadoutStep];
+ if(itemStep){soulseekAdvanceLoadoutStep(soulseekLoadoutStep);return}
+ // potion step: selection happens live via the +/- steppers, so the footer
+ // button's only job here is to actually start the run.
+ await soulseekFinalizeLoadout();
 }
 async function soulseekFinalizeLoadout(){
  if(!game?.player)return;

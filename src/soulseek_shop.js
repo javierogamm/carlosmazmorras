@@ -50,6 +50,36 @@ const SOULSEEK_POTION_TIER_COSTS=[5,7,10,15];
 const SOULSEEK_ITEM_TIER_COSTS=[5,20,30,50];
 const SOULSEEK_ROMAN_TO_TIER={I:1,II:2,III:3,IV:4,V:5,VI:6};
 
+// ============================================================================
+// PJ > Potion Tier unlock - permanent account-level unlock, same piggyback
+// storage trick as the starter packs above (own prefix on soulseek_classes,
+// see SOULSEEK_STARTER_PACK_PREFIX's comment for why: a real column needs a
+// production migration first). Sequential chain, one tier at a time
+// (uncommon -> rare -> epic -> legendary), costs 100/200/350/500. Owning a
+// tier SUBSTITUTES which rarity the starting-loadout potion step offers
+// (soulseek.js's soulseekCommonPotionRows/soulseekSelectablePotionTier)
+// instead of the 'common' default - it does not add extra potion slots.
+// ============================================================================
+const SOULSEEK_POTION_TIER_PREFIX='potiontier:';
+const SOULSEEK_POTION_TIER_ORDER=['uncommon','rare','epic','legendary'];
+const SOULSEEK_POTION_TIER_UNLOCK_COSTS={uncommon:100,rare:200,epic:350,legendary:500};
+function soulseekUnlockedPotionTiers(){
+ const raw=Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[];
+ return raw.filter(id=>typeof id==='string'&&id.startsWith(SOULSEEK_POTION_TIER_PREFIX)).map(id=>id.slice(SOULSEEK_POTION_TIER_PREFIX.length));
+}
+function soulseekPotionTierOwned(tier){return soulseekUnlockedPotionTiers().includes(tier)}
+function soulseekPotionTierCost(tier){return SOULSEEK_POTION_TIER_UNLOCK_COSTS[tier]||0}
+function soulseekPotionTierPrereqOk(tier){
+ const idx=SOULSEEK_POTION_TIER_ORDER.indexOf(tier);
+ return idx<=0||soulseekPotionTierOwned(SOULSEEK_POTION_TIER_ORDER[idx-1]);
+}
+// Highest owned tier, or 'common' when nothing is unlocked - read by
+// soulseek.js's soulseekCommonPotionRows() at loadout time.
+function soulseekSelectablePotionTier(){
+ for(let i=SOULSEEK_POTION_TIER_ORDER.length-1;i>=0;i--)if(soulseekPotionTierOwned(SOULSEEK_POTION_TIER_ORDER[i]))return SOULSEEK_POTION_TIER_ORDER[i];
+ return 'common';
+}
+
 function soulseekCostForIndex(table,index,fallback){return index<table.length?table[index]:fallback}
 function soulseekItemTierCost(rarity,table){const idx=Math.min(table.length-1,Math.max(0,LOOT_RARITY_ORDER.indexOf(rarity)));return table[idx]??table[table.length-1]}
 function soulseekLegendaryItemCost(rarity,baseCost){
@@ -95,10 +125,11 @@ function soulseekUnlockedRaces(){return Array.isArray(window.currentUser?.soulse
 // UNFILTERED array (never from soulseekUnlockedClasses() below) or they'd
 // silently drop whichever kind of entry they didn't know about.
 function soulseekRawStoredClasses(){return Array.isArray(window.currentUser?.soulseek_classes)?window.currentUser.soulseek_classes:[]}
-// Real classes only - strips the piggybacked pack entries back out, so the
-// class cost-by-count formula and the "owns at least one class" gate below
-// behave exactly as before v1.1 (a bought pack must never look like a class).
-function soulseekUnlockedClasses(){return soulseekRawStoredClasses().filter(id=>typeof id!=='string'||!id.startsWith(SOULSEEK_STARTER_PACK_PREFIX))}
+// Real classes only - strips BOTH kinds of piggybacked entries this column
+// also carries (starter packs AND potion tier unlocks - see their own
+// prefix constants) so neither is ever mistaken for an owned class by the
+// cost-by-count formula or the "own at least one class" creation gate.
+function soulseekUnlockedClasses(){return soulseekRawStoredClasses().filter(id=>typeof id!=='string'||(!id.startsWith(SOULSEEK_STARTER_PACK_PREFIX)&&!id.startsWith(SOULSEEK_POTION_TIER_PREFIX)))}
 function soulseekUnlockedSkills(){return Array.isArray(window.currentUser?.soulseek_skills)?window.currentUser.soulseek_skills:[]}
 function soulseekSessionItems(){return Array.isArray(window.currentUser?.soulseek_session_items)?window.currentUser.soulseek_session_items:[]}
 function soulseekRaceUnlocked(id){return soulseekUnlockedRaces().includes(id)}
@@ -219,7 +250,7 @@ function soulseekCloseDetailModal(){document.getElementById('soulseekShopDetailM
 async function soulseekEnsureTabData(tab,subTab){
  if(tab==='pj'){
   if(subTab==='razas'){if(!configRacesLoaded)await fetchConfigRaces()}
-  else if(subTab==='packs'){/* starter packs need nothing beyond the already-loaded account data */}
+  else if(subTab==='packs'||subTab==='pocionesTier'){/* both read only already-loaded account data */}
   else if(!configClasses.length)await fetchConfigClasses(); // clases + skills both need classSkillTrees, populated from configClasses
  }else{
   await ensureConfigItemsHydrated(); // objetos + pociones both read configItems
@@ -255,13 +286,14 @@ function soulseekRenderShopHeader(){
  el.innerHTML=`${soulIconHtml()} <b>${soulseekAccountSouls()}</b>`;
  setTimeout(soulseekDrawMiniIcons,0);
 }
+const SOULSEEK_PJ_SUBTAB_LABELS={pocionesTier:'POCIONES TIER'};
 function soulseekRenderShop(){
  soulseekRenderShopHeader();
  document.querySelectorAll('[data-shop-main]').forEach(b=>b.classList.toggle('active',b.dataset.shopMain===soulseekShopTab));
  const subRoot=document.getElementById('soulseekShopSubTabs');
- const subTabs=soulseekShopTab==='pj'?['razas','clases','skills','packs']:['objetos','pociones'];
+ const subTabs=soulseekShopTab==='pj'?['razas','clases','skills','packs','pocionesTier']:['objetos','pociones'];
  const activeSub=soulseekShopTab==='pj'?soulseekShopPjTab:soulseekShopObjTab;
- subRoot.innerHTML=subTabs.map(t=>`<button type="button" class="${t===activeSub?'active':''}" data-shop-sub="${t}">${t.toUpperCase()}</button>`).join('');
+ subRoot.innerHTML=subTabs.map(t=>`<button type="button" class="${t===activeSub?'active':''}" data-shop-sub="${t}">${SOULSEEK_PJ_SUBTAB_LABELS[t]||t.toUpperCase()}</button>`).join('');
  subRoot.querySelectorAll('[data-shop-sub]').forEach(b=>b.onclick=()=>{
   if(soulseekShopTab==='pj')soulseekShopPjTab=b.dataset.shopSub;else soulseekShopObjTab=b.dataset.shopSub;
   soulseekLoadTabThenRender();
@@ -270,6 +302,7 @@ function soulseekRenderShop(){
   if(soulseekShopPjTab==='razas')soulseekRenderShopRaces();
   else if(soulseekShopPjTab==='clases')soulseekRenderShopClasses();
   else if(soulseekShopPjTab==='packs')soulseekRenderShopStarterPacks();
+  else if(soulseekShopPjTab==='pocionesTier')soulseekRenderShopPotionTiers();
   else soulseekRenderShopSkills();
  }else soulseekRenderShopObjects();
 }
@@ -468,6 +501,52 @@ async function soulseekBuyStarterPack(rarity,tier,price){
   // owned are preserved, and writes back through the same soulseek_classes
   // field soulseekBuyClass uses.
   const next=[...new Set([...soulseekRawStoredClasses(),SOULSEEK_STARTER_PACK_PREFIX+soulseekStarterPackId(rarity,tier)])];
+  await soulseekSpendSouls(price,{soulseek_classes:next});
+  soulseekCloseDetailModal();
+  soulseekRenderShop();
+ }catch(e){uiAlert('Error al desbloquear: '+e.message)}
+}
+
+// ============================================================================
+// PJ > Pociones Tier - sequential chain (uncommon -> rare -> epic ->
+// legendary, costs 100/200/350/500) that SUBSTITUTES the rarity offered by
+// the starting-loadout potion step (soulseek.js's soulseekCommonPotionRows),
+// same single-row layout as the starter-pack rows above but one tier wide.
+// ============================================================================
+function soulseekRenderShopPotionTiers(){
+ const root=document.getElementById('soulseekShopContent'),current=soulseekSelectablePotionTier(),currentInfo=tierDefs[current]||{label:current,color:'#fff'};
+ root.innerHTML=`<p class="small">Desbloquea un tier superior de pociones para sustituir las pociones comunes que se pueden elegir al empezar la partida. Tier actual: <b style="color:${currentInfo.color}">${currentInfo.label}</b>.</p>
+ <div class="soulseekShopGrid">${SOULSEEK_POTION_TIER_ORDER.map(tier=>{
+  const owned=soulseekPotionTierOwned(tier),cost=soulseekPotionTierCost(tier),prereqOk=soulseekPotionTierPrereqOk(tier),locked=!owned&&!prereqOk,tierInfo=tierDefs[tier]||{label:tier,color:'#fff'};
+  return `<button type="button" class="soulseekShopCard ${owned?'unlocked':''}${locked?' soulseekShopCardLocked':''}" data-shop-potion-tier="${tier}">
+   <span class="soulseekShopLock">${owned?'🔓':'🔒'}</span>
+   <b style="color:${tierInfo.color}">Pociones ${tierInfo.label}</b>
+   <p>Sustituye el tier de pociones seleccionables al empezar la partida por ${tierInfo.label.toLowerCase()}.</p>
+   <span class="soulseekShopCardPrice">${owned?'Desbloqueado':(locked?'Requiere el tier anterior':cost+' souls')}</span>
+  </button>`;
+ }).join('')}</div>`;
+ root.querySelectorAll('[data-shop-potion-tier]').forEach(btn=>btn.onclick=()=>soulseekOpenPotionTierDetail(btn.dataset.shopPotionTier));
+}
+function soulseekOpenPotionTierDetail(tier){
+ const owned=soulseekPotionTierOwned(tier),cost=soulseekPotionTierCost(tier),prereqOk=soulseekPotionTierPrereqOk(tier),tierInfo=tierDefs[tier]||{label:tier,color:'#fff'};
+ const box=document.getElementById('soulseekShopDetailBox');
+ box.innerHTML=`<h2 style="color:${tierInfo.color}">Pociones ${tierInfo.label}</h2>
+  <p class="small">Sustituye el tier de pociones seleccionables al empezar la partida por rareza ${tierInfo.label.toLowerCase()}.</p>
+  ${(!owned&&!prereqOk)?'<p class="small">Necesitas desbloquear antes el tier anterior.</p>':''}
+  <div class="startActions">${owned?'<span class="soulseekShopUnlockedTag">DESBLOQUEADO</span>':`<button id="soulseekShopUnlockBtn" class="start" ${prereqOk?'':'disabled'}>DESBLOQUEAR (${cost} souls)</button>`}<button id="soulseekShopDetailCloseBtn">CERRAR</button></div>`;
+ document.getElementById('soulseekShopDetailModal').classList.add('open');
+ document.getElementById('soulseekShopDetailCloseBtn').onclick=soulseekCloseDetailModal;
+ document.getElementById('soulseekShopUnlockBtn')?.addEventListener('click',()=>soulseekBuyPotionTier(tier,cost));
+}
+async function soulseekBuyPotionTier(tier,price){
+ if(!soulseekPotionTierPrereqOk(tier))return;
+ if(soulseekAccountSouls()<price){uiAlert('No tienes suficientes Soul Spikes.');return}
+ if(!await uiConfirm(`¿Desbloquear pociones ${tierDefs[tier]?.label||tier} por ${price} souls?`))return;
+ try{
+  // Piggybacked on soulseek_classes (see SOULSEEK_POTION_TIER_PREFIX) -
+  // starts from the raw array so real classes and any starter packs already
+  // owned are preserved, same reasoning as soulseekBuyStarterPack.
+  const next=[...new Set([...soulseekRawStoredClasses(),SOULSEEK_POTION_TIER_PREFIX+tier])];
   await soulseekSpendSouls(price,{soulseek_classes:next});
   soulseekCloseDetailModal();
   soulseekRenderShop();
