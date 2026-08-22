@@ -564,34 +564,6 @@ function rng(n){return Math.floor(Math.random()*n)}function pick(a){return a[rng
 function rarity(){let r=Math.random()*100,s=0;for(const x of rarities){s+=x.w;if(r<=s)return x}return rarities[0]}
 
 
-const skillRarities={
- common:{label:'Común',weight:45,xpMult:1},
- uncommon:{label:'Infrecuente',weight:27,xpMult:1.15},
- rare:{label:'Raro',weight:16,xpMult:1.35},
- epic:{label:'Épico',weight:9,xpMult:1.65},
- legendary:{label:'Legendario',weight:3,xpMult:2.1}
-};
-function randomLootableSkill(){
- const known=new Set(game.player.knownSkills||[]);
- const pool=Object.entries(skillDefs).filter(([id,s])=>!known.has(id)&&(!s.classId||s.classId===game.player.cls||s.enemyUsable));
- if(!pool.length)return null;
- const level=game.player.level||1;
- // Same floor-progress gate as items/chests (currentLootProgressionRow, paced
- // against PROGRESSION_REFERENCE_FLOORS) - a rare+ skill shouldn't drop before
- // its rarity is actually unlocked for this floor, short dungeon or not.
- const lootRow=currentLootProgressionRow(game?.floor||1,level);
- const allowed=pool.filter(([id,s])=>{
-  const r=s.rarity||'common';
-  if(s.tier&&level<(s.tier===2?10:s.tier===3?30:1))return false;
-  if(!lootRarityAllowed(r,lootRow))return false;
-  return r==='common'||r==='uncommon'||(r==='rare'&&level>=2)||(r==='epic'&&level>=4)||(r==='legendary'&&level>=7)
- });
- const source=allowed.length?allowed:pool;
- let total=source.reduce((sum,[id,s])=>sum+(skillRarities[s.rarity||'common'].weight),0),roll=Math.random()*total;
- for(const pair of source){roll-=skillRarities[pair[1].rarity||'common'].weight;if(roll<=0)return pair[0]}
- return source[0][0];
-}
-
 function skillRange(id){
  const d=skillDefs[id]||{};
  if(d.range)return d.range;
@@ -646,19 +618,6 @@ function gainSkillUse(id){
 }
 function skillLevel(id){return game.player.skillProgress?.[id]?.level||1}
 function skillPowerMultiplier(id){return 1+(skillLevel(id)-1)*.12}
-function unlockSkillLoot(id){
- if(!id)return;
- game.player.knownSkills=game.player.knownSkills||[];
- if(!game.player.knownSkills.includes(id))game.player.knownSkills.push(id);
- game.player.skillProgress=game.player.skillProgress||{};
- game.player.skillProgress[id]=game.player.skillProgress[id]||{level:1,xp:0,uses:0};
- const s=skillDefs[id],r=skillRarities[s.rarity||'common'];
- const fake={name:`Técnica: ${s.name}`,slot:'trinket1',rarity:s.rarity||'common',label:r.label,desc:s.desc,itemLevel:game.player.level,score:0,iconShape:'sigilring'};
- lootToast(fake);banner(`HABILIDAD ${r.label.toUpperCase()}: ${s.name}`);
- log(`Has aprendido ${s.name}.`,'loot');
-}
-
-
 const weaponIconCache={};
 const WEAPON_ICON_COLUMNS=10;
 const WEAPON_TYPE_ICON_SIZE=50;
@@ -993,7 +952,7 @@ function describeEquipmentEffects(item){
 function describeItem(item){item.defenseStat=item.defenseStat||inferWeaponDefenseStat(item);
  const lines=[];
  if(item.type==='potion')lines.push(`<span class="effectLine">☥ ${describePotionEffects(item)||item.desc||'Poción'}</span>`);
- if(item.flavor)lines.push(`<span class="small">${item.flavor}</span>`);if(item.skillIds?.length)lines.push(`<span class="effectLine">✦ Habilidades: ${item.skillIds.map(id=>skillDefs[id]?.name||id).join(', ')}</span>`);if(item.slot==='weapon'&&item.damageDice)lines.push(`<span class="affixLine">Daño arma: ${item.damageDice}</span>`);for(const a of item.affixes||[])lines.push(`<span class="affixLine">+${a.value}${a.percent?'%':''} ${a.label}</span>`);
+ if(item.flavor)lines.push(`<span class="small">${item.flavor}</span>`);if(item.slot==='weapon'&&item.damageDice)lines.push(`<span class="affixLine">Daño arma: ${item.damageDice}</span>`);for(const a of item.affixes||[])lines.push(`<span class="affixLine">+${a.value}${a.percent?'%':''} ${a.label}</span>`);
  for(const p of item.passives||[])lines.push(`<span class="passiveLine">◆ ${p.name}: ${p.desc} (${p.value}${p.percent?'%':''})</span>`);
  if(item.type!=='potion'){
   const eq=describeEquipmentEffects(item);
@@ -1089,9 +1048,10 @@ function effectiveSkillCost(def){const raceMult=Math.max(0,1+(Number(game.player
 // Transformación (stackable 'transform' effect) can be authored to disallow
 // casting any other skill while it's active - see useSkill().
 function skillsBlockedByTransform(){return (game.player?.activeBuffs||[]).some(b=>b.effects?.blockSkills)}
+const MAX_ACTIVE_SKILL_SLOTS=6;
 function activeSkillSlotsFor(player=game.player){
  const wisdom=player?.derived?.finalStats?.wisdom??player?.stats?.wisdom??0;
- return 3+Math.floor(Math.max(0,wisdom)/10)
+ return Math.min(MAX_ACTIVE_SKILL_SLOTS,3+Math.floor(Math.max(0,wisdom)/10))
 }
 function enforceActiveSkillSlots(player=game.player){
  const limit=activeSkillSlotsFor(player),equipped=Array.isArray(player.equippedSkills)?player.equippedSkills:[];
@@ -2876,7 +2836,6 @@ function resolveFloorEvent(ev,prepared){
  }else if(ev.type==='reward'){
   const count=ev.id==='buriedArmory'?3:2;
   for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6){const row=currentLootProgressionRow(game.floor,game.player.level),pool=['rare','epic','legendary'].filter(r=>lootRarityAllowed(r,row));if(pool.length){item.rarity=pick(pool);item.label=tierDefs[item.rarity]?.label||item.rarity}}addInventoryItem(item);lootToast(item)}
-  if(ev.id==='fairyCache'&&Math.random()<.21)unlockSkillLoot(randomLootableSkill());
   if(ev.id==='forgottenShrine'){game.player.hp=game.player.maxHp;game.player.mana=game.player.maxMana;game.player.stamina=game.player.maxStamina}
   if(ev.id==='smugglerLocker')game.player.gold+=40+game.floor*15;
   banner('RECOMPENSA ESPECIAL');log(`${ev.name}: encuentras una recompensa poco común.`,'loot')
@@ -3683,20 +3642,19 @@ function kill(e){
   const item=configuredBossEquipmentDrop(e)||makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));addInventoryItem(item);lootToast(item);
  }else if(Math.random()<killLootChance||e.eventBoss){
   const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
-  const potionWeight=.322*(new Set(['caster','invocador','clerigo','chaman']).has(enemyClassOf(e))?1.15:1),equipmentWeight=.645,skillWeight=.033,totalWeight=equipmentWeight+potionWeight+skillWeight,roll=Math.random()*totalWeight;
+  // Skills no longer drop from enemy kills (see chestLootItem) - the old
+  // skillWeight share is folded back into equipment/potion.
+  const potionWeight=.322*(new Set(['caster','invocador','clerigo','chaman']).has(enemyClassOf(e))?1.15:1),equipmentWeight=.678,roll=Math.random()*(equipmentWeight+potionWeight);
   if(roll<equipmentWeight){
    // Elites never drop below 'uncommon', same guaranteed-floor idea as
    // bosses (rare) and megabosses (epic) above.
    const item=makeLoot(game.player.level,source,null,'equipment',e.elite?'uncommon':null);addInventoryItem(item);lootToast(item);
-  }else if(roll<equipmentWeight+potionWeight){
-   const item=makeLoot(game.player.level,source,null,'potion');if(item){addInventoryItem(item);lootToast(item)}
   }else{
-   const drop=(e.skills?.length?pick(e.skills.filter(id=>!game.player.knownSkills.includes(id))):null)||randomLootableSkill();
-   if(drop)unlockSkillLoot(drop);
+   const item=makeLoot(game.player.level,source,null,'potion');if(item){addInventoryItem(item);lootToast(item)}
   }
  }
  log(`${e.name} ha sido eliminado.`,'good');
- if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');learnSkill('ironRain');banner('JEFE DERROTADO · HABILIDAD DESBLOQUEADA')}
+ if(e.boss){game.bossesKilled++;unlock('firstBoss','Rey de nada','Derrota al primer jefe.');banner('JEFE DERROTADO')}
 }
 // Weapon on-hit procs: after a basic player attack lands, the equipped MAIN
 // weapon's own effects[] gets one independent procChance roll; on success it
@@ -3856,7 +3814,7 @@ function rescaleBossOnLevelUp(){
  rescaleEnemyToLevel(game.boss,bossTargetLevel());
 }
 function learnSkill(id){if(!skillDefs[id]||game.player.knownSkills.includes(id))return;game.player.knownSkills.push(id);game.player.skillProgress=game.player.skillProgress||{};game.player.skillProgress[id]={level:1,xp:0,uses:0};enforceActiveSkillSlots();const free=game.player.equippedSkills.findIndex(x=>!x);if(free>=0)game.player.equippedSkills[free]=id;log(`Nueva habilidad: ${skillDefs[id].name}.`,'loot')}
-function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot');if(id==='crowd')learnSkill('taunt');if(id==='chest5')learnSkill('lootMagnet')}
+function unlock(id,title,desc){if(game.achievements[id])return;game.achievements[id]={title,desc};log(`LOGRO: ${title}`,'loot')}
 
 function blocked(x,y){const d=game.doors.find(d=>d.x===x&&d.y===y);return game.map[y]?.[x]!==0||(d&&!d.open)}
 // A megaboss visually occupies a 2x2 block anchored on its own x,y (see
@@ -4269,17 +4227,14 @@ function pickChestDefForFloor(){
 }
 // The selected config_chest definition fixes both item class and exact rarity.
 // The actual config_items row is not rolled until the chest is opened.
+// Skills are no longer obtainable from chests (only via level-up class
+// picks, see pjlvl.js) - a legacy config_chest row still saved with
+// type==='skill' just falls through to the generic equipment pool below
+// instead of granting one.
 function chestLootItem(c){
  const def=c.chestDef;if(!def)return null;
  const type=def.type;
  const lootRow=currentLootProgressionRow(game.floor,game.player.level);
- if(type==='skill'){
-  const rarity=chestItemRarity(c.lootTier);
-  const ids=Object.keys(skillDefs).filter(id=>skillDefs[id].rarity===rarity&&!(game.player.knownSkills||[]).includes(id));
-  const id=ids.length?pick(ids):null;
-  if(id)unlockSkillLoot(id);
-  return null
- }
  const chestRarity=chestItemRarity(c.lootTier);
  const pool=configItems.filter(r=>{
   const j=r.item_json||r,rarity=j.rarity||r.tier||'common';
@@ -6255,7 +6210,6 @@ function useSkill(slot){
  if(!used){log('No hay un objetivo válido.','sys');return}
  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
 }
-function learnItemSkills(item){for(const id of item?.skillIds||[])learnSkill(id)}
 // Necklace effects are passive: only the 'buff' kind makes sense with no
 // target/cast action of its own. They are applied as a permanent buff
 // (999999-turn sentinel, same "until explicitly reverted" convention already
@@ -6288,7 +6242,7 @@ function syncEquipmentSlotPassive(slot){
 function equipItem(id){
  const item=game.inventory.find(i=>i.id===id);if(!item)return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
- learnItemSkills(item);let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
+ let slot=item.slot;if(slot==='ring1'&&game.player.equipment.ring1)slot='ring2';if(slot==='trinket1'&&game.player.equipment.trinket1)slot='trinket2';
  const old=game.player.equipment[slot];if(old)game.inventory.push(old);game.player.equipment[slot]=item;game.inventory=game.inventory.filter(i=>i.id!==id);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);log(`Equipado: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
 // Lets a weapon-slot dagger or wand be equipped in the offhand slot instead of the
@@ -6298,12 +6252,15 @@ function equipItem(id){
 function equipItemAsOffhand(id){
  const item=game.inventory.find(i=>i.id===id);if(!item||!isDualHandWeapon(item))return;
  if(isItemInMyTradeOffer(id)){log('Este objeto está en oferta de intercambio: retíralo antes de equiparlo.','sys');return}
- learnItemSkills(item);
  const old=game.player.equipment.offhand;if(old)game.inventory.push(old);
  game.player.equipment.offhand=item;game.inventory=game.inventory.filter(i=>i.id!==id);syncEquipmentSlotPassive('offhand');
  log(`Equipado en mano izquierda: ${item.name}.`,'loot');recomputeDerived();updateUI();draw()
 }
-function equipSkill(id,slot){if(!game.player.knownSkills.includes(id)||slot<0||slot>=activeSkillSlotsFor())return;game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()}
+function equipSkill(id,slot){
+ if(!game.player.knownSkills.includes(id)||slot<0||slot>=MAX_ACTIVE_SKILL_SLOTS)return;
+ if(slot>=activeSkillSlotsFor()){uiAlert('No tienes sabiduría suficiente para activar esta habilidad.');return}
+ game.player.equippedSkills=game.player.equippedSkills.map(x=>x===id?null:x);game.player.equippedSkills[slot]=id;updateUI()
+}
 function unequipItem(slot){
  const item=game.player.equipment?.[slot];if(!item)return;
  game.player.equipment[slot]=null;game.inventory.push(item);if(game.player.equipmentCooldowns)game.player.equipmentCooldowns[slot]=0;syncEquipmentSlotPassive(slot);
@@ -6371,7 +6328,7 @@ function updateUI(){
  renderCompanionsTab();
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=c.dataset.equippedSlot?p.equipment[c.dataset.equippedSlot]:game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
- skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard ${d.raceSkill?'raceSkill':''}"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${Array.from({length:activeSkillSlotsFor()},(_,n)=>`<button onclick="equipSkill('${id}',${n})">${n+1}</button>`).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
+ skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard ${d.raceSkill?'raceSkill':''}"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${Array.from({length:MAX_ACTIVE_SKILL_SLOTS},(_,n)=>{const locked=n>=activeSkillSlotsFor();return `<button class="skillSlotBtn${locked?' locked':''}" title="${locked?'Sabiduría insuficiente para este hueco':''}" onclick="equipSkill('${id}',${n})">${n+1}</button>`}).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Small icon-only thumbnails overlaid on the board itself (see .mobileSkill
@@ -8062,7 +8019,7 @@ function chestItemMatchesType(j,type,slotFilter='all',weaponTypeFilter='all'){
 function renderChestItemResults(){
  const summary=document.getElementById('configChestLootSummary');if(!summary)return;
  const type=document.getElementById('configChestType')?.value||'equipment';
- const typeLabels={equipment:'equipo',weapon:'arma',potion:'poción',skill:'habilidad'};
+ const typeLabels={equipment:'equipo',weapon:'arma',potion:'poción'};
  summary.textContent=`Cofre de ${typeLabels[type]||type}: su tier se sorteará al iniciar el piso según el nivel del personaje y el contenido se decidirá al abrir.`;
 }
 function toggleChestTypeFields(){

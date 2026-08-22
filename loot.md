@@ -139,7 +139,6 @@ Al abrir un cofre:
 
 - siempre da 1 objeto;
 - tiene 24% de probabilidad de dar un segundo objeto;
-- tiene `min(65%, 16% + piso * 2.5%)` de probabilidad de enseñar una habilidad lootable;
 - da oro: `5 + random(0..13)`.
 
 La skill `lootMagnet` abre cofres cercanos en radio Manhattan <= 3 y recoge llaves cercanas en el mismo radio. `dimensionalPocket` abre cofres ya explorados con un límite de `2 + floor(nivelSkill / 2)`.
@@ -157,16 +156,7 @@ Al matar un enemigo:
 - si el enemigo es jefe, el loot se crea con `nivelJugador + 3` y fuente `boss`;
 - si el enemigo es élite, la fuente marcada es `elite`, pero la probabilidad base de soltar objeto no cambia salvo que sea jefe.
 
-Drops de habilidades desde enemigos:
-
-- Si el enemigo tiene skills, puede soltar una skill que el jugador no conozca:
-  - jefe: 38%;
-  - élite: 18%;
-  - normal: 5.5%.
-- Si no se produce ese drop, puede aprenderse una habilidad aleatoria:
-  - jefe o jefe de evento: garantizado por esa rama;
-  - enemigo normal/élite: 1.8%.
-- Al derrotar un jefe normal, además se aprende `ironRain` por el logro del primer jefe si aún no se tenía.
+Las skills ya no se obtienen de ninguna fuente de loot (cofres, enemigos ni eventos): la única vía de adquisición es subir de nivel (ver `skills-json-rules.md`).
 
 ### Eventos de recompensa
 
@@ -176,7 +166,6 @@ Los eventos de tipo `reward` dan recompensas especiales:
 - Otros eventos de recompensa: 2 objetos.
 - Cada objeto se genera con `makeLoot(nivelJugador + piso + 2, 'specialReward')`.
 - El primer objeto tiene 60% de probabilidad de forzarse a Raro, Épico o Legendario al azar, filtrando antes por las rarezas permitidas en la progresión actual de piso/nivel.
-- `fairyCache`: 65% de probabilidad adicional de enseñar una habilidad lootable.
 - `forgottenShrine`: restaura vida, maná y stamina al máximo.
 - `smugglerLocker`: da `40 + piso * 15` oro.
 
@@ -241,43 +230,20 @@ La probabilidad de efecto especial depende de la rareza:
 
 Los efectos disponibles incluyen impacto extra, segunda vida, atravesar pared, sobrecarga dual, berserk, conversión de oro en recursos, eco de skill y bonus por coleccionar rarezas distintas.
 
-## 10. Habilidades como botín
+## 10. Habilidades
 
-Las skills lootables se eligen con pesos independientes:
-
-| Rareza de skill | Peso | Multiplicador XP |
-|---|---:|---:|
-| Común | 45 | x1.00 |
-| Infrecuente | 27 | x1.15 |
-| Raro | 16 | x1.35 |
-| Épico | 9 | x1.65 |
-| Legendario | 3 | x2.10 |
-
-Filtros de desbloqueo:
-
-- no debe estar ya aprendida;
-- si es skill de clase, debe pertenecer a la clase del jugador o ser usable por enemigos;
-- Tier II requiere nivel 10;
-- Tier III requiere nivel 30;
-- rareza Rara requiere nivel >= 2;
-- Épica requiere nivel >= 4;
-- Legendaria requiere nivel >= 7.
+Las skills no forman parte del botín: se obtienen exclusivamente subiendo de nivel (elección de skill de clase en los niveles/tiers correspondientes). Ver `skills-json-rules.md` y `pjlvl.js` para el detalle de esa progresión.
 
 ## 11. Resumen rápido de porcentajes importantes
 
 | Sistema | Porcentaje |
 |---|---:|
 | Segundo objeto en cofre | 24% |
-| Skill desde cofre | `min(65%, 16% + piso * 2.5%)` |
 | Drop de objeto de enemigo normal | `min(65%, 13% + SuerteFinal * 0.8%)` |
 | Drop de objeto de jefe / jefe evento | 100% |
 | Poción en `makeLoot()` | `min(22%, 7% + piso * 2.5% + 8% si boss)` |
 | Objeto configurado si hay elegibles | 55% |
-| Skill desde enemigo con skills normal / élite / jefe | 5.5% / 18% / 38% |
-| Skill aleatoria fallback en enemigo normal/élite | 1.8% |
-| Skill aleatoria fallback en jefe / jefe evento | 100% en esa rama |
 | Primer objeto de evento reward forzado a Raro/Épico/Legendario | 60%, limitado a rarezas permitidas |
-| Skill adicional en `fairyCache` | 65% |
 
 ## 12. Notas de implementación y balance
 

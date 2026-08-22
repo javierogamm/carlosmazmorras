@@ -125,18 +125,17 @@ Los objetos con `slot: "weapon"` pueden declarar datos de arma. Si no los declar
     { "key": "strength", "label": "Fuerza", "value": 2, "percent": false },
     { "key": "damage", "label": "Daño", "value": 3, "percent": false }
   ],
-  "skillIds": ["smash"],
+  "skillIds": [],
   "passives": [],
   "effects": [],
-  "desc": "Configurado · strength:+2, damage:+3 · Habilidades: Golpe de Yunque"
+  "desc": "Configurado · strength:+2, damage:+3"
 }
 ```
 
-## Habilidades en objetos (legado)
+## Habilidades en objetos (eliminado)
 
-- `skillIds` es un array de IDs de skill. Al equipar el objeto, el motor intenta aprender esas skills (`learnItemSkills`).
-- **El editor ya no expone este campo**: la pestaña Items eliminó el selector "Habilidades" porque los efectos apilables configurables del propio objeto (ver más abajo) lo hacen redundante. Un objeto editado y reguardado conserva el `skillIds` que ya tuviera (no se borra silenciosamente), pero no hay forma de asignar uno nuevo desde el formulario.
-- Solo tiene sentido incluir `skillIds` a mano en un JSON si necesitas compatibilidad con objetos antiguos que ya dependían de este mecanismo. Para efectos nuevos, usa el `effects[]` del objeto en su lugar.
+- `skillIds` ya no tiene ningún efecto en el motor: equipar un objeto nunca enseña una skill, sea cual sea su contenido. Las skills solo se obtienen subiendo de nivel (ver `skills-json-rules.md`).
+- El campo se mantiene en el JSON por compatibilidad con datos antiguos, pero se ignora en runtime; no lo rellenes en objetos nuevos.
 
 ## Pasivas legendarias
 
