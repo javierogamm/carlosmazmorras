@@ -337,6 +337,16 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 body.gameOnly{margin:0;background:#09070c;overflow:hidden}body.gameOnly>#globalMenuBtn,body.gameOnly #app>header,body.gameOnly .log,body.gameOnly .controls,body.gameOnly .gamePanel>.small,body.gameOnly .floorObjective,body.gameOnly .boardActionBar{display:none!important}body.gameOnly #app{display:block!important;width:100vw;height:100vh;padding:4px;overflow:hidden}body.gameOnly #app .layout{height:100%;display:grid;grid-template-columns:minmax(150px,14vw) minmax(0,1fr) minmax(210px,18vw);gap:4px}body.gameOnly .heroPanel,body.gameOnly .gamePanel,body.gameOnly .sidePanel{display:block;height:100%;min-width:0;margin:0;overflow:auto}body.gameOnly .heroPanel{padding:7px}body.gameOnly .gamePanel{padding:3px}body.gameOnly .gameStage{width:100%;max-width:none;margin:0}body.gameOnly #game{display:block;width:100%;height:auto;max-width:none}body.gameOnly .sidePanel{max-height:none;padding:7px}body.gameOnly #hudFullscreen{opacity:.55}body.gameOnly #hudFullscreen:hover,body.gameOnly #hudFullscreen:focus{opacity:1}@media(max-width:900px){body.gameOnly #app{overflow:auto}body.gameOnly #app .layout{height:auto;min-height:100%;grid-template-columns:minmax(150px,20vw) minmax(520px,1fr) minmax(210px,25vw)}}
 
 /* Editor de pisos (custompisos.js) */
+/* 33% more visible width specifically for the canvas viewport (the middle
+   grid column, minmax(0,1fr) - see .pisoEditorLayout below). Both side
+   panels are capped at their own minmax() upper bound (320px/300px) and
+   never grow, so ALL of the extra room this adds funnels straight into the
+   middle column: at max side widths the middle column is normally
+   1160(content)-620(sides)-20(gaps)=520px: +171px (=520*.33) here grows the
+   canvas column to ~691px, i.e. +33%, not the whole screen. Scoped to only
+   when the piso tab is actually open, so every other Configuración tab
+   keeps .configScreen's normal 1180px. */
+#configScreen:has(#configTabCustompisos:not(.hidden)){max-width:1351px}
 .pisoEditorLayout{grid-template-columns:minmax(260px,320px) minmax(0,1fr) minmax(240px,300px);align-items:start}
 .pisoEditorMain{min-width:0}
 .pisoToolbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -344,7 +354,15 @@ body.gameOnly{margin:0;background:#09070c;overflow:hidden}body.gameOnly>#globalM
 .pisoToolGroup button{background:#251a2f;color:#fff;border:2px solid #684b7c;padding:7px 10px;cursor:pointer;font-family:inherit}
 .pisoToolGroup button.active{background:#65447a;border-color:#ffc35a}
 .pisoCanvasWrap{position:relative;max-width:100%;max-height:70vh;overflow:auto;border:2px solid #4d395a;background:#09070c;touch-action:none}
-.pisoCanvasWrap canvas{display:block;image-rendering:pixelated;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none}
+/* width/height:auto (+max-width:none) override the global `canvas{width:100%;
+   height:auto}` rule (styles.css top) which was forcing #pisoCanvas to always
+   fill its wrap's width regardless of pisoZoom - that's what made zoom look
+   like it did nothing: the internal buffer (canvas.width/height, sized off
+   pisoZoom in pisoDraw()) changed, but the on-page size was pinned right back
+   down to 100% of .pisoCanvasWrap every time. Letting it render at its native
+   pixel size means zoom actually changes the visible size, with the wrap's
+   own overflow:auto handling scroll once it's bigger than the viewport. */
+.pisoCanvasWrap canvas{display:block;width:auto;height:auto;max-width:none;image-rendering:pixelated;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none}
 .pisoCanvasWrap.pisoPanning canvas{cursor:grab}
 .pisoCanvasWrap:fullscreen,.pisoCanvasWrap:-webkit-full-screen{max-height:100vh;height:100vh;max-width:100vw;background:#09070c}
 .pisoDragGhost{position:fixed;z-index:9999;pointer-events:none;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:#1c1424ee;border:2px solid #ffc35a;box-shadow:0 0 12px #000a;font-size:20px;transform:translate(-50%,-50%)}
