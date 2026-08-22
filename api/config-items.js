@@ -31,7 +31,17 @@ module.exports=async(req,res)=>{
   const {url,key}=supabaseConfig();
   if(req.method==='GET'){
    const id=req.query?.id||null,light=req.query?.light==='1',select=(id||!light)?'id,created_at,nombre,slot,tier,icon,stats,ilvl,weapontype,item_json':'id,created_at,nombre,slot,tier,ilvl,weapontype,type:item_json->>type',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
-   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=created_at.desc`,{headers:headers(key)});
+   // The full (non-light) row set embeds every item's item_json - icon included -
+   // so with a catalog of hundreds of rows that single response can be large
+   // enough to time out. limit/offset let the client page through it in small
+   // chunks instead of requesting everything at once; PostgREST supports both
+   // natively. Omitted entirely for the default (unpaged) request.
+   const limit=!id&&req.query?.limit?Math.max(1,Math.min(200,parseInt(req.query.limit,10)||0)):null,offset=!id&&req.query?.offset?Math.max(0,parseInt(req.query.offset,10)||0):0,page=limit?`&limit=${limit}&offset=${offset}`:'';
+   // id.asc as a tiebreaker keeps paged offsets stable even when several
+   // rows share the same created_at (e.g. a bulk import) - without it,
+   // ties could be ordered differently between two page requests and
+   // rows would be skipped or duplicated across pages.
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}${page}&order=created_at.desc,id.asc`,{headers:headers(key)});
    const data=await r.json();
    if(!r.ok)return res.status(r.status).json(data);
    return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);

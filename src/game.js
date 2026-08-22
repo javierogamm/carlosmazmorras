@@ -7012,20 +7012,52 @@ function allClassIds(){
  return [...ids];
 }
 
-// With a catalog of hundreds of rows, the full request (every row's item_json,
-// icons included) can be huge enough to fail or time out. fetchConfigItems used
-// to swallow that error into #configStatus - a field that isn't even on screen
-// during actual gameplay - leaving configItems empty with no visible signal,
-// which then made every loot roll (enemies and chests alike) come up empty.
-// configItemsFullFetchFailed remembers that the full request doesn't work this
-// session so ensureConfigItemsHydrated() stops retrying that same oversized
-// request on every screen transition, and instead treats a successful light
-// fallback as "hydrated enough" - degraded (no icon/affixes from item_json,
-// falling back to the row's own tier/slot/ilvl/nombre columns) beats no loot.
-let configItemsFullFetchFailed=false;
-function configItemsNeedHydration(){if(!configItems.length)return true;if(configItemsFullFetchFailed)return false;return configItems.some(row=>!row.item_json)}
-async function fetchConfigItems({light=false}={}){const startedHydrated=!configItemsNeedHydration();try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(!light)configItemsFullFetchFailed=false;if(light&&!startedHydrated&&!configItemsNeedHydration()){const fullById=new Map(configItems.map(row=>[String(row.id),row]));configItems=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configItems=rows;renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`;if(!light&&!configItems.length){configItemsFullFetchFailed=true;await fetchConfigItems({light:true})}}}
-async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !!configItems.length}
+// Loot must always be a real config_items row, icon included - never a
+// substitute built from a partial row. With a catalog of hundreds of rows,
+// asking for the full set (every row's item_json, icons embedded) in one
+// request can be big enough to time out, so the full load is paged into
+// small chunks instead of one giant request. configItems is only replaced
+// once every page has arrived, so a mid-load failure never swaps working
+// data for an empty or degraded catalog - it just leaves the previous
+// (possibly still-empty) state in place and reports the error.
+const CONFIG_ITEMS_PAGE_SIZE=80;
+function configItemsNeedHydration(){return !configItems.length||configItems.some(row=>!row.item_json)}
+async function fetchConfigItemsFullPaged(){
+ const rows=[];
+ for(let offset=0;;offset+=CONFIG_ITEMS_PAGE_SIZE){
+  const r=await fetch(`/api/config-items?limit=${CONFIG_ITEMS_PAGE_SIZE}&offset=${offset}`);
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');
+  const page=Array.isArray(data)?data:[];
+  rows.push(...page);
+  // Every row here is a real, fully-hydrated config_items row (icon
+  // included) - publish each page as it lands so a later page failing
+  // still leaves whatever loaded usable for real loot, instead of an
+  // all-or-nothing swap that could throw away good data.
+  configItems=rows.slice();
+  if(page.length<CONFIG_ITEMS_PAGE_SIZE)break;
+ }
+ return rows;
+}
+async function fetchConfigItems({light=false}={}){
+ try{
+  if(light){
+   // Cheap admin-panel refresh after a save/update/delete - keep whatever
+   // item_json rows are already hydrated locally instead of discarding them,
+   // since this path is never used to build actual loot.
+   const r=await fetch('/api/config-items?light=1');const data=await r.json();
+   if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');
+   const rows=Array.isArray(data)?data:[],fullById=new Map(configItems.filter(row=>row.item_json).map(row=>[String(row.id),row]));
+   configItems=rows.map(row=>fullById.get(String(row.id))||row);
+  }else{
+   configItems=await fetchConfigItemsFullPaged();
+  }
+  renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()
+ }catch(e){
+  const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`;
+ }
+}
+async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !configItemsNeedHydration()}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
 
