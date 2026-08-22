@@ -97,14 +97,21 @@ function pisoResizeGrid(draft,cols,rows){
  if(draft.spawn&&!inBounds(draft.spawn))draft.spawn=null;
  if(draft.stairs&&!inBounds(draft.stairs))draft.stairs=null;
 }
+// Belt-and-suspenders: strips any leftover `icon` (hex PNG) from an object -
+// nothing in this file writes one anymore (see pisoApplyTileEntry's/
+// pisoPlaceInstance's comments), but a piso saved before that fix, or a
+// hand-edited import, could still be carrying one in memory. Re-saving it
+// must never re-persist that bloat.
+function pisoWithoutIcon(o){if(!o||typeof o!=='object')return o;const {icon,...rest}=o;return rest}
 function pisoDraftToColumns(draft){
+ const tileRefs={};for(const k in draft.tileRefs)tileRefs[k]=pisoWithoutIcon(draft.tileRefs[k]);
  return {
   name:draft.name||'Piso sin nombre',
   nivel:draft.nivel||null,
-  tiles_doors:{cols:draft.cols,rows:draft.rows,grid:draft.grid,tileRefs:draft.tileRefs,doors:draft.doors,spawn:draft.spawn,stairs:draft.stairs,tilesetId:draft.tilesetId||null},
-  assets:draft.assets,
-  enemigos:draft.enemies,
-  chests_keys_traps:{chests:draft.chests,keys:draft.keys,traps:draft.traps,altars:draft.altars},
+  tiles_doors:{cols:draft.cols,rows:draft.rows,grid:draft.grid,tileRefs,doors:draft.doors,spawn:draft.spawn,stairs:draft.stairs,tilesetId:draft.tilesetId||null},
+  assets:(draft.assets||[]).map(pisoWithoutIcon),
+  enemigos:(draft.enemies||[]).map(pisoWithoutIcon),
+  chests_keys_traps:{chests:(draft.chests||[]).map(pisoWithoutIcon),keys:draft.keys,traps:draft.traps,altars:draft.altars},
   interiors:Object.fromEntries(Object.entries(draft.interiors||{}).map(([iid,sub])=>[iid,pisoDraftToColumns(sub)])),
   salas:draft.salas
  };
@@ -225,7 +232,7 @@ function pisoPopulateTilesetSelect(){
  if(current)sel.value=current;
 }
 async function pisoOnTilesetChange(id){
- if(!id){pisoActiveTileset=null;pisoRenderPalette();return}
+ if(!id){pisoActiveTileset=null;pisoRenderPalette();pisoDraw();return}
  try{
   const detail=await pisoFetchFloorDetail(id);
   pisoActiveTileset=detail?.floor_json||null;
@@ -234,6 +241,19 @@ async function pisoOnTilesetChange(id){
   const st=document.getElementById('pisoStatus');if(st)st.textContent='Error cargando tileset: '+e.message;
  }
  pisoRenderPalette();pisoDraw();
+}
+// Re-selects and (re)loads whichever tileset the CURRENT draft (root or
+// interior) was last painted with, so already-painted tiles show their real
+// icons again instead of just their flat color - tileRefs only keep a
+// name/type reference, not the icon itself (see pisoTileIconFor()), so
+// without this the active tileset has to be picked by hand after every
+// load/interior switch for icons to reappear.
+function pisoSyncActiveTilesetFromDraft(){
+ const id=pisoCurrentDraft().tilesetId;
+ const sel=document.getElementById('pisoTilesetSelect');
+ if(sel)sel.value=id||'';
+ if(id)pisoOnTilesetChange(id);
+ else{pisoActiveTileset=null;pisoRenderPalette();pisoDraw()}
 }
 
 // ---- enemy icon on-demand fetch (mirrors requestEnemyIcon but decoupled
@@ -344,6 +364,42 @@ function pisoCellPx(){return Math.max(6,Math.round(PISO_CELL_BASE*pisoZoom))}
 function pisoCanvasEl(){return document.getElementById('pisoCanvas')}
 function pisoCtx(){const c=pisoCanvasEl();return c?c.getContext('2d'):null}
 
+// Tile icons are NOT stored per painted cell (that would duplicate the same
+// icon hex hundreds/thousands of times and blow past Vercel's request body
+// limit on any reasonably-painted floor - see the comment on
+// pisoApplyTileEntry). Instead each cell only remembers {type,name,...}, and
+// the actual icon is looked up here, live, from the currently loaded
+// reference tileset. A cell painted with a tile that isn't in the active
+// tileset (e.g. reopening a piso before its own tileset has loaded) just
+// falls back to its flat color until pisoSyncActiveTilesetFromDraft() runs.
+function pisoTileIconFor(ref){
+ if(!ref||!pisoActiveTileset)return null;
+ const list=ref.type==='wall'?pisoActiveTileset.wallTiles:ref.type==='door'?pisoActiveTileset.doorTiles:pisoActiveTileset.floorTiles;
+ return (list||[]).find(t=>t.name===ref.name)?.icon||null;
+}
+// Same reasoning as pisoTileIconFor: asset/enemy/chest instances only keep
+// their stable catalog reference (key/enemyDetailId/configChestId), never
+// the icon itself, so resolve it live from whichever catalog cache already
+// has it (populated by pisoEnsureCatalogs()/pisoRequestEnemyIcon()/
+// fetchConfigWorldObjectDetail() - all shared with the rest of the config
+// screen, so nothing here re-fetches on its own).
+const pisoAssetIconRequests=new Set();
+function pisoAssetIconFor(key){
+ if(!key||typeof configWorldObjectRows==='undefined')return null;
+ const icon=configWorldObjectRows[key]?.icon;
+ if(icon===undefined&&typeof fetchConfigWorldObjectDetail==='function'&&!pisoAssetIconRequests.has(key)){
+  pisoAssetIconRequests.add(key);
+  fetchConfigWorldObjectDetail(key).then(()=>pisoDraw()).catch(()=>{}).finally(()=>pisoAssetIconRequests.delete(key));
+ }
+ return icon||null;
+}
+function pisoEnemyIconFor(enemyDetailId){
+ if(!enemyDetailId||typeof configEnemyDetails==='undefined')return null;
+ const detail=configEnemyDetails.find(d=>String(d.id)===String(enemyDetailId));
+ if(detail&&!detail.icon)pisoRequestEnemyIcon(enemyDetailId,()=>pisoDraw());
+ return detail?.icon||null;
+}
+function pisoChestIconFor(configChestId){return (typeof configChests!=='undefined'?configChests.find(r=>String(r.id)===String(configChestId))?.chest_json?.icon:null)||null}
 function pisoDraw(){
  const canvas=pisoCanvasEl(),ctx=pisoCtx();if(!canvas||!ctx)return;
  const draft=pisoCurrentDraft(),cell=pisoCellPx();
@@ -354,7 +410,7 @@ function pisoDraw(){
   const open=draft.grid[y][x]===0,ref=draft.tileRefs[pisoKey(x,y)];
   ctx.fillStyle=open?(ref?.color||'#241b2c'):(ref?.color||'#100b16');
   ctx.fillRect(x*cell,y*cell,cell,cell);
-  if(ref?.icon)pisoDrawIconAt(ctx,ref.icon,x*cell,y*cell,cell,cell);
+  const icon=pisoTileIconFor(ref);if(icon)pisoDrawIconAt(ctx,icon,x*cell,y*cell,cell,cell);
   ctx.strokeStyle='#00000050';ctx.lineWidth=1;ctx.strokeRect(x*cell+.5,y*cell+.5,cell-1,cell-1);
  }
  // salas outlines, colored by archetype when the sala has one
@@ -380,15 +436,15 @@ function pisoDraw(){
   ctx.fillStyle='#3c2a4a';ctx.fillRect(a.x*cell,a.y*cell,a.cols*cell,a.rows*cell);
   ctx.strokeStyle=pisoSelectedInstance?.kind==='asset'&&pisoSelectedInstance.iid===a.iid?'#ffc35a':'#8b6b9d';
   ctx.lineWidth=2;ctx.strokeRect(a.x*cell+1,a.y*cell+1,a.cols*cell-2,a.rows*cell-2);
-  if(a.icon)pisoDrawIconAt(ctx,a.icon,a.x*cell,a.y*cell,a.cols*cell,a.rows*cell);
+  const assetIcon=pisoAssetIconFor(a.key);if(assetIcon)pisoDrawIconAt(ctx,assetIcon,a.x*cell,a.y*cell,a.cols*cell,a.rows*cell);
   if(a.door&&window.DungeonInteriors){
    const dt=window.DungeonInteriors.parseDoor(a.door,a.cols,a.rows);
    if(dt){ctx.fillStyle='#ffd68b';ctx.fillRect((a.x+dt.x)*cell+cell*.3,(a.y+dt.y)*cell+cell*.3,cell*.4,cell*.4)}
   }
  }
  // enemies/chests/keys/traps
- for(const e of draft.enemies||[])pisoDrawGlyphOrIcon(ctx,e.icon,'👹',e.x*cell,e.y*cell,cell,e.boss?'#ff5c5c':'#e0b0ff');
- for(const c of draft.chests||[])pisoDrawGlyphOrIcon(ctx,c.icon,'🎁',c.x*cell,c.y*cell,cell,c.locked?'#ffcf70':'#8cffb0');
+ for(const e of draft.enemies||[])pisoDrawGlyphOrIcon(ctx,pisoEnemyIconFor(e.enemyDetailId),'👹',e.x*cell,e.y*cell,cell,e.boss?'#ff5c5c':'#e0b0ff');
+ for(const c of draft.chests||[])pisoDrawGlyphOrIcon(ctx,pisoChestIconFor(c.configChestId),'🎁',c.x*cell,c.y*cell,cell,c.locked?'#ffcf70':'#8cffb0');
  for(const k of draft.keys||[])pisoDrawGlyphOrIcon(ctx,null,'🔑',k.x*cell,k.y*cell,cell,'#ffe28a');
  for(const t of draft.traps||[])pisoDrawGlyphOrIcon(ctx,null,'☠️',t.x*cell,t.y*cell,cell,t.effects?.length?'#ff6b6b':'#c98cff');
  // spawn/stairs markers
@@ -476,18 +532,25 @@ function pisoCanPlaceAssetAt(draft,x,y,cols,rows,ignoreIid){
 // ============================================================================
 function pisoSetStatus(msg){const st=document.getElementById('pisoStatus');if(st)st.textContent=msg||''}
 
+// Deliberately NOT storing entry.tile.icon here: it's a hex-encoded PNG,
+// and this runs once per painted cell - on any decently-sized floor that
+// would multiply the same icon hundreds/thousands of times into the saved
+// JSON and blow well past Vercel's request body limit (this is exactly what
+// broke saving a 40x40 floor). color/name/type/direction are all tiny and
+// enough to resolve the real icon back from the tileset at render time -
+// see pisoTileIconFor().
 function pisoApplyTileEntry(entry,x,y){
  const draft=pisoCurrentDraft();
  if(entry.kind==='floor'){
-  draft.grid[y][x]=0;draft.tileRefs[pisoKey(x,y)]={type:'floor',name:entry.tile.name,color:entry.tile.color,icon:entry.tile.icon};
+  draft.grid[y][x]=0;draft.tileRefs[pisoKey(x,y)]={type:'floor',name:entry.tile.name,color:entry.tile.color};
   const doorIdx=(draft.doors||[]).findIndex(d=>d.x===x&&d.y===y);if(doorIdx>=0)draft.doors.splice(doorIdx,1);
  }else if(entry.kind==='wall'){
   if(pisoInstanceAt(x,y)){pisoSetStatus('Esa casilla tiene algo colocado encima; bórralo primero.');return}
   if((draft.spawn?.x===x&&draft.spawn?.y===y)||(draft.stairs?.x===x&&draft.stairs?.y===y)){pisoSetStatus('Ahí está marcada la entrada/salida; muévela primero.');return}
-  draft.grid[y][x]=1;draft.tileRefs[pisoKey(x,y)]={type:'wall',name:entry.tile.name,color:entry.tile.color,icon:entry.tile.icon,direction:entry.tile.direction};
+  draft.grid[y][x]=1;draft.tileRefs[pisoKey(x,y)]={type:'wall',name:entry.tile.name,color:entry.tile.color,direction:entry.tile.direction};
   const doorIdx=(draft.doors||[]).findIndex(d=>d.x===x&&d.y===y);if(doorIdx>=0)draft.doors.splice(doorIdx,1);
  }else if(entry.kind==='door'){
-  draft.grid[y][x]=0;draft.tileRefs[pisoKey(x,y)]={type:'door',name:entry.tile.name,color:entry.tile.color,icon:entry.tile.icon};
+  draft.grid[y][x]=0;draft.tileRefs[pisoKey(x,y)]={type:'door',name:entry.tile.name,color:entry.tile.color};
   const existing=(draft.doors||[]).find(d=>d.x===x&&d.y===y);
   if(!existing)draft.doors.push({iid:pisoUid(),x,y,open:false,locked:true});
  }
@@ -533,13 +596,14 @@ function pisoPlaceInstance(entry,x,y){
  if(entry.kind==='asset'){
   const a=entry.asset;
   if(!pisoCanPlaceAssetAt(draft,x,y,a.cols,a.rows)){pisoSetStatus('No cabe ahí: hace falta suelo ya pintado y libre de otros assets en todo su hueco ('+a.cols+'×'+a.rows+').');return}
-  draft.assets.push({iid:pisoUid(),key:a.key,name:a.name,icon:a.icon,x,y,cols:a.cols,rows:a.rows,door:a.door||''});
+  // icon deliberately not stored - see pisoAssetIconFor()/the comment above pisoApplyTileEntry
+  draft.assets.push({iid:pisoUid(),key:a.key,name:a.name,x,y,cols:a.cols,rows:a.rows,door:a.door||''});
  }else if(entry.kind==='enemy'){
   if(draft.grid[y][x]!==0){pisoSetStatus('Coloca enemigos sobre suelo.');return}
-  draft.enemies.push({iid:pisoUid(),x,y,enemyDetailId:entry.enemy.id,name:entry.enemy.name,icon:entry.enemy.icon,tier:entry.enemy.tier,boss:false,familyName:entry.family});
+  draft.enemies.push({iid:pisoUid(),x,y,enemyDetailId:entry.enemy.id,name:entry.enemy.name,tier:entry.enemy.tier,boss:false,familyName:entry.family});
  }else if(entry.kind==='chest'){
   if(draft.grid[y][x]!==0){pisoSetStatus('Coloca cofres sobre suelo.');return}
-  draft.chests.push({iid:pisoUid(),x,y,configChestId:entry.chestRow.id,name:entry.label,icon:entry.icon,locked:false});
+  draft.chests.push({iid:pisoUid(),x,y,configChestId:entry.chestRow.id,name:entry.label,locked:false});
  }else if(entry.kind==='key'){
   if(draft.grid[y][x]!==0){pisoSetStatus('Coloca llaves sobre suelo.');return}
   draft.keys.push({iid:pisoUid(),x,y});
@@ -1067,11 +1131,11 @@ function pisoOpenInterior(assetObj){
  if(!pisoRootDraft.interiors[assetObj.iid])pisoRootDraft.interiors[assetObj.iid]=pisoNewDraft(21,21);
  pisoContextStack=[{assetIid:assetObj.iid,assetName:assetObj.name}];
  pisoSelectedInstance=null;pisoActiveEntry=null;pisoTool='paint';pisoSyncToolButtons();
- pisoRenderBreadcrumb();pisoRenderInspector();pisoDraw();
+ pisoRenderBreadcrumb();pisoRenderInspector();pisoSyncActiveTilesetFromDraft();
 }
 function pisoCloseInterior(){
  pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;
- pisoRenderBreadcrumb();pisoRenderInspector();pisoDraw();
+ pisoRenderBreadcrumb();pisoRenderInspector();pisoSyncActiveTilesetFromDraft();
 }
 function pisoRenderBreadcrumb(){
  const el=document.getElementById('pisoBreadcrumb');if(!el)return;
@@ -1206,7 +1270,7 @@ async function pisoLoadForEdit(id){
   pisoRootDraft=pisoColumnsToDraft(data);
   pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;pisoMultiSelection.clear();pisoDragPreview=null;
   pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();
-  pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();
+  pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoSyncActiveTilesetFromDraft();
   pisoSetStatus('Piso "'+(pisoRootDraft.name||'')+'" cargado.');
  }catch(e){pisoSetStatus('Error: '+e.message)}
 }
@@ -1249,10 +1313,19 @@ async function pisoSave(){
  else pisoSetStatus('Guardando...');
  try{
   const cols=pisoDraftToColumns(pisoRootDraft);
+  const body=JSON.stringify(cols);
   const id=pisoRootDraft.id;
-  const r=await fetch(id?`/api/config-floor?kind=custompiso&id=${id}`:'/api/config-floor?kind=custompiso',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cols)});
+  const r=await fetch(id?`/api/config-floor?kind=custompiso&id=${id}`:'/api/config-floor?kind=custompiso',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body});
   const data=await pisoResponseJson(r);
-  if(!r.ok)throw new Error(data?.error||'No se pudo guardar el piso');
+  if(!r.ok){
+   // A body this size (413) or an infra-level failure (5xx from the edge)
+   // never reaches our own JSON-emitting handler, so data/data.error is
+   // null here - surface the raw HTTP status instead of a silent "no se
+   // pudo guardar" so a payload-size regression is diagnosable from the
+   // status line alone next time.
+   const sizeKb=Math.round(body.length/1024);
+   throw new Error(data?.error||`HTTP ${r.status} (payload ~${sizeKb} KB)`);
+  }
   pisoRootDraft.id=(Array.isArray(data)?data[0]?.id:data?.id)??id;
   pisoSetStatus('Piso guardado.');
   await pisoFetchList();
@@ -1293,7 +1366,7 @@ function pisoImportJson(file){
    pisoRootDraft.id=parsed.id??keepId??null; // importing edits the currently open piso unless the JSON itself carries an id
    pisoContextStack=[];pisoSelectedInstance=null;pisoActiveEntry=null;pisoMultiSelection.clear();pisoDragPreview=null;
    pisoUndoStack=[];pisoRedoStack=[];pisoSyncHistoryButtons();
-   pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoDraw();
+   pisoSyncFormFromDraft();pisoRenderBreadcrumb();pisoRenderInspector();pisoRenderMultiSelectBar();pisoSyncActiveTilesetFromDraft();
    pisoSetStatus('JSON importado en memoria. Pulsa GUARDAR PISO para persistirlo.');
   }catch(e){pisoSetStatus('JSON no válido: '+e.message)}
  };
@@ -1322,6 +1395,7 @@ async function pisoOnTabOpen(){
  pisoSetupMode();
  await pisoEnsureCatalogs();
  pisoPopulateTilesetSelect();
+ if(!pisoActiveTileset&&pisoCurrentDraft().tilesetId)pisoSyncActiveTilesetFromDraft();
  pisoRenderPalette();
  if(!pisoList.length)await pisoFetchList();
  pisoDraw();
