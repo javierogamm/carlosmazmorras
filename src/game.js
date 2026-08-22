@@ -7012,9 +7012,20 @@ function allClassIds(){
  return [...ids];
 }
 
-function configItemsNeedHydration(){return !configItems.length||configItems.some(row=>!row.item_json)}
-async function fetchConfigItems({light=false}={}){const startedHydrated=!configItemsNeedHydration();try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(light&&!startedHydrated&&!configItemsNeedHydration()){const fullById=new Map(configItems.map(row=>[String(row.id),row]));configItems=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configItems=rows;renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
-async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !configItemsNeedHydration()}
+// With a catalog of hundreds of rows, the full request (every row's item_json,
+// icons included) can be huge enough to fail or time out. fetchConfigItems used
+// to swallow that error into #configStatus - a field that isn't even on screen
+// during actual gameplay - leaving configItems empty with no visible signal,
+// which then made every loot roll (enemies and chests alike) come up empty.
+// configItemsFullFetchFailed remembers that the full request doesn't work this
+// session so ensureConfigItemsHydrated() stops retrying that same oversized
+// request on every screen transition, and instead treats a successful light
+// fallback as "hydrated enough" - degraded (no icon/affixes from item_json,
+// falling back to the row's own tier/slot/ilvl/nombre columns) beats no loot.
+let configItemsFullFetchFailed=false;
+function configItemsNeedHydration(){if(!configItems.length)return true;if(configItemsFullFetchFailed)return false;return configItems.some(row=>!row.item_json)}
+async function fetchConfigItems({light=false}={}){const startedHydrated=!configItemsNeedHydration();try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(!light)configItemsFullFetchFailed=false;if(light&&!startedHydrated&&!configItemsNeedHydration()){const fullById=new Map(configItems.map(row=>[String(row.id),row]));configItems=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configItems=rows;renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`;if(!light&&!configItems.length){configItemsFullFetchFailed=true;await fetchConfigItems({light:true})}}}
+async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !!configItems.length}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
 

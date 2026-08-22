@@ -1,3 +1,9 @@
+## Sin versionar - 2026-08-22
+
+- **Corrección crítica de loot**: con un catálogo grande en `config_items` (cientos de filas), la petición completa que carga `item_json` de cada objeto podía fallar o expirar; el error se escribía en `#configStatus` (invisible durante la partida) y dejaba `configItems` vacío sin ningún aviso. Como el generador procedural aleatorio se eliminó recientemente (el loot debe salir siempre de `config_items`), ese fallo silencioso significaba que no caía ningún objeto ni de enemigos ni de cofres.
+- `fetchConfigItems()` ahora recurre automáticamente al catálogo **ligero** (`?light=1`: id, nombre, slot, tier, ilvl, weapontype) si la petición completa falla, en vez de dejar `configItems` vacío. `configuredItemFromRow()` ya sabía construir un objeto a partir de esas columnas cuando falta `item_json` (usa `row.tier`, `row.slot`, `row.nombre`, `row.ilvl`), así que el loot vuelve a caer aunque salga degradado (sin icono ni afijos) hasta que la petición completa funcione.
+- Se evita repetir la petición completa (la que falla) en cada cambio de pantalla una vez que ya falló en esta sesión, para no machacar la API con la misma petición gigante sin éxito.
+
 ## v1.1.0 - 2026-08-21
 
 - Nueva sección **PJ → PACKS** en la tienda Soulseek: 4 filas de rareza (Común, Infrecuente, Raro, Épico) con 3 packs cada una (Starter, Advanced, Expert), desbloqueos permanentes de cuenta pagados con Soul Spikes.
