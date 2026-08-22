@@ -1,3 +1,10 @@
+## Sin versionar - 2026-08-22
+
+- **Corrección crítica de loot**: con un catálogo grande en `config_items` (cientos de filas), la petición que carga el catálogo completo (`item_json` de cada objeto, icono incluido) en una sola llamada podía fallar o expirar, dejando `configItems` vacío sin ningún aviso visible durante la partida. Como el loot ya no tiene generador procedural de reserva (sale siempre de `config_items`), ese fallo silencioso significaba que no caía ningún objeto ni de enemigos ni de cofres.
+- Primer intento de arreglo (revertido): recurrir a un catálogo "ligero" sin `icon` cuando la petición completa fallaba. Esto hacía que sí cayeran objetos, pero sin icono real: `drawItemIcon` pintaba entonces una forma genérica inventada en su lugar. Eso viola la norma de que el loot debe ser exactamente lo configurado en `config_items`, icono incluido, así que se ha revertido por completo.
+- **Arreglo correcto**: `/api/config-items` admite ahora `limit`/`offset` para el listado completo, y `fetchConfigItems()` pagina la carga completa en bloques de 80 filas en vez de pedir todo el catálogo de una vez. Cada fila que llega es siempre una fila real de `config_items` con su `item_json` e icono completos - nunca una versión degradada. Si una página falla a mitad de carga, se conservan las páginas ya cargadas (reales, con icono) en vez de descartarlas o sustituirlas por algo inventado.
+- Se añade `id.asc` como criterio de orden secundario junto a `created_at.desc` para que la paginación sea estable incluso con filas importadas en bloque que comparten la misma fecha de creación.
+
 ## v1.1.0 - 2026-08-21
 
 - Nueva sección **PJ → PACKS** en la tienda Soulseek: 4 filas de rareza (Común, Infrecuente, Raro, Épico) con 3 packs cada una (Starter, Advanced, Expert), desbloqueos permanentes de cuenta pagados con Soul Spikes.

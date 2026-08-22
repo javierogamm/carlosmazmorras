@@ -1398,8 +1398,8 @@ function parseConfigStats(text){return String(text||'').split(/[\n,;]/).map(x=>x
 function tierColor(tier){return tierDefs[tier]?.color||'#ddd'}
 const configImageCache={};function configIconImage(src){if(!configImageCache[src]){const img=new Image();img.src=src;configImageCache[src]=img}return configImageCache[src]}
 function hexToBase64(hex){const bytes=hex.match(/.{1,2}/g)||[];let bin='';bytes.forEach(b=>bin+=String.fromCharCode(parseInt(b,16)));return btoa(bin)}
-// Itemization uses config_items exclusively; the random generator below only
-// remains as a fallback for when the table is empty or has no eligible rows.
+// Itemization uses config_items exclusively - if no eligible row exists,
+// no equipment drop is invented; the drop is simply skipped.
 function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minRarityName=null){const lootRow=currentLootProgressionRow(game?.floor||1,game?.player?.level||level||1);if(forceKind==='potion')return makePotion(encounterLootQuality(source));if(forceKind!=='equipment'&&!forceRarityName&&Math.random()<Math.min(.22,.07+game.floor*.025+(source==='boss'? .08:0))){const potion=makePotion(encounterLootQuality(source));if(potion)return potion}
  if(forceRarityName){
   // Used only by the guaranteed floor-completion reward (grantFloorRewardPopup):
@@ -1416,36 +1416,9 @@ function makeLoot(level,source='normal',forceRarityName=null,forceKind=null,minR
  } else {
   const configured=makeConfiguredLoot(level,minRarityName);if(configured)return configured;
  }
- const slot=pick(slots),rar=forceRarityName?(rarities.find(r=>r.name===forceRarityName)||weightedRarity(level,minRarityName)):weightedRarity(level,minRarityName);
- const itemLevel=Math.max(lootRow.itemLevel.min,Math.min(lootRow.itemLevel.max,level+rng(3)-1));
- const affixes=buildItemAffixes(slot,itemLevel,rar),passives=buildPassives(itemLevel,rar),effects=buildEffects(rar);
- const score=itemBudget(itemLevel,rar)+affixes.reduce((s,a)=>s+a.value,0)+passives.length*12+effects.length*25;
- const iconShape=pick(itemIconShapes[slot]),themed=pickThemedItem(slot);
- const weaponCategory=slot==='weapon'?weaponCategoryForLoot(rar):null;
- const weaponIconRow=weaponCategory?weaponRowForCategory(weaponCategory):null;
- const weaponIconCol=weaponCategory?weaponPowerColumn(itemLevel,rar,score):null;
- const weaponIconPathValue=weaponCategory?weaponIconPath(weaponIconRow,weaponIconCol):null;
- const armorIconRow=slot==='chest'?armorRowForLoot(rar):null;
- const armorIconCol=slot==='chest'?armorPowerColumn(itemLevel,rar,score):null;
- const armorIconPathValue=slot==='chest'?armorIconPath(armorIconRow,armorIconCol):null;
- // Offhand loot rolls one of 3 kinds - mostly shields, sometimes a wand or a
- // dagger held in the left hand alongside the main-hand weapon.
- const offhandKind=slot==='offhand'?pick(['shield','shield','shield','wand','dagger']):null;
- const offhandNameCategory=offhandKind==='wand'?configWeaponTypeCategories.Varitas:offhandKind==='dagger'?configWeaponTypeCategories.Dagas:null;
- const offhandName=offhandNameCategory?weaponNameForCategory(offhandNameCategory,weaponPowerColumn(itemLevel,rar,score)):null;
- return applyOffhandGuarantee({
-  id:crypto.randomUUID(),slot,iconShape,rarity:rar.name,label:rar.label,itemLevel,score,
-  name:slot==='weapon'?weaponNameForCategory(weaponCategory,weaponIconCol):slot==='chest'?armorName(armorIconRow,armorIconCol):(offhandName||themed?.name||`${pick(itemBases[slot])} ${pick(prefixes)}`),
-  theme:themed?.theme||'fantasy',offhandKind,
-  weaponCategory,weaponIconRow,weaponIconCol,weaponIconPath:weaponIconPathValue,
-  armorCategory:slot==='chest'?armorRows[armorIconRow]?.category:null,armorIconRow,armorIconCol,armorIconPath:armorIconPathValue,
-  flavor:slot==='weapon'?`${weaponCategory}. Imagen individual: ${weaponIconPathValue}. La progresión por fila respeta rareza y nivel.`:slot==='chest'?`${armorRows[armorIconRow]?.category}. Imagen individual: ${armorIconPathValue}. La progresión por fila va de menos a más poder.`:(themed?.flavor||'Un objeto con más historia de la que conviene preguntar.'),
-  defenseStat:slot==='weapon'?(weaponCategoryStats[weaponCategory]||'strength'):inferWeaponDefenseStat({name:themed?.name||'',iconShape,theme:themed?.theme||'fantasy'}),
-  rangeMin:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).min:null,
-  rangeMax:slot==='weapon'?weaponRangeBounds({weaponCategory,name:weaponNameForCategory(weaponCategory,weaponIconCol)}).max:null,
-  affixes,passives,effects,
-  desc:`Nivel ${itemLevel} · Poder ${score}`
- });
+ // No eligible config_items row: never invent procedural gear, just skip
+ // the drop.
+ return null;
 }
 function log(msg,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=msg;document.getElementById('log').prepend(d);if(game?.multiplayer&&game.mpCapture&&cls&&cls!=='sys')game.mpPendingEvents=(game.mpPendingEvents||[]).concat({m:msg,c:cls}).slice(-8)}
 // ---- In-page confirm / alert / prompt --------------------------------------
@@ -2835,7 +2808,7 @@ function resolveFloorEvent(ev,prepared){
   banner('JEFE OPCIONAL');log(`${b.name} entra en combate.`,'story')
  }else if(ev.type==='reward'){
   const count=ev.id==='buriedArmory'?3:2;
-  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(i===0&&Math.random()<.6){const row=currentLootProgressionRow(game.floor,game.player.level),pool=['rare','epic','legendary'].filter(r=>lootRarityAllowed(r,row));if(pool.length){item.rarity=pick(pool);item.label=tierDefs[item.rarity]?.label||item.rarity}}addInventoryItem(item);lootToast(item)}
+  for(let i=0;i<count;i++){const item=makeLoot(game.player.level+game.floor+2,'specialReward');if(!item)continue;if(i===0&&Math.random()<.6){const row=currentLootProgressionRow(game.floor,game.player.level),pool=['rare','epic','legendary'].filter(r=>lootRarityAllowed(r,row));if(pool.length){item.rarity=pick(pool);item.label=tierDefs[item.rarity]?.label||item.rarity}}addInventoryItem(item);lootToast(item)}
   if(ev.id==='forgottenShrine'){game.player.hp=game.player.maxHp;game.player.mana=game.player.maxMana;game.player.stamina=game.player.maxStamina}
   if(ev.id==='smugglerLocker')game.player.gold+=40+game.floor*15;
   banner('RECOMPENSA ESPECIAL');log(`${ev.name}: encuentras una recompensa poco común.`,'loot')
@@ -3637,9 +3610,9 @@ function kill(e){
  const killLootChance=Math.min(.9,(.13+(game.player.derived?.finalStats?.luck??game.player.stats.luck)*.008)*pctMult(worldParams().enemyLootPct));
  if(e.megaboss){
   const{count,rarity}=megabossGuaranteedDrops(game.floor),equipped=configuredBossEquipmentDrop(e);
-  for(let i=0;i<count;i++){const item=i===0&&equipped?equipped:makeLoot(game.player.level+3,'boss',rarity);addInventoryItem(item);lootToast(item)}
+  for(let i=0;i<count;i++){const item=i===0&&equipped?equipped:makeLoot(game.player.level+3,'boss',rarity);if(item){addInventoryItem(item);lootToast(item)}}
  }else if(e.boss){
-  const item=configuredBossEquipmentDrop(e)||makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));addInventoryItem(item);lootToast(item);
+  const item=configuredBossEquipmentDrop(e)||makeLoot(game.player.level+3,'boss',bossGuaranteedRarityForFloor(game.floor));if(item){addInventoryItem(item);lootToast(item)}
  }else if(Math.random()<killLootChance||e.eventBoss){
   const source=e.eventBoss?'eventBoss':e.elite?'elite':'normal';
   // Skills no longer drop from enemy kills (see chestLootItem) - the old
@@ -3648,7 +3621,7 @@ function kill(e){
   if(roll<equipmentWeight){
    // Elites never drop below 'uncommon', same guaranteed-floor idea as
    // bosses (rare) and megabosses (epic) above.
-   const item=makeLoot(game.player.level,source,null,'equipment',e.elite?'uncommon':null);addInventoryItem(item);lootToast(item);
+   const item=makeLoot(game.player.level,source,null,'equipment',e.elite?'uncommon':null);if(item){addInventoryItem(item);lootToast(item)}
   }else{
    const item=makeLoot(game.player.level,source,null,'potion');if(item){addInventoryItem(item);lootToast(item)}
   }
@@ -7039,8 +7012,51 @@ function allClassIds(){
  return [...ids];
 }
 
+// Loot must always be a real config_items row, icon included - never a
+// substitute built from a partial row. With a catalog of hundreds of rows,
+// asking for the full set (every row's item_json, icons embedded) in one
+// request can be big enough to time out, so the full load is paged into
+// small chunks instead of one giant request. configItems is only replaced
+// once every page has arrived, so a mid-load failure never swaps working
+// data for an empty or degraded catalog - it just leaves the previous
+// (possibly still-empty) state in place and reports the error.
+const CONFIG_ITEMS_PAGE_SIZE=80;
 function configItemsNeedHydration(){return !configItems.length||configItems.some(row=>!row.item_json)}
-async function fetchConfigItems({light=false}={}){const startedHydrated=!configItemsNeedHydration();try{const r=await fetch(`/api/config-items${light?'?light=1':''}`);const data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');const rows=Array.isArray(data)?data:[];if(light&&!startedHydrated&&!configItemsNeedHydration()){const fullById=new Map(configItems.map(row=>[String(row.id),row]));configItems=rows.map(row=>({...row,...(fullById.get(String(row.id))||{})}))}else configItems=rows;renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()}catch(e){const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`}}
+async function fetchConfigItemsFullPaged(){
+ const rows=[];
+ for(let offset=0;;offset+=CONFIG_ITEMS_PAGE_SIZE){
+  const r=await fetch(`/api/config-items?limit=${CONFIG_ITEMS_PAGE_SIZE}&offset=${offset}`);
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');
+  const page=Array.isArray(data)?data:[];
+  rows.push(...page);
+  // Every row here is a real, fully-hydrated config_items row (icon
+  // included) - publish each page as it lands so a later page failing
+  // still leaves whatever loaded usable for real loot, instead of an
+  // all-or-nothing swap that could throw away good data.
+  configItems=rows.slice();
+  if(page.length<CONFIG_ITEMS_PAGE_SIZE)break;
+ }
+ return rows;
+}
+async function fetchConfigItems({light=false}={}){
+ try{
+  if(light){
+   // Cheap admin-panel refresh after a save/update/delete - keep whatever
+   // item_json rows are already hydrated locally instead of discarding them,
+   // since this path is never used to build actual loot.
+   const r=await fetch('/api/config-items?light=1');const data=await r.json();
+   if(!r.ok)throw new Error(data.error||'No se pudieron cargar objetos');
+   const rows=Array.isArray(data)?data:[],fullById=new Map(configItems.filter(row=>row.item_json).map(row=>[String(row.id),row]));
+   configItems=rows.map(row=>fullById.get(String(row.id))||row);
+  }else{
+   configItems=await fetchConfigItemsFullPaged();
+  }
+  renderConfigItems();renderConfigPotionsList();renderEnemyEquipment();if(document.getElementById('configChestItemResults'))renderChestItemResults()
+ }catch(e){
+  const st=document.getElementById('configStatus');if(st)st.textContent=`Error cargando config_items: ${e.message}`;
+ }
+}
 async function ensureConfigItemsHydrated(){if(configItemsNeedHydration())await fetchConfigItems();return !configItemsNeedHydration()}
 
 function potionTierLevel(tier){return {common:1,uncommon:2,rare:3,epic:4,legendary:5,artifact:6}[tier]||1}
