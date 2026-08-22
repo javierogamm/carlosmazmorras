@@ -91,7 +91,7 @@ function pisoResizeGrid(draft,cols,rows){
  const inBounds=e=>e.x<cols&&e.y<rows;
  draft.cols=cols;draft.rows=rows;draft.grid=grid;draft.tileRefs=tileRefs;
  draft.doors=draft.doors.filter(inBounds);draft.assets=draft.assets.filter(a=>a.x+a.cols<=cols&&a.y+a.rows<=rows);
- draft.enemies=draft.enemies.filter(inBounds);draft.chests=draft.chests.filter(inBounds);
+ draft.enemies=draft.enemies.filter(e=>e.megaboss?e.x+2<=cols&&e.y+2<=rows:inBounds(e));draft.chests=draft.chests.filter(inBounds);
  draft.keys=draft.keys.filter(inBounds);draft.traps=draft.traps.filter(inBounds);draft.altars=draft.altars.filter(inBounds);
  draft.salas=draft.salas.filter(s=>s.x+s.w<=cols&&s.y+s.h<=rows);
  if(draft.spawn&&!inBounds(draft.spawn))draft.spawn=null;
@@ -314,7 +314,7 @@ function pisoBuildPaletteRow(entry,idx){
  else if(entry.color){thumb.style.background=entry.color}
  else thumb.textContent='?';
  const name=document.createElement('div');name.className='pisoPaletteName';
- name.innerHTML=`<b>${(entry.label||'').replace(/</g,'&lt;')}</b>`+(entry.kind==='wall'?'<span>Muro · '+(entry.tile?.direction||'auto')+'</span>':entry.kind==='asset'?`<span>${entry.asset.cols}×${entry.asset.rows}</span>`:'');
+ name.innerHTML=`<b>${(entry.label||'').replace(/</g,'&lt;')}</b>`+(entry.kind==='wall'?'<span>Muro · '+(entry.tile?.direction||'auto')+'</span>':entry.kind==='asset'?`<span>${entry.asset.cols}×${entry.asset.rows}</span>`:entry.kind==='enemy'?`<span>Tier ${(entry.enemy.tier||'?').toString().toUpperCase()}${entry.enemy.megaboss?' · MEGAJEFE':entry.enemy.boss?' · JEFE':''}</span>`:'');
  row.appendChild(thumb);row.appendChild(name);
  pisoWirePaletteDrag(row,entry);
  // lazily fetch icons the catalog doesn't ship in its light/list form
@@ -443,7 +443,7 @@ function pisoDraw(){
   }
  }
  // enemies/chests/keys/traps
- for(const e of draft.enemies||[])pisoDrawGlyphOrIcon(ctx,pisoEnemyIconFor(e.enemyDetailId),'👹',e.x*cell,e.y*cell,cell,e.boss?'#ff5c5c':'#e0b0ff');
+ for(const e of draft.enemies||[])pisoDrawGlyphOrIcon(ctx,pisoEnemyIconFor(e.enemyDetailId),'👹',e.x*cell,e.y*cell,cell,e.megaboss?'#ff2f2f':e.boss?'#ff5c5c':'#e0b0ff',pisoEnemyBadgeText(e),e.megaboss?2:1);
  for(const c of draft.chests||[])pisoDrawGlyphOrIcon(ctx,pisoChestIconFor(c.configChestId),'🎁',c.x*cell,c.y*cell,cell,c.locked?'#ffcf70':'#8cffb0');
  for(const k of draft.keys||[])pisoDrawGlyphOrIcon(ctx,null,'🔑',k.x*cell,k.y*cell,cell,'#ffe28a');
  for(const t of draft.traps||[])pisoDrawGlyphOrIcon(ctx,null,'☠️',t.x*cell,t.y*cell,cell,t.effects?.length?'#ff6b6b':'#c98cff');
@@ -455,7 +455,7 @@ function pisoDraw(){
   ctx.strokeStyle='#7cffd4';ctx.lineWidth=3;
   for(const k of pisoMultiSelection){
    const [kind,iid]=k.split(':'),list=pisoInstanceListFor(draft,kind),o=list?.find(x=>x.iid===iid);if(!o)continue;
-   const w=kind==='asset'?o.cols:1,h=kind==='asset'?o.rows:1;
+   const w=kind==='asset'?o.cols:kind==='enemy'&&o.megaboss?2:1,h=kind==='asset'?o.rows:kind==='enemy'&&o.megaboss?2:1;
    ctx.strokeRect(o.x*cell+1,o.y*cell+1,w*cell-2,h*cell-2);
   }
  }
@@ -475,11 +475,34 @@ function pisoDraw(){
  }
  const zl=document.getElementById('pisoZoomLabel');if(zl)zl.textContent=Math.round(pisoZoom*100)+'%';
 }
-function pisoDrawGlyphOrIcon(ctx,hex,glyph,px,py,cell,accent){
- ctx.fillStyle=accent+'55';ctx.beginPath();ctx.arc(px+cell/2,py+cell/2,cell*.42,0,7);ctx.fill();
- if(hex&&pisoDrawIconAt(ctx,hex,px+cell*.08,py+cell*.08,cell*.84,cell*.84))return;
- ctx.font=`${Math.max(10,cell*.6)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
- ctx.fillText(glyph,px+cell/2,py+cell/2+1);
+// `sizeCells` lets a multi-tile instance (a megaboss, footprint 2x2 in-game -
+// see upgradeToMegaboss() in game.js) draw its icon/glyph across its whole
+// footprint instead of just its origin cell.
+function pisoDrawGlyphOrIcon(ctx,hex,glyph,px,py,cell,accent,badge,sizeCells=1){
+ const w=cell*sizeCells,h=cell*sizeCells;
+ ctx.fillStyle=accent+'55';ctx.beginPath();ctx.arc(px+w/2,py+h/2,Math.min(w,h)*.42,0,7);ctx.fill();
+ if(!(hex&&pisoDrawIconAt(ctx,hex,px+w*.08,py+h*.08,w*.84,h*.84))){
+  ctx.font=`${Math.max(10,Math.min(w,h)*.6)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(glyph,px+w/2,py+h/2+1);
+ }
+ if(badge)pisoDrawTierBadge(ctx,badge,px,py,w,h);
+}
+// Small tier/rank badge (e.g. "III·J", "II·MJ") in the bottom-right corner
+// of an instance's footprint - used by enemies in both the palette (see
+// pisoBuildPaletteRow) and here on the canvas itself.
+function pisoDrawTierBadge(ctx,text,px,py,w,h){
+ const label=String(text).toUpperCase();
+ ctx.font=`bold ${Math.max(8,Math.min(w,h)*.28)}px sans-serif`;
+ const bw=ctx.measureText(label).width+6,bh=Math.max(9,Math.min(w,h)*.32);
+ const bx=px+w-bw-1,by=py+h-bh-1;
+ ctx.fillStyle='#000000c0';ctx.fillRect(bx,by,bw,bh);
+ ctx.fillStyle='#ffe28a';ctx.textAlign='left';ctx.textBaseline='middle';
+ ctx.fillText(label,bx+3,by+bh/2+1);
+}
+function pisoEnemyBadgeText(e){
+ const tier=(e.tier||'').toString().toUpperCase();
+ const suffix=e.megaboss?'MJ':e.boss?'J':'';
+ return [tier,suffix].filter(Boolean).join('·')||null;
 }
 function pisoDrawMarker(ctx,pos,glyph,cell){
  ctx.font=`${Math.max(10,cell*.7)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
@@ -494,7 +517,7 @@ function pisoInstanceAt(x,y){
  const draft=pisoCurrentDraft();
  const asset=(draft.assets||[]).find(a=>x>=a.x&&x<a.x+a.cols&&y>=a.y&&y<a.y+a.rows);
  if(asset)return {kind:'asset',iid:asset.iid,obj:asset};
- const enemy=(draft.enemies||[]).find(e=>e.x===x&&e.y===y);if(enemy)return {kind:'enemy',iid:enemy.iid,obj:enemy};
+ const enemy=(draft.enemies||[]).find(e=>{const s=e.megaboss?2:1;return x>=e.x&&x<e.x+s&&y>=e.y&&y<e.y+s});if(enemy)return {kind:'enemy',iid:enemy.iid,obj:enemy};
  const chest=(draft.chests||[]).find(c=>c.x===x&&c.y===y);if(chest)return {kind:'chest',iid:chest.iid,obj:chest};
  const key=(draft.keys||[]).find(k=>k.x===x&&k.y===y);if(key)return {kind:'key',iid:key.iid,obj:key};
  const trap=(draft.traps||[]).find(t=>t.x===x&&t.y===y);if(trap)return {kind:'trap',iid:trap.iid,obj:trap};
@@ -599,8 +622,14 @@ function pisoPlaceInstance(entry,x,y){
   // icon deliberately not stored - see pisoAssetIconFor()/the comment above pisoApplyTileEntry
   draft.assets.push({iid:pisoUid(),key:a.key,name:a.name,x,y,cols:a.cols,rows:a.rows,door:a.door||''});
  }else if(entry.kind==='enemy'){
-  if(draft.grid[y][x]!==0){pisoSetStatus('Coloca enemigos sobre suelo.');return}
-  draft.enemies.push({iid:pisoUid(),x,y,enemyDetailId:entry.enemy.id,name:entry.enemy.name,tier:entry.enemy.tier,boss:false,familyName:entry.family});
+  const isMega=!!entry.enemy.megaboss;
+  // Megajefes ocupan un footprint 2x2 en juego (upgradeToMegaboss() en
+  // game.js) - reserva el mismo hueco 2x2 libre que un asset, en vez de solo
+  // la celda clicada.
+  if(isMega){
+   if(!pisoCanPlaceAssetAt(draft,x,y,2,2)){pisoSetStatus('Los megajefes ocupan un hueco de 2×2 de suelo libre.');return}
+  }else if(draft.grid[y][x]!==0){pisoSetStatus('Coloca enemigos sobre suelo.');return}
+  draft.enemies.push({iid:pisoUid(),x,y,enemyDetailId:entry.enemy.id,name:entry.enemy.name,tier:entry.enemy.tier,boss:!!entry.enemy.boss,megaboss:isMega,familyName:entry.family});
  }else if(entry.kind==='chest'){
   if(draft.grid[y][x]!==0){pisoSetStatus('Coloca cofres sobre suelo.');return}
   draft.chests.push({iid:pisoUid(),x,y,configChestId:entry.chestRow.id,name:entry.label,locked:false});
@@ -717,7 +746,7 @@ function pisoInstancesInRect(draft,r){
  const out=[];
  const test=(kind,list)=>{
   for(const o of list||[]){
-   const w=kind==='asset'?o.cols:1,h=kind==='asset'?o.rows:1;
+   const w=kind==='asset'?o.cols:kind==='enemy'&&o.megaboss?2:1,h=kind==='asset'?o.rows:kind==='enemy'&&o.megaboss?2:1;
    if(o.x<r.x1+1&&o.x+w>r.x&&o.y<r.y1+1&&o.y+h>r.y)out.push({kind,iid:o.iid,obj:o});
   }
  };
@@ -983,7 +1012,9 @@ function pisoRenderInspector(){
   if(isDoor&&!pisoInInterior())html+=`<button type="button" id="pisoOpenInterior">${draft.interiors?.[obj.iid]?'Editar sala interior →':'Definir sala interior →'}</button>`;
   else if(isDoor)html+='<p class="small">Los interiores no pueden anidarse más de un nivel.</p>';
  }else if(kind==='enemy'){
-  html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoEnemyBoss" ${obj.boss?'checked':''}> Es un boss (nivel/estadísticas de jefe)</label>`;
+  html+=`<p class="small">Tier ${(obj.tier||'?').toString().toUpperCase()}</p>
+   <label class="tileRotateLabel"><input type="checkbox" id="pisoEnemyBoss" ${obj.boss?'checked':''}> Es un jefe (nivel/estadísticas de jefe)</label>
+   <label class="tileRotateLabel"><input type="checkbox" id="pisoEnemyMegaboss" ${obj.megaboss?'checked':''}> Es un megajefe (ocupa 2×2, estadísticas dobladas)</label>`;
  }else if(kind==='chest'){
   html+=`<label class="tileRotateLabel"><input type="checkbox" id="pisoChestLocked" ${obj.locked?'checked':''}> Cofre cerrado (requiere llave)</label>`;
  }else if(kind==='door'){
@@ -1015,7 +1046,10 @@ function pisoRenderInspector(){
  if(kind==='asset'){
   document.getElementById('pisoOpenInterior')?.addEventListener('click',()=>pisoOpenInterior(obj));
  }
- if(kind==='enemy')document.getElementById('pisoEnemyBoss').onchange=e=>{pisoPushHistory();obj.boss=e.target.checked};
+ if(kind==='enemy'){
+  document.getElementById('pisoEnemyBoss').onchange=e=>{pisoPushHistory();obj.boss=e.target.checked;if(!obj.boss)obj.megaboss=false;pisoRenderInspector();pisoDraw()};
+  document.getElementById('pisoEnemyMegaboss').onchange=e=>{pisoPushHistory();obj.megaboss=e.target.checked;if(obj.megaboss)obj.boss=true;pisoRenderInspector();pisoDraw()};
+ }
  if(kind==='chest')document.getElementById('pisoChestLocked').onchange=e=>{pisoPushHistory();obj.locked=e.target.checked};
  if(kind==='door'){
   document.getElementById('pisoDoorOpen').onchange=e=>{pisoPushHistory();obj.open=e.target.checked;pisoDraw()};
@@ -1457,13 +1491,26 @@ pisoPrefetchRuntimeCatalog();
 // loadPrecomputedFloor() wrap below successfully applies the floor.
 function pisoEligibleForFloor(floor){return pisoRuntimeCatalog.filter(p=>pisoNivelMatches(p.nivel,floor)&&p.draft.spawn&&p.draft.stairs)}
 
+// buildConfiguredEnemy() (game.js) already ORs `wantBoss` with the catalog
+// template's own `.boss` flag, so a catalog-configured boss/megaboss lands
+// with correct boss-tier stats even if the piso instance's own `boss` toggle
+// is off. It never applies upgradeToMegaboss() on its own though (that's
+// normally called explicitly by buildMegabossFloorPlan) - do that extra step
+// here whenever either the placed instance or its catalog template is
+// flagged as a megaboss, so a custom piso megaboss gets the same 2x2
+// footprint/doubled stats a procedural megaboss floor gives it.
+function pisoBuildRuntimeEnemy(tpl,en,floor){
+ let e=buildConfiguredEnemy(tpl,{x:en.x,y:en.y},floor,!!en.boss);
+ if((en.megaboss||tpl.megaboss)&&typeof upgradeToMegaboss==='function')e=upgradeToMegaboss(e);
+ return e;
+}
 function pisoBuildInteriorState(sub,floor){
  if(!sub?.spawn)return null;
  const map=sub.grid.map(row=>row.map(v=>v?1:0));
  const families=typeof normalizedEnemyFamilies==='function'?normalizedEnemyFamilies():[],allTemplates=families.flatMap(f=>f.enemies||[]);
  const enemies=(sub.enemies||[]).map(en=>{
   const tpl=allTemplates.find(t=>String(t.id)===String(en.enemyDetailId));if(!tpl)return null;
-  try{return buildConfiguredEnemy(tpl,{x:en.x,y:en.y},floor,!!en.boss)}catch(e){return null}
+  try{return pisoBuildRuntimeEnemy(tpl,en,floor)}catch(e){return null}
  }).filter(Boolean);
  const chestRows=typeof configChests!=='undefined'?configChests:[];
  const chests=(sub.chests||[]).map(c=>{const row=chestRows.find(r=>String(r.id)===String(c.configChestId));if(!row)return null;return {x:c.x,y:c.y,opened:false,locked:!!c.locked,chestDef:{...row.chest_json,configChestId:row.id}}}).filter(Boolean);
@@ -1484,7 +1531,7 @@ function pisoBuildFloorData(entry,floor){
  const families=typeof normalizedEnemyFamilies==='function'?normalizedEnemyFamilies():[],allTemplates=families.flatMap(f=>f.enemies||[]);
  const enemies=(draft.enemies||[]).map(en=>{
   const tpl=allTemplates.find(t=>String(t.id)===String(en.enemyDetailId));if(!tpl)return null;
-  try{return buildConfiguredEnemy(tpl,{x:en.x,y:en.y},floor,!!en.boss)}catch(e){return null}
+  try{return pisoBuildRuntimeEnemy(tpl,en,floor)}catch(e){return null}
  }).filter(Boolean);
  const boss=enemies.find(e=>e.boss)||null;
  const interiorIds={};
