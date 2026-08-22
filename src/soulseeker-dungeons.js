@@ -31,6 +31,9 @@
 // - No session is ever saved/resumed for a Soulseeker run: the save-run
 //   button is neutralised, and leaving to the main menu kills the
 //   character permanently, exactly like dying in combat.
+// - 'standard' floors get 25% fewer rooms (room COUNT only - interior room
+//   SIZE is untouched), and XP received gets a flat +20% on top of every
+//   difficulty's own pct (soulseekWorldParamsForDifficulty).
 // ============================================================================
 
 const SOULSEEK_DIFFICULTIES={
@@ -45,8 +48,10 @@ let soulseekSelectedDifficulty='normal';
 function soulseekWorldParamsForDifficulty(id){
  const d=SOULSEEK_DIFFICULTIES[id]||SOULSEEK_DIFFICULTIES.normal;
  // Only what the request specifies (HP/daño/XP recibida) is scaled - loot
- // drop rate and enemy count stay at the normal-mode default (100).
- return {damageReceivedPct:d.pct,damageDealtPct:100,lifePct:d.pct,xpReceivedPct:d.pct,enemyCountPct:100,enemyLootPct:100,apMode:true};
+ // drop rate and enemy count stay at the normal-mode default (100). XP gets
+ // an extra flat +20% on top of the difficulty's own pct (Soulseeker-wide
+ // XP boost, independent of difficulty).
+ return {damageReceivedPct:d.pct,damageDealtPct:100,lifePct:d.pct,xpReceivedPct:Math.round(d.pct*1.2),enemyCountPct:100,enemyLootPct:100,apMode:true};
 }
 function soulseekDifficultyConfig(){
  return SOULSEEK_DIFFICULTIES[game?.player?.soulseekDifficulty]||SOULSEEK_DIFFICULTIES.normal;
@@ -313,25 +318,48 @@ function soulseekPopulateEntryChests(plan){
  // -- floor 1 is a short classless threshold; multiples of 3 are guaranteed
  // -- megaboss/boss-chain floors instead of normal mode's 33% chance --
  const soulseekOriginalBuildFloorPlan=buildFloorPlan;
+ // 'standard' floors (FLOOR_ARCHETYPES.standard, rooms:[26,40]) get 25% fewer
+ // rooms in Soulseeker Mode - room COUNT only, never room SIZE: ROOM_TYPES/
+ // T.size (what actually sizes each interior room) is untouched, so every
+ // room generated is exactly as big as in normal mode, there are just fewer
+ // of them per floor. Scaling FLOOR_ARCHETYPES.standard.layout.rooms in
+ // place for the duration of one synchronous buildFloorPlan() call (no
+ // await anywhere inside it, so nothing else can observe the mutation) is
+ // simpler than plumbing a soulseeker flag through the whole room-carving
+ // loop just for this one archetype.
+ const soulseekStandardRoomsRange=FLOOR_ARCHETYPES.standard.layout.rooms;
+ const soulseekStandardRoomsOriginal=soulseekStandardRoomsRange.slice();
+ const soulseekStandardRoomsScaled=[
+  Math.max(4,Math.round(soulseekStandardRoomsOriginal[0]*.75)),
+  Math.max(4,Math.round(soulseekStandardRoomsOriginal[1]*.75))
+ ];
  buildFloorPlan=function(floor,params,opts){
-  if(game?.player?.soulseeker&&floor===1&&!game?.forcedFloorArchetype){
-   game.forcedFloorArchetype='soulseek_entry';
-   const plan=soulseekPopulateEntryChests(soulseekOriginalBuildFloorPlan(floor,params,opts));
-   delete game.forcedFloorArchetype;
-   return plan;
+  if(!game?.player?.soulseeker)return soulseekOriginalBuildFloorPlan(floor,params,opts);
+  soulseekStandardRoomsRange[0]=soulseekStandardRoomsScaled[0];
+  soulseekStandardRoomsRange[1]=soulseekStandardRoomsScaled[1];
+  try{
+   if(floor===1&&!game?.forcedFloorArchetype){
+    game.forcedFloorArchetype='soulseek_entry';
+    const plan=soulseekPopulateEntryChests(soulseekOriginalBuildFloorPlan(floor,params,opts));
+    delete game.forcedFloorArchetype;
+    return plan;
+   }
+   if(floor%3===0&&!game?.forcedFloorArchetype){
+    if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
+    game.forcedFloorArchetype='bossrush';
+    const plan=soulseekOriginalBuildFloorPlan(floor,params,opts);
+    // Normal mode only clears this flag when floor===DUNGEON_FLOORS (the
+    // fixed climax); Soulseeker forces it on every 3rd floor of an infinite
+    // run, so it must always be cleared right after use or it would leak
+    // into (and force bossrush on) every floor from here on.
+    delete game.forcedFloorArchetype;
+    return plan;
+   }
+   return soulseekOriginalBuildFloorPlan(floor,params,opts);
+  }finally{
+   soulseekStandardRoomsRange[0]=soulseekStandardRoomsOriginal[0];
+   soulseekStandardRoomsRange[1]=soulseekStandardRoomsOriginal[1];
   }
-  if(game?.player?.soulseeker&&floor%3===0&&!game?.forcedFloorArchetype){
-   if(Math.random()<.5)return buildMegabossFloorPlan(floor,params);
-   game.forcedFloorArchetype='bossrush';
-   const plan=soulseekOriginalBuildFloorPlan(floor,params,opts);
-   // Normal mode only clears this flag when floor===DUNGEON_FLOORS (the
-   // fixed climax); Soulseeker forces it on every 3rd floor of an infinite
-   // run, so it must always be cleared right after use or it would leak
-   // into (and force bossrush on) every floor from here on.
-   delete game.forcedFloorArchetype;
-   return plan;
-  }
-  return soulseekOriginalBuildFloorPlan(floor,params,opts);
  };
 
  // -- infinite floors: never end the run at DUNGEON_FLOORS, grant the
