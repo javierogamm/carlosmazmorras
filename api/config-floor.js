@@ -4,6 +4,11 @@ const SUPABASE_TABLE='config_floor';
 // own file - Vercel's Hobby plan caps a project at 12 Serverless Functions,
 // and this repo was already at that limit before this table existed.
 const WORLD_OBJECT_TABLE='config_world_object';
+// Hand-authored custom floors from the "Editor de pisos" config tab
+// (custompisos.js) share this function too via ?kind=custompiso, for the
+// same Hobby-plan function-count reason as the world objects above.
+const CUSTOM_PISO_TABLE='config_custom_piso';
+const CUSTOM_PISO_COLUMNS='name,nivel,enemigos,chests_keys_traps,assets,tiles_doors,interiors,salas';
 
 function supabaseConfig(){
  const url=process.env.SUPABASE_URL;
@@ -92,10 +97,47 @@ async function handleWorldObjects(req,res,url,key){
  res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
 }
 
+async function handleCustomPiso(req,res,url,key){
+ if(req.method==='GET'){
+  const id=requestId(req),light=req.query?.light!=='0',select=(id||!light)?`id,created_at,${CUSTOM_PISO_COLUMNS}`:'id,created_at,name,nivel',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+  const r=await fetch(`${url}/rest/v1/${CUSTOM_PISO_TABLE}?select=${select}${filter}&order=name.asc`,{headers:headers(key)});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
+ }
+ if(req.method==='POST'){
+  const b=req.body||{},row={name:b.name||'Piso sin nombre',nivel:b.nivel??null,enemigos:b.enemigos??[],chests_keys_traps:b.chests_keys_traps??{},assets:b.assets??[],tiles_doors:b.tiles_doors??{},interiors:b.interiors??{},salas:b.salas??[]};
+  const r=await fetch(`${url}/rest/v1/${CUSTOM_PISO_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(Array.isArray(data)?data[0]:data);
+ }
+ if(req.method==='PUT'){
+  const id=requestId(req);
+  if(!id)return res.status(400).json({error:'Falta id para actualizar el piso'});
+  const b=req.body||{},row={};
+  for(const f of ['name','nivel','enemigos','chests_keys_traps','assets','tiles_doors','interiors','salas'])if(b[f]!==undefined)row[f]=b[f];
+  const r=await fetch(`${url}/rest/v1/${CUSTOM_PISO_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(data);
+ }
+ if(req.method==='DELETE'){
+  const id=requestId(req);
+  if(!id)return res.status(400).json({error:'Falta id para borrar el piso'});
+  const r=await fetch(`${url}/rest/v1/${CUSTOM_PISO_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});
+  const data=await r.json();
+  if(!r.ok)return res.status(r.status).json(data);
+  return res.status(200).json(data);
+ }
+ res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
+}
+
 module.exports=async(req,res)=>{
  try{
   const {url,key}=supabaseConfig();
   if(req.query?.kind==='object')return handleWorldObjects(req,res,url,key);
+  if(req.query?.kind==='custompiso')return handleCustomPiso(req,res,url,key);
   if(req.method==='GET'){
    const id=requestId(req),light=req.query?.light==='1',select=(id||!light)?'id,created_at,floor_name,floor_json,interior':'id,created_at,floor_name,interior',legacySelect=(id||!light)?'id,created_at,floor_name,floor_json':'id,created_at,floor_name',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
    let r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}&order=floor_name.asc`,{headers:headers(key)});
