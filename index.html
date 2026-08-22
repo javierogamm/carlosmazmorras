@@ -203,7 +203,7 @@
 
 <div class="configScreen hidden" id="configScreen">
  <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.4 RAZAS CONFIGURADAS</div></header>
- <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="testing">Modo Testing</button><button type="button" data-config-tab="gamepad">Mando</button></div>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="custompisos">Editor de pisos</button><button type="button" data-config-tab="testing">Modo Testing</button><button type="button" data-config-tab="gamepad">Mando</button></div>
  <div class="configTabPanel" id="configTabItems">
  <div class="configLayout">
   <section class="panel">
@@ -707,6 +707,74 @@
   <button class="start" id="saveConfigGatesBtn" type="button">GUARDAR BLOQUEOS</button>
   <div id="configGatesStatus" class="small"></div>
  </div>
+ <div class="configTabPanel hidden" id="configTabCustompisos">
+  <div class="configLayout pisoEditorLayout">
+   <section class="panel">
+    <h2>Piso</h2>
+    <p class="small">Diseña un piso completo a mano: tiles de suelo/muro/puerta, assets, enemigos, cofres, llaves y trampas. No se suben imágenes aquí: todo se referencia desde lo ya configurado en Tilesets, Objetos del mundo, Enemigos y Cofres. El generador de mazmorras usará estos pisos (si hay alguno que encaje con el nivel) en las partidas normales.</p>
+    <div class="configForm">
+     <label>Nombre <input id="pisoName" maxlength="80" placeholder="Cripta olvidada..."></label>
+     <label>Nivel(es) de aparición <input id="pisoNivel" maxlength="60" placeholder="Ej: 3 · 3,5,8-10 · vacío = cualquiera"></label>
+     <label>Ancho (tiles) <input id="pisoCols" type="number" min="9" max="99" value="49"></label>
+     <label>Alto (tiles) <input id="pisoRows" type="number" min="9" max="99" value="49"></label>
+    </div>
+    <div class="configItemActions">
+     <button class="start" id="savePisoBtn" type="button">GUARDAR PISO</button>
+     <button id="newPisoBtn" type="button">NUEVO PISO</button>
+     <button id="deletePisoBtn" type="button">ELIMINAR</button>
+    </div>
+    <div class="configItemActions">
+     <button id="exportPisoJsonBtn" type="button">EXPORTAR JSON</button>
+     <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importPisoJsonInput" accept=".json,application/json"></label>
+    </div>
+    <div id="pisoStatus" class="small"></div>
+    <hr>
+    <h2>Pisos guardados</h2>
+    <div id="pisoList" class="configItemsList"></div>
+   </section>
+   <section class="panel pisoEditorMain">
+    <h2>Lienzo</h2>
+    <div id="pisoBreadcrumb" class="pisoBreadcrumb hidden"></div>
+    <div class="pisoToolbar">
+     <div class="pisoToolGroup" id="pisoToolButtons">
+      <button type="button" data-piso-tool="paint" class="active">Pintar</button>
+      <button type="button" data-piso-tool="select">Seleccionar</button>
+      <button type="button" data-piso-tool="room">Sala</button>
+      <button type="button" data-piso-tool="erase">Borrar</button>
+     </div>
+     <div class="pisoToolGroup">
+      <button type="button" id="pisoZoomOutBtn">−</button>
+      <span id="pisoZoomLabel" class="small">100%</span>
+      <button type="button" id="pisoZoomInBtn">+</button>
+      <button type="button" id="pisoFullscreenBtn">⛶ Pantalla completa</button>
+     </div>
+    </div>
+    <div class="pisoCanvasWrap" id="pisoCanvasWrap">
+     <canvas id="pisoCanvas" width="1176" height="1176"></canvas>
+     <div class="pisoDragGhost hidden" id="pisoDragGhost"></div>
+    </div>
+    <div id="pisoSelectionMenu" class="pisoSelectionMenu hidden"></div>
+    <div id="pisoMultiSelectBar" class="pisoInspector hidden"></div>
+    <div id="pisoInspector" class="pisoInspector hidden"></div>
+   </section>
+   <section class="panel pisoPalettePanel">
+    <h2>Paleta</h2>
+    <div class="pisoToolGroup" id="pisoPaletteTabs">
+     <button type="button" data-piso-palette="tiles" class="active">Tiles</button>
+     <button type="button" data-piso-palette="assets">Assets</button>
+     <button type="button" data-piso-palette="enemies">Enemigos</button>
+     <button type="button" data-piso-palette="chests">Cofres</button>
+     <button type="button" data-piso-palette="keys">Llaves</button>
+     <button type="button" data-piso-palette="traps">Trampas</button>
+     <button type="button" data-piso-palette="doors">Puertas</button>
+     <button type="button" data-piso-palette="salas">Salas</button>
+    </div>
+    <label>Tileset de referencia <select id="pisoTilesetSelect"></select></label>
+    <p class="small">Solo para previsualizar en el editor: en juego el piso usará el sistema habitual de tilesets del motor.</p>
+    <div id="pisoPaletteList" class="configItemsList"></div>
+   </section>
+  </div>
+ </div>
  <div class="configTabPanel hidden" id="configTabDungeons">
   <div class="configLayout dungeonConfigLayout">
    <section class="panel">
@@ -930,6 +998,7 @@
 <script src="./src/soulseek.js?v=1.1.0"></script>
 <script src="./src/soulseeker-dungeons.js?v=1.1.0"></script>
 <script src="./src/soulseek_shop.js?v=1.1.0"></script>
+<script src="./src/custompisos.js?v=1.1.0"></script>
 <script src="./src/loading-overlays.js?v=1.1.0"></script>
 
 </body>

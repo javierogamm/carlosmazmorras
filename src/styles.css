@@ -335,3 +335,42 @@ canvas{width:100%;height:auto;display:block;background:#050407;border:4px solid 
 .uiPromptModal{z-index:10050}.uiPromptBox{width:min(460px,100%)}.uiPromptBox h2{color:#ffd477;margin:0 0 8px}.uiPromptText{white-space:pre-line}.uiPromptField{display:block;margin:10px 0}.uiPromptField input{width:100%;box-sizing:border-box;padding:8px;background:#0e0a13;color:#f3eaf6;border:2px solid #59406b;font-family:inherit}.uiPromptField.hidden{display:none}
 @media(max-width:600px){.gamepadBindings{grid-template-columns:1fr}}
 body.gameOnly{margin:0;background:#09070c;overflow:hidden}body.gameOnly>#globalMenuBtn,body.gameOnly #app>header,body.gameOnly .log,body.gameOnly .controls,body.gameOnly .gamePanel>.small,body.gameOnly .floorObjective,body.gameOnly .boardActionBar{display:none!important}body.gameOnly #app{display:block!important;width:100vw;height:100vh;padding:4px;overflow:hidden}body.gameOnly #app .layout{height:100%;display:grid;grid-template-columns:minmax(150px,14vw) minmax(0,1fr) minmax(210px,18vw);gap:4px}body.gameOnly .heroPanel,body.gameOnly .gamePanel,body.gameOnly .sidePanel{display:block;height:100%;min-width:0;margin:0;overflow:auto}body.gameOnly .heroPanel{padding:7px}body.gameOnly .gamePanel{padding:3px}body.gameOnly .gameStage{width:100%;max-width:none;margin:0}body.gameOnly #game{display:block;width:100%;height:auto;max-width:none}body.gameOnly .sidePanel{max-height:none;padding:7px}body.gameOnly #hudFullscreen{opacity:.55}body.gameOnly #hudFullscreen:hover,body.gameOnly #hudFullscreen:focus{opacity:1}@media(max-width:900px){body.gameOnly #app{overflow:auto}body.gameOnly #app .layout{height:auto;min-height:100%;grid-template-columns:minmax(150px,20vw) minmax(520px,1fr) minmax(210px,25vw)}}
+
+/* Editor de pisos (custompisos.js) */
+.pisoEditorLayout{grid-template-columns:minmax(260px,320px) minmax(0,1fr) minmax(240px,300px);align-items:start}
+.pisoEditorMain{min-width:0}
+.pisoToolbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:8px}
+.pisoToolGroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pisoToolGroup button{background:#251a2f;color:#fff;border:2px solid #684b7c;padding:7px 10px;cursor:pointer;font-family:inherit}
+.pisoToolGroup button.active{background:#65447a;border-color:#ffc35a}
+.pisoCanvasWrap{position:relative;max-width:100%;max-height:70vh;overflow:auto;border:2px solid #4d395a;background:#09070c;touch-action:none}
+.pisoCanvasWrap canvas{display:block;image-rendering:pixelated;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none}
+.pisoCanvasWrap.pisoPanning canvas{cursor:grab}
+.pisoCanvasWrap:fullscreen,.pisoCanvasWrap:-webkit-full-screen{max-height:100vh;height:100vh;max-width:100vw;background:#09070c}
+.pisoDragGhost{position:fixed;z-index:9999;pointer-events:none;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:#1c1424ee;border:2px solid #ffc35a;box-shadow:0 0 12px #000a;font-size:20px;transform:translate(-50%,-50%)}
+.pisoDragGhost.hidden{display:none}
+.pisoPaletteList{max-height:60vh;overflow:auto}
+.pisoPaletteItem{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;background:#17101f;border:2px solid #4d395a;padding:6px 8px;cursor:grab;touch-action:none}
+.pisoPaletteItem:hover{border-color:#8b6b9d}
+.pisoPaletteItem.pisoDragging{opacity:.4}
+.pisoPaletteThumb{width:32px;height:32px;background:#100b16;border:1px solid #4d395a;display:flex;align-items:center;justify-content:center;font-size:15px;image-rendering:pixelated}
+.pisoPaletteThumb img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+.pisoPaletteName{font-size:11px;line-height:1.3}
+.pisoPaletteName b{display:block;color:#f4ead5}
+.pisoSelectionMenu{position:fixed;z-index:1200;background:#1c1424f5;border:2px solid #ffc35a;box-shadow:0 0 14px #000c;padding:8px;display:grid;gap:6px;min-width:200px;max-width:min(280px,90vw)}
+.pisoSelectionMenu.hidden{display:none}
+.pisoSelectionMenu button{display:block;width:100%;background:#31223c;color:#fff;border:1px solid #6a4d7d;padding:6px 8px;cursor:pointer;text-align:left;font-family:inherit}
+.pisoSelectionMenu button:hover{border-color:#ffc35a}
+.pisoInspector{margin-top:10px;background:#17101f;border:2px solid #4d395a;padding:10px}
+.pisoInspector.hidden{display:none}
+.pisoInspector h3{margin:0 0 8px;color:#ffd68b}
+.pisoInspectorRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.pisoInspectorRow label{display:grid;gap:4px}
+.pisoInspectorRow input,.pisoInspectorRow select{background:#100b16;color:#f4ead5;border:2px solid #5b4269;padding:7px}
+.pisoBreadcrumb{display:flex;align-items:center;gap:8px;background:#1c1424;border:1px solid #684b7c;padding:6px 8px;margin-bottom:8px;font-size:11px;color:#c9b8d0}
+.pisoBreadcrumb.hidden{display:none}
+.pisoBreadcrumb button{background:#31223c;color:#fff;border:1px solid #6a4d7d;padding:5px 8px;cursor:pointer;font-family:inherit}
+.pisoBreadcrumb b{color:#ffd68b}
+.pisoGridStatus{margin:6px 0;color:#c9b8d0}
+@media(max-width:1080px){.pisoEditorLayout{grid-template-columns:1fr}}
+@media(max-width:600px){.pisoToolbar{flex-direction:column;align-items:stretch}.pisoInspectorRow{grid-template-columns:1fr}}
