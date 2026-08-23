@@ -326,8 +326,15 @@ function pisoBuildPaletteRow(entry,idx){
  }
  return row;
 }
+// The palette is rebuilt when an icon arrives asynchronously and whenever an
+// entry is selected. Keep the user's accordion choices outside the generated
+// DOM so those redraws never close a group that they were browsing.
+const pisoPaletteGroupsOpen=new Map();
 function pisoRenderPalette(){
  const root=document.getElementById('pisoPaletteList');if(!root)return;
+ root.querySelectorAll('details[data-piso-palette-group]').forEach(details=>{
+  pisoPaletteGroupsOpen.set(details.dataset.pisoPaletteGroup,details.open);
+ });
  pisoPaletteEntries=pisoBuildPaletteEntries();
  if(!pisoPaletteEntries.length){
   root.innerHTML=`<p class="small">${pisoActivePaletteTab==='tiles'||pisoActivePaletteTab==='doors'?'Elige un tileset de referencia arriba.':'Nada configurado todavía en ese catálogo.'}</p>`;
@@ -348,7 +355,10 @@ function pisoRenderPalette(){
   groups.get(g).push({entry,idx});
  });
  for(const [label,items] of groups){
-  const details=document.createElement('details');details.className='configSlotGroup';details.open=groups.size<=3;
+  const groupKey=pisoActivePaletteTab+'::'+label;
+  const details=document.createElement('details');details.className='configSlotGroup';details.dataset.pisoPaletteGroup=groupKey;
+  details.open=pisoPaletteGroupsOpen.has(groupKey)?pisoPaletteGroupsOpen.get(groupKey):groups.size<=3;
+  details.addEventListener('toggle',()=>pisoPaletteGroupsOpen.set(groupKey,details.open));
   const summary=document.createElement('summary');summary.innerHTML=`<span>${label.replace(/</g,'&lt;')}</span><b>${items.length}</b>`;
   const body=document.createElement('div');body.className='configSlotItems';
   for(const {entry,idx} of items)body.appendChild(pisoBuildPaletteRow(entry,idx));
@@ -684,6 +694,20 @@ function pisoBeginPointerDrag(e,{onStart,onMove,onEnd,panEl}){
  else onStart(e);
 }
 
+// Desktop canvas navigation: right-button dragging pans the viewport without
+// changing the current tool or painting cells underneath the pointer.
+function pisoBeginMousePan(e,panEl){
+ const pid=e.pointerId;
+ let lastX=e.clientX,lastY=e.clientY;
+ panEl.classList.add('pisoPanning');
+ function cleanup(){panEl.classList.remove('pisoPanning');document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',end)}
+ function move(ev){if(ev.pointerId!==pid)return;ev.preventDefault();panEl.scrollLeft-=ev.clientX-lastX;panEl.scrollTop-=ev.clientY-lastY;lastX=ev.clientX;lastY=ev.clientY}
+ function end(ev){if(ev.pointerId===pid)cleanup()}
+ document.addEventListener('pointermove',move,{passive:false});
+ document.addEventListener('pointerup',end);
+ document.addEventListener('pointercancel',end);
+}
+
 function pisoWirePaletteDrag(row,entry){
  row.addEventListener('pointerdown',e=>{
   if(e.button!==undefined&&e.button>0)return;
@@ -756,7 +780,9 @@ function pisoInstancesInRect(draft,r){
 }
 function pisoWireCanvas(){
  const canvas=pisoCanvasEl();if(!canvas)return;
+ canvas.addEventListener('contextmenu',e=>e.preventDefault());
  canvas.addEventListener('pointerdown',e=>{
+  if(e.button===2){e.preventDefault();pisoBeginMousePan(e,document.getElementById('pisoCanvasWrap'));return}
   if(e.button!==undefined&&e.button>0)return;
   const startCell=pisoCellFromPoint(e.clientX,e.clientY);if(!startCell)return;
   const panEl=document.getElementById('pisoCanvasWrap');

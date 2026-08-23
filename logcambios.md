@@ -1610,3 +1610,10 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Cada subida de nivel del PJ desde nivel 2 ofrece una selección de habilidad, siempre que queden skills sin aprender en el pool de la clase.
 - El pool respeta la progresión solicitada: tier I en niveles 1–4; I–II en 5–7; I–III en 8–10; I–IV desde nivel 11.
 - Se asigna la versión de aplicación `1.3.0` y se actualiza el cache-busting de recursos.
+
+## v1.4.0 — Navegación y amplitud del editor de pisos (2026-08-23)
+
+- Los acordeones de la paleta conservan su estado abierto o cerrado cuando la paleta se redibuja al cargar iconos o seleccionar elementos.
+- En escritorio, el lienzo se puede desplazar manteniendo pulsado el botón derecho y arrastrando, sin pintar ni cambiar la herramienta activa.
+- El editor aprovecha hasta 1800 px del viewport y compacta sus paneles laterales para dar mucha más amplitud al lienzo, manteniendo el diseño responsive en pantallas estrechas.
+- Se asigna la versión de aplicación `1.4.0` y se renueva el cache-busting de recursos.
