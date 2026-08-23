@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v1.1.0 RENDER DUNGEON</title>
-<link rel="stylesheet" href="./src/styles.css?v=1.1.0">
+<title>MAZMORRA // BOTÍN v1.3.0 RENDER DUNGEON</title>
+<link rel="stylesheet" href="./src/styles.css?v=1.3.0">
 
 </head>
 <body>
@@ -438,6 +438,7 @@
     <div class="configItemActions">
      <button type="button" id="newConfigSkillBtn">NUEVA SKILL</button>
      <button type="button" id="duplicateConfigSkillBtn">DUPLICAR SKILL</button>
+     <button type="button" id="deleteConfigSkillBtn">ELIMINAR SKILL</button>
      <button type="button" id="exportConfigSkillsBtn">EXPORTAR SKILLS (JSON)</button>
      <label class="fileImportLabel">IMPORTAR SKILLS (JSON)<input type="file" id="importConfigSkillsInput" accept="application/json" hidden></label>
     </div>
@@ -453,10 +454,8 @@
       <label>Enfriamiento (turnos) <input id="configSkillCd" type="number" min="0" value="5"></label>
       <label>PA (coste en modo turnos por Puntos de Acción, single y multi) <input id="configSkillApCost" type="number" min="0" value="10"></label>
       <label>Tipo <select id="configSkillType"><option value="physical">Físico</option><option value="magic">Mágico</option><option value="utility">Utilidad</option></select></label>
-      <label>Rareza <select id="configSkillRarity"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option></select></label>
-      <label>Alcance (0 = cuerpo a cuerpo) <input id="configSkillRange" type="number" min="0" value="1"></label>
-      <label>Modo de objetivo <select id="configSkillTargetMode"><option value="">Automático</option><option value="self">Uno mismo</option><option value="enemy">Enemigo</option><option value="area">Área</option></select></label>
-      <label>Efecto (classEffect) <select id="configSkillEffect"></select><span class="small">Si eliges un efecto que no sea uno de los 12 básicos (ranged/shield/dash/debuff/aoe/heal/multihit/utility/ultimate/execute/buff/massive), fija el modo de objetivo en Enemigo, Área o Uno mismo para que sea invocable.</span></label>
+      <label>Animación en pantalla <select id="configSkillAnimation"></select></label>
+      <label>Icono de la animación <select id="configSkillAnimationIcon"><option value="✦">✦ Estrella</option><option value="💥">💥 Explosión</option><option value="🔥">🔥 Fuego</option><option value="❄">❄ Hielo</option><option value="⚡">⚡ Rayo</option><option value="☄">☄ Meteoro</option><option value="🛡">🛡 Escudo</option><option value="✚">✚ Curación</option><option value="☠">☠ Calavera</option><option value="🌀">🌀 Espiral</option><option value="⬆">⬆ Emerger</option><option value="⬇">⬇ Caída</option></select></label>
       <label class="tileRotateLabel"><input id="configSkillEnemyUsable" type="checkbox" checked> Los enemigos también pueden usarla</label>
      </div>
      <label>Descripción <input id="configSkillDesc" maxlength="200" placeholder="Descripción de la skill"></label>
@@ -509,14 +508,7 @@
      <div class="cropWrap"><canvas id="configSummonCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia.</div></div>
      <div class="configPreview"><canvas id="configSummonIconPreview" width="50" height="50"></canvas><span id="configSummonIconStatus" class="small">Sin imagen seleccionada.</span></div>
     </details>
-    <details class="configAccordion">
-     <summary>Icono de imagen</summary>
-     <label>Icono de imagen (opcional, sustituye al emoji en juego) <input type="file" id="configSkillImageInput" accept="image/*"></label>
-     <div class="cropTools"><label>Zoom imagen <input type="range" id="configSkillCropZoom" min="25" max="400" value="100"></label><button type="button" id="configSkillMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configSkillMagicTolerance" min="0" max="160" value="38"></label></div>
-     <div class="cropWrap"><canvas id="configSkillCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono de la skill conservando su resolución.</div></div>
-     <div class="configPreview"><canvas id="configSkillIconPreview" width="50" height="50"></canvas><span id="configSkillIconStatus" class="small">Sin imagen: se usa el icono de texto/emoji.</span></div>
-     <button id="rollbackConfigSkillIconBtn" type="button">QUITAR ICONO DE IMAGEN</button>
-    </details>
+    <details class="configAccordion" open><summary>Animación en pantalla · vista en bucle</summary><p class="small">La animación seleccionada se reproduce continuamente en este escenario. Cambia el selector de arriba para compararlas al instante; «Automática» conserva el comportamiento anterior.</p><div id="configSkillAnimationPreview" class="skillAnimationPreview" aria-live="polite"></div><button type="button" id="previewConfigSkillAnimationBtn">REINICIAR BUCLE</button></details>
     <button class="start" id="saveConfigSkillBtn" type="button">GUARDAR SKILL (Y CLASE)</button>
     <div id="configSkillStatus" class="small"></div>
    </details>
@@ -988,18 +980,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/interiors.js?v=1.1.0"></script>
-<script src="./src/pjrace.js?v=1.1.0"></script>
-<script src="./src/pjlvl.js?v=1.1.0"></script>
-<script src="./src/animations.js?v=1.1.0"></script>
-<script src="./src/game.js?v=1.1.0"></script>
-<script src="./src/joystick.js?v=1.1.0"></script>
-<script src="./src/touch.js?v=1.1.0"></script>
-<script src="./src/soulseek.js?v=1.1.0"></script>
-<script src="./src/soulseeker-dungeons.js?v=1.1.0"></script>
-<script src="./src/soulseek_shop.js?v=1.1.0"></script>
-<script src="./src/custompisos.js?v=1.1.0"></script>
-<script src="./src/loading-overlays.js?v=1.1.0"></script>
+<script src="./src/interiors.js?v=1.3.0"></script>
+<script src="./src/pjrace.js?v=1.3.0"></script>
+<script src="./src/pjlvl.js?v=1.3.0"></script>
+<script src="./src/animations.js?v=1.3.0"></script>
+<script src="./src/classkills.js?v=1.3.0"></script>
+<script src="./src/game.js?v=1.3.0"></script>
+<script src="./src/joystick.js?v=1.3.0"></script>
+<script src="./src/touch.js?v=1.3.0"></script>
+<script src="./src/soulseek.js?v=1.3.0"></script>
+<script src="./src/soulseeker-dungeons.js?v=1.3.0"></script>
+<script src="./src/soulseek_shop.js?v=1.3.0"></script>
+<script src="./src/custompisos.js?v=1.3.0"></script>
+<script src="./src/loading-overlays.js?v=1.3.0"></script>
 
 </body>
 </html>

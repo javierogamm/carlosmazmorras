@@ -14,21 +14,20 @@
 // xpReceivedMultiplier and the DOM element ids used by the level-up modals).
 // ============================================================================
 
-const classSkillMilestones={1:1};
+const CLASS_SKILL_LEVELS=Array.from({length:100},(_,i)=>i+1);
+const classSkillMilestones=Object.fromEntries(CLASS_SKILL_LEVELS.map(level=>[level,maxSkillTierForLevel(level)]));
 // Levels at which a class skill choice is awarded after the initial pick
 // (level 1 in normal mode, level 2/floor 2 in Soulseek mode - see
 // soulseekCheckClassUnlock()). Shared with the tier thresholds below.
-const SKILL_CHOICE_LEVELS=[5,7,10,12,15,20];
-function isClassSkillChoiceLevel(level){return SKILL_CHOICE_LEVELS.includes(level)}
+const SKILL_CHOICE_LEVELS=Array.from({length:99},(_,i)=>i+2);
+function isClassSkillChoiceLevel(level){return level>=2&&level<=100}
 // Roman numerals for skill tiers I-IV, shared by every tier-label render site.
 const TIER_ROMAN=['','I','II','III','IV'];
-// Highest skill tier selectable at a given character level: II at 7, III at
-// 12, IV at 20.
-function maxSkillTierForLevel(level){return level>=20?4:level>=12?3:level>=7?2:1}
+// Pools: tier II from level 5, tier III from 8 and tier IV from 11.
+function maxSkillTierForLevel(level){return level>=11?4:level>=8?3:level>=5?2:1}
 
 let pendingClassSkillRequests=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1];
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
@@ -99,7 +98,7 @@ function levelRewardLabel(level,skillId){
  const s=skillDefs[skillId];
  if(!s)return '';
  const tier=TIER_ROMAN[s.tier]||s.tier||'?';
- return `<div class="levelRewardSkill"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${tier}</span><p>${s.desc}</p><span class="small">Skill aleatoria de ${game.player.className} desbloqueada al nivel ${level}.</span></div>`
+ return `<div class="levelRewardSkill"><b>${s.icon} ${s.name}</b><span class="tierBadge" data-tier="${s.tier||1}">TIER ${tier}</span><p>${s.desc}</p><span class="small">Skill aleatoria de ${game.player.className} desbloqueada al nivel ${level}.</span></div>`
 }
 function processClassSkillChoices(){
  if(!game?.player)return;
@@ -124,7 +123,7 @@ function processClassSkillChoices(){
  if(!choices.length){game.player.skillChoicesAwarded[request.level]='complete';if(request.initial)finishCharacterCreation();else if(game.player.unspentStatPoints)showStatPointModal();processClassSkillChoices();return}
  document.getElementById('skillChoiceTitle').textContent=request.initial?'ELIGE TU PRIMERA HABILIDAD':`NUEVA HABILIDAD · NIVEL ${request.level} · TIER ${roman}`;
  document.getElementById('skillChoiceText').textContent=request.initial?`${game.player.className} · nivel 1. Elige una habilidad del pool real de tu clase.`:`${game.player.className} · nivel ${request.level}. Elige una habilidad disponible del pool de tu clase (hasta tier ${roman}).`;
- document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=TIER_ROMAN[s.tier]||s.tier;return `<button type="button" class="skillChoiceCard" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
+ document.getElementById('skillChoiceGrid').innerHTML=choices.map(id=>{const s=skillDefs[id],skillRoman=TIER_ROMAN[s.tier]||s.tier;return `<button type="button" class="skillChoiceCard ${classSkillTierClass(s.tier)}" data-tier="${s.tier||1}" data-pick-skill="${id}"><b>${s.icon} ${s.name}</b><span class="tierBadge" data-tier="${s.tier||1}">TIER ${skillRoman}</span><p>${s.desc}</p><span class="small">${s.cost} ${s.resource==='mana'?'maná':'stamina'} · CD ${s.cd} · Alcance ${s.range||0}</span></button>`}).join('');
  modal.classList.add('open');
  modal.querySelectorAll('[data-pick-skill]').forEach(b=>b.addEventListener('click',async()=>{
   // Everything below (closing the modal, saving to Supabase on the initial
