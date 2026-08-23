@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MAZMORRA // BOTÍN v1.2.0 RENDER DUNGEON</title>
-<link rel="stylesheet" href="./src/styles.css?v=1.2.0">
+<title>MAZMORRA // BOTÍN v1.2.1 RENDER DUNGEON</title>
+<link rel="stylesheet" href="./src/styles.css?v=1.2.1">
 
 </head>
 <body>
@@ -507,7 +507,7 @@
      <div class="cropWrap"><canvas id="configSummonCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia.</div></div>
      <div class="configPreview"><canvas id="configSummonIconPreview" width="50" height="50"></canvas><span id="configSummonIconStatus" class="small">Sin imagen seleccionada.</span></div>
     </details>
-    <details class="configAccordion"><summary>Reproductor de animación</summary><p class="small">Previsualiza la animación elegida. «Automática» conserva el comportamiento anterior.</p><div id="configSkillAnimationPreview" class="skillAnimationPreview"><span>✦</span></div><button type="button" id="previewConfigSkillAnimationBtn">REPRODUCIR</button></details>
+    <details class="configAccordion" open><summary>Animación en pantalla · vista en bucle</summary><p class="small">La animación seleccionada se reproduce continuamente en este escenario. Cambia el selector de arriba para compararlas al instante; «Automática» conserva el comportamiento anterior.</p><div id="configSkillAnimationPreview" class="skillAnimationPreview" aria-live="polite"></div><button type="button" id="previewConfigSkillAnimationBtn">REINICIAR BUCLE</button></details>
     <button class="start" id="saveConfigSkillBtn" type="button">GUARDAR SKILL (Y CLASE)</button>
     <div id="configSkillStatus" class="small"></div>
    </details>
@@ -979,19 +979,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="./src/interiors.js?v=1.2.0"></script>
-<script src="./src/pjrace.js?v=1.2.0"></script>
-<script src="./src/pjlvl.js?v=1.2.0"></script>
-<script src="./src/animations.js?v=1.2.0"></script>
-<script src="./src/classkills.js?v=1.2.0"></script>
-<script src="./src/game.js?v=1.2.0"></script>
-<script src="./src/joystick.js?v=1.2.0"></script>
-<script src="./src/touch.js?v=1.2.0"></script>
-<script src="./src/soulseek.js?v=1.2.0"></script>
-<script src="./src/soulseeker-dungeons.js?v=1.2.0"></script>
-<script src="./src/soulseek_shop.js?v=1.2.0"></script>
-<script src="./src/custompisos.js?v=1.2.0"></script>
-<script src="./src/loading-overlays.js?v=1.2.0"></script>
+<script src="./src/interiors.js?v=1.2.1"></script>
+<script src="./src/pjrace.js?v=1.2.1"></script>
+<script src="./src/pjlvl.js?v=1.2.1"></script>
+<script src="./src/animations.js?v=1.2.1"></script>
+<script src="./src/classkills.js?v=1.2.1"></script>
+<script src="./src/game.js?v=1.2.1"></script>
+<script src="./src/joystick.js?v=1.2.1"></script>
+<script src="./src/touch.js?v=1.2.1"></script>
+<script src="./src/soulseek.js?v=1.2.1"></script>
+<script src="./src/soulseeker-dungeons.js?v=1.2.1"></script>
+<script src="./src/soulseek_shop.js?v=1.2.1"></script>
+<script src="./src/custompisos.js?v=1.2.1"></script>
+<script src="./src/loading-overlays.js?v=1.2.1"></script>
 
 </body>
 </html>

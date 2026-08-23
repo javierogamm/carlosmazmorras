@@ -23,9 +23,12 @@ function populateClassSkillAnimationEditor(selected='default'){
  const select=document.getElementById('configSkillAnimation');if(!select)return;
  select.innerHTML=Object.entries(CLASS_SKILL_ANIMATIONS).map(([id,a])=>`<option value="${id}">${a.label}</option>`).join('');
  select.value=CLASS_SKILL_ANIMATIONS[selected]?selected:'default';
+ select.onchange=previewClassSkillAnimation;
+ previewClassSkillAnimation();
 }
 function previewClassSkillAnimation(){
- const key=document.getElementById('configSkillAnimation')?.value||'default',stage=document.getElementById('configSkillAnimationPreview');if(!stage)return;
- stage.className=`skillAnimationPreview playing preview-${CLASS_SKILL_ANIMATIONS[key]?.preview||'shake'}`;
- stage.innerHTML='<span>✦</span>';setTimeout(()=>stage.classList.remove('playing'),850);
+ const selected=document.getElementById('configSkillAnimation')?.value||'default',key=CLASS_SKILL_ANIMATIONS[selected]?.preview||'shake';
+ const stage=document.getElementById('configSkillAnimationPreview');if(!stage)return;
+ stage.className=`skillAnimationPreview preview-${key}`;
+ stage.innerHTML=`<div class="skillPreviewFloor"></div><div class="skillPreviewActor skillPreviewHero"><span>♟</span><small>HÉROE</small></div><div class="skillPreviewCast"><span>${document.getElementById('configSkillIconText')?.value||'✦'}</span></div><div class="skillPreviewActor skillPreviewEnemy"><span>♜</span><small>ENEMIGO</small></div><div class="skillPreviewLabel">${CLASS_SKILL_ANIMATIONS[selected]?.label||CLASS_SKILL_ANIMATIONS.default.label} · EN BUCLE</div>`;
 }

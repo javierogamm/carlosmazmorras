@@ -1593,3 +1593,11 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Los slots activos se desbloquean cada 5 puntos de Sabiduría y mantienen el máximo de 6.
 - El pool por nivel pasa a tier I (niveles 1–4), tiers I–II (5–7), I–III (8–10) e I–IV (11+).
 - Se asigna la versión de aplicación `1.2.0` y se actualiza el cache-busting de recursos.
+
+## v1.2.1 — Reproductor visible y continuo de animaciones (2026-08-23)
+
+- El reproductor de animaciones de skills queda abierto por defecto y dispone de un escenario de combate amplio y claramente visible.
+- La animación seleccionada se reproduce automáticamente en bucle, sin depender de pulsar un botón.
+- Cambiar la animación en el selector actualiza la vista previa de inmediato; el botón permite reiniciar el bucle manualmente.
+- La vista representa héroe, lanzamiento y enemigo, con una etiqueta permanente de la animación activa.
+- Se asigna la versión de aplicación `1.2.1` y se renueva el cache-busting de recursos.
