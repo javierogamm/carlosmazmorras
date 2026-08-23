@@ -1580,3 +1580,16 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Añadido un intervalo de reintento para evitar repetir inmediatamente una descarga fallida cuando no existe caché local.
 - El endpoint reintenta la lectura con la proyección compatible anterior cuando PostgREST todavía no expone `updated_at` en su caché de esquema.
 - Actualizada la versión de la app y del paquete a `0.76.0`.
+
+## v1.2.0 — Skills de clase consolidadas (2026-08-23)
+
+- Se crea `src/classkills.js` como módulo dedicado a reglas visuales, tiers, desbloqueo del pool y animaciones de las skills de clase.
+- El editor elimina los campos legacy de rareza, alcance, modo de objetivo y `classEffect`; las skills configuradas se guardan a partir de sus efectos apilables.
+- Se elimina el editor de icono de imagen de las skills (se mantiene el icono de texto y las imágenes propias de invocaciones).
+- Se añade eliminación persistente de skills desde el editor de clase.
+- Los tiers I, II, III y IV usan respectivamente verde, azul, morado y rojo en selector, elección al subir, ficha de habilidad y miniatura de combate.
+- Se añade selector de animación por skill y un reproductor colapsable. La opción automática conserva la animación histórica; una selección explícita prevalece siempre.
+- Los enemigos reproducen una animación roja por defecto al usar skills, respetando también una animación configurada explícitamente.
+- Los slots activos se desbloquean cada 5 puntos de Sabiduría y mantienen el máximo de 6.
+- El pool por nivel pasa a tier I (niveles 1–4), tiers I–II (5–7), I–III (8–10) e I–IV (11+).
+- Se asigna la versión de aplicación `1.2.0` y se actualiza el cache-busting de recursos.

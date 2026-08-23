@@ -1051,7 +1051,7 @@ function skillsBlockedByTransform(){return (game.player?.activeBuffs||[]).some(b
 const MAX_ACTIVE_SKILL_SLOTS=6;
 function activeSkillSlotsFor(player=game.player){
  const wisdom=player?.derived?.finalStats?.wisdom??player?.stats?.wisdom??0;
- return Math.min(MAX_ACTIVE_SKILL_SLOTS,3+Math.floor(Math.max(0,wisdom)/10))
+ return Math.min(MAX_ACTIVE_SKILL_SLOTS,3+Math.floor(Math.max(0,wisdom)/5))
 }
 function enforceActiveSkillSlots(player=game.player){
  const limit=activeSkillSlotsFor(player),equipped=Array.isArray(player.equippedSkills)?player.equippedSkills:[];
@@ -3092,7 +3092,7 @@ function enemyUseSkill(e,dist,target=game.player){
      attempted=true;
      applied=applyMindControlStatus(target,comp.kind,comp.turns??2,e,s.name)||applied;
     }
-    if(attempted){if(applied)floating(controlEffects.some(c=>c.kind==='mesmer')?'◈':'!',target.x,target.y,controlEffects.some(c=>c.kind==='mesmer')?'#b45cff':'#111');log(`${e.name} usa ${s.name}.`,'combat');e.skillCooldowns[id]=Math.max(2,s.cd||5);return true}
+    if(attempted){if(applied)floating(controlEffects.some(c=>c.kind==='mesmer')?'◈':'!',target.x,target.y,controlEffects.some(c=>c.kind==='mesmer')?'#b45cff':'#111');log(`${e.name} usa ${s.name}.`,'combat');playClassSkillAnimation(s,'enemy',e);e.skillCooldowns[id]=Math.max(2,s.cd||5);return true}
    }
    // ...*skillTierPowerMultiplier(s): the same global +5%-per-tier skill buff
    // the player gets. `amount` below is what this cast deals OR heals, so a
@@ -3122,7 +3122,7 @@ function enemyUseSkill(e,dist,target=game.player){
     if(ENEMY_DRAIN_EFFECTS.has(s.classEffect))healEntity(e,Math.round(amount*(s.classEffect==='holyLeech'?.25:.4)),e.x,e.y);
     floating(`-${amount}`,target.x,target.y,'#ff8888');log(`${e.name} usa ${s.name} contra ${target.name} por ${amount}.`,'combat')
    }
-   e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
+   playClassSkillAnimation(s,'enemy',e);e.skillCooldowns[id]=Math.max(2,s.cd||5);return true
   }
  }
  return false
@@ -6039,7 +6039,7 @@ function resolveTargetedSkill(slot,x,y){
   used=true;
  }
  if(!used)return false;
- game.player[d.resource]-=targetedCost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');cancelTargeting('');actionDone('skill',skillApCost(id));return true
+ game.player[d.resource]-=targetedCost;game.player.cooldowns[id]=Math.max(1,d.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);playClassSkillAnimation(skillDefs[id]);cancelTargeting('');actionDone('skill',skillApCost(id));return true
 }
 function beginBasicAttack(){
  if(!game||busy||game.over)return;
@@ -6094,7 +6094,7 @@ function useSkill(slot){
   const visible=visibleEnemiesInRange(def.range||8),nearest=visible.sort((a,b)=>(Math.abs(a.x-game.player.x)+Math.abs(a.y-game.player.y))-(Math.abs(b.x-game.player.x)+Math.abs(b.y-game.player.y)))[0];
   const used=applySkillEffectsList(id,{x:game.player.x,y:game.player.y,clickedEnemy:nearest,nearest});
   if(!used){log('No hay un objetivo válido.','sys');return}
-  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
+  game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,def.cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);playClassSkillAnimation(skillDefs[id]);actionDone('skill',skillApCost(id));
   return
  }
  const near=(r)=>game.enemies.filter(e=>Math.max(Math.abs(e.x-game.player.x),Math.abs(e.y-game.player.y))<=r);
@@ -6181,7 +6181,7 @@ function useSkill(slot){
  }
 
  if(!used){log('No hay un objetivo válido.','sys');return}
- game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);effect('shake');actionDone('skill',skillApCost(id));
+ game.player[def.resource]-=cost;game.player.cooldowns[id]=Math.max(1,skillDefs[id].cd-Math.floor((skillLevel(id)-1)/4));gainSkillUse(id);playClassSkillAnimation(skillDefs[id]);actionDone('skill',skillApCost(id));
 }
 // Necklace effects are passive: only the 'buff' kind makes sense with no
 // target/cast action of its own. They are applied as a permanent buff
@@ -6301,7 +6301,7 @@ function updateUI(){
  renderCompanionsTab();
  setTimeout(()=>{document.querySelectorAll('.itemThumb').forEach(c=>{const it=c.dataset.equippedSlot?p.equipment[c.dataset.equippedSlot]:game.inventory.find(x=>x.id===c.dataset.item);if(it)drawItemIcon(c,it)});document.querySelectorAll('#inventory .shardTierIcon').forEach(c=>drawShardTierIconToCanvas(c,c.dataset.shardTier))},0);
  equipment.innerHTML=`<div class="equipVisual"><canvas id="equipmentHeroCanvas" class="equipmentHeroCanvas" width="128" height="192"></canvas>${slots.map(s=>`<div class="visualSlot vs-${s}"><span class="slotName">${slotNames[s]}</span>${equippedSlotHtml(s,p.equipment[s])}</div>`).join('')}</div>`;
- skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div class="skillCard ${d.raceSkill?'raceSkill':''}"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${Array.from({length:MAX_ACTIVE_SKILL_SLOTS},(_,n)=>{const locked=n>=activeSkillSlotsFor();return `<button class="skillSlotBtn${locked?' locked':''}" title="${locked?'Sabiduría insuficiente para este hueco':''}" onclick="equipSkill('${id}',${n})">${n+1}</button>`}).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
+ skills.innerHTML=p.knownSkills.map(id=>[id,skillDefs[id]]).filter(([,d])=>d).map(([id,d])=>{const eq=p.equippedSkills.indexOf(id),iconHtml=d.iconImage?`<canvas class="skillIconImg" width="20" height="20" data-skill-icon="${id}"></canvas>`:d.icon;return`<div data-tier="${d.tier||1}" class="skillCard ${classSkillTierClass(d.tier)} ${d.raceSkill?'raceSkill':''}"><b>${iconHtml} ${d.name}</b><span class="small">${d.desc}<span class='rangeTag'>${d.type==='utility'?'Utilidad':skillRangeLabel(id)}</span><br>Coste: ${d.cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · Daño: ${diceDamageLabel(id)} · <span class='skillLevel'>Nivel ${skillLevel(id)} · ${game.player.skillProgress?.[id]?.xp||0}/${skillXpNeeded(skillLevel(id))} XP</span><div class='skillXpBar'><i style='width:${((game.player.skillProgress?.[id]?.xp||0)/skillXpNeeded(skillLevel(id))*100)}%'></i></div> Aprendida ${eq>=0?`· <span class="equippedTag">Equipada en ${eq+1}</span>`:''}</span><div>${Array.from({length:MAX_ACTIVE_SKILL_SLOTS},(_,n)=>{const locked=n>=activeSkillSlotsFor();return `<button class="skillSlotBtn${locked?' locked':''}" title="${locked?'Sabiduría insuficiente para este hueco':''}" onclick="equipSkill('${id}',${n})">${n+1}</button>`}).join(' ')}</div></div>`}).join('')||'<p class="small">Todavía no has aprendido habilidades.</p>';
  achievements.innerHTML=[['crowd','Reunión multitudinaria','Tres enemigos adyacentes.'],['chest5','Coleccionista de basura','Abrir cinco cofres.'],['firstBoss','Rey de nada','Derrotar al primer jefe.']].map(a=>`<div class="skillCard ${game.achievements[a[0]]?'':'locked'}"><b>${game.achievements[a[0]]?'✓':'?'} ${a[1]}</b><span class="small">${a[2]}</span></div>`).join('');
  setTimeout(()=>{const ec=document.getElementById('equipmentHeroCanvas');if(ec)drawPaperDoll(ec,p);document.querySelectorAll('[data-equipped-slot]').forEach(c=>{const it=p.equipment[c.dataset.equippedSlot];if(it)drawItemIcon(c,it)})},0);
  // Small icon-only thumbnails overlaid on the board itself (see .mobileSkill
@@ -6312,7 +6312,7 @@ function updateUI(){
   const activeCompanion=permanentCompanionForSkill(id);
   if(activeCompanion)return companionCommandButtonHtml(activeCompanion,i);
   const d=skillDefs[id],cd=p.cooldowns[id]||0,cost=effectiveSkillCost(d),detail=`${d.name} · ${cost} ${d.resource==='mana'?'maná':'stamina'}${apModeOn()?` · ${skillApCost(id)} PA`:''} · ${diceDamageLabel(id)} · ${skillRangeLabel(id)}`,iconHtml=d.iconImage?`<canvas class="skillIconImg" width="18" height="18" data-skill-icon="${id}"></canvas>`:d.icon;
-  return`<button class="mobileSkill ${d.raceSkill?'raceSkill':''}" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`
+  return`<button data-tier="${d.tier||1}" class="mobileSkill ${classSkillTierClass(d.tier)} ${d.raceSkill?'raceSkill':''}" ${cd||busy||p[d.resource]<cost||skillsBlockedByTransform()?'disabled':''} onclick="useSkill(${i})" title="${detail}"><span class="slotKey">${i+1}</span><span class="icon">${iconHtml}</span>${cd?`<span class="cooldown">${cd}</span>`:''}</button>`
  }).join('');
  setTimeout(()=>document.querySelectorAll('[data-skill-icon]').forEach(c=>{const dd=skillDefs[c.dataset.skillIcon];if(dd?.iconImage)drawSkillIconImg(c,dd.iconImage)}),0);
  document.getElementById('activeEffects').innerHTML=activeEffectsHtml();updateRestButton();updateGameHud();
@@ -7215,7 +7215,7 @@ function renderClassSkillSelect(){
  const sel=document.getElementById('configClassSkillSelect');if(!sel)return;
  const bag=window.currentClassSkillsDraft||{};
  const ids=Object.keys(bag).sort((a,b)=>(bag[a].tier||1)-(bag[b].tier||1)||a.localeCompare(b));
- sel.innerHTML=ids.map(id=>`<option value="${id}">T${bag[id].tier||1} · ${bag[id].name||id}</option>`).join('')||'<option value="">Sin skills</option>';
+ sel.innerHTML=ids.map(id=>`<option value="${id}" style="color:${classSkillTierColor(bag[id].tier)}">T${bag[id].tier||1} · ${bag[id].name||id}</option>`).join('')||'<option value="">Sin skills</option>';
  if(ids.length)loadSkillIntoForm(ids.includes(sel.value)?sel.value:ids[0]);
  renderClassSkillsSummaryTable();
 }
@@ -7679,35 +7679,25 @@ function loadSkillIntoForm(skillId){
  document.getElementById('configSkillCd').value=s.cd??5;
  document.getElementById('configSkillApCost').value=s.apCost??10;
  document.getElementById('configSkillType').value=s.type||'physical';
- document.getElementById('configSkillRarity').value=s.rarity||'common';
- document.getElementById('configSkillRange').value=s.range??1;
- document.getElementById('configSkillTargetMode').value=s.targetMode||'';
- document.getElementById('configSkillEffect').value=s.classEffect||'ranged';
+ populateClassSkillAnimationEditor(s.animation||'default');
  document.getElementById('configSkillEnemyUsable').checked=s.enemyUsable!==false;
  document.getElementById('configSkillDesc').value=s.desc||'';
- window.currentConfigSkillIconHex=s.iconImage||'';
- renderConfigIconPreview(window.currentConfigSkillIconHex,'configSkillIconPreview','configSkillIconStatus');
- document.getElementById('configSkillIconStatus').textContent=window.currentConfigSkillIconHex?'Imagen personalizada activa.':'Sin imagen: se usa el icono de texto/emoji.';
  const st=document.getElementById('configSkillStatus');if(st)st.textContent=`Editando ${s.name||skillId}.`;
 }
 function currentSkillFormJson(){
  return {
   name:document.getElementById('configSkillName').value.trim()||'Skill sin nombre',
   icon:document.getElementById('configSkillIconText').value.trim()||'✦',
-  iconImage:window.currentConfigSkillIconHex||'',
   desc:document.getElementById('configSkillDesc').value.trim(),
   cd:Number(document.getElementById('configSkillCd').value)||1,
   apCost:Number(document.getElementById('configSkillApCost').value)||10,
   resource:document.getElementById('configSkillResource').value,
   cost:Number(document.getElementById('configSkillCost').value)||0,
   type:document.getElementById('configSkillType').value,
-  rarity:document.getElementById('configSkillRarity').value,
-  range:Number(document.getElementById('configSkillRange').value)||0,
-  targetMode:document.getElementById('configSkillTargetMode').value||undefined,
-  classEffect:document.getElementById('configSkillEffect').value,
   tier:Number(document.getElementById('configSkillTier').value)||1,
   classId:window.pendingNewClassId||selectedGameClassId(),
   enemyUsable:document.getElementById('configSkillEnemyUsable').checked,
+  animation:document.getElementById('configSkillAnimation').value||'default',
   effects:(window.currentSkillEffectsDraft&&window.currentSkillEffectsDraft.length)?window.currentSkillEffectsDraft:undefined,
   unlock:'Clase'
  };
@@ -8877,7 +8867,6 @@ function setupClassConfigMode(){
  const editor=setupImageIconEditor({inputId:'configClassImageInput',canvasId:'configClassCropCanvas',previewId:'configClassIconPreview',statusId:'configClassIconStatus',zoomId:'configClassCropZoom',eraserId:'configClassMagicEraserBtn',toleranceId:'configClassMagicTolerance',hexKey:'currentConfigClassIconHex',statusPrefix:'Icono',maxSize:128});
  if(!editor)return;
  setupImageIconEditor({inputId:'configClassFemaleImageInput',canvasId:'configClassFemaleCropCanvas',previewId:'configClassFemaleIconPreview',statusId:'configClassFemaleIconStatus',zoomId:'configClassFemaleCropZoom',eraserId:'configClassFemaleMagicEraserBtn',toleranceId:'configClassFemaleMagicTolerance',hexKey:'currentConfigClassFemaleIconHex',statusPrefix:'Icono femenino',maxSize:128});
- setupImageIconEditor({inputId:'configSkillImageInput',canvasId:'configSkillCropCanvas',previewId:'configSkillIconPreview',statusId:'configSkillIconStatus',zoomId:'configSkillCropZoom',eraserId:'configSkillMagicEraserBtn',toleranceId:'configSkillMagicTolerance',hexKey:'currentConfigSkillIconHex',statusPrefix:'Icono skill',maxSize:128});
  setupImageIconEditor({inputId:'configSummonImageInput',canvasId:'configSummonCropCanvas',previewId:'configSummonIconPreview',statusId:'configSummonIconStatus',zoomId:'configSummonCropZoom',eraserId:'configSummonMagicEraserBtn',toleranceId:'configSummonMagicTolerance',hexKey:'currentSummonIconHex',statusPrefix:'Icono invocación',maxSize:128});
  const summonExistingSel=document.getElementById('configSummonIconExisting');
  if(summonExistingSel)summonExistingSel.onchange=()=>{
@@ -8888,8 +8877,6 @@ function setupClassConfigMode(){
  };
  populateSummonIconExistingList();
  document.getElementById('configClassPotionSearch')?.addEventListener('input',renderConfigClassPotionResults);
- const effectSel=document.getElementById('configSkillEffect');
- if(effectSel&&!effectSel.options.length)effectSel.innerHTML=ALL_CLASS_EFFECTS.map(e=>`<option value="${e}">${e}</option>`).join('');
  configClassSelect.onchange=loadSelectedConfigClass;
  document.getElementById('configClassSkillSelect').onchange=e=>loadSkillIntoForm(e.target.value);
  document.getElementById('newConfigClassBtn').onclick=async()=>{
@@ -8922,7 +8909,7 @@ function setupClassConfigMode(){
   const id=window.pendingNewClassId||selectedGameClassId(),n=Object.keys(window.currentClassSkillsDraft||{}).length+1;
   const skillId=`${id}_custom_${n}`;
   window.currentClassSkillsDraft=window.currentClassSkillsDraft||{};
-  window.currentClassSkillsDraft[skillId]={name:'Nueva skill',icon:'✦',iconImage:'',desc:'Descripción pendiente.',cd:5,apCost:10,resource:'stamina',cost:10,type:'physical',rarity:'common',range:1,classEffect:'ranged',tier:1,classId:id,enemyUsable:true,unlock:'Clase'};
+  window.currentClassSkillsDraft[skillId]={name:'Nueva skill',icon:'✦',desc:'Descripción pendiente.',cd:5,apCost:10,resource:'stamina',cost:10,type:'physical',tier:1,classId:id,enemyUsable:true,animation:'default',effects:[],unlock:'Clase'};
   renderClassSkillSelect();
   document.getElementById('configClassSkillSelect').value=skillId;loadSkillIntoForm(skillId);
  };
@@ -8947,10 +8934,8 @@ function setupClassConfigMode(){
  };
  document.getElementById('saveConfigSkillBtn').onclick=saveSkillAndClass;
  document.getElementById('saveConfigSkillBtnTop').onclick=saveSkillAndClass;
- document.getElementById('rollbackConfigSkillIconBtn').onclick=()=>{
-  window.currentConfigSkillIconHex='';renderConfigIconPreview('','configSkillIconPreview','configSkillIconStatus');
-  document.getElementById('configSkillIconStatus').textContent='Sin imagen: se usa el icono de texto/emoji.';
- };
+ document.getElementById('previewConfigSkillAnimationBtn').onclick=previewClassSkillAnimation;
+ document.getElementById('deleteConfigSkillBtn').onclick=async()=>{const id=window.editingConfigSkillId;if(!id||!await uiConfirm('¿Eliminar esta skill?'))return;delete window.currentClassSkillsDraft[id];window.editingConfigSkillId=null;renderClassSkillSelect();const st=document.getElementById('configSkillStatus');try{await saveConfigClass(currentConfigClassJson(),window.currentClassSkillsDraft);st.textContent='Skill eliminada y clase guardada.'}catch(e){st.textContent=e.message}};
  document.getElementById('addSkillEffectBtn').onclick=()=>{
   const kind=document.getElementById('configEffectKindPicker').value;
   window.currentSkillEffectsDraft=window.currentSkillEffectsDraft||[];
