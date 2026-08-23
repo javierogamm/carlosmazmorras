@@ -1601,3 +1601,12 @@ Every floor now picks an archetype by weighted probability, gated by depth, the 
 - Cambiar la animación en el selector actualiza la vista previa de inmediato; el botón permite reiniciar el bucle manualmente.
 - La vista representa héroe, lanzamiento y enemigo, con una etiqueta permanente de la animación activa.
 - Se asigna la versión de aplicación `1.2.1` y se renueva el cache-busting de recursos.
+
+## v1.3.0 — Iconos, nuevas animaciones y skill en cada nivel (2026-08-23)
+
+- Cada skill permite seleccionar por separado el icono mostrado por su animación, que se utiliza tanto en el reproductor como durante el combate.
+- Se incorporan las animaciones Explosión, Desvanecer, Fortalecer, Espiral, Caída del cielo y Emerger; Pulso permanece disponible y se integra con el mismo sistema.
+- Todas las animaciones nuevas cuentan con vista previa continua en el configurador y ejecución de un solo ciclo en juego.
+- Cada subida de nivel del PJ desde nivel 2 ofrece una selección de habilidad, siempre que queden skills sin aprender en el pool de la clase.
+- El pool respeta la progresión solicitada: tier I en niveles 1–4; I–II en 5–7; I–III en 8–10; I–IV desde nivel 11.
+- Se asigna la versión de aplicación `1.3.0` y se actualiza el cache-busting de recursos.

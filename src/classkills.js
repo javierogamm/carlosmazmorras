@@ -7,28 +7,39 @@ const CLASS_SKILL_ANIMATIONS={
  flash:{label:'Destello',preview:'flash'},
  pulse:{label:'Pulso mágico',preview:'pulse'},
  projectile:{label:'Proyectil / chispa',preview:'projectile'},
+ explosion:{label:'Explosión',preview:'explosion'},
+ fade:{label:'Desvanecer',preview:'fade'},
+ strengthen:{label:'Fortalecer',preview:'strengthen'},
+ spiral:{label:'Espiral',preview:'spiral'},
+ skyfall:{label:'Caída del cielo',preview:'skyfall'},
+ emerge:{label:'Emerger',preview:'emerge'},
  enemy:{label:'Enemigo (por defecto)',preview:'enemy'}
 };
 function classSkillTierColor(tier){return CLASS_SKILL_TIER_COLORS[Math.max(1,Math.min(4,Number(tier)||1))]}
 function classSkillTierClass(tier){return `class-skill-tier-${Math.max(1,Math.min(4,Number(tier)||1))}`}
 function maxSkillTierForLevel(level){return level>=11?4:level>=8?3:level>=5?2:1}
 function playClassSkillAnimation(skill,actor='player'){
- const chosen=skill?.animation||'default',key=chosen==='default'?(actor==='enemy'?'enemy':'shake'):chosen;
- if(key==='pulse'&&typeof areaPulse==='function'&&game?.player)areaPulse(game.player.x,game.player.y,2,{color:classSkillTierColor(skill?.tier)});
- else if((key==='projectile'||key==='enemy')&&typeof procFx==='function'){
-  const entity=actor==='enemy'?arguments[2]:game?.player;if(entity)procFx(entity.x,entity.y,{color:actor==='enemy'?'#ff596f':classSkillTierColor(skill?.tier),icon:skill?.icon||'✦'});
- }else if(typeof effect==='function')effect(key==='flash'?'flash':'shake');
+ const chosen=skill?.animation||'default',key=chosen==='default'?(actor==='enemy'?'enemy':'shake'):chosen,entity=actor==='enemy'?arguments[2]:game?.player;
+ const icon=skill?.animationIcon||skill?.icon||'✦',color=actor==='enemy'?'#ff596f':classSkillTierColor(skill?.tier);
+ if(key==='pulse'&&typeof areaPulse==='function'&&entity)areaPulse(entity.x,entity.y,2,{color});
+ if(entity&&typeof classSkillScreenFx==='function')classSkillScreenFx(entity.x,entity.y,{animation:key,icon,color});
+ else if(typeof effect==='function')effect(key==='flash'?'flash':'shake');
+}
+function classSkillScreenFx(x,y,{animation='shake',icon='✦',color='#b98cff'}={}){
+ const layer=document.getElementById('combatFxLayer');if(!layer||!game||x==null||y==null)return;
+ const c=camera(),pct=100/visibleTiles,el=document.createElement('i');el.className=`classSkillScreenFx classSkillScreenFx-${animation}`;el.textContent=icon;el.style.left=`${(x-c.x+.5)*pct}%`;el.style.top=`${(y-c.y+.5)*pct}%`;el.style.setProperty('--skill-fx-color',color);layer.appendChild(el);setTimeout(()=>el.remove(),1100);
 }
 function populateClassSkillAnimationEditor(selected='default'){
  const select=document.getElementById('configSkillAnimation');if(!select)return;
  select.innerHTML=Object.entries(CLASS_SKILL_ANIMATIONS).map(([id,a])=>`<option value="${id}">${a.label}</option>`).join('');
  select.value=CLASS_SKILL_ANIMATIONS[selected]?selected:'default';
  select.onchange=previewClassSkillAnimation;
+ const iconSelect=document.getElementById('configSkillAnimationIcon');if(iconSelect)iconSelect.onchange=previewClassSkillAnimation;
  previewClassSkillAnimation();
 }
 function previewClassSkillAnimation(){
  const selected=document.getElementById('configSkillAnimation')?.value||'default',key=CLASS_SKILL_ANIMATIONS[selected]?.preview||'shake';
  const stage=document.getElementById('configSkillAnimationPreview');if(!stage)return;
  stage.className=`skillAnimationPreview preview-${key}`;
- stage.innerHTML=`<div class="skillPreviewFloor"></div><div class="skillPreviewActor skillPreviewHero"><span>♟</span><small>HÉROE</small></div><div class="skillPreviewCast"><span>${document.getElementById('configSkillIconText')?.value||'✦'}</span></div><div class="skillPreviewActor skillPreviewEnemy"><span>♜</span><small>ENEMIGO</small></div><div class="skillPreviewLabel">${CLASS_SKILL_ANIMATIONS[selected]?.label||CLASS_SKILL_ANIMATIONS.default.label} · EN BUCLE</div>`;
+ stage.innerHTML=`<div class="skillPreviewFloor"></div><div class="skillPreviewActor skillPreviewHero"><span>♟</span><small>HÉROE</small></div><div class="skillPreviewCast"><span>${document.getElementById('configSkillAnimationIcon')?.value||'✦'}</span></div><div class="skillPreviewActor skillPreviewEnemy"><span>♜</span><small>ENEMIGO</small></div><div class="skillPreviewLabel">${CLASS_SKILL_ANIMATIONS[selected]?.label||CLASS_SKILL_ANIMATIONS.default.label} · EN BUCLE</div>`;
 }

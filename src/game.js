@@ -7679,6 +7679,7 @@ function loadSkillIntoForm(skillId){
  document.getElementById('configSkillCd').value=s.cd??5;
  document.getElementById('configSkillApCost').value=s.apCost??10;
  document.getElementById('configSkillType').value=s.type||'physical';
+ const animationIcon=document.getElementById('configSkillAnimationIcon');if(animationIcon){const savedAnimationIcon=s.animationIcon||s.icon||'✦';if(![...animationIcon.options].some(o=>o.value===savedAnimationIcon))animationIcon.add(new Option(`${savedAnimationIcon} Icono guardado`,savedAnimationIcon));animationIcon.value=savedAnimationIcon;}
  populateClassSkillAnimationEditor(s.animation||'default');
  document.getElementById('configSkillEnemyUsable').checked=s.enemyUsable!==false;
  document.getElementById('configSkillDesc').value=s.desc||'';
@@ -7698,6 +7699,7 @@ function currentSkillFormJson(){
   classId:window.pendingNewClassId||selectedGameClassId(),
   enemyUsable:document.getElementById('configSkillEnemyUsable').checked,
   animation:document.getElementById('configSkillAnimation').value||'default',
+  animationIcon:document.getElementById('configSkillAnimationIcon').value||'✦',
   effects:(window.currentSkillEffectsDraft&&window.currentSkillEffectsDraft.length)?window.currentSkillEffectsDraft:undefined,
   unlock:'Clase'
  };
@@ -8909,7 +8911,7 @@ function setupClassConfigMode(){
   const id=window.pendingNewClassId||selectedGameClassId(),n=Object.keys(window.currentClassSkillsDraft||{}).length+1;
   const skillId=`${id}_custom_${n}`;
   window.currentClassSkillsDraft=window.currentClassSkillsDraft||{};
-  window.currentClassSkillsDraft[skillId]={name:'Nueva skill',icon:'✦',desc:'Descripción pendiente.',cd:5,apCost:10,resource:'stamina',cost:10,type:'physical',tier:1,classId:id,enemyUsable:true,animation:'default',effects:[],unlock:'Clase'};
+  window.currentClassSkillsDraft[skillId]={name:'Nueva skill',icon:'✦',desc:'Descripción pendiente.',cd:5,apCost:10,resource:'stamina',cost:10,type:'physical',tier:1,classId:id,enemyUsable:true,animation:'default',animationIcon:'✦',effects:[],unlock:'Clase'};
   renderClassSkillSelect();
   document.getElementById('configClassSkillSelect').value=skillId;loadSkillIntoForm(skillId);
  };
@@ -11276,7 +11278,7 @@ function renderClassChoices(){
  root.querySelectorAll('[data-gate-lock]').forEach(c=>drawWorldObjectIconToCanvas(c,'reward_lock'));
  root.querySelectorAll('[data-race-icon]').forEach(c=>drawSkillIconImg(c,raceDefs[c.dataset.raceIcon]?.icon));
  root.querySelectorAll('[data-class]').forEach(el=>el.onclick=()=>{if(el.dataset.locked==='1'){uiAlert('Clase bloqueada: no cumples los requisitos de desbloqueo (nivel máximo de PJ / puntuación).');return}selectedClass=el.dataset.class;renderClassChoices();renderGenderChoices()});
- const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás más en niveles ${SKILL_CHOICE_LEVELS.join(', ')}.</p>`;
+ const c=resolveClassDef(selectedClass);document.getElementById('classDetail').innerHTML=`<b>${c.name}</b><p>${c.desc}</p><p class="small">Al entrar elegirás una habilidad de Tier I. Después elegirás una habilidad en cada subida de nivel, dentro del pool de tiers disponible.</p>`;
 }
 renderClassChoices();
 document.getElementById('skillModeHardcode')?.addEventListener('change',()=>{selectedSkillMode='hardcode';renderClassChoices()});

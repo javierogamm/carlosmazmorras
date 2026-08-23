@@ -14,12 +14,13 @@
 // xpReceivedMultiplier and the DOM element ids used by the level-up modals).
 // ============================================================================
 
-const classSkillMilestones={1:1};
+const CLASS_SKILL_LEVELS=Array.from({length:100},(_,i)=>i+1);
+const classSkillMilestones=Object.fromEntries(CLASS_SKILL_LEVELS.map(level=>[level,maxSkillTierForLevel(level)]));
 // Levels at which a class skill choice is awarded after the initial pick
 // (level 1 in normal mode, level 2/floor 2 in Soulseek mode - see
 // soulseekCheckClassUnlock()). Shared with the tier thresholds below.
-const SKILL_CHOICE_LEVELS=[5,7,10,12,15,20];
-function isClassSkillChoiceLevel(level){return SKILL_CHOICE_LEVELS.includes(level)}
+const SKILL_CHOICE_LEVELS=Array.from({length:99},(_,i)=>i+2);
+function isClassSkillChoiceLevel(level){return level>=2&&level<=100}
 // Roman numerals for skill tiers I-IV, shared by every tier-label render site.
 const TIER_ROMAN=['','I','II','III','IV'];
 // Pools: tier II from level 5, tier III from 8 and tier IV from 11.
@@ -27,7 +28,6 @@ function maxSkillTierForLevel(level){return level>=11?4:level>=8?3:level>=5?2:1}
 
 let pendingClassSkillRequests=[];
 function classTierForLevel(level){return classSkillMilestones[level]||0}
-const CLASS_SKILL_LEVELS=[1];
 function ensureSkillChoiceState(){
  const p=game.player;
  p.skillChoicesAwarded=p.skillChoicesAwarded||{};
