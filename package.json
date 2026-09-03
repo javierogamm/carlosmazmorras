@@ -1,8 +1,8 @@
 {
-  "name": "mazmorra-botin",
-  "version": "1.4.0",
+  "name": "metalwinds",
+  "version": "2.0.1",
   "private": true,
-  "description": "MAZMORRA // BOTÍN, dungeon crawler web en HTML, CSS y JavaScript.",
+  "description": "Catálogo y comunidad de crítica musical MetalWinds.",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
