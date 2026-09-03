@@ -1,9 +1,4 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false,
-  "functions": {
-    "api/logo.js": {
-      "includeFiles": "resources/metalwindslogo.base64"
-    }
-  }
+  "trailingSlash": false
 }

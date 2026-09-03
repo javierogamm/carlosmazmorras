@@ -1,0 +1,76 @@
+const SUPABASE_TABLE='config_items';
+
+function supabaseConfig(){
+ const url=process.env.SUPABASE_URL;
+ const key=process.env.SUPABASE_ANON_KEY;
+ if(!url||!key)throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY');
+ return {url:url.replace(/\/$/,''),key};
+}
+function headers(key){return {apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'};}
+function cleanItem(body){
+ const source=body.item_json||body,isPotion=source.type==='potion'||source.type==='consumable'||source.slot==='consumable'||body.slot==='consumable';
+ // Consumables have one canonical contract regardless of whether they came
+ // from the UI, an older JSON export or an import wrapper. This prevents a
+ // damage/effects potion from being stored as generic equipment and becoming
+ // invisible to potion loot pools.
+ const item=isPotion?{...source,type:'potion',slot:'consumable',effects:Array.isArray(source.effects)?source.effects:[]}:source;
+ return {
+  nombre:body.nombre??item.name??item.nombre??null,
+  slot:isPotion?'consumable':(body.slot??item.slot??null),
+  tier:body.tier??item.rarity??item.tier??null,
+  icon:body.icon??item.icon??null,
+  stats:body.stats??(item.affixes?JSON.stringify(item.affixes):null),
+  ilvl:String(body.ilvl??item.itemLevel??item.ilvl??'1'),
+  weapontype:body.weapontype??body.weaponType??item.weaponType??item.weaponCategory??null,
+  item_json:item
+ };
+}
+function requestId(req){return req.query?.id||req.body?.id||req.body?.item_id||null}
+module.exports=async(req,res)=>{
+ try{
+  const {url,key}=supabaseConfig();
+  if(req.method==='GET'){
+   const id=req.query?.id||null,light=req.query?.light==='1',select=(id||!light)?'id,created_at,nombre,slot,tier,icon,stats,ilvl,weapontype,item_json':'id,created_at,nombre,slot,tier,ilvl,weapontype,type:item_json->>type',filter=id?`&id=eq.${encodeURIComponent(id)}&limit=1`:'';
+   // The full (non-light) row set embeds every item's item_json - icon included -
+   // so with a catalog of hundreds of rows that single response can be large
+   // enough to time out. limit/offset let the client page through it in small
+   // chunks instead of requesting everything at once; PostgREST supports both
+   // natively. Omitted entirely for the default (unpaged) request.
+   const limit=!id&&req.query?.limit?Math.max(1,Math.min(200,parseInt(req.query.limit,10)||0)):null,offset=!id&&req.query?.offset?Math.max(0,parseInt(req.query.offset,10)||0):0,page=limit?`&limit=${limit}&offset=${offset}`:'';
+   // id.asc as a tiebreaker keeps paged offsets stable even when several
+   // rows share the same created_at (e.g. a bulk import) - without it,
+   // ties could be ordered differently between two page requests and
+   // rows would be skipped or duplicated across pages.
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?select=${select}${filter}${page}&order=created_at.desc,id.asc`,{headers:headers(key)});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(id?(Array.isArray(data)?data[0]||null:data):data);
+  }
+  if(req.method==='POST'){
+   const incoming=Array.isArray(req.body)?req.body:[req.body||{}];
+   const rows=incoming.map(cleanItem);
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(rows)});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  if(req.method==='PUT'){
+   const id=requestId(req);
+   if(!id)return res.status(400).json({error:'Falta id para actualizar el objeto'});
+   const row=cleanItem(req.body||{});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',headers:{...headers(key),Prefer:'return=representation'},body:JSON.stringify(row)});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  if(req.method==='DELETE'){
+   const id=requestId(req);
+   if(!id)return res.status(400).json({error:'Falta id para borrar el objeto'});
+   const r=await fetch(`${url}/rest/v1/${SUPABASE_TABLE}?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{...headers(key),Prefer:'return=representation'}});
+   const data=await r.json();
+   if(!r.ok)return res.status(r.status).json(data);
+   return res.status(200).json(data);
+  }
+  res.setHeader('Allow','GET, POST, PUT, DELETE');return res.status(405).json({error:'Método no permitido'});
+ }catch(e){return res.status(500).json({error:e.message});}
+};
