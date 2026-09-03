@@ -1,58 +1,998 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#08090a">
-  <meta name="description" content="MetalWinds: discos, críticas y comunidad metal.">
-  <title>MetalWinds</title>
-  <link rel="icon" type="image/png" href="/api/logo">
-  <link rel="apple-touch-icon" href="/api/logo">
-  <link rel="stylesheet" href="/src/styles.css?v=2.0.1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>MAZMORRA // BOTÍN v1.4.0 EDITOR AMPLIADO</title>
+<link rel="stylesheet" href="./src/styles.css?v=1.4.0">
+
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="#inicio" aria-label="MetalWinds, inicio">
-      <img src="/api/logo" alt="MetalWinds">
-    </a>
-    <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="mainNav">Menú</button>
-    <nav id="mainNav" aria-label="Navegación principal">
-      <a class="active" href="#inicio">Inicio</a>
-      <a href="#discos">Discos</a>
-      <a href="#reviews">Reviews</a>
-      <a href="#comunidad">Comunidad</a>
-    </nav>
-  </header>
+<button type="button" id="globalMenuBtn" class="backToLanding globalMenuBtn">☰ MENÚ PRINCIPAL</button>
+<div id="app" class="hidden">
+<header><h1>MAZMORRA // BOTÍN</h1><div class="badge">v1.1.0 RENDER DUNGEON</div></header>
+<div class="layout">
+<section class="panel heroPanel">
+<h2 id="heroName"><span id="heroRaceIcon"></span><span id="heroNameText">HÉROE</span></h2><div class="small build" id="buildLabel"></div>
+<div><div class="stat"><span>Nivel</span><b id="level">1</b></div><div class="stat"><span>Piso</span><b id="floor"></b></div></div>
+<div><div class="stat"><span>Daño</span><b id="damage"></b></div><div class="stat"><span>Armadura</span><b id="armor"></b></div><div class="stat"><span>Oro</span><b id="gold"></b></div></div>
+<div><div class="stat"><span>FUE</span><b id="strength"></b></div><div class="stat"><span>VIT</span><b id="vitality"></b></div><div class="stat"><span>AGI</span><b id="agility"></b></div><div class="stat"><span>SUE</span><b id="luck"></b></div><div class="stat"><span>INT</span><b id="intelligence"></b></div><div class="stat"><span>SAB</span><b id="wisdom"></b></div></div>
+<hr><h3>Equipo rápido</h3><div id="equipmentMini"></div>
+<button type="button" class="start" id="saveRunBtn">GUARDAR PARTIDA</button><div class="small" id="saveRunStatus">La partida solo se guarda al pulsar este botón.</div>
+</section>
 
-  <main>
-    <section class="hero" id="inicio">
-      <img class="hero-logo" src="/api/logo" alt="MetalWinds">
-      <div class="hero-copy">
-        <p class="eyebrow">El metal se escucha. Aquí también se lee.</p>
-        <h1>Donde el metal<br><em>deja huella.</em></h1>
-        <p class="intro">Discos, puntuaciones y críticas publicadas en MetalWinds, sin contenido de muestra.</p>
-        <a class="primary-button" href="#reviews">Explorar reviews <span>↘</span></a>
-      </div>
-      <div class="signal" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+<section class="panel gamePanel">
+<div class="enemyTheme" id="themeLabel"></div>
+<div class="gameToolbar">
+ <div class="zoomControl">
+  <label for="zoomVisibleTiles">ZOOM <b id="zoomVisibleTilesLabel">8x8</b></label>
+  <input id="zoomVisibleTiles" type="range" min="5" max="12" value="8" step="1" aria-label="Zoom de la zona visible">
+ </div>
+ <div class="hudButtons">
+  <span class="mpConnBadge hidden" id="mpConnBadge"></span>
+  <button class="hudButton" id="hudEquipment" title="Equipo" aria-label="Ver equipo">⚔</button>
+  <button class="hudButton" id="hudSkills" title="Habilidades" aria-label="Ver habilidades">✷</button>
+  <button class="hudButton" id="hudMap" title="Mostrar u ocultar minimapa" aria-label="Mostrar u ocultar minimapa">🗺</button>
+  <button class="hudButton" id="hudFullscreen" title="Mostrar solo el juego" aria-label="Activar pantalla completa">⛶</button>
+ </div>
+</div>
+<div class="gameStage" id="gameStage">
+<canvas id="game" width="512" height="512"></canvas>
+<div class="combatFxLayer" id="combatFxLayer" aria-hidden="true"></div>
+<div class="gameHudIdentity" id="gameHudIdentity"></div>
+<div class="vitalBars" id="vitalBars">
+ <div class="vitalBar vbHp" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" id="hudHpBar"><i id="hudHpFill"></i><span class="vbLabel">♥</span><span class="vbValue" id="hudHpText"></span></div>
+ <div class="vitalBar vbXp" role="progressbar" aria-label="Experiencia" aria-valuemin="0" aria-valuemax="100" id="hudXpBar"><i id="hudXpFill"></i><span class="vbLabel">★</span><span class="vbValue" id="hudXpText"></span></div>
+ <div class="vitalBar vbStamina" role="progressbar" aria-label="Stamina" aria-valuemin="0" aria-valuemax="100" id="hudStaminaBar"><i id="hudStaminaFill"></i><span class="vbLabel">⚡</span><span class="vbValue" id="hudStaminaText"></span></div>
+ <div class="vitalBar vbMana" role="progressbar" aria-label="Maná" aria-valuemin="0" aria-valuemax="100" id="hudManaBar"><i id="hudManaFill"></i><span class="vbLabel">✦</span><span class="vbValue" id="hudManaText"></span></div>
+</div>
+<div class="activeEffects" id="activeEffects"></div>
+<div class="mpTurnIndicator hidden" id="mpTurnIndicator"></div>
+<div class="minimapWrap minimapHidden" id="minimapWrap"><canvas id="minimap" width="150" height="150"></canvas></div>
+<div class="inspectPopup" id="inspectPopup"><button class="closeInspect" id="closeInspect">×</button><div id="inspectContent"></div></div>
+<div class="targetHint hidden" id="targetHint"></div>
+<div class="quickPotionBadge hidden" id="quickPotionBadge" title="Poción de uso rápido"><canvas width="48" height="48" id="quickPotionIcon"></canvas></div>
+<div class="quickActivableBadge hidden" id="quickActivableBadge" title="Activable de uso rápido"><canvas width="48" height="48" id="quickActivableIcon"></canvas></div>
+<div class="apBadge hidden" id="apBadge">PA <b id="apBadgeValue">0</b></div>
+<div class="boardActionBar" id="boardActionBar">
+ <button type="button" class="mobileSkill waitSkill" id="passTurnSkillBtn" title="Pasar turno"><span class="icon">⏳</span></button>
+ <div class="mobileSkillbar" id="mobileSkillbar"></div>
+</div>
+</div>
+<div class="floorObjective hidden" id="floorObjective"></div>
+<div class="controls">
+<button class="empty">.</button><button data-move="0,-1" aria-label="Mover arriba">▲</button><button class="empty">.</button>
+<button data-move="-1,0" aria-label="Mover izquierda">◀</button>
+<div class="waitCancelWrap">
+  <button id="waitBtn">ESPERAR</button>
+  <button id="confirmTargetBtn" class="cancelTargetBtn hidden">CONFIRMAR</button>
+  <button id="cancelTargetBtn" class="cancelTargetBtn hidden">CANCELAR</button>
+</div>
+<button data-move="1,0" aria-label="Mover derecha">▶</button>
+<button class="empty">.</button><button data-move="0,1" aria-label="Mover abajo">▼</button><button class="empty">.</button>
+</div>
+<div class="small">Muévete exclusivamente con las flechas · habilidades abajo · enemigos actúan tras tu movimiento</div>
+</section>
+
+<section class="panel sidePanel">
+<div class="tabs">
+<button class="active" data-tab="inventory">Mochila</button>
+<button data-tab="potions">Pociones</button>
+<button data-tab="activables">Activables</button>
+<button data-tab="companions">Compañeros</button>
+<button data-tab="equipment">Equipo</button>
+<button data-tab="shards">Shards</button>
+<button data-tab="skills">Habilidades</button>
+<button data-tab="achievements">Logros</button>
+<button data-tab="trade" class="hidden">Comercio</button>
+</div>
+<div id="inventory" class="tabview"></div>
+<div id="potions" class="tabview hidden"></div>
+<div id="activables" class="tabview hidden"></div>
+<div id="companions" class="tabview hidden"></div>
+<div id="equipment" class="tabview hidden"></div>
+<div id="shards" class="tabview hidden"></div>
+<div id="skills" class="tabview hidden"></div>
+<div id="achievements" class="tabview hidden"></div>
+<div id="trade" class="tabview hidden"></div>
+</section>
+<!-- Last in the layout on purpose: on mobile (.layout becomes display:block)
+     this puts the log after the mochila/equipo panels instead of sandwiched
+     right before them, so its own internal scroll (overflow:auto) doesn't
+     sit in the middle of the page and hijack a scroll gesture meant for the
+     panels above it. -->
+<div class="log" id="log"></div>
+</div>
+</div>
+
+
+
+<div class="overlay" id="landingOverlay">
+ <div class="modal landingModal">
+  <h2>MAZMORRA // BOTÍN</h2>
+  <p class="small">Inicia sesión para entrar. Si el usuario no existe se crea automáticamente como jugador no admin.</p>
+  <form class="loginForm" id="loginForm">
+   <label>Usuario <input id="loginName" name="nombre" autocomplete="username" maxlength="80" required></label>
+   <label>Contraseña <input id="loginPass" name="pass" type="password" autocomplete="current-password" maxlength="80" required></label>
+   <button class="start" id="loginBtn" type="submit">SIGN IN</button>
+  </form>
+  <div id="loginStatus" class="small"></div>
+  <div id="userProgressStats" class="small userProgressStats hidden"></div>
+  <!-- Root menu: three modes. SOULSEEKER MODE is injected between STANDARD
+       and CONFIGURACIÓN by soulseek.js (see wireSoulseekMode). The gamepad
+       bindings used to be a fifth button here; they are a tab inside
+       Configuración now, and the pad's own "menú de mando" button still opens
+       them from anywhere, including mid-run. -->
+  <div class="landingActions hidden" id="mainMenuActions">
+   <button class="start" id="menuStandardBtn" type="button">STANDARD MODE</button>
+   <button class="start" id="menuConfigBtn">CONFIGURACIÓN</button>
+  </div>
+  <div class="landingActions hidden" id="standardModeActions">
+   <button class="start" id="menuScoresBtn">PUNTUACIONES</button>
+   <button class="start" id="menuSingleBtn">SINGLE PLAYER</button>
+   <button class="start" id="menuMultiBtn">MULTIPLAYER</button>
+   <button class="start" id="standardBackBtn" type="button">← VOLVER</button>
+  </div>
+ </div>
+</div>
+
+<div class="overlay hidden" id="gamepadOverlay">
+ <div class="modal gamepadModal">
+  <h2>MANDO / KEYBINDING</h2>
+  <p class="small">Conecta un mando. Pulsa «Cambiar» y después el botón que quieras asignar. <b>Stick izquierdo</b>: mueve siempre al personaje, o el cursor de ataque/habilidad al apuntar. <b>Cruceta</b>: navega siempre por los menús laterales y por los botones de cualquier ventana abierta. <b>Hombros</b>: cambian de pestaña o de zona.</p>
+  <div class="gamepadStatus">Sin mando detectado</div>
+  <div class="gamepadBindings"></div>
+  <div class="startActions"><button type="button" data-gamepad-reset>RESTAURAR</button><button type="button" id="closeGamepadBtn" data-gamepad-cancel>CERRAR</button></div>
+ </div>
+</div>
+
+<div class="configScreen hidden" id="scoresScreen">
+ <header><h1>PUNTUACIONES</h1><div class="badge">RANKING</div></header>
+ <div id="scoresStatus" class="small">Cargando puntuaciones...</div>
+ <div class="scoresTable" id="scoresTable"></div>
+ <button class="backToLanding" id="backFromScoresBtn">VOLVER</button>
+</div>
+
+<div class="overlay hidden" id="singlePlayerOverlay">
+ <div class="modal">
+  <h2>SINGLE PLAYER</h2>
+  <div class="landingActions" id="singlePlayerActions">
+   <button class="start" id="spSelectCharBtn">SELECCIONAR PERSONAJE</button>
+   <button class="start" id="spNewCharBtn">NUEVO PERSONAJE</button>
+   <button class="start" id="spContinueBtn">CARGAR SESIÓN</button>
+  </div>
+  <div id="spListStatus" class="small hidden"></div>
+  <div class="worldList hidden" id="spList"></div>
+  <button class="backToLanding" id="backFromSingleBtn">VOLVER</button>
+ </div>
+</div>
+
+<div class="overlay hidden" id="multiplayerOverlay">
+ <div class="modal multiplayerModal">
+  <h2>MULTIPLAYER</h2>
+  <div class="multiplayerLayout">
+   <aside class="multiplayerOnline">
+    <h3>Conectados</h3>
+    <div id="onlineUsersList" class="onlineUsersList"><p class="small">Cargando...</p></div>
+   </aside>
+   <div class="multiplayerMain">
+    <div class="landingActions" id="multiplayerActions">
+     <button class="start" id="mpCreateBtn">CREAR SESIÓN</button>
+     <button class="start" id="mpContinueBtn">CONTINUAR SESIÓN</button>
+    </div>
+    <h3>Sesiones abiertas para unirse</h3>
+    <div id="mpOpenStatus" class="small">Cargando sesiones...</div>
+    <div class="worldList" id="mpOpenList"></div>
+   </div>
+  </div>
+  <button class="backToLanding" id="backFromMultiplayerBtn">VOLVER</button>
+ </div>
+</div>
+
+<div class="overlay hidden" id="mpLobbyOverlay">
+ <div class="modal">
+  <h2>SALA DE ESPERA</h2>
+  <p class="small" id="mpLobbyWorldLabel"></p>
+  <h3>Jugadores</h3>
+  <div id="mpLobbyRoster" class="worldList"></div>
+  <button class="start hidden" id="mpStartGameBtn">INICIAR PARTIDA</button>
+  <p class="small" id="mpLobbyWaitMsg">Esperando a que el anfitrión inicie la partida...</p>
+  <button class="backToLanding" id="backFromLobbyBtn">SALIR</button>
+ </div>
+</div>
+
+<div class="configScreen hidden" id="configScreen">
+ <header><h1>CONFIGURACIÓN</h1><div class="badge">v0.64.4 RAZAS CONFIGURADAS</div></header>
+ <div class="configTabs"><button class="active" type="button" data-config-tab="items">Items</button><button type="button" data-config-tab="potions">Pociones</button><button type="button" data-config-tab="classes">Clases</button><button type="button" data-config-tab="races">Razas</button><button type="button" data-config-tab="tilesets">Tilesets</button><button type="button" data-config-tab="dungeons">Dungeons</button><button type="button" data-config-tab="enemies">Enemigos</button><button type="button" data-config-tab="chests">Cofres</button><button type="button" data-config-tab="worldobjects">Objetos del mundo</button><button type="button" data-config-tab="gates">Bloqueos</button><button type="button" data-config-tab="custompisos">Editor de pisos</button><button type="button" data-config-tab="testing">Modo Testing</button><button type="button" data-config-tab="gamepad">Mando</button></div>
+ <div class="configTabPanel" id="configTabItems">
+ <div class="configLayout">
+  <section class="panel">
+   <h2>Editor</h2>
+   <label>Imagen base <input type="file" id="configImageInput" accept="image/*"></label>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configCropZoom" min="25" max="400" value="100"></label><button type="button" id="configMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación.</div></div>
+   <div class="configPreview"><canvas id="configIconPreview" width="50" height="50"></canvas><span id="configIconStatus" class="small">Sin icono</span></div>
+   <div class="configForm">
+    <label>Nombre <input id="configNombre" maxlength="80" placeholder="Nombre del objeto"></label>
+    <label>Tier <select id="configTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
+    <label class="tileRotateLabel"><input id="configItemHidden" type="checkbox"> Oculta (solo aparece en los buscadores al escribir texto que coincida)</label>
+    <label id="configSlotWrap">Slot <select id="configSlot"></select></label>
+    <input id="configIlvl" type="hidden" value="1">
+    <label id="configWeaponCategoryWrap">Tipo de arma <select id="configWeaponCategory"></select><span class="small" id="configWeaponApCost">Coste de ataque: 10 PA</span></label>
+    <label id="configRangeMinWrap">Alcance mínimo <input id="configRangeMin" type="number" min="1" max="20" value="1"></label>
+    <label id="configRangeMaxWrap">Alcance máximo <input id="configRangeMax" type="number" min="1" max="20" value="1"></label>
+    <label id="configDamageDiceWrap">Daño arma <select id="configDamageDice"><option value="1d4">1d4</option><option value="1d6" selected>1d6</option><option value="1d6+1">1d6+1</option><option value="1d8">1d8</option><option value="1d8+1">1d8+1</option><option value="1d10">1d10</option><option value="1d12">1d12</option><option value="2d6">2d6</option><option value="2d8">2d8</option></select></label>
+    <label>Stats <textarea id="configStats" placeholder="damage:+4, armor:+2"></textarea></label>
+    <div id="configStatsHelp" class="configStatsHelp"></div>
+    <details id="configEquipmentEffectsWrap" class="configAccordion" style="grid-column:1/-1">
+     <summary>Efectos apilables</summary>
+     <p class="small">Igual que en pociones/skills: una pila de efectos independientes. Solo está disponible en slots compatibles — Arma: el proc se calcula únicamente con ataques básicos y dispara la pila completa. Pecho y escudo: proc defensivo al recibir daño. Anillos y trinkets: activables con enfriamiento. Colgante: buffs pasivos.</p>
+     <div class="configItemActions">
+      <select id="configEquipmentEffectKindPicker">
+       <option value="dmg">Daño</option>
+       <option value="dot">Daño periódico (DOT)</option>
+       <option value="buff">Buff (mejora propia)</option>
+       <option value="debuff">Debuff (empeora al enemigo)</option>
+       <option value="heal">Curación</option>
+       <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+       <option value="fear">Miedo (huye y gasta todos sus PA)</option>
+       <option value="mesmer">Mesmer (cambia de bando)</option>
+       <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+       <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option><option value="revive">Revivir automáticamente</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+       <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+       <option value="trap">Trampa (se activa al pisarla)</option>
+       <option value="clones">Clones (invocan copias que luchan contigo)</option>
+       <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+       <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+       <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+       <option value="transform">Transformación (icono propio y stats en %)</option>
+      </select>
+      <button type="button" id="addEquipmentEffectBtn">AÑADIR EFECTO →</button>
+     </div>
+     <div id="configEquipmentEffectsList" class="effectsList"></div>
+    </details>
+    <label id="configProcChanceWrap">% de proc al golpear <input id="configProcChance" type="number" min="0" max="100" value="20"></label>
+    <label id="configEquipmentCooldownWrap">Enfriamiento (turnos) <input id="configEquipmentCooldown" type="number" min="1" max="50" value="4"></label>
+    <label id="configEquipmentRangeWrap">Alcance de activación (casillas) <input id="configEquipmentRange" type="number" min="1" max="20" value="5"></label>
+   </div>
+   <button class="start" id="saveConfigItemBtn">GUARDAR OBJETO</button>
+   <button id="newConfigItemBtn">NUEVO OBJETO</button>
+   <button id="exportConfigJsonBtn">EXPORTAR JSON</button>
+   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigJsonInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
+   <div id="configStatus" class="small"></div>
+  </section>
+  <section class="panel">
+   <h2>Objetos guardados</h2>
+   <div id="configItemsList" class="configItemsList"></div>
+  </section>
+ </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabPotions">
+ <div class="configLayout">
+  <section class="panel">
+   <h2>Editor de pociones</h2>
+   <label>Imagen base <input type="file" id="configPotionImageInput" accept="image/*"></label>
+   <div class="cropTools"><label>Zoom imagen <input type="range" id="configPotionCropZoom" min="25" max="400" value="100"></label><button type="button" id="configPotionMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configPotionMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configPotionCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación. Si no subes ninguna, el juego dibuja el vial base.</div></div>
+   <div class="configPreview"><canvas id="configPotionIconPreview" width="50" height="50"></canvas><span id="configPotionIconStatus" class="small">Sin icono</span></div>
+   <div class="configForm">
+    <label>Nombre <input id="configPotionNombre" maxlength="80" placeholder="Nombre de la poción"></label>
+    <label>Tier <select id="configPotionTier"><option value="common">Común</option><option value="uncommon">Infrecuente</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Legendario</option><option value="artifact">Artefacto</option></select></label>
+    <label class="tileRotateLabel"><input id="configPotionHidden" type="checkbox"> Oculta (solo aparece en los buscadores al escribir texto que coincida)</label>
+    <details class="configAccordion" open style="grid-column:1/-1">
+     <summary>Efectos apilables</summary>
+     <p class="small">Una poción se define exactamente igual que una skill: una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, control, marca, invocación, utilidad...), cada uno con su propio objetivo cuando aplique. Si añades algún efecto dirigido a Enemigo/Área/Aliado, la poción deja de beberse al instante y pasa a ser un arma arrojadiza de un solo uso: al usarla desde el inventario tendrás que seleccionar el objetivo, igual que con una skill. Si todos los efectos son sobre ti mismo (curación, buff, utilidad...), se aplica al instante al pulsarla, como hasta ahora.</p>
+     <div class="configItemActions">
+      <select id="configPotionEffectKindPicker">
+       <option value="dmg">Daño</option>
+       <option value="dot">Daño periódico (DOT)</option>
+       <option value="buff">Buff (mejora propia)</option>
+       <option value="debuff">Debuff (empeora al enemigo)</option>
+       <option value="heal">Curación</option>
+       <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+       <option value="fear">Miedo (huye y gasta todos sus PA)</option>
+       <option value="mesmer">Mesmer (cambia de bando)</option>
+       <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+       <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option><option value="revive">Revivir automáticamente</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+       <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+       <option value="trap">Trampa (se activa al pisarla)</option>
+       <option value="clones">Clones (invocan copias que luchan contigo)</option>
+       <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+       <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+       <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+       <option value="transform">Transformación (icono propio y stats en %)</option>
+      </select>
+      <button type="button" id="addPotionEffectBtn">AÑADIR EFECTO →</button>
+     </div>
+     <div id="configPotionEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion" style="grid-column:1/-1">
+     <summary>Alcance de lanzamiento</summary>
+     <p class="small">Solo se usa si la poción incluye algún efecto dirigido a Enemigo/Área/Aliado (arma arrojadiza). Ignorado si todos sus efectos son sobre ti mismo.</p>
+     <label>Alcance (casillas) <input id="configPotionRange" type="number" min="1" max="20" value="5"></label>
+    </details>
+   </div>
+   <button class="start" id="saveConfigPotionBtn">GUARDAR POCIÓN</button>
+   <button id="newConfigPotionBtn">NUEVA POCIÓN</button>
+   <button id="exportConfigPotionJsonBtn">EXPORTAR JSON</button>
+   <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigPotionJsonInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
+   <div id="configPotionStatus" class="small"></div>
+  </section>
+  <section class="panel">
+   <h2>Pociones guardadas</h2>
+   <div id="configPotionsList" class="configItemsList"></div>
+  </section>
+ </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabRaces">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de razas</h2>
+    <p class="small">Crea, modifica, elimina, importa y exporta razas persistidas en <code>config_razas</code>. Las razas configuradas sustituyen el catálogo clásico y conservan sus bloqueos por clave estable.</p>
+    <details class="configAccordion" open><summary>Nombre y descripción</summary>
+     <label>Raza <select id="configRaceSelect"></select></label>
+     <label>Clave de bloqueo <input id="configRaceKey" maxlength="60" placeholder="elfo_nocturno"></label>
+     <label>Nombre <input id="configRaceName" maxlength="80"></label>
+     <label>Descripción <textarea id="configRaceDesc" maxlength="400"></textarea></label>
+    </details>
+    <details class="configAccordion"><summary>Stats</summary>
+     <p class="small">Bonus aditivos salvo los campos en % (selector fijo de -100% a +200%, de 10 en 10, admite negativos): atributos, regeneraciones por turno, PA adicional y ganancias de vida/stamina/maná por nivel.</p>
+     <div class="configForm" id="configRaceStatsFields"></div>
+     <label>Otros stats (JSON) <textarea id="configRaceExtraStats" placeholder='{"vision":1}'></textarea></label>
+    </details>
+    <details class="configAccordion"><summary>Skill de raza</summary>
+     <p class="small">Skill exclusiva de nivel 1, renderizada en dorado/blanco. Se construye con el mismo sistema apilable de efectos.</p>
+     <div class="configForm"><label>Nombre <input id="configRaceSkillName"></label><label>Icono texto <input id="configRaceSkillIcon" maxlength="4" value="✦"></label><label>Descripción <textarea id="configRaceSkillDesc"></textarea></label><label>Recurso <select id="configRaceSkillResource"><option value="stamina">Stamina</option><option value="mana">Maná</option></select></label><label>Coste <input id="configRaceSkillCost" type="number" min="0" value="10"></label><label>PA <input id="configRaceSkillAp" type="number" min="0" value="10"></label><label>Cooldown <input id="configRaceSkillCd" type="number" min="0" value="5"></label><label>Alcance <input id="configRaceSkillRange" type="number" min="0" value="1"></label></div>
+     <div class="configItemActions"><select id="configRaceEffectKindPicker"></select><button type="button" id="addRaceEffectBtn">AÑADIR EFECTO →</button></div>
+     <div id="configRaceEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion"><summary>Iconos de raza por sexo</summary>
+     <h3>Icono masculino</h3>
+     <label>Imagen <input type="file" id="configRaceImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceIconPreview" width="50" height="50"></canvas><span id="configRaceIconStatus" class="small">Sin icono masculino.</span></div>
+     <h3>Icono femenino</h3>
+     <label>Imagen <input type="file" id="configRaceFemaleImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceFemaleCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceFemaleMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceFemaleMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceFemaleCropCanvas" width="320" height="320"></canvas><div class="small">Si no se configura, se reutiliza el icono masculino.</div></div><div class="configPreview"><canvas id="configRaceFemaleIconPreview" width="50" height="50"></canvas><span id="configRaceFemaleIconStatus" class="small">Sin icono femenino.</span></div>
+    </details>
+    <details class="configAccordion"><summary>Iconos de mapa Soulseek por sexo</summary>
+     <p class="small">Se usan mientras el personaje Soulseek no tiene clase. Si faltan, se emplean los iconos predeterminados de Objetos del mundo.</p>
+     <h3>Mapa masculino</h3>
+     <label>Imagen <input type="file" id="configRaceMapMaleImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceMapMaleCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMapMaleMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMapMaleMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceMapMaleCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceMapMaleIconPreview" width="50" height="50"></canvas><span id="configRaceMapMaleIconStatus" class="small">Sin icono de mapa masculino.</span></div>
+     <h3>Mapa femenino</h3>
+     <label>Imagen <input type="file" id="configRaceMapFemaleImageInput" accept="image/*"></label><div class="cropTools"><label>Zoom <input type="range" id="configRaceMapFemaleCropZoom" min="25" max="400" value="100"></label><button type="button" id="configRaceMapFemaleMagicEraserBtn">Magic eraser: off</button><label>Sutileza <input type="range" id="configRaceMapFemaleMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configRaceMapFemaleCropCanvas" width="320" height="320"></canvas></div><div class="configPreview"><canvas id="configRaceMapFemaleIconPreview" width="50" height="50"></canvas><span id="configRaceMapFemaleIconStatus" class="small">Sin icono de mapa femenino.</span></div>
+    </details>
+    <button class="start" id="saveConfigRaceBtn">GUARDAR RAZA</button><button id="newConfigRaceBtn">NUEVA RAZA</button><button id="deleteConfigRaceBtn">ELIMINAR</button><button id="exportConfigRacesBtn">EXPORTAR JSON</button><label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importConfigRacesInput" accept="application/json,.json" multiple></label><div id="configRaceStatus" class="small"></div>
+   </section><section class="panel"><h2>Razas guardadas</h2><div id="configRacesList" class="configItemsList"></div></section>
+  </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabClasses">
+  <section class="panel">
+   <h2>Editor de clases</h2>
+   <p class="small">Selecciona una clase, crea una nueva o duplica una existente. Stats, skills e icono se consolidan en <code>config_class</code> (skills en la columna <code>skills_json</code>); el motor las lee de ahí primero y usa el sistema por defecto si no existen.</p>
+   <details class="configAccordion" open>
+    <summary>Clase / Nueva clase / Duplicar clase</summary>
+    <label>Clase del juego <select id="configClassSelect"></select></label>
+    <div class="configItemActions">
+     <button type="button" id="newConfigClassBtn">NUEVA CLASE</button>
+     <button type="button" id="duplicateConfigClassBtn">DUPLICAR CLASE</button>
+    </div>
+   </details>
+   <details class="configAccordion">
+    <summary>Configuración (nombre, descripción, icono)</summary>
+    <label>Nombre <input id="configClassName" maxlength="80" placeholder="Nombre de la clase"></label>
+    <label>Descripción <input id="configClassDesc" maxlength="160" placeholder="Descripción de la clase"></label>
+    <h3>Icono masculino</h3>
+    <label>Imagen <input type="file" id="configClassImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia. El área seleccionada conserva su resolución para evitar pixelación.</div></div>
+    <div class="configPreview"><canvas id="configClassIconPreview" width="50" height="50"></canvas><span id="configClassIconStatus" class="small">Sin icono: usará los pixels por defecto.</span></div>
+    <h3>Icono femenino</h3>
+    <label>Imagen <input type="file" id="configClassFemaleImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configClassFemaleCropZoom" min="25" max="400" value="100"></label><button type="button" id="configClassFemaleMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configClassFemaleMagicTolerance" min="0" max="160" value="38"></label></div><div class="cropWrap"><canvas id="configClassFemaleCropCanvas" width="320" height="320"></canvas><div class="small">Recorta la variante femenina. Si no se configura, se reutiliza el icono masculino.</div></div>
+    <div class="configPreview"><canvas id="configClassFemaleIconPreview" width="50" height="50"></canvas><span id="configClassFemaleIconStatus" class="small">Sin icono femenino.</span></div>
+    <button id="rollbackConfigClassBtn" type="button">ROLLBACK AL ORIGINAL</button>
+   </details>
+   <details class="configAccordion">
+    <summary>Stats y equipo inicial</summary>
+    <h3>Stats iniciales</h3>
+    <div class="configForm">
+     <label>Fuerza <input id="configClassStr" type="number" min="0" value="2"></label>
+     <label>Vitalidad <input id="configClassVit" type="number" min="0" value="2"></label>
+     <label>Agilidad <input id="configClassAgi" type="number" min="0" value="2"></label>
+     <label>Suerte <input id="configClassLuck" type="number" min="0" value="2"></label>
+     <label>Inteligencia <input id="configClassInt" type="number" min="0" value="2"></label>
+     <label>Sabiduría <input id="configClassWis" type="number" min="0" value="2"></label>
+    </div>
+    <h3>Equipo inicial</h3>
+    <div class="configForm">
+     <label>Arma inicial <select id="configClassStarterWeapon"><option value="">— Automático (genérico) —</option></select></label>
+    </div>
+    <p class="small">Pociones iniciales (deja vacío para las 2 de curación por defecto)</p>
+    <label>Buscar pociones <input type="text" id="configClassPotionSearch" placeholder="Buscar por nombre..."></label>
+    <div id="configClassPotionResults" class="configItemsList"></div>
+    <div id="configClassPotionSummary" class="small"></div>
+   </details>
+   <button class="start" id="saveConfigClassBtn">GUARDAR CLASE</button>
+   <div id="configClassStatus" class="small"></div>
+   <details class="configAccordion">
+    <summary>Skills de la clase</summary>
+    <button class="start" id="saveConfigSkillBtnTop" type="button">GUARDAR SKILL (Y CLASE)</button>
+    <label>Skill <select id="configClassSkillSelect"></select></label>
+    <div class="configItemActions">
+     <button type="button" id="newConfigSkillBtn">NUEVA SKILL</button>
+     <button type="button" id="duplicateConfigSkillBtn">DUPLICAR SKILL</button>
+     <button type="button" id="deleteConfigSkillBtn">ELIMINAR SKILL</button>
+     <button type="button" id="exportConfigSkillsBtn">EXPORTAR SKILLS (JSON)</button>
+     <label class="fileImportLabel">IMPORTAR SKILLS (JSON)<input type="file" id="importConfigSkillsInput" accept="application/json" hidden></label>
+    </div>
+    <details class="configAccordion" open>
+     <summary>Datos básicos</summary>
+     <div class="configForm">
+      <label>Id interno <input id="configSkillId" maxlength="60"></label>
+      <label>Nombre <input id="configSkillName" maxlength="80"></label>
+      <label>Icono (emoji/texto) <input id="configSkillIconText" maxlength="4"></label>
+      <label>Tier <select id="configSkillTier"><option value="1">I</option><option value="2">II</option><option value="3">III</option><option value="4">IV</option></select></label>
+      <label>Recurso <select id="configSkillResource"><option value="stamina">Stamina</option><option value="mana">Maná</option></select></label>
+      <label>Coste de recurso <input id="configSkillCost" type="number" min="0" value="10"></label>
+      <label>Enfriamiento (turnos) <input id="configSkillCd" type="number" min="0" value="5"></label>
+      <label>PA (coste en modo turnos por Puntos de Acción, single y multi) <input id="configSkillApCost" type="number" min="0" value="10"></label>
+      <label>Tipo <select id="configSkillType"><option value="physical">Físico</option><option value="magic">Mágico</option><option value="utility">Utilidad</option></select></label>
+      <label>Animación en pantalla <select id="configSkillAnimation"></select></label>
+      <label>Icono de la animación <select id="configSkillAnimationIcon"><option value="✦">✦ Estrella</option><option value="💥">💥 Explosión</option><option value="🔥">🔥 Fuego</option><option value="❄">❄ Hielo</option><option value="⚡">⚡ Rayo</option><option value="☄">☄ Meteoro</option><option value="🛡">🛡 Escudo</option><option value="✚">✚ Curación</option><option value="☠">☠ Calavera</option><option value="🌀">🌀 Espiral</option><option value="⬆">⬆ Emerger</option><option value="⬇">⬇ Caída</option></select></label>
+      <label class="tileRotateLabel"><input id="configSkillEnemyUsable" type="checkbox" checked> Los enemigos también pueden usarla</label>
+     </div>
+     <label>Descripción <input id="configSkillDesc" maxlength="200" placeholder="Descripción de la skill"></label>
+    </details>
+    <details class="configAccordion" open>
+     <summary>Efectos apilables</summary>
+     <p class="small">Toda skill se define como una pila de uno o más efectos independientes (daño, DOT, buff, debuff, curación, movimiento, control, drenaje, AOE, multihit, marca, invocación o utilidad), cada uno con su propio objetivo (a ti mismo / enemigo / área) cuando aplique. Con un solo efecto añadido, la skill es simplemente una pila de tamaño 1. Si un efecto de Daño apunta "A ti mismo", se hace daño propio directamente (ya no hace falta una skill especial tipo "bloodBuff" para eso).</p>
+     <div class="configItemActions">
+      <select id="configEffectKindPicker">
+       <option value="dmg">Daño</option>
+       <option value="dot">Daño periódico (DOT)</option>
+       <option value="buff">Buff (mejora propia)</option>
+       <option value="debuff">Debuff (empeora al enemigo)</option>
+       <option value="heal">Curación</option>
+       <option value="move">Movimiento (dash/teleport)</option>
+       <option value="cc">Control (aturdir/congelar/silenciar/enraizar)</option>
+       <option value="fear">Miedo (huye y gasta todos sus PA)</option>
+       <option value="mesmer">Mesmer (cambia de bando)</option>
+       <option value="drain">Drenaje (daña y te cura)</option>
+       <option value="aoe">AOE (daño en área)</option>
+       <option value="multihit">Multihit (varios impactos)</option>
+       <option value="mark">Marca (aumenta el daño recibido)</option>
+       <option value="summon">Invocación (aliado temporal)</option>
+       <option value="summonturret">Invocación-torreta (aliado estático a distancia)</option>
+       <option value="utility">Utilidad</option>
+       <option value="hot">Curación periódica (HOT)</option>
+       <option value="execute">Ejecutar (umbral de % de vida)</option>
+       <option value="pullroot">Atraer + enraizar</option>
+       <option value="counter">Contraataque (te blinda y devuelve el próximo golpe)</option>
+       <option value="cheatdeath">Desafiar a la muerte (sobrevives a 1 HP)</option><option value="revive">Revivir automáticamente</option>
+       <option value="holyshield">Escudo (absorbe daño antes que la vida)</option>
+       <option value="lineshot">Disparo en línea (perfora enemigos)</option>
+       <option value="trap">Trampa (se activa al pisarla)</option>
+       <option value="clones">Clones (invocan copias que luchan contigo)</option>
+       <option value="linkdamage">Daño en cadena (salta de enemigo en enemigo)</option>
+       <option value="invisible">Invisibilidad (evita la respuesta enemiga)</option>
+       <option value="ascend">Ascensión (cambia el % de coste de las skills)</option>
+       <option value="transform">Transformación (icono propio y stats en %)</option>
+      </select>
+      <button type="button" id="addSkillEffectBtn">AÑADIR EFECTO →</button>
+     </div>
+     <div id="configSkillEffectsList" class="effectsList"></div>
+    </details>
+    <details class="configAccordion">
+     <summary>Imagen de invocación</summary>
+     <p class="small">Elige la imagen que usarán tus efectos de tipo Invocación / Invocación-torreta / Clones / Transformación / Ascensión: reutiliza una imagen ya usada en otro objeto/enemigo/clase/skill de la lista, o sube y recorta una nueva (igual que en el resto de editores). Cuando esté lista, pulsa "Usar esta imagen" dentro de la tarjeta del efecto que quieras ilustrar.</p>
+     <label>Reutilizar imagen existente <select id="configSummonIconExisting"><option value="">— Elegir de la lista —</option></select></label>
+     <label>Subir imagen nueva <input type="file" id="configSummonImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configSummonCropZoom" min="25" max="400" value="100"></label><button type="button" id="configSummonMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configSummonMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configSummonCropCanvas" width="320" height="320"></canvas><div class="small">Dibuja o arrastra el cuadrado. Activa Magic eraser y pulsa un pixel para convertir colores similares en transparencia.</div></div>
+     <div class="configPreview"><canvas id="configSummonIconPreview" width="50" height="50"></canvas><span id="configSummonIconStatus" class="small">Sin imagen seleccionada.</span></div>
+    </details>
+    <details class="configAccordion" open><summary>Animación en pantalla · vista en bucle</summary><p class="small">La animación seleccionada se reproduce continuamente en este escenario. Cambia el selector de arriba para compararlas al instante; «Automática» conserva el comportamiento anterior.</p><div id="configSkillAnimationPreview" class="skillAnimationPreview" aria-live="polite"></div><button type="button" id="previewConfigSkillAnimationBtn">REINICIAR BUCLE</button></details>
+    <button class="start" id="saveConfigSkillBtn" type="button">GUARDAR SKILL (Y CLASE)</button>
+    <div id="configSkillStatus" class="small"></div>
+   </details>
+   <details class="configAccordion">
+    <summary>Tabla resumen</summary>
+    <p class="small">Vista rápida de todas las skills de la clase seleccionada: nombre, tipo, efectos apilables (daño área, hot a uno mismo, root, etc.) y coste (recurso + PA).</p>
+    <div id="configClassSkillsSummaryTable"></div>
+   </details>
+   <details class="configAccordion">
+    <summary>Clases guardadas</summary>
+    <div id="configClassesList" class="configItemsList"></div>
+   </details>
+  </section>
+ </div>
+
+ <div class="configTabPanel hidden" id="configTabTilesets">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de tilesets</h2>
+    <p class="small">Define un floor completo guardado en <code>config_floor</code>: tiles de suelo, muros direccionales con rotación y puertas. El primer piso usará siempre <b>Caverna verdeante</b>.</p>
+    <label>Imagen tile <input type="file" id="configTileImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configTileCropZoom" min="25" max="400" value="100"></label><button type="button" id="configTileMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configTileMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configTileCropCanvas" width="320" height="320"></canvas><div class="small">Recorta un tile cuadrado. El área seleccionada conserva su resolución y se adapta suavemente al tablero.</div></div>
+    <div class="configPreview"><canvas id="configTileIconPreview" width="50" height="50"></canvas><span id="configTileIconStatus" class="small">Sin tile</span></div>
+    <div class="configForm">
+     <label>Nombre tile <input id="configTileName" maxlength="80" placeholder="Musgo, roca, puerta..."></label>
+     <label>Tipo <select id="configTileType"><option value="floor">Suelo</option><option value="wall">Muro</option><option value="door">Puerta</option></select></label>
+     <label>Color base <input id="configTileColor" type="color" value="#263927"></label>
+     <label>Color secundario <input id="configTileAlt" type="color" value="#314832"></label>
+     <label>Color acento <input id="configTileAccent" type="color" value="#8fbf63"></label>
+     <label id="configWallDirectionWrap">Dirección muro <select id="configWallDirection"><option value="top">Arriba</option><option value="right">Derecha</option><option value="bottom">Abajo</option><option value="left">Izquierda</option><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option><option value="center">Centro</option></select></label>
+     <label class="tileRotateLabel"><input id="configTileRotatable" type="checkbox" checked> Permitir rotación (muros)</label>
+    </div>
+    <button class="start" id="addConfigTileBtn" type="button">GUARDAR TILE EN FLOOR</button>
+    <button id="newConfigTileBtn" type="button">NUEVO TILE</button>
+    <hr>
+    <div class="configForm">
+     <label>Nombre floor <input id="configFloorName" maxlength="80" value="Caverna verdeante"></label>
+     <label>Descripción <input id="configFloorStory" maxlength="160" value="Cavernas húmedas cubiertas de musgo, raíces y piedra viva."></label>
+     <label><input id="configFloorInterior" type="checkbox"> Suelo interior (solo salas interiores)</label>
+     <label>Tiles de suelo del floor <select id="configFloorTiles" multiple size="5"></select></label>
+     <label>Tiles de muro del floor <select id="configWallTiles" multiple size="5"></select></label>
+     <label>Puertas del floor <select id="configDoorTiles" multiple size="5"></select></label>
+    </div>
+    <button class="start" id="saveConfigFloorBtn" type="button">GUARDAR FLOOR EN CONFIG_FLOOR</button>
+    <button id="newConfigFloorBtn" type="button">NUEVO FLOOR</button>
+    <button id="exportConfigTilesetBtn" type="button">EXPORTAR FLOOR</button>
+    <label class="importJsonBtn">IMPORTAR FLOOR JSON<input type="file" id="importConfigFloorInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
+    <div id="configTilesetStatus" class="small"></div>
+   </section>
+   <section class="panel">
+    <h2>Tiles y floors guardados</h2>
+    <div id="configTilesList" class="configItemsList"></div>
+    <hr>
+    <div id="configFloorsList" class="configItemsList"></div>
+   </section>
+  </div>
+ </div>
+
+ <div class="configTabPanel hidden" id="configTabEnemies">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de familia de enemigos</h2>
+    <p class="small">Define familias completas en <code>enemy_family</code> y enemigos individuales en <code>enemy_detail</code>. El JSON de familia consolida todos los enemigos con sus iconos hexadecimales.</p>
+    <label>Imagen enemigo <input type="file" id="configEnemyImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configEnemyCropZoom" min="25" max="400" value="100"></label><button type="button" id="configEnemyMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configEnemyMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configEnemyCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono del enemigo conservando su resolución. Los jefes se renderizan más grandes en el tablero.</div></div>
+    <div class="configPreview"><canvas id="configEnemyIconPreview" width="50" height="50"></canvas><span id="configEnemyIconStatus" class="small">Sin icono</span></div>
+    <div class="configForm">
+     <label>Familia <input id="configEnemyFamilyName" maxlength="80" placeholder="Orquidos, No muertos..."></label>
+     <label>Clase libre <input id="configEnemyClass" maxlength="80" placeholder="Soldado, acólito..."></label>
+     <label>Tipo <select id="configEnemyType"><option>rogue</option><option>warrior</option><option>caster</option><option>invocador</option><option>clerigo</option><option>chaman</option><option>arquero</option><option>francotirador</option><option>tanque</option></select></label>
+     <label>Rango <select id="configEnemyBoss"><option value="normal">Enemigo normal</option><option value="boss">Boss</option><option value="megaboss">Megaboss</option></select></label>
+     <label>Tier <select id="configEnemyTier"><option value="i">I</option><option value="ii">II</option><option value="iii">III</option><option value="iv">IV</option></select></label>
+     <label>Arma <select id="configEnemyWeaponType"></select></label>
+     <label>Vida base <input id="configEnemyHp" type="number" min="1" value="12"></label>
+     <label>PA base <input id="configEnemyAp" type="number" min="1" value="20"><span class="small">Al generarse suma Agilidad y el bonus de boss/megaboss.</span></label>
+     <label>Ataque base <input id="configEnemyAtk" type="number" min="1" value="4"></label>
+     <label>Armadura base <input id="configEnemyArmor" type="number" min="0" value="0"></label>
+     <label>XP base <input id="configEnemyXp" type="number" min="1" value="8"></label>
+     <label>Fuerza <input id="configEnemyStrength" type="number" min="0" value="2"></label>
+     <label>Vitalidad <input id="configEnemyVitality" type="number" min="0" value="2"></label>
+     <label>Agilidad <input id="configEnemyAgility" type="number" min="0" value="2"></label>
+     <label>Suerte <input id="configEnemyLuck" type="number" min="0" value="1"></label>
+     <label>Inteligencia <input id="configEnemyIntelligence" type="number" min="0" value="1"></label>
+     <label>Sabiduría <input id="configEnemyWisdom" type="number" min="0" value="1"></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Añadir skill Advanced <select id="configEnemySkills" size="8"></select><span class="small">Solo aparecen skills utilizables por enemigos y configuradas en clases marcadas como Advanced. Al seleccionar una se añade al pool del jefe.</span><div id="configEnemySkillPool" class="enemySkillPool"></div></label>
+     <label class="configSkillSelectWrap enemyBossOnly hidden">Ficha de equipamiento del boss / megaboss <span class="small">Pulsa un hueco y elige un objeto looteable de <code>config_items</code>. Solo puede equiparse un objeto por slot; sus bonus se aplican a las estadísticas del jefe y cualquiera de ellos puede convertirse en su loot garantizado.</span><div id="configEnemyEquipment" class="enemyEquipmentPool"></div></label>
+    </div>
+    <button class="start" id="saveConfigEnemyBtn" type="button">GUARDAR ENEMIGO</button>
+    <button id="newConfigEnemyBtn" type="button">NUEVO ENEMIGO</button>
+    <button class="start" id="saveEnemyFamilyBtn" type="button">CONSOLIDAR FAMILIA</button>
+    <button id="exportEnemyFamilyBtn" type="button">EXPORTAR FAMILIA</button>
+    <label class="importJsonBtn">IMPORTAR FAMILIA JSON<input type="file" id="importEnemyFamilyInput" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" multiple></label>
+    <div id="configEnemyStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Familias y enemigos</h2><p class="small">Abre una familia para consultar y editar sus enemigos configurados.</p><div id="configEnemyFamiliesList" class="configItemsList"></div><div id="configEnemiesList" class="hidden"></div></section>
+  </div>
+ </div>
+
+ <div class="configTabPanel hidden" id="configTabChests">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Editor de cofres del tesoro</h2>
+    <p class="small">Cada cofre generado se elige exclusivamente de <code>config_chest</code>, que fija su tipo. El tier se sortea al iniciar el piso con pesos dependientes del nivel del personaje; el objeto concreto se sortea solo al abrir.</p>
+    <div class="configForm">
+     <label>Tipo <select id="configChestType"><option value="equipment">Equipo</option><option value="weapon">Arma</option><option value="potion">Poción</option></select></label>
+     <label id="configChestSlotFilterWrap">Slot <select id="configChestSlotFilter"><option value="all">Todas</option><option value="head">Cabeza</option><option value="chest">Pecho</option><option value="hands">Manos</option><option value="legs">Piernas</option><option value="boots">Botas</option><option value="neck">Cuello</option><option value="ring1">Anillo I</option><option value="ring2">Anillo II</option><option value="trinket1">Trinket I</option><option value="trinket2">Trinket II</option></select></label>
+     <label id="configChestWeaponTypeFilterWrap">Tipo de arma <select id="configChestWeaponTypeFilter"><option value="all">Todas</option></select></label>
+     <label>Nombre <input id="configChestName" maxlength="80" placeholder="Cofre de fuego..."></label>
+    </div>
+    <label>Icono cofre <input type="file" id="configChestImageInput" accept="image/*"></label>
+    <div class="cropTools"><label>Zoom imagen <input type="range" id="configChestCropZoom" min="25" max="400" value="100"></label><button type="button" id="configChestMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configChestMagicTolerance" min="0" max="160" value="38"></label></div>
+    <div class="cropWrap"><canvas id="configChestCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono del cofre conservando su resolución.</div></div>
+    <div class="configPreview"><canvas id="configChestIconPreview" width="50" height="50"></canvas><span id="configChestIconStatus" class="small">Sin icono</span></div>
+    <p id="configChestLootSummary" class="small">El tipo queda configurado ahora; la rareza se decidirá al entrar en cada piso según el nivel del personaje.</p>
+    <button class="start" id="saveConfigChestBtn" type="button">GUARDAR COFRE</button>
+    <button id="newConfigChestBtn" type="button">NUEVO COFRE</button>
+    <div id="configChestStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Cofres guardados</h2><div id="configChestsList" class="configItemsList"></div></section>
+  </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabWorldObjects">
+  <details class="configSlotGroup" open>
+   <summary><span>Objetos del mundo (iconos fijos)</span></summary>
+   <div class="configLayout">
+    <section class="panel">
+     <h2>Icono del objeto seleccionado</h2>
+     <p class="small">Elige un objeto de la lista de la derecha y sube/recorta su icono. Sin icono = sprite por defecto del juego.</p>
+     <p class="small" id="configWorldObjectSelected">Ningún objeto seleccionado.</p>
+     <label>Imagen <input type="file" id="configWorldObjectImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configWorldObjectCropZoom" min="25" max="400" value="100"></label><button type="button" id="configWorldObjectMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configWorldObjectMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configWorldObjectCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono conservando su resolución.</div></div>
+     <div class="configPreview"><canvas id="configWorldObjectIconPreview" width="50" height="50"></canvas><span id="configWorldObjectIconStatus" class="small">Sin icono</span></div>
+     <button class="start" id="saveConfigWorldObjectBtn" type="button">GUARDAR ICONO</button>
+     <button id="rollbackConfigWorldObjectBtn" type="button">QUITAR ICONO (sprite por defecto)</button>
+     <div id="configWorldObjectStatus" class="small"></div>
     </section>
-
-    <section class="content-section" id="discos">
-      <div class="section-heading"><div><p class="kicker">Archivo sonoro</p><h2>Discos</h2></div><p id="discosCount" class="counter"></p></div>
-      <div id="discosGrid" class="album-grid" aria-live="polite"></div>
+    <section class="panel"><h2>Objetos del mundo</h2><div id="configWorldObjectsList" class="configItemsList"></div></section>
+   </div>
+  </details>
+  <details class="configSlotGroup">
+   <summary><span>Assets de decoración</span></summary>
+   <div class="configLayout">
+    <section class="panel">
+     <h2 id="configAssetSelected">Nuevo asset (aún no guardado).</h2>
+     <div class="configForm">
+      <label>Nombre <input id="configAssetName" maxlength="80" placeholder="Estatua, fuente, jaula..."></label>
+      <label>Columnas que ocupa <input type="number" id="configAssetCols" min="1" max="49" value="1"></label>
+      <label>Filas que ocupa <input type="number" id="configAssetRows" min="1" max="49" value="1"></label>
+      <label>Ambiente/familia <input id="configAssetAmbiente" list="configAssetAmbienteList" maxlength="60" placeholder="Bosque, mazmorra, cripta..."><datalist id="configAssetAmbienteList"></datalist></label>
+     </div>
+     <label>Imagen <input type="file" id="configAssetImageInput" accept="image/*"></label>
+     <div class="cropTools"><label>Zoom imagen <input type="range" id="configAssetCropZoom" min="25" max="400" value="100"></label><button type="button" id="configAssetMagicEraserBtn">Magic eraser: off</button><label>Sutileza pixel <input type="range" id="configAssetMagicTolerance" min="0" max="160" value="38"></label></div>
+     <div class="cropWrap"><canvas id="configAssetCropCanvas" width="320" height="320"></canvas><div class="small">Recorta el icono guardado (proporción columnas:filas).</div></div>
+     <div class="configPreview"><canvas id="configAssetIconPreview" width="50" height="50"></canvas><span id="configAssetIconStatus" class="small">Sin icono</span></div>
+     <button class="start" id="saveConfigAssetBtn" type="button">GUARDAR ASSET</button>
+     <button id="newConfigAssetBtn" type="button">NUEVO ASSET</button>
+     <div id="configAssetStatus" class="small"></div>
     </section>
-
-    <section class="content-section dark-section" id="reviews">
-      <div class="section-heading"><div><p class="kicker">La escucha, por escrito</p><h2>Últimas reviews</h2></div><p id="reviewsCount" class="counter"></p></div>
-      <div id="reviewsGrid" class="reviews-grid" aria-live="polite"></div>
+    <section class="panel">
+     <h2>Vista previa a tamaño real</h2>
+     <p class="small" id="configAssetGridHint">Ajusta columnas/filas y haz clic para alternar bloqueada, transitable o puerta (una por asset).</p>
+     <div class="cropWrap"><canvas id="configAssetGridCanvas" width="64" height="64"></canvas></div>
+     <hr>
+     <h2>Assets guardados</h2>
+     <p class="small">Se reparten automáticamente por algunas salas al generar mazmorras, siempre que la sala sea más grande que el asset.</p>
+     <button id="exportConfigAssetEnvironmentsBtn" type="button">EXPORTAR TODOS LOS AMBIENTES JSON</button>
+     <div id="configAssetsList" class="configItemsList"></div>
     </section>
+   </div>
+  </details>
+ </div>
+ <div class="configTabPanel hidden" id="configTabGates">
+  <div class="configLayout">
+   <section class="panel">
+    <h2>Bloqueos de razas</h2>
+    <p class="small">Nivel máximo de PJ y puntuación acumulada mínimos (columnas <code>max_pj_lv</code>/<code>accumulated_points</code> del usuario) que hacen falta para poder elegir esta raza al crear personaje. Deja ambos en 0 para que esté siempre desbloqueada.</p>
+    <div id="configGatesRaces" class="configItemsList"></div>
+   </section>
+   <section class="panel">
+    <h2>Bloqueos de clases</h2>
+    <p class="small">Mismo criterio que las razas, para las 16 clases hardcode.</p>
+    <div id="configGatesClasses" class="configItemsList"></div>
+   </section>
+  </div>
+  <button class="start" id="saveConfigGatesBtn" type="button">GUARDAR BLOQUEOS</button>
+  <div id="configGatesStatus" class="small"></div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabCustompisos">
+  <div class="configLayout pisoEditorLayout">
+   <section class="panel">
+    <h2>Piso</h2>
+    <p class="small">Diseña un piso completo a mano: tiles de suelo/muro/puerta, assets, enemigos, cofres, llaves y trampas. No se suben imágenes aquí: todo se referencia desde lo ya configurado en Tilesets, Objetos del mundo, Enemigos y Cofres. El generador de mazmorras usará estos pisos (si hay alguno que encaje con el nivel) en las partidas normales.</p>
+    <div class="configForm">
+     <label>Nombre <input id="pisoName" maxlength="80" placeholder="Cripta olvidada..."></label>
+     <label>Nivel(es) de aparición <input id="pisoNivel" maxlength="60" placeholder="Ej: 3 · 3,5,8-10 · vacío = cualquiera"></label>
+     <label>Ancho (tiles) <input id="pisoCols" type="number" min="9" max="99" value="49"></label>
+     <label>Alto (tiles) <input id="pisoRows" type="number" min="9" max="99" value="49"></label>
+    </div>
+    <div class="configItemActions">
+     <button class="start" id="savePisoBtn" type="button">GUARDAR PISO</button>
+     <button id="newPisoBtn" type="button">NUEVO PISO</button>
+     <button id="deletePisoBtn" type="button">ELIMINAR</button>
+    </div>
+    <div class="configItemActions">
+     <button id="exportPisoJsonBtn" type="button">EXPORTAR JSON</button>
+     <label class="importJsonBtn">IMPORTAR JSON<input type="file" id="importPisoJsonInput" accept=".json,application/json"></label>
+    </div>
+    <div id="pisoStatus" class="small"></div>
+    <hr>
+    <h2>Pisos guardados</h2>
+    <div id="pisoList" class="configItemsList"></div>
+   </section>
+   <section class="panel pisoEditorMain">
+    <h2>Lienzo</h2>
+    <div id="pisoBreadcrumb" class="pisoBreadcrumb hidden"></div>
+    <div class="pisoToolbar">
+     <div class="pisoToolGroup" id="pisoToolButtons">
+      <button type="button" data-piso-tool="paint" class="active">Pintar</button>
+      <button type="button" data-piso-tool="select">Seleccionar</button>
+      <button type="button" data-piso-tool="room">Sala</button>
+      <button type="button" data-piso-tool="erase">Borrar</button>
+     </div>
+     <div class="pisoToolGroup">
+      <button type="button" id="pisoZoomOutBtn">−</button>
+      <span id="pisoZoomLabel" class="small">100%</span>
+      <button type="button" id="pisoZoomInBtn">+</button>
+      <button type="button" id="pisoFullscreenBtn">⛶ Pantalla completa</button>
+     </div>
+    </div>
+    <div class="pisoCanvasWrap" id="pisoCanvasWrap">
+     <canvas id="pisoCanvas" width="1176" height="1176"></canvas>
+     <div class="pisoDragGhost hidden" id="pisoDragGhost"></div>
+    </div>
+    <div id="pisoSelectionMenu" class="pisoSelectionMenu hidden"></div>
+    <div id="pisoMultiSelectBar" class="pisoInspector hidden"></div>
+    <div id="pisoInspector" class="pisoInspector hidden"></div>
+   </section>
+   <section class="panel pisoPalettePanel">
+    <h2>Paleta</h2>
+    <div class="pisoToolGroup" id="pisoPaletteTabs">
+     <button type="button" data-piso-palette="tiles" class="active">Tiles</button>
+     <button type="button" data-piso-palette="assets">Assets</button>
+     <button type="button" data-piso-palette="enemies">Enemigos</button>
+     <button type="button" data-piso-palette="chests">Cofres</button>
+     <button type="button" data-piso-palette="keys">Llaves</button>
+     <button type="button" data-piso-palette="traps">Trampas</button>
+     <button type="button" data-piso-palette="doors">Puertas</button>
+     <button type="button" data-piso-palette="salas">Salas</button>
+    </div>
+    <label>Tileset de referencia <select id="pisoTilesetSelect"></select></label>
+    <p class="small">Solo para previsualizar en el editor: en juego el piso usará el sistema habitual de tilesets del motor.</p>
+    <div id="pisoPaletteList" class="configItemsList"></div>
+   </section>
+  </div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabDungeons">
+  <div class="configLayout dungeonConfigLayout">
+   <section class="panel">
+    <h2>Editor de dungeons</h2>
+    <p class="small">Crea o edita una dungeon completa. Los ajustes se organizan por categorías y se consolidan junto a sus pisos pregenerados.</p>
+    <details class="configAccordion" open><summary>Identidad e historia</summary><div class="configForm">
+     <label>Nombre <input id="dungeonConfigName" maxlength="100" placeholder="Nombre de la dungeon"></label>
+     <label style="grid-column:1/-1">Historia inicial <textarea id="dungeonConfigStory" rows="5" placeholder="Texto que presenta la aventura..."></textarea></label>
+    </div></details>
+    <details class="configAccordion"><summary>Dificultad y progresión</summary><div class="configForm">
+     <label>Daño recibido % <input id="dungeonDamageReceived" type="number" min="25" max="500" value="125"></label><label>Daño causado % <input id="dungeonDamageDealt" type="number" min="25" max="500" value="100"></label>
+     <label>Vida enemigos % <input id="dungeonLife" type="number" min="25" max="500" value="125"></label><label>Experiencia % <input id="dungeonXp" type="number" min="25" max="500" value="100"></label>
+     <label>Número de enemigos % <input id="dungeonEnemyCount" type="number" min="25" max="500" value="100"></label><label>Loot de enemigos % <input id="dungeonEnemyLoot" type="number" min="25" max="500" value="100"></label>
+     <label>Loot/cofres por piso <input id="dungeonLootPerFloor" type="number" min="0" max="50" value="4"></label><label><input id="dungeonApMode" type="checkbox"> Combate por puntos de acción</label>
+    </div></details>
+    <details class="configAccordion"><summary>Geometría y dimensiones totales</summary><div class="configForm">
+     <label>Ancho (casillas) <input id="dungeonWidth" type="number" min="15" max="99" step="2" value="49"></label><label>Alto (casillas) <input id="dungeonHeight" type="number" min="15" max="99" step="2" value="49"></label>
+     <label>Geometría <select id="dungeonGeometry"><option value="rooms">Salas y corredores</option><option value="caves">Cuevas orgánicas</option><option value="mixed">Mixta</option><option value="open">Espacio abierto</option></select></label><label>Densidad de salas % <input id="dungeonRoomDensity" type="number" min="25" max="200" value="100"></label>
+    </div><p class="small">Las dimensiones y geometría son metadatos finos del diseño; el motor conserva su malla táctica compatible de 49×49 al consolidar los pisos.</p></details>
+    <details class="configAccordion" open><summary>Tipos e historia de los 6 pisos</summary><div id="dungeonFloorEditor" class="configItemsList"></div></details>
+    <div class="configItemActions"><button class="start" id="saveDungeonConfigBtn">GUARDAR DUNGEON</button><button id="newDungeonConfigBtn">NUEVA</button><button id="deleteDungeonConfigBtn">BORRAR</button></div>
+    <div class="configItemActions"><button id="exportDungeonConfigBtn">EXPORTAR JSON</button><label class="importJsonBtn dungeonImportBtn">IMPORTAR JSON<input type="file" id="importDungeonConfigInput" accept=".json,application/json"></label></div>
+    <div id="dungeonConfigStatus" class="small"></div>
+   </section>
+   <section class="panel"><h2>Vista previa navegable</h2><div class="dungeonPreviewNav"><button id="dungeonPreviewPrev">◀</button><b id="dungeonPreviewLabel">Piso 1</b><button id="dungeonPreviewNext">▶</button></div><canvas id="dungeonGeometryPreview" width="520" height="520"></canvas><p class="small">Suelo, muros, salas, puertas, enemigos, cofres, entrada y salida en una representación simplificada.</p><h2>Dungeons guardadas</h2><div id="dungeonConfigList" class="configItemsList"></div></section>
+  </div>
+ </div>
+ <!-- Gamepad bindings, same controls as #gamepadOverlay. Both copies are
+      addressed by CLASS (.gamepadStatus/.gamepadBindings/[data-gamepad-reset])
+      rather than by id so joystick.js can render into every copy at once and
+      they can never drift apart - the overlay stays because the pad's own
+      "menú de mando" button opens it mid-run, where the config screen is not
+      reachable. -->
+ <div class="configTabPanel hidden" id="configTabGamepad">
+  <h3>Mando / keybinding</h3>
+  <p class="small">Conecta un mando. Pulsa «Cambiar» y después el botón que quieras asignar. <b>Stick izquierdo</b>: mueve siempre al personaje, o el cursor de ataque/habilidad al apuntar. <b>Cruceta</b>: navega siempre por los menús laterales y por los botones de cualquier ventana abierta. <b>Hombros</b>: cambian de pestaña o de zona.</p>
+  <div class="gamepadStatus">Sin mando detectado</div>
+  <div class="gamepadBindings"></div>
+  <div class="startActions"><button type="button" data-gamepad-reset>RESTAURAR VALORES POR DEFECTO</button></div>
+ </div>
+ <div class="configTabPanel hidden" id="configTabTesting">
+  <p class="small">Personaje y piso 100% temporales para probar combate, skills y archetypes de piso: no se guardan en Supabase y no están sujetos a bloqueos de nivel/puntuación. Sales en cualquier momento con "☰ MENÚ PRINCIPAL".</p>
+  <div class="configLayout">
+   <section class="panel">
+    <h2>1. Personaje</h2>
+    <label>Nombre <input id="testNameInput" maxlength="16" placeholder="Tester" value="Tester"></label>
+    <h3>Raza</h3>
+    <div class="choices raceGrid" id="testRaceChoices"></div>
+    <h3>Modo de habilidades</h3>
+    <div class="skillModeChoice">
+     <label><input type="radio" name="testSkillMode" id="testSkillModeHardcode" value="hardcode" checked> Hardcode <span class="small">Las 16 clases y skills clásicas.</span></label>
+     <label><input type="radio" name="testSkillMode" id="testSkillModeAdvanced" value="advanced"> Advanced Classes <span class="small">Solo clases creadas en Clases (BDD).</span></label>
+    </div>
+    <h3>Modo de combate</h3>
+    <div class="skillModeChoice">
+     <label><input type="radio" name="testCombatMode" id="testCombatModeClassic" value="classic" checked> Clásico <span class="small">Una acción por turno.</span></label>
+     <label><input type="radio" name="testCombatMode" id="testCombatModeAp" value="ap"> Puntos de Acción (PA)</label>
+    </div>
+    <h3>Clase</h3>
+    <div class="classGrid" id="testClassChoices"></div>
+   </section>
+   <section class="panel">
+    <h2>2. Nivel, stats y habilidades</h2>
+    <label>Nivel <input id="testLevelInput" type="number" min="1" max="100" value="1"></label>
+    <div id="testStatsPanel" class="configStatsHelp"></div>
+    <h3>Habilidades de clase disponibles a este nivel</h3>
+    <p class="small" id="testSkillsInfo"></p>
+    <div id="testSkillChoices" class="configItemsList"></div>
+    <h2>3. Piso de prueba</h2>
+    <label>Tipo de piso <select id="testFloorArchetype"></select></label>
+    <p class="small" id="testFloorArchetypeDesc"></p>
+    <label>Densidad de enemigos <input id="testEnemyDensity" type="range" min="25" max="150" value="50" step="5"><span id="testEnemyDensityValue">50%</span></label>
+    <p class="small">100% es la densidad normal de ese tipo de piso (una horda puede rondar el centenar de enemigos); bájala para poder despejar el piso de prueba sin que se sienta interminable.</p>
+    <button class="start" id="testLaunchBtn" type="button">LANZAR PRUEBA DE COMBATE</button>
+    <div id="testStatus" class="small"></div>
+   </section>
+  </div>
+ </div>
+ <button class="backToLanding" id="backToLandingBtn">VOLVER</button>
+</div>
 
-    <section class="content-section community" id="comunidad">
-      <div class="section-heading"><div><p class="kicker">Quienes escriben</p><h2>Comunidad</h2></div><p id="usersCount" class="counter"></p></div>
-      <div id="usersGrid" class="users-grid" aria-live="polite"></div>
-    </section>
-  </main>
+<div class="skillChoiceModal" id="skillChoiceModal"><div class="skillChoiceBox"><h2 id="skillChoiceTitle">ELIGE HABILIDAD</h2><p id="skillChoiceText" class="small"></p><div class="skillChoiceGrid" id="skillChoiceGrid"></div></div></div>
+<div class="statPointModal" id="statPointModal"><div class="statPointBox"><h2 id="statPointTitle">SUBIDA DE NIVEL</h2><p id="statPointText" class="small"></p><div id="statPointSkillReward"></div><div class="statChoiceGrid" id="statChoiceGrid"></div></div></div>
+<!-- In-game replacement for the browser's native confirm()/alert()/prompt().
+     Native dialogs are drawn by the BROWSER, outside the page, so a gamepad
+     can never focus or press their buttons - leaving anyone playing with a
+     pad stuck on every "¿Confirmas...?" (level-up stat pick, learning a
+     skill, shop purchases...). This one is a normal in-page modal, so the
+     same gamepad navigation that drives every other modal works on it too.
+     See uiConfirm()/uiAlert()/uiTextPrompt() in src/game.js. -->
+<div class="statPointModal uiPromptModal" id="uiPromptModal"><div class="statPointBox uiPromptBox" data-gamepad-zone="ui-prompt"><h2 id="uiPromptTitle">CONFIRMAR</h2><p id="uiPromptText" class="small"></p><label class="uiPromptField hidden" id="uiPromptField"><input id="uiPromptInput" maxlength="120"></label><div class="startActions"><button type="button" class="start" id="uiPromptAccept">ACEPTAR</button><button type="button" id="uiPromptCancel">CANCELAR</button></div></div></div>
+<div class="statPointModal" id="soulReviveModal"><div class="statPointBox soulReviveBox"><h2>¿QUIERES VIVIR?</h2><div id="soulReviveCount" class="soulReviveCount"></div><p id="soulReviveText"></p><div class="startActions"><button id="acceptSoulRevive" class="start">SÍ, REVIVIR</button><button id="rejectSoulRevive">NO</button></div></div></div>
+<div class="overlay hidden" id="disenchantOverlay">
+<div class="modal">
+<h2>ALTAR DEL CREADOR</h2>
+<p class="small">Deshacer equipo o pociones por shards se hace desde su botón en el inventario. Aquí puedes crear pociones y mejorar equipo.</p>
+<div class="craftTabs">
+<button type="button" class="craftTabBtn" data-craft-tab="potions">Crear pociones</button>
+<button type="button" class="craftTabBtn active" data-craft-tab="tier">Mejorar tier</button>
+<button type="button" class="craftTabBtn" data-craft-tab="addstat">Añadir stat</button>
+<button type="button" class="craftTabBtn" data-craft-tab="upgradestat">Mejorar stat</button>
+</div>
+<p class="small" id="craftShardsSummary"></p>
+<div class="craftPane hidden" id="craftPanePotions">
+<p class="small">Crea una copia de cualquier poción de Configuración → Pociones. Coste: 7 shards del mismo tier de la poción.</p>
+<div id="craftPotionsList" class="configItemsList"></div>
+</div>
+<div class="craftPane" id="craftPaneTier">
+<p class="small">Sube el tier de un objeto: su stat principal pasa a la base del tier objetivo. Coste: 20 shards del tier objetivo.</p>
+<div id="craftTierList" class="configItemsList"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneAddStat">
+<p class="small">Añade una stat adicional (empieza en +1 común). Raros/Épicos: 1 stat extra · Legendarios: 2 · Artefactos: 3. Coste: 20 shards comunes.</p>
+<div id="craftAddStatList" class="configItemsList"></div>
+</div>
+<div class="craftPane hidden" id="craftPaneUpgradeStat">
+<p class="small">Sube el bonus de una stat existente. El bonus nunca puede superar el máximo del tier del objeto. +2/+3: shards infrecuentes · +4/+5: raras · +6/+7: épicas · +8/+9: legendarias · +10: artefacto. Coste: 20 shards por subida.</p>
+<div id="craftUpgradeStatList" class="configItemsList"></div>
+</div>
+<button id="disenchantCloseBtn" type="button">CERRAR</button>
+</div>
+</div>
 
-  <footer><img src="/api/logo" alt=""><p>MetalWinds <span>·</span> <span id="appVersion">v2.0.1</span></p></footer>
-  <script src="/src/app.js?v=2.0.1" defer></script>
+<div class="overlay hidden" id="dungeonOverlay">
+<div class="modal">
+<h2>ELIGE O CREA UNA DUNGEON</h2>
+<p class="small" id="dungeonCharacterLabel"></p>
+<p class="small">Selecciona un mundo guardado o crea uno nuevo. Los mundos se guardan en Supabase en <b>dungeon_world</b>.</p>
+<div data-gamepad-zone="dungeon-create"><label>Nombre del mundo <input id="worldNameInput" value="Mazmorra Consolidada" maxlength="40"></label>
+<details class="worldSettingsAccordion">
+<summary>Editar características del mundo</summary>
+<details class="worldSettingsSubAccordion">
+<summary>Dificultad (% de cosas)</summary>
+<div class="worldParamsGrid">
+<label>Modo puntos de acción <input id="worldApMode" type="checkbox"><span>turnos con PA (30+AGI/2)</span></label>
+<label>% daño recibido <input id="worldDamageReceivedPct" type="range" value="125" min="25" max="500" step="5"><span id="worldDamageReceivedValue">125%</span></label>
+<label>% daño infligido <input id="worldDamageDealtPct" type="range" value="100" min="25" max="500" step="5"><span id="worldDamageDealtValue">100%</span></label>
+<label>% vida enemiga <input id="worldLifePct" type="range" value="125" min="25" max="500" step="5"><span id="worldLifeValue">125%</span></label>
+<label>% XP recibida <input id="worldXpReceivedPct" type="range" value="100" min="25" max="500" step="5"><span id="worldXpReceivedValue">100%</span></label>
+<label>% nº de enemigos <input id="worldEnemyCountPct" type="range" value="100" min="25" max="500" step="5"><span id="worldEnemyCountValue">100%</span></label>
+<label>% loot de enemigos <input id="worldEnemyLootPct" type="range" value="100" min="25" max="500" step="5"><span id="worldEnemyLootValue">100%</span></label>
+</div>
+</details>
+<details class="worldSettingsSubAccordion">
+<summary>Historias</summary>
+<div class="worldStoryControls">
+<p class="small"><b>6 pisos fijos.</b> Configura su aspecto y familia; el sexto siempre será un encuentro final especial.</p>
+<input id="worldFloorsInput" type="hidden" value="6">
+<p class="small">Selecciona para cada piso un floor visual de <b>config_floor</b> y una familia existente de <b>enemy_family</b>, o deja <b>Aleatorio</b> para que se elija durante la generación.</p>
+<div id="worldFloorPlanList" class="worldFloorPlanList"></div>
+</div>
+</details>
+</details>
+<button class="start" id="createWorldBtn">CREAR DUNGEON Y CALCULAR CONTENIDOS</button></div>
+<div data-gamepad-zone="dungeon-saved">
+<h3>Dungeons guardadas</h3>
+<div id="worldStatus" class="small">Cargando dungeons...</div>
+<div class="worldList" id="worldList"></div>
+</div>
+</div>
+</div>
+
+<div class="overlay hidden" id="dungeonPreviewOverlay">
+<div class="modal">
+<h2>CARACTERÍSTICAS DE LA DUNGEON</h2>
+<p class="small">Resumen por piso antes de entrar: enemigos por tier y tipos de cofre asignados. El tier de cada cofre se sortea al iniciar el piso según el nivel del personaje.</p>
+<pre id="dungeonPreviewText" class="dungeonPreviewText"></pre>
+<button class="start" id="dungeonPreviewContinueBtn">ENTRAR EN LA DUNGEON</button>
+<button id="dungeonPreviewBackBtn" type="button">VOLVER</button>
+</div>
+</div>
+
+<div class="overlay hidden" id="startOverlay">
+<div class="modal characterWizard">
+<h2>CREA TU DESGRACIADO PROFESIONAL</h2>
+<div class="wizardProgress" id="wizardProgress" aria-label="Progreso de creación"></div>
+<div class="wizardViewport"><div class="wizardTrack" id="wizardTrack">
+<section class="wizardStep"><h3>1. Reglas de juego</h3><p class="small">Elige qué catálogo de clases usarás y cómo se resuelven los turnos.</p><h4>Clases</h4>
+<div class="skillModeChoice">
+ <label><input type="radio" name="skillMode" id="skillModeHardcode" value="hardcode"> Hardcode <span class="small">Las 16 clases y skills clásicas del juego.</span></label>
+ <label><input type="radio" name="skillMode" id="skillModeAdvanced" value="advanced" checked> Advanced Classes <span class="small">Solo clases y skills creadas en Configuración &gt; Clases (BDD), sin nada hardcodeado.</span></label>
+</div>
+<h4>Combate</h4>
+<div class="skillModeChoice" id="combatModeChoice">
+ <label><input type="radio" name="combatMode" id="combatModeClassic" value="classic"> Clásico <span class="small">Una acción por turno.</span></label>
+ <label><input type="radio" name="combatMode" id="combatModeAp" value="ap" checked> Puntos de Acción (PA) <span class="small">Pool de PA por turno (30+AGI/2): varias acciones antes de pasar turno.</span></label>
+</div>
+</section>
+<section class="wizardStep"><h3>2. Clase</h3><p class="small">Compara atributos y estilo. Selecciona una tarjeta para ver todos sus detalles.</p>
+<div class="classGrid" id="classChoices"></div>
+<div id="classDetail" class="narrative"></div>
+</section>
+<section class="wizardStep"><h3>3. Raza y sexo</h3><p class="small">La raza modifica tu build. El sexo solo cambia el icono del personaje.</p>
+<div class="choices raceGrid" id="raceChoices"></div>
+<h4>Sexo</h4><div class="genderChoices" id="genderChoices">
+ <button type="button" class="genderChoice selected" data-gender="male"><canvas width="64" height="64"></canvas><b>Masculino</b><span>♂</span></button>
+ <button type="button" class="genderChoice" data-gender="female"><canvas width="64" height="64"></canvas><b>Femenino</b><span>♀</span></button>
+</div></section>
+<section class="wizardStep wizardNameStep"><h3>4. Nombre</h3><p class="small">Revisa tu identidad y ponle un nombre antes de entrar en la mazmorra.</p><div id="characterSummary" class="characterSummary"></div><label>Nombre <input id="nameInput" value="" maxlength="16" placeholder="Nombre de tu personaje" autocomplete="off"></label><button class="start" id="startBtn">CREAR PERSONAJE</button></section>
+</div></div>
+<div class="wizardNav"><button type="button" class="start" id="wizardBackBtn">← VOLVER</button><button type="button" class="start" id="wizardNextBtn">SIGUIENTE →</button></div>
+</div>
+</div>
+
+<div class="overlay hidden" id="storyOverlay">
+<div class="modal">
+<h2 id="storyTitle"></h2>
+<div id="storyBody"></div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="./src/interiors.js?v=1.4.0"></script>
+<script src="./src/pjrace.js?v=1.4.0"></script>
+<script src="./src/pjlvl.js?v=1.4.0"></script>
+<script src="./src/animations.js?v=1.4.0"></script>
+<script src="./src/classkills.js?v=1.4.0"></script>
+<script src="./src/game.js?v=1.4.0"></script>
+<script src="./src/joystick.js?v=1.4.0"></script>
+<script src="./src/touch.js?v=1.4.0"></script>
+<script src="./src/soulseek.js?v=1.4.0"></script>
+<script src="./src/soulseeker-dungeons.js?v=1.4.0"></script>
+<script src="./src/soulseek_shop.js?v=1.4.0"></script>
+<script src="./src/custompisos.js?v=1.4.0"></script>
+<script src="./src/loading-overlays.js?v=1.4.0"></script>
+
 </body>
 </html>
